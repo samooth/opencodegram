@@ -61,6 +61,7 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const sessionsByChat = new Map<number, ChatSession>();
+  const lastChatBySession = new Map<string, number>(); // sessionId -> chatId where last prompted
   const findChatBySession = (sessionId: string): number | undefined => {
     for (const [cid, s] of sessionsByChat) if (s.sessionId === sessionId) return cid;
     return undefined;
@@ -383,7 +384,7 @@ async function main() {
 
         if (e.type === "session.text.started") {
           const sessionId = e.data?.sessionID ?? e.data?.session?.id;
-          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
           if (chatId === undefined) continue;
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
@@ -394,7 +395,7 @@ async function main() {
 
         if (e.type === "session.text.delta") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
           if (chatId === undefined) continue;
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
@@ -407,7 +408,7 @@ async function main() {
 
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
           if (chatId === undefined) continue;
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
@@ -426,7 +427,7 @@ async function main() {
           const p = e.data ?? {};
           const requestId = p.id;
           const sessionId = p.sessionID;
-          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
           if (chatId === undefined || !requestId || !sessionId) continue;
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
@@ -468,7 +469,7 @@ async function main() {
         if (e.type === "form.created") {
           const p = e.data ?? {};
           const sessionId = p.sessionID;
-          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             const title = p.title ?? "Form";
@@ -493,7 +494,7 @@ async function main() {
 
         if (e.type === "session.execution.failed") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
@@ -504,7 +505,7 @@ async function main() {
 
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             await tg.sendRichMessage(chatId, "✓ session idle", threadId && chatId > 0 ? { message_thread_id: threadId } : {});
@@ -836,6 +837,7 @@ async function main() {
         }
         const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
         try {
+          lastChatBySession.set(s.sessionId, chatId);
           await oc.prompt(s.sessionId, text, mediaToAttach);
           await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
         } catch (err) {
@@ -1221,6 +1223,7 @@ async function main() {
       }
 
       try {
+        lastChatBySession.set(s.sessionId, chatId);
         await oc.prompt(s.sessionId, text);
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
