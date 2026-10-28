@@ -271,11 +271,12 @@ async function main() {
     modelListByChat.set(chatId, list.map((m: any) => ({ id: m.id, providerID: m.providerID, variant: m.variants?.[0]?.id })));
     const lines = slice.map((m: any, i: number) => {
       const name = esc(m.name ?? m.id);
-      const variant = m.variants?.length ? ` · ${esc(m.variants.map((v: any) => v.id).join(", "))}` : "";
+      const variant = m.variants?.length ? esc(m.variants.map((v: any) => v.id).join(", ")) : "—";
       const isCurrent = current && current.providerID === m.providerID && current.id === m.id;
       const mark = isCurrent ? " ✅" : "";
-      return `${start + i + 1}. <b>${name}</b>${mark}\n   <code>${esc(m.providerID)}/${esc(m.id)}</code>${variant}`;
+      return `<tr><td>${start + i + 1}</td><td><b>${name}</b>${mark}</td><td><code>${esc(m.providerID)}/${esc(m.id)}</code></td><td>${variant}</td></tr>`;
     });
+    const table = `<table><tr><th>#</th><th>Model</th><th>ID</th><th>Variants</th></tr>${lines.join("")}</table>`;
     const keyboard: any[][] = slice.map((m: any, i: number) => {
       const label = `${m.name ?? m.id}`.slice(0, 48);
       return [{ text: label, callback_data: `model:${start + i}` }];
@@ -286,7 +287,7 @@ async function main() {
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
-    await sendOrEditRich(chatId, messageId, `<b>Models</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, `<b>Models</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {
