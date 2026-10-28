@@ -27,6 +27,103 @@ async function main() {
 
   const sessionsByChat = new Map<number, ChatSession>();
   const chatBySession = new Map<string, number>();
+  const sessionListByChat = new Map<number, string[]>();
+  const commandListByChat = new Map<number, string[]>();
+
+  async function createNewSession(chatId: number): Promise<void> {
+    const old = sessionsByChat.get(chatId);
+    if (old) chatBySession.delete(old.sessionId);
+    sessionsByChat.delete(chatId);
+    const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
+    let model: { id: string; providerID: string; variant?: string } | undefined;
+    try {
+      const sessions = await oc.client.session.list();
+      const list = (sessions as any)?.data ?? (Array.isArray(sessions) ? sessions : []);
+      const latest = [...list].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0))[0];
+      if (latest?.model?.id && latest?.model?.providerID) model = { id: latest.model.id, providerID: latest.model.providerID, variant: latest.model.variant };
+    } catch {
+      // ignore
+    }
+    if (!model) model = await oc.defaultModel(directory);
+    const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
+    const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
+    const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
+    sessionsByChat.set(chatId, cs);
+    chatBySession.set(sessionId, chatId);
+    await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`);
+  }
+
+  async function activateSession(chatId: number, sessionId: string): Promise<void> {
+    const session = await oc.client.session.get({ sessionID: sessionId });
+    const s = session as any;
+    const directory = s?.location?.directory ?? s?.directory;
+    const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
+    const old = sessionsByChat.get(chatId);
+    if (old) chatBySession.delete(old.sessionId);
+    const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
+    sessionsByChat.set(chatId, cs);
+    chatBySession.set(sessionId, chatId);
+    await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`);
+  }
+
+  async function showSessions(chatId: number, page = 0): Promise<void> {
+    const pageSize = 8;
+    const res = await oc.client.session.list({ limit: 100, order: "desc" });
+    const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    if (!list.length) {
+      await tg.sendRichMessage(chatId, "no sessions found.");
+      return;
+    }
+    const total = list.length;
+    const start = page * pageSize;
+    const slice = list.slice(start, start + pageSize);
+    sessionListByChat.set(chatId, slice.map((s: any) => s.id));
+    const lines = slice.map((s: any, i: number) => {
+      const title = esc(s.title ?? "(untitled)");
+      const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "";
+      return `${start + i + 1}. <b>${title}</b>\n   <code>${esc(s.id)}</code>${model ? " · " + model : ""}`;
+    });
+    const keyboard: any[][] = slice.map((_: any, i: number) => [{ text: `Open ${i + 1}`, callback_data: `use:${i}` }]);
+    const nav: any[] = [];
+    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });
+    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
+    if (nav.length) keyboard.push(nav);
+    keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    await tg.sendRichMessage(chatId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+  }
+
+  async function showCommands(chatId: number): Promise<void> {
+    const s = sessionsByChat.get(chatId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
+    const cmds = await oc.listCommands(directory);
+    if (!cmds.length) {
+      await tg.sendRichMessage(chatId, "no commands available.");
+      return;
+    }
+    commandListByChat.set(chatId, cmds.map((c: any) => c.name));
+    const lines = cmds.map((c: any) => `• <b>/${esc(c.name)}</b>${c.description ? " — " + esc(c.description) : ""}`);
+    const keyboard = cmds.map((c: any) => [{ text: `/${c.name}`, callback_data: `cmd:${c.name}` }]);
+    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${lines.join("\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+  }
+
+  async function sendPanel(chatId: number): Promise<void> {
+    const s = sessionsByChat.get(chatId);
+    const ocInfo = await oc.serverInfo().catch(() => null);
+    const text = [
+      `<b>OpenCodegram</b>`,
+      ``,
+      s ? `<b>Session</b>: <code>${esc(s.sessionId)}</code>` : `<b>Session</b>: none`,
+      s?.directory ? `<b>Directory</b>: <code>${esc(s.directory)}</code>` : "",
+      ocInfo ? `<b>OpenCode</b>: v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""}` : "",
+    ].filter(Boolean).join("\n");
+    const keyboard = [
+      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }],
+      [{ text: "⚡ Commands", callback_data: "panel:commands" }, { text: "📊 Status", callback_data: "panel:status" }],
+      [{ text: "⏹ Stop", callback_data: "panel:stop" }, { text: "❓ Help", callback_data: "panel:help" }],
+    ];
+    await tg.sendRichMessage(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+  }
   const pendingPermissions = new Map<string, { chatId: number; sessionId: string }>(); // requestId -> info
 
   const flushDraft = async (chatId: number) => {
@@ -188,6 +285,79 @@ async function main() {
           }
           pendingPermissions.delete(requestId);
         }
+
+        const chatId = cq.message?.chat?.id ?? cq.from.id;
+        const cbData = cq.data ?? "";
+
+        if (cbData === "panel:home" || cbData === "panel:status" || cbData === "panel:help") {
+          await tg.answerCallbackQuery(cq.id);
+          await sendPanel(chatId);
+          continue;
+        }
+        if (cbData === "panel:sessions") {
+          await tg.answerCallbackQuery(cq.id);
+          await showSessions(chatId, 0);
+          continue;
+        }
+        if (cbData === "panel:new") {
+          await tg.answerCallbackQuery(cq.id, "Creating…");
+          await createNewSession(chatId);
+          await sendPanel(chatId);
+          continue;
+        }
+        if (cbData === "panel:commands") {
+          await tg.answerCallbackQuery(cq.id);
+          await showCommands(chatId);
+          continue;
+        }
+        if (cbData === "panel:stop") {
+          const s = sessionsByChat.get(chatId);
+          if (s) {
+            await oc.interrupt(s.sessionId);
+            await tg.answerCallbackQuery(cq.id, "Stopped");
+            await tg.sendRichMessage(chatId, "⏹ stopped");
+          } else {
+            await tg.answerCallbackQuery(cq.id, "No active session");
+          }
+          continue;
+        }
+        const useMatch = cbData.match(/^use:(\\d+)$/);
+        if (useMatch) {
+          const idx = parseInt(useMatch[1], 10);
+          const ids = sessionListByChat.get(chatId) ?? [];
+          const sessionId = ids[idx];
+          if (sessionId) {
+            await tg.answerCallbackQuery(cq.id, "Switching…");
+            await activateSession(chatId, sessionId);
+          } else {
+            await tg.answerCallbackQuery(cq.id, "Session not found");
+          }
+          continue;
+        }
+        const pageMatch = cbData.match(/^sessions:page:(\\d+)$/);
+        if (pageMatch) {
+          await tg.answerCallbackQuery(cq.id);
+          await showSessions(chatId, parseInt(pageMatch[1], 10));
+          continue;
+        }
+        const cmdMatch = cbData.match(/^cmd:(.+)$/);
+        if (cmdMatch) {
+          const name = cmdMatch[1];
+          const s = sessionsByChat.get(chatId);
+          if (!s) {
+            await tg.answerCallbackQuery(cq.id, "No active session");
+            continue;
+          }
+          await tg.answerCallbackQuery(cq.id, `Running /${name}…`);
+          try {
+            await oc.runCommand(s.sessionId, name, "");
+            await tg.sendRichMessage(chatId, `ran /${esc(name)}`);
+          } catch (err) {
+            await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
+          }
+          continue;
+        }
+
         continue;
       }
 
@@ -203,13 +373,13 @@ async function main() {
       const chatId = msg.chat.id;
       const text = msg.text.trim();
 
-      if (text === "/start") {
-        await tg.sendRichMessage(chatId, "opencodegram ready. Send a prompt to create a session. Commands: /help /status /new");
+      if (text === "/start" || text === "/help") {
+        await sendPanel(chatId);
         continue;
       }
 
-      if (text === "/help") {
-        await tg.sendRichMessage(chatId, "Send any text to prompt the active session. /status shows the active session. /new creates a new session. Other /commands are forwarded to OpenCode.");
+      if (text === "/status") {
+        await sendPanel(chatId);
         continue;
       }
 
@@ -220,10 +390,7 @@ async function main() {
       }
 
       if (text === "/new") {
-        const old = sessionsByChat.get(chatId);
-        if (old) chatBySession.delete(old.sessionId);
-        sessionsByChat.delete(chatId);
-        await tg.sendRichMessage(chatId, "cleared active session; next message creates a new one.");
+        await createNewSession(chatId);
         continue;
       }
 
@@ -243,57 +410,14 @@ async function main() {
       }
 
       if (text === "/commands") {
-        const s = sessionsByChat.get(chatId);
-        const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
-        const cmds = await oc.listCommands(directory);
-        if (!cmds.length) {
-          await tg.sendRichMessage(chatId, "no commands available");
-          continue;
-        }
-        const lines = cmds.map((c: any) => `/${c.name}${c.description ? " — " + c.description : ""}`);
-        await tg.sendRichMessage(chatId, "OpenCode commands:\n" + lines.map(esc).join("\n"));
+        await showCommands(chatId);
         continue;
       }
 
       if (text === "/sessions" || text.startsWith("/sessions ")) {
         const arg = text.slice("/sessions".length).trim();
-        const all = arg === "all";
-        const limit = all ? 100 : 20;
-        const lines: string[] = [];
-        let cursor: string | undefined;
-        let count = 0;
-        const max = all ? 10000 : 20;
-        while (count < max) {
-          const res = await oc.client.session.list({ limit, order: "desc", cursor });
-          const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
-          if (!list.length) break;
-          for (const s of list) {
-            if (count >= max) break;
-            const title = s.title ?? "(untitled)";
-            const model = s.model ? `${s.model.providerID}/${s.model.id}` : "";
-            const updated = s.time?.updated ? new Date(s.time.updated).toISOString().slice(0, 16).replace("T", " ") : "";
-            lines.push(`• ${title}\n  ${s.id}${model ? "  " + model : ""}${updated ? "  " + updated : ""}`);
-            count++;
-          }
-          const c = (res as any)?.cursor;
-          cursor = typeof c === "string" ? c : (c?.next ?? (res as any)?.nextCursor);
-          if (!cursor || !all) break;
-        }
-        if (!lines.length) {
-          await tg.sendRichMessage(chatId, "no sessions found.");
-          continue;
-        }
-        // Send in chunks to respect Telegram's 4096-char limit.
-        let chunk = "";
-        for (const line of lines) {
-          if (chunk.length + line.length + 2 > 3800) {
-            await tg.sendRichMessage(chatId, chunk);
-            chunk = "";
-          }
-          chunk += (chunk ? "\n\n" : "") + line;
-        }
-        if (chunk) await tg.sendRichMessage(chatId, chunk);
-        await tg.sendRichMessage(chatId, `listed ${count} session(s). Use <code>/use &lt;session_id&gt;</code> to switch.`);
+        const page = /^\d+$/.test(arg) ? Math.max(0, parseInt(arg, 10) - 1) : 0;
+        await showSessions(chatId, page);
         continue;
       }
 
@@ -304,16 +428,7 @@ async function main() {
           continue;
         }
         try {
-          const session = await oc.client.session.get({ sessionID: sessionId });
-          const s = session as any;
-          const directory = s?.location?.directory ?? s?.directory;
-          const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
-          const old = sessionsByChat.get(chatId);
-          if (old) chatBySession.delete(old.sessionId);
-          const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
-          sessionsByChat.set(chatId, cs);
-          chatBySession.set(sessionId, chatId);
-          await tg.sendRichMessage(chatId, `active session: ${sessionId}\nmodel: ${model ? model.providerID + "/" + model.id : "default"}\ndir: ${directory ?? "n/a"}`);
+          await activateSession(chatId, sessionId);
         } catch (err) {
           await tg.sendRichMessage(chatId, `failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
         }
@@ -323,24 +438,8 @@ async function main() {
       // Create or reuse session
       let s = sessionsByChat.get(chatId);
       if (!s) {
-        const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
-        // Reuse the most recent session's model when possible, otherwise ask OpenCode for the default.
-        let model: { id: string; providerID: string; variant?: string } | undefined;
-        try {
-          const sessions = await oc.client.session.list();
-          const list = (sessions as any)?.data ?? (Array.isArray(sessions) ? sessions : []);
-          const latest = [...list].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0))[0];
-          if (latest?.model?.id && latest?.model?.providerID) model = { id: latest.model.id, providerID: latest.model.providerID, variant: latest.model.variant };
-        } catch {
-          // ignore
-        }
-        if (!model) model = await oc.defaultModel(directory);
-        const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
-        const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
-        s = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
-        sessionsByChat.set(chatId, s);
-        chatBySession.set(sessionId, chatId);
-        await tg.sendRichMessage(chatId, `<b>Session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`);
+        await createNewSession(chatId);
+        s = sessionsByChat.get(chatId)!;
       }
 
       const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\\s+(.*))?$/s);
@@ -352,7 +451,7 @@ async function main() {
           await oc.runCommand(s.sessionId, name, args);
           await tg.sendRichMessage(chatId, `ran /${name}`);
         } catch (err) {
-          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
+          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, { reply_markup: { inline_keyboard: [[{ text: "⚡ Commands", callback_data: "panel:commands" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
         }
         continue;
       }
