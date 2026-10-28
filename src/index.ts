@@ -187,7 +187,13 @@ async function main() {
     const s = sessionsByChat.get(chatId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     const res = await oc.client.model.list(directory ? { location: { directory } } as any : undefined);
-    const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    const raw = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    const list = [...raw].sort((a: any, b: any) => {
+      const aFree = /free/i.test(a.id ?? "") || /free/i.test(a.name ?? "");
+      const bFree = /free/i.test(b.id ?? "") || /free/i.test(b.name ?? "");
+      if (aFree !== bFree) return aFree ? -1 : 1;
+      return String(a.name ?? a.id).localeCompare(String(b.name ?? b.id));
+    });
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no models available.");
       return;
