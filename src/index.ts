@@ -45,7 +45,10 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const sessionsByChat = new Map<number, ChatSession>();
-  const chatBySession = new Map<string, number>();
+  const findChatBySession = (sessionId: string): number | undefined => {
+    for (const [cid, s] of sessionsByChat) if (s.sessionId === sessionId) return cid;
+    return undefined;
+  };
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
   const modelListByChat = new Map<number, Array<{ id: string; providerID: string; variant?: string }>>();
@@ -73,7 +76,6 @@ async function main() {
 
   async function createNewSession(chatId: number): Promise<void> {
     const old = sessionsByChat.get(chatId);
-    if (old) chatBySession.delete(old.sessionId);
     sessionsByChat.delete(chatId);
     const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
     let model: { id: string; providerID: string; variant?: string } | undefined;
@@ -101,7 +103,6 @@ async function main() {
       }
     }
     sessionsByChat.set(chatId, cs);
-    chatBySession.set(sessionId, chatId);
     await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
   }
 
@@ -111,7 +112,7 @@ async function main() {
     const directory = s?.location?.directory ?? s?.directory;
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const old = sessionsByChat.get(chatId);
-    if (old) chatBySession.delete(old.sessionId);
+    // (no-op: sessionsByChat is keyed by chatId)
     const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", stopped: false };
     if (topicsEnabled) {
       if (threadBySession.has(sessionId)) {
@@ -128,7 +129,6 @@ async function main() {
       }
     }
     sessionsByChat.set(chatId, cs);
-    chatBySession.set(sessionId, chatId);
     await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
   }
 
@@ -248,19 +248,19 @@ async function main() {
     let gpu = "";
     try {
       const out = execFileSync("nvidia-smi", ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
-      if (out) gpu = `\n<b>GPU</b>: ${esc(out)}`;
+      if (out) gpu = esc(out);
     } catch {
       // no gpu
     }
-    const text = [
-      `<b>OpenCodegram</b>`,
-      ``,
-      s ? `<b>Session</b>: <code>${esc(s.sessionId)}</code>` : `<b>Session</b>: none`,
-      s?.model ? `<b>Model</b>: <code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}` : "",
-      s?.directory ? `<b>Directory</b>: <code>${esc(s.directory)}</code>` : "",
-      ocInfo ? `<b>OpenCode</b>: v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""} · sessions ${sessionCount}` : "",
-      `<b>Host</b>: ${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB${gpu}`,
-    ].filter(Boolean).join("\n");
+    const rows = [
+      s ? `<tr><td><b>Session</b></td><td><code>${esc(s.sessionId)}</code></td></tr>` : `<tr><td><b>Session</b></td><td>none</td></tr>`,
+      s?.model ? `<tr><td><b>Model</b></td><td><code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}</td></tr>` : "",
+      s?.directory ? `<tr><td><b>Directory</b></td><td><code>${esc(s.directory)}</code></td></tr>` : "",
+      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
+      `<tr><td><b>Host</b></td><td>${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB</td></tr>`,
+      gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
+    ].filter(Boolean).join("");
+    const text = `<b>OpenCodegram</b>\n\n<table>${rows}</table>`;
     const keyboard = [
       [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }],
       [{ text: "➕ New", callback_data: "panel:new" }, { text: "⚡ Commands", callback_data: "panel:commands" }],
@@ -294,7 +294,7 @@ async function main() {
 
         if (e.type === "session.text.started") {
           const sessionId = e.data?.sessionID ?? e.data?.session?.id;
-          const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
+          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId === undefined) continue;
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
@@ -305,7 +305,7 @@ async function main() {
 
         if (e.type === "session.text.delta") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
+          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId === undefined) continue;
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
@@ -318,7 +318,7 @@ async function main() {
 
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
+          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId === undefined) continue;
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
@@ -337,7 +337,7 @@ async function main() {
           const p = e.data ?? {};
           const requestId = p.id;
           const sessionId = p.sessionID;
-          const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
+          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId === undefined || !requestId || !sessionId) continue;
           pendingPermissions.set(requestId, { chatId, sessionId });
           const label = p.tool ?? p.action ?? "permission";
@@ -356,7 +356,7 @@ async function main() {
 
         if (e.type === "session.execution.failed") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
+          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
@@ -366,7 +366,7 @@ async function main() {
 
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
+          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             await tg.sendRichMessage(chatId, "✓ session idle", threadId ? { message_thread_id: threadId } : {});
@@ -556,6 +556,8 @@ async function main() {
       }
 
       const chatId = msg.chat.id;
+      const replyThread = msg.message_thread_id;
+      const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
       console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
 
       // Multimedia handling
@@ -601,9 +603,9 @@ async function main() {
         const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
         try {
           await oc.prompt(s.sessionId, text, mediaToAttach);
-          await tg.sendRichMessage(chatId, `📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.threadId ? { message_thread_id: s.threadId } : {});
+          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.threadId ? { message_thread_id: s.threadId } : {});
         } catch (err) {
-          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, s.threadId ? { message_thread_id: s.threadId } : {});
+          await send(`❌ ${esc(String(err))}`, s.threadId ? { message_thread_id: s.threadId } : {});
         }
         continue;
       }
@@ -623,7 +625,7 @@ async function main() {
 
       if (text === "/status") {
         const s = sessionsByChat.get(chatId);
-        await tg.sendRichMessage(chatId, s ? `active session: ${s.sessionId}\ndir: ${s.directory}` : "no active session");
+        await send(s ? `active session: ${s.sessionId}\ndir: ${s.directory}` : "no active session");
         continue;
       }
 
@@ -635,14 +637,14 @@ async function main() {
       if (text === "/stop" || text === "/abort") {
         const s = sessionsByChat.get(chatId);
         if (!s) {
-          await tg.sendRichMessage(chatId, "no active session");
+          await send("no active session");
           continue;
         }
         try {
           await oc.interrupt(s.sessionId);
-          await tg.sendRichMessage(chatId, "⏹ stopped", s.threadId ? { message_thread_id: s.threadId } : {});
+          await send("⏹ stopped", s.threadId ? { message_thread_id: s.threadId } : {});
         } catch (err) {
-          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
+          await send(`❌ ${esc(String(err))}`);
         }
         continue;
       }
@@ -673,7 +675,7 @@ async function main() {
         try {
           await activateSession(chatId, sessionId);
         } catch (err) {
-          await tg.sendRichMessage(chatId, `failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
+          await send(`failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
         }
         continue;
       }
@@ -692,9 +694,9 @@ async function main() {
         const args = (slash[2] ?? "").trim();
         try {
           await oc.runCommand(s.sessionId, name, args);
-          await tg.sendRichMessage(chatId, `ran /${name}`);
+          await send(`ran /${name}`);
         } catch (err) {
-          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, { reply_markup: { inline_keyboard: [[{ text: "⚡ Commands", callback_data: "panel:commands" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
+          await send(`❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, { reply_markup: { inline_keyboard: [[{ text: "⚡ Commands", callback_data: "panel:commands" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
         }
         continue;
       }
