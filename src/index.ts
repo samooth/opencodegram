@@ -18,13 +18,17 @@ type ChatSession = {
   draftId: number;
   buffer: string;
   reasoningBuffer: string;
+  toolCalls: string[];
   timer?: ReturnType<typeof setTimeout>;
   typingTimer?: ReturnType<typeof setInterval>;
+  statusTimer?: ReturnType<typeof setTimeout>;
   stopped: boolean;
   threadId?: number;
   targetChatId?: number;
   userMessageId?: number;
   lastTyping?: number;
+  statusMessageId?: number;
+  statusLastUpdate?: number;
 };
 
 async function main() {
@@ -154,7 +158,7 @@ async function main() {
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const title = (session as any)?.title ?? "Telegram session";
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], stopped: false };
     if (topicsEnabled) {
       try {
         const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
@@ -178,7 +182,7 @@ async function main() {
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const old = sessionsByChat.get(chatId);
     // (no-op: sessionsByChat is keyed by chatId)
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], stopped: false };
     if (topicsEnabled) {
       if (threadBySession.has(sessionId)) {
         cs.threadId = threadBySession.get(sessionId);
@@ -381,9 +385,54 @@ async function main() {
     // Drafts are only available in private chats.
     if (chatId < 0) return;
     try {
-      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.threadId ? { message_thread_id: s.threadId } : {}) });
+      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}) });
     } catch (err) {
       console.error("[draft]", err);
+    }
+  };
+
+  const startStatus = async (chatId: number, s: ChatSession) => {
+    const threadOpts = s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {};
+    try {
+      const sent = await tg.sendRichMessage(chatId, "⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>", { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
+      s.statusMessageId = sent.message_id;
+      s.statusLastUpdate = Date.now();
+    } catch (err) {
+      console.error("[status]", err);
+    }
+  };
+
+  const updateStatus = async (chatId: number, s: ChatSession, force = false) => {
+    if (!s.statusMessageId) return;
+    const now = Date.now();
+    if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 2000) return;
+    s.statusLastUpdate = now;
+    const threadOpts = s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {};
+    const lines: string[] = ["⏳ <b>Working…</b>"];
+    if (s.reasoningBuffer.trim()) {
+      const r = s.reasoningBuffer.trim().slice(0, 300);
+      lines.push("<details><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
+    }
+    if (s.toolCalls.length) {
+      lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
+    }
+    if (s.buffer.trim()) {
+      const b = s.buffer.trim().slice(0, 300);
+      lines.push("<pre>" + esc(b) + "</pre>");
+    }
+    try {
+      await tg.editRichMessage(chatId, s.statusMessageId, lines.join("\n"), { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
+    } catch (err) {
+      console.error("[status]", err);
+    }
+  };
+
+  const finishStatus = async (chatId: number, s: ChatSession) => {
+    if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+    if (s.statusMessageId) {
+      const threadOpts = s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {};
+      await tg.editRichMessage(chatId, s.statusMessageId, "✅ <b>Done</b>", threadOpts).catch(() => {});
+      s.statusMessageId = undefined;
     }
   };
 
@@ -406,6 +455,7 @@ async function main() {
           if (!s) continue;
           s.buffer = "";
           s.reasoningBuffer = "";
+          s.toolCalls = [];
           s.draftId = Math.floor(Math.random() * 2147483647) + 1;
           s.stopped = false;
           if (s.typingTimer) clearInterval(s.typingTimer);
@@ -433,6 +483,18 @@ async function main() {
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           s.reasoningBuffer += e.data?.delta ?? "";
+          updateStatus(chatId, s).catch(() => {});
+        }
+
+        if (e.type === "session.tool.input.started") {
+          const sessionId = e.data?.sessionID;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
+          if (chatId === undefined) continue;
+          const s = _s0 ?? sessionsByChat.get(chatId);
+          if (!s) continue;
+          if (e.data?.name) s.toolCalls.push(e.data.name);
+          updateStatus(chatId, s, true).catch(() => {});
         }
 
         if (e.type === "session.text.delta") {
@@ -465,6 +527,7 @@ async function main() {
             clearInterval(s.typingTimer);
             s.typingTimer = undefined;
           }
+          await finishStatus(chatId, s);
           if (!s.stopped) {
             await flushDraft(chatId);
             if (s.reasoningBuffer.trim()) {
@@ -558,6 +621,7 @@ async function main() {
             const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
             const s2 = _s0 ?? (chatId ? sessionsByChat.get(chatId) : undefined);
             if (s2?.typingTimer) { clearInterval(s2.typingTimer); s2.typingTimer = undefined; }
+            if (s2) await finishStatus(chatId, s2);
             await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
             if (isRateLimit && sessionId && !retryingSessions.has(sessionId)) {
               const prompt = lastPromptBySession.get(sessionId);
@@ -1329,6 +1393,8 @@ async function main() {
         s.targetChatId = chatId;
         lastChatBySession.set(s.sessionId, chatId);
         lastPromptBySession.set(s.sessionId, text);
+        await startStatus(chatId, s);
+        s.statusTimer = setInterval(() => { updateStatus(chatId, s).catch(() => {}); }, 3000);
         await oc.prompt(s.sessionId, text);
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
