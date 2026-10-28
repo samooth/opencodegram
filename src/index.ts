@@ -19,6 +19,7 @@ type ChatSession = {
   buffer: string;
   reasoningBuffer: string;
   timer?: ReturnType<typeof setTimeout>;
+  typingTimer?: ReturnType<typeof setInterval>;
   stopped: boolean;
   threadId?: number;
   targetChatId?: number;
@@ -87,7 +88,6 @@ async function main() {
     if (threadId) {
       for (const s of sessionsByChat.values()) if (s.threadId === threadId) return s;
     }
-    if (sessionsByChat.size === 1) return [...sessionsByChat.values()][0];
     return sessionsByChat.get(chatId);
   };
 
@@ -99,11 +99,13 @@ async function main() {
       const res = await oc.client.session.list({ limit: 1, order: "desc" });
       const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
       if (list.length) {
+        console.log("[ensureActive] activating", list[0].id, "for chat", chatId);
         await activateSession(chatId, list[0].id, true);
         s = getActiveSession(chatId, threadId) ?? sessionsByChat.get(chatId);
+        console.log("[ensureActive] result", s?.sessionId, "stored=", sessionsByChat.has(chatId));
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error("[ensureActive]", err);
     }
     return s;
   };
@@ -406,6 +408,11 @@ async function main() {
           s.reasoningBuffer = "";
           s.draftId = Math.floor(Math.random() * 2147483647) + 1;
           s.stopped = false;
+          if (s.typingTimer) clearInterval(s.typingTimer);
+          s.typingTimer = setInterval(() => {
+            tg.sendChatAction(chatId, "typing", chatId > 0 ? s.threadId : undefined).catch(() => {});
+          }, 4000);
+          tg.sendChatAction(chatId, "typing", chatId > 0 ? s.threadId : undefined).catch(() => {});
         }
 
         if (e.type === "session.reasoning.started") {
@@ -453,6 +460,10 @@ async function main() {
           if (s.timer) {
             clearTimeout(s.timer);
             s.timer = undefined;
+          }
+          if (s.typingTimer) {
+            clearInterval(s.typingTimer);
+            s.typingTimer = undefined;
           }
           if (!s.stopped) {
             await flushDraft(chatId);
@@ -545,6 +556,8 @@ async function main() {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             const isRateLimit = /rate limit|quota/i.test(msg);
             const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
+            const s2 = _s0 ?? (chatId ? sessionsByChat.get(chatId) : undefined);
+            if (s2?.typingTimer) { clearInterval(s2.typingTimer); s2.typingTimer = undefined; }
             await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
             if (isRateLimit && sessionId && !retryingSessions.has(sessionId)) {
               const prompt = lastPromptBySession.get(sessionId);
