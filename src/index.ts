@@ -103,6 +103,7 @@ async function main() {
   let modelCache: { time: number; data: any[] } | null = null;
   const THREADS_FILE = join(process.cwd(), "data", "threads.json");
   const threadBySession = new Map<string, number>();
+  const forumChats = new Set<number>();
   try {
     if (existsSync(THREADS_FILE)) {
       const raw = readFileSync(THREADS_FILE, "utf8");
@@ -172,8 +173,8 @@ async function main() {
           cs.threadId = topic.message_thread_id;
           threadBySession.set(sessionId, cs.threadId!);
           saveThreads();
-        } catch (err) {
-          console.error("[topic]", err);
+        } catch {
+          // Topic creation may fail in non-forum chats; fall back to general chat.
         }
       }
     }
@@ -238,7 +239,8 @@ async function main() {
     const tableRows = cmds.map((c: any) => `<tr><td><code>/${esc(c.name)}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");
     const table = `<table><tr><th>Command</th><th>Description</th></tr>${tableRows}</table>`;
     const keyboard = cmds.map((c: any) => [{ text: `/${c.name}`, callback_data: `cmd:${c.name}` }]);
-    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    keyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }]);
+    keyboard.push([{ text: "📊 Status", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const botCmds = [
       ["/start", "Welcome and control panel"],
       ["/help", "Show help and panel"],
@@ -349,7 +351,7 @@ async function main() {
       [{ text: "📊 Status", callback_data: "panel:status" }, { text: "⏹ Stop", callback_data: "panel:stop" }],
       [{ text: "❓ Help", callback_data: "panel:help" }],
     ];
-    await tg.sendRichMessage(chatId, text, { ...(threadId ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
+    await tg.sendRichMessage(chatId, text, { ...(threadId && chatId > 0 ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
   }
   const pendingPermissions = new Map<string, { chatId: number; sessionId: string; messageId?: number; decided: boolean; label: string; resource: string }>(); // requestId -> info
   const awaitingReason = new Map<number, string>(); // chatId -> requestId
@@ -359,7 +361,7 @@ async function main() {
     if (!s) return;
     s.timer = undefined;
     try {
-      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.threadId ? { message_thread_id: s.threadId } : {}) });
+      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}) });
     } catch (err) {
       console.error("[draft]", err);
     }
@@ -411,7 +413,7 @@ async function main() {
           }
           if (!s.stopped) {
             await flushDraft(chatId);
-            await tg.sendRichMessageMarkdown(chatId, s.buffer || "(empty response)", s.threadId ? { message_thread_id: s.threadId } : {});
+            await tg.sendRichMessageMarkdown(chatId, s.buffer || "(empty response)", s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
           }
           s.buffer = "";
         }
@@ -426,7 +428,7 @@ async function main() {
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
           const threadId = threadBySession.get(sessionId);
           const sent = await tg.sendRichMessage(chatId, `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>\n\n<i>Expires in 5 minutes</i>`, {
-            ...(threadId ? { message_thread_id: threadId } : {}),
+            ...(threadId && chatId > 0 ? { message_thread_id: threadId } : {}),
             reply_markup: {
               inline_keyboard: [
                 [
@@ -480,7 +482,7 @@ async function main() {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             const hint = /rate limit|quota/i.test(msg) ? "\n\nTry switching model with /models." : "";
-            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadId ? { message_thread_id: threadId } : {});
+            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
           }
         }
 
@@ -489,7 +491,7 @@ async function main() {
           const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
-            await tg.sendRichMessage(chatId, "✓ session idle", threadId ? { message_thread_id: threadId } : {});
+            await tg.sendRichMessage(chatId, "✓ session idle", threadId && chatId > 0 ? { message_thread_id: threadId } : {});
           }
         }
       }
@@ -819,9 +821,9 @@ async function main() {
         const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
         try {
           await oc.prompt(s.sessionId, text, mediaToAttach);
-          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.threadId ? { message_thread_id: s.threadId } : {});
+          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
         } catch (err) {
-          await send(`❌ ${esc(String(err))}`, s.threadId ? { message_thread_id: s.threadId } : {});
+          await send(`❌ ${esc(String(err))}`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
         }
         continue;
       }
@@ -861,7 +863,7 @@ async function main() {
         }
         try {
           await oc.interrupt(s.sessionId);
-          await send("⏹ stopped", s.threadId ? { message_thread_id: s.threadId } : {});
+          await send("⏹ stopped", s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
