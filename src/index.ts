@@ -390,14 +390,14 @@ async function main() {
     // Drafts are only available in private chats.
     if (chatId < 0) return;
     try {
-      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {})) });
+      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {})) });
     } catch (err) {
       console.error("[draft]", err);
     }
   };
 
   const startStatus = async (chatId: number, s: ChatSession) => {
-    const threadOpts = s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+    const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
     try {
       const sent = await tg.sendRichMessage(chatId, "⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>", { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
       s.statusMessageId = sent.message_id;
@@ -414,7 +414,7 @@ async function main() {
     if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 4000) return;
     s.statusEditing = true;
     s.statusLastUpdate = now;
-    const threadOpts = s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+    const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
     const lines: string[] = ["⏳ <b>Working…</b>"];
     if (s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(0, 300);
@@ -594,7 +594,7 @@ async function main() {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
           const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
-          console.log("[event] text.ended session=", sessionId, "chat=", chatId, "hasStatus=", !!_s0?.statusMessageId);
+          // debug removed
           // debug removed
 
           if (chatId === undefined) continue;
@@ -649,7 +649,7 @@ async function main() {
             }
             parts.push(finalText);
             const fullContent = parts.join("\n\n");
-            const threadOpts = s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+            const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
             console.log("[send] final to chat=", chatId, "len=", fullContent.length);
             await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err) => console.error("[send final]", err));
           }
@@ -1114,9 +1114,9 @@ async function main() {
         try {
           lastChatBySession.set(s.sessionId, chatId);
           await oc.prompt(s.sessionId, text, mediaToAttach);
-          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
+          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
         } catch (err) {
-          await send(`❌ ${esc(String(err))}`, s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
+          await send(`❌ ${esc(String(err))}`, s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
         }
         continue;
       }
@@ -1156,7 +1156,7 @@ async function main() {
         }
         try {
           await oc.interrupt(s.sessionId);
-          await send("⏹ stopped", s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
+          await send("⏹ stopped", s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
