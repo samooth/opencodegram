@@ -652,11 +652,11 @@ async function main() {
             console.log("[send] final to chat=", chatId, "len=", fullContent.length);
             if (s.statusMessageId) {
               try {
-                await tg.editRichMessageMarkdown(chatId, s.statusMessageId, fullContent, threadOpts);
+                await tg.editRichMessageMarkdown(chatId, s.statusMessageId!, fullContent, threadOpts);
                 s.statusMessageId = undefined;
               } catch (err) {
                 console.error("[edit final]", err);
-                await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
+                await tg.deleteMessage(chatId, s.statusMessageId!).catch(() => {});
                 s.statusMessageId = undefined;
                 await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err2) => console.error("[send final]", err2));
               }
