@@ -146,8 +146,8 @@ async function main() {
         cs.threadId = topic.message_thread_id;
         threadBySession.set(sessionId, cs.threadId!);
         saveThreads();
-      } catch (err) {
-        console.error("[topic]", err);
+      } catch {
+        // Topic creation may fail in non-forum chats; fall back to general chat.
       }
     }
     sessionsByChat.set(chatId, cs);
@@ -359,7 +359,7 @@ async function main() {
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
           s.buffer = "";
-          s.draftId = Date.now();
+          s.draftId = Math.floor(Math.random() * 2147483647) + 1;
           s.stopped = false;
         }
 
