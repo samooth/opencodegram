@@ -131,7 +131,7 @@ async function main() {
 
   async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}): Promise<void> {
     if (messageId) {
-      await tg.editMessageText(chatId, messageId, html, opts);
+      await tg.editRichMessage(chatId, messageId, html, opts);
     } else {
       await tg.sendRichMessage(chatId, html, opts);
     }
@@ -453,7 +453,7 @@ async function main() {
           try {
             await activateSession(chatId, sessionId);
             if (cq.message?.message_id) {
-              await tg.editMessageText(chatId, cq.message.message_id, `✅ Switched to session\n<code>${esc(sessionId)}</code>`, { reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
+              await tg.editRichMessage(chatId, cq.message.message_id, `✅ Switched to session\n<code>${esc(sessionId)}</code>`, { reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
             }
           } catch (err) {
             await tg.answerCallbackQuery(cq.id, "Failed");
@@ -487,7 +487,7 @@ async function main() {
           try {
             await oc.switchModel(s.sessionId, model);
             if (cq.message?.message_id) {
-              await tg.editMessageText(chatId, cq.message.message_id, `✅ Model switched\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${model.variant ? " (" + esc(model.variant) + ")" : ""}`, { reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
+              await tg.editRichMessage(chatId, cq.message.message_id, `✅ Model switched\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${model.variant ? " (" + esc(model.variant) + ")" : ""}`, { reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
             } else {
               await tg.sendRichMessage(chatId, `<b>Model switched</b>\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${model.variant ? " (" + esc(model.variant) + ")" : ""}`, s.threadId ? { message_thread_id: s.threadId } : {});
             }

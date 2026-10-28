@@ -98,6 +98,14 @@ export class TelegramClient {
     return this.call("editMessageText", { chat_id: chatId, message_id: messageId, text, ...opts });
   }
 
+  editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html }, ...opts });
+  }
+
+  editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown }, ...opts });
+  }
+
   answerCallbackQuery(callbackQueryId: string, text?: string): Promise<boolean> {
     return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
   }
