@@ -602,6 +602,7 @@ async function main() {
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           if (e.type === "session.text.ended") console.log("[event] text.ended chat=", chatId, "lastActive=", lastActiveChatId);
+          if (s.timer) {
             clearTimeout(s.timer);
             s.timer = undefined;
           }
