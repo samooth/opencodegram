@@ -1,8 +1,9 @@
+const bun = (process.env.HOME || "") + "/.bun/bin/bun";
 module.exports = {
   apps: [
     {
       name: "opencodegram",
-      script: "/home/t0m4s/.bun/bin/bun",
+      script: bun,
       args: "run src/index.ts",
       interpreter: "none",
       cwd: __dirname,

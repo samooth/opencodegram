@@ -45,6 +45,11 @@ export class OpenCodeBridge {
       const res = await this.client.session.list();
       const sessions = (res as any)?.data ?? (Array.isArray(res) ? res : []);
       const sorted = [...sessions].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0));
+      // Prefer a real project directory over the home directory.
+      for (const s of sorted) {
+        const dir = s?.location?.directory ?? s?.directory;
+        if (dir && dir !== process.env.HOME) return dir;
+      }
       return sorted[0]?.location?.directory ?? sorted[0]?.directory;
     } catch {
       return undefined;
