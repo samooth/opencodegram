@@ -788,6 +788,8 @@ async function main() {
       if (!msg) continue;
       const userId = msg.from?.id;
       if (config.ADMIN_TELEGRAM_USER_ID && userId !== config.ADMIN_TELEGRAM_USER_ID) {
+        // In groups, silently ignore non-admin messages.
+        if (msg.chat.id < 0) continue;
         await tg.sendRichMessage(msg.chat.id, "Not authorized.");
         continue;
       }
