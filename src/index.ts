@@ -1484,9 +1484,11 @@ async function main() {
         lastActiveChatId = chatId;
         lastChatBySession.set(s.sessionId, chatId);
         lastPromptBySession.set(s.sessionId, text);
+        console.log("[prompt] sending to session", s.sessionId, "chat", chatId);
         await startStatus(chatId, s);
         s.statusTimer = setInterval(() => { updateStatus(chatId, s).catch(() => {}); }, 3000);
         await oc.prompt(s.sessionId, text);
+        console.log("[prompt] sent");
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
       }
