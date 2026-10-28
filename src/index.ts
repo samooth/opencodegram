@@ -147,13 +147,13 @@ async function main() {
     const total = list.length;
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
-    modelListByChat.set(chatId, slice.map((m: any) => ({ id: m.id, providerID: m.providerID, variant: m.variants?.[0]?.id })));
+    modelListByChat.set(chatId, list.map((m: any) => ({ id: m.id, providerID: m.providerID, variant: m.variants?.[0]?.id })));
     const lines = slice.map((m: any, i: number) => {
       const name = esc(m.name ?? m.id);
       const variant = m.variants?.length ? ` · ${esc(m.variants.map((v: any) => v.id).join(", "))}` : "";
       return `${start + i + 1}. <b>${name}</b>\n   <code>${esc(m.providerID)}/${esc(m.id)}</code>${variant}`;
     });
-    const keyboard: any[][] = slice.map((_: any, i: number) => [{ text: `Use ${i + 1}`, callback_data: `model:${i}` }]);
+    const keyboard: any[][] = slice.map((_: any, i: number) => [{ text: `Use ${start + i + 1}`, callback_data: `model:${start + i}` }]);
     const nav: any[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
