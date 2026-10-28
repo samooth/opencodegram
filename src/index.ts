@@ -360,8 +360,10 @@ async function main() {
     const s = sessionsByChat.get(chatId);
     if (!s) return;
     s.timer = undefined;
+    // Drafts are only available in private chats.
+    if (chatId < 0) return;
     try {
-      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}) });
+      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.threadId ? { message_thread_id: s.threadId } : {}) });
     } catch (err) {
       console.error("[draft]", err);
     }
