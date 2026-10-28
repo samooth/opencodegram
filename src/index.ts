@@ -223,6 +223,99 @@ async function main() {
         continue;
       }
 
+      if (text === "/stop" || text === "/abort") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) {
+          await tg.sendMessage(chatId, "no active session");
+          continue;
+        }
+        try {
+          await oc.interrupt(s.sessionId);
+          await tg.sendMessage(chatId, "⏹ stopped");
+        } catch (err) {
+          await tg.sendMessage(chatId, `❌ ${String(err)}`);
+        }
+        continue;
+      }
+
+      if (text === "/commands") {
+        const s = sessionsByChat.get(chatId);
+        const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
+        const cmds = await oc.listCommands(directory);
+        if (!cmds.length) {
+          await tg.sendMessage(chatId, "no commands available");
+          continue;
+        }
+        const lines = cmds.map((c: any) => `/${c.name}${c.description ? " — " + c.description : ""}`);
+        await tg.sendMessage(chatId, "OpenCode commands:\n" + lines.join("\n"));
+        continue;
+      }
+
+      if (text === "/sessions" || text.startsWith("/sessions ")) {
+        const arg = text.slice("/sessions".length).trim();
+        const all = arg === "all";
+        const limit = all ? 100 : 20;
+        const lines: string[] = [];
+        let cursor: string | undefined;
+        let count = 0;
+        const max = all ? 10000 : 20;
+        while (count < max) {
+          const res = await oc.client.session.list({ limit, order: "desc", cursor });
+          const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+          if (!list.length) break;
+          for (const s of list) {
+            if (count >= max) break;
+            const title = s.title ?? "(untitled)";
+            const model = s.model ? `${s.model.providerID}/${s.model.id}` : "";
+            const updated = s.time?.updated ? new Date(s.time.updated).toISOString().slice(0, 16).replace("T", " ") : "";
+            lines.push(`• ${title}\\n  ${s.id}${model ? "  " + model : ""}${updated ? "  " + updated : ""}`);
+            count++;
+          }
+          const c = (res as any)?.cursor;
+          cursor = typeof c === "string" ? c : (c?.next ?? (res as any)?.nextCursor);
+          if (!cursor || !all) break;
+        }
+        if (!lines.length) {
+          await tg.sendMessage(chatId, "no sessions found.");
+          continue;
+        }
+        // Send in chunks to respect Telegram's 4096-char limit.
+        let chunk = "";
+        for (const line of lines) {
+          if (chunk.length + line.length + 2 > 3800) {
+            await tg.sendMessage(chatId, chunk);
+            chunk = "";
+          }
+          chunk += (chunk ? "\\n\\n" : "") + line;
+        }
+        if (chunk) await tg.sendMessage(chatId, chunk);
+        await tg.sendMessage(chatId, `listed ${count} session(s). Use /use <session_id> to switch.`);
+        continue;
+      }
+
+      if (text.startsWith("/use ")) {
+        const sessionId = text.slice(5).trim();
+        if (!sessionId) {
+          await tg.sendMessage(chatId, "usage: /use <session_id>");
+          continue;
+        }
+        try {
+          const session = await oc.client.session.get({ sessionID: sessionId });
+          const s = session as any;
+          const directory = s?.location?.directory ?? s?.directory;
+          const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
+          const old = sessionsByChat.get(chatId);
+          if (old) chatBySession.delete(old.sessionId);
+          const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
+          sessionsByChat.set(chatId, cs);
+          chatBySession.set(sessionId, chatId);
+          await tg.sendMessage(chatId, `active session: ${sessionId}\\nmodel: ${model ? model.providerID + "/" + model.id : "default"}\\ndir: ${directory ?? "n/a"}`);
+        } catch (err) {
+          await tg.sendMessage(chatId, `failed to switch: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        continue;
+      }
+
       // Create or reuse session
       let s = sessionsByChat.get(chatId);
       if (!s) {
@@ -246,10 +339,34 @@ async function main() {
         await tg.sendMessage(chatId, `Session created: ${sessionId}\\nmodel: ${model?.providerID}/${model?.id}${model?.variant ? " (" + model.variant + ")" : ""}\\ndir: ${directory}`);
       }
 
+      const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\\s+(.*))?$/s);
+      const known = new Set(["start", "help", "status", "new", "stop", "abort", "commands"]);
+      if (slash && !known.has(slash[1])) {
+        const name = slash[1];
+        const args = (slash[2] ?? "").trim();
+        try {
+          await oc.runCommand(s.sessionId, name, args);
+          await tg.sendMessage(chatId, `ran /${name}`);
+        } catch (err) {
+          await tg.sendMessage(chatId, `❌ ${String(err)}`);
+        }
+        continue;
+      }
+
       await oc.prompt(s.sessionId, text);
     }
   }
 }
+
+const shutdown = (signal: string) => {
+  console.log(`[opencodegram] ${signal} received, shutting down`);
+  process.exit(0);
+};
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("unhandledRejection", (err) => {
+  console.error("[opencodegram] unhandled rejection", err);
+});
 
 main().catch((err) => {
   console.error(err);
