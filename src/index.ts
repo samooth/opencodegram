@@ -27,6 +27,17 @@ async function main() {
   const me = await tg.getMe();
   const topicsEnabled = me.has_topics_enabled === true;
   console.log(`[opencodegram] bot: @${me.username ?? me.first_name} (id ${me.id}) topics=${topicsEnabled}`);
+  await tg.setMyCommands([
+    { command: "start", description: "Welcome and control panel" },
+    { command: "help", description: "Show help and panel" },
+    { command: "status", description: "Show active session" },
+    { command: "sessions", description: "List and switch sessions" },
+    { command: "use", description: "Switch to a session by ID" },
+    { command: "new", description: "Create a new session" },
+    { command: "models", description: "List and switch models" },
+    { command: "commands", description: "List OpenCode commands" },
+    { command: "stop", description: "Stop the active turn" },
+  ]).catch((err) => console.error("[commands]", err));
   const info = await oc.serverInfo();
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
