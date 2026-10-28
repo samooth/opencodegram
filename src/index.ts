@@ -1,5 +1,6 @@
 import { loadConfig } from "./config.js";
 import { mkdir, writeFile } from "node:fs/promises";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
@@ -34,7 +35,27 @@ async function main() {
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
   const modelListByChat = new Map<number, Array<{ id: string; providerID: string; variant?: string }>>();
+  const THREADS_FILE = join(process.cwd(), "data", "threads.json");
   const threadBySession = new Map<string, number>();
+  try {
+    if (existsSync(THREADS_FILE)) {
+      const raw = readFileSync(THREADS_FILE, "utf8");
+      const parsed = JSON.parse(raw) as Record<string, number>;
+      for (const [k, v] of Object.entries(parsed)) threadBySession.set(k, v);
+    }
+  } catch (err) {
+    console.error("[threads] load failed", err);
+  }
+  const saveThreads = () => {
+    try {
+      mkdirSync(join(process.cwd(), "data"), { recursive: true });
+      const obj: Record<string, number> = {};
+      for (const [k, v] of threadBySession) obj[k] = v;
+      writeFileSync(THREADS_FILE, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[threads] save failed", err);
+    }
+  };
 
   async function createNewSession(chatId: number): Promise<void> {
     const old = sessionsByChat.get(chatId);
@@ -53,12 +74,14 @@ async function main() {
     if (!model) model = await oc.defaultModel(directory);
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
+    const title = (session as any)?.title ?? "Telegram session";
     const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
     if (topicsEnabled) {
       try {
-        const topic = await tg.createForumTopic(chatId, (model ? `${model.id}` : "session").slice(0, 120));
+        const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
         cs.threadId = topic.message_thread_id;
         threadBySession.set(sessionId, cs.threadId!);
+        saveThreads();
       } catch (err) {
         console.error("[topic]", err);
       }
@@ -84,6 +107,7 @@ async function main() {
           const topic = await tg.createForumTopic(chatId, (s.title ?? sessionId).slice(0, 120));
           cs.threadId = topic.message_thread_id;
           threadBySession.set(sessionId, cs.threadId!);
+          saveThreads();
         } catch (err) {
           console.error("[topic]", err);
         }
