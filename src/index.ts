@@ -57,6 +57,12 @@ async function main() {
     for (const [cid, s] of sessionsByChat) if (s.sessionId === sessionId) return cid;
     return undefined;
   };
+  const getActiveSession = (chatId: number, threadId?: number): ChatSession | undefined => {
+    if (threadId) {
+      for (const s of sessionsByChat.values()) if (s.threadId === threadId) return s;
+    }
+    return sessionsByChat.get(chatId);
+  };
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
   const modelListByChat = new Map<number, Array<{ id: string; providerID: string; variant?: string }>>();
@@ -686,10 +692,10 @@ async function main() {
       }
 
       if (mediaToAttach.length) {
-        let s = sessionsByChat.get(chatId);
+        let s = getActiveSession(chatId, replyThread);
         if (!s) {
           await createNewSession(chatId);
-          s = sessionsByChat.get(chatId)!;
+          s = getActiveSession(chatId, replyThread)!;
         }
         const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
         try {
@@ -715,7 +721,7 @@ async function main() {
       }
 
       if (text === "/status") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         await send(s ? `active session: ${s.sessionId}\ndir: ${s.directory}` : "no active session");
         continue;
       }
@@ -726,7 +732,7 @@ async function main() {
       }
 
       if (text === "/stop" || text === "/abort") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) {
           await send("no active session");
           continue;
@@ -751,7 +757,7 @@ async function main() {
       }
 
       if (text === "/fork") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const forked = await oc.forkSession(s.sessionId);
@@ -765,7 +771,7 @@ async function main() {
       }
 
       if (text.startsWith("/rename ")) {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         const title = text.slice(8).trim();
         if (!title) { await send("usage: /rename <title>"); continue; }
@@ -779,7 +785,7 @@ async function main() {
       }
 
       if (text === "/archive") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.archiveSession(s.sessionId, true);
@@ -791,7 +797,7 @@ async function main() {
       }
 
       if (text === "/unarchive") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.archiveSession(s.sessionId, false);
@@ -803,7 +809,7 @@ async function main() {
       }
 
       if (text === "/delete") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         // Simple confirmation via text; buttons would be better but keep simple.
         await send(`Delete session <code>${esc(s.sessionId)}</code>? Reply /delete confirm to proceed.`);
@@ -811,7 +817,7 @@ async function main() {
       }
 
       if (text === "/delete confirm") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.deleteSession(s.sessionId);
@@ -825,7 +831,7 @@ async function main() {
       }
 
       if (text === "/diff") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const diffs = await oc.diff(s.sessionId);
@@ -840,7 +846,7 @@ async function main() {
       }
 
       if (text === "/context") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const ctx = await oc.context(s.sessionId);
@@ -862,7 +868,7 @@ async function main() {
       }
 
       if (text === "/compact") {
-        const s = sessionsByChat.get(chatId);
+        const s = getActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.compactSession(s.sessionId);
@@ -895,10 +901,10 @@ async function main() {
       }
 
       // Create or reuse session
-      let s = sessionsByChat.get(chatId);
+      let s = getActiveSession(chatId, replyThread);
       if (!s) {
         await createNewSession(chatId);
-        s = sessionsByChat.get(chatId)!;
+        s = getActiveSession(chatId, replyThread)!;
       }
 
       const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
