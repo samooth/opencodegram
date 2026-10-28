@@ -610,23 +610,23 @@ async function main() {
           await finishStatus(chatId, s);
           if (!s.stopped) {
             await flushDraft(chatId);
+            const parts: string[] = [];
             if (s.reasoningBuffer.trim()) {
               const r = s.reasoningBuffer.trim().slice(0, 3500);
-              await tg.sendRichMessage(chatId, `<details open><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`, s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {})).catch((err) => console.error("[send]", err));
+              parts.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
             }
             if (s.toolCallDetails.length) {
               const details = s.toolCallDetails.map((d) => {
-                const input = d.input ? `Input: ${esc(d.input.slice(0, 500))}` : "";
-                const output = d.output ? `Output: ${esc(d.output.slice(0, 500))}` : "";
+                const input = d.input ? "Input: " + esc(d.input.slice(0, 500)) : "";
+                const output = d.output ? "Output: " + esc(d.output.slice(0, 500)) : "";
                 const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-                return `${status} ${esc(d.name)}\n${input}\n${output}`.trim();
+                return status + " " + esc(d.name) + (input ? "\n" + input : "") + (output ? "\n" + output : "");
               }).join("\n\n");
-              await tg.sendRichMessage(chatId, `<details><summary>🔧 Tool calls (${s.toolCallDetails.length})</summary>\n<pre><code>${esc(details)}</code></pre>\n</details>`, s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {})).catch((err) => console.error("[send]", err));
+              parts.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
             }
             let finalText = s.buffer || "(empty response)";
             let elapsed = 0;
             let tokens = s.lastOutputTokens ?? 0;
-            // Try to get accurate timing from the assistant message.
             try {
               const msgId = e.data?.assistantMessageID;
               if (msgId) {
@@ -644,10 +644,13 @@ async function main() {
             }
             if (tokens && elapsed > 0) {
               const speed = (tokens / elapsed).toFixed(1);
-              finalText += `\n\n⚡ ${speed} tok/s`;
+              finalText += "\n\n⚡ " + speed + " tok/s";
             }
-            console.log("[send] final to chat=", chatId, "len=", finalText.length);
-            await tg.sendRichMessageMarkdown(chatId, finalText, s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {})).catch((err) => console.error("[send final]", err));
+            parts.push(finalText);
+            const fullContent = parts.join("\n\n");
+            const threadOpts = s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+            console.log("[send] final to chat=", chatId, "len=", fullContent.length);
+            await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err) => console.error("[send final]", err));
           }
           s.buffer = "";
         }
