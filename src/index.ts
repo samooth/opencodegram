@@ -109,10 +109,8 @@ async function main() {
       const res = await oc.client.session.list({ limit: 1, order: "desc" });
       const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
       if (list.length) {
-        console.log("[ensureActive] activating", list[0].id, "for chat", chatId);
         await activateSession(chatId, list[0].id, true);
         s = sessionsByChat.get(chatId);
-        console.log("[ensureActive] result", s?.sessionId, "stored=", sessionsByChat.has(chatId));
       }
     } catch (err) {
       console.error("[ensureActive]", err);
@@ -595,7 +593,8 @@ async function main() {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
           const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
-          console.log("[event] text.ended session=", sessionId, "chat=", chatId, "lastActive=", lastActiveChatId, "global=", (globalThis as any).__lastActiveChatId, "mapSize=", lastChatBySession.size);
+          // debug removed
+
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -1513,13 +1512,10 @@ async function main() {
         lastActiveChatId = chatId;
         (globalThis as any).__lastActiveChatId = chatId;
         lastChatBySession.set(s.sessionId, chatId);
-        console.log("[prompt] set lastChatBySession size=", lastChatBySession.size, "global=", (globalThis as any).__lastActiveChatId);
         lastPromptBySession.set(s.sessionId, text);
-        console.log("[prompt] sending to session", s.sessionId, "chat", chatId);
         await startStatus(chatId, s);
         s.statusTimer = setInterval(() => { updateStatus(chatId, s).catch(() => {}); }, 3000);
         await oc.prompt(s.sessionId, text);
-        console.log("[prompt] sent");
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
       }
