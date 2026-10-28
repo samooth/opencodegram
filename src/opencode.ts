@@ -131,7 +131,7 @@ export class OpenCodeBridge {
     return this.client.session.form.get({ sessionID: sessionId, formID: formId });
   }
 
-  async replyForm(sessionId: string, formId: string, answer: Record<string, unknown>) {
+  async replyForm(sessionId: string, formId: string, answer: Record<string, string | number | boolean | string[]>) {
     return this.client.session.form.reply({ sessionID: sessionId, formID: formId, answer });
   }
 

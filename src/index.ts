@@ -991,7 +991,7 @@ async function main() {
           await send("invalid JSON."); continue;
         }
         try {
-          await oc.replyForm(s.sessionId, formId, answer);
+          await oc.replyForm(s.sessionId, formId, answer as Record<string, string | number | boolean | string[]>);
           await send(`Form ${esc(formId)} answered.`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
