@@ -823,6 +823,13 @@ async function main() {
 
       const chatId = msg.chat.id;
       const replyThread = msg.message_thread_id;
+      // In groups, only respond to commands or mentions.
+      if (chatId < 0) {
+        const raw = (msg.text ?? msg.caption ?? "").trim();
+        const isCommand = raw.startsWith("/");
+        const isMention = !!me.username && raw.toLowerCase().includes("@" + me.username.toLowerCase());
+        if (!isCommand && !isMention) continue;
+      }
       const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
       console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
       tg.setMessageReaction(chatId, msg.message_id, "👀").catch(() => {});
