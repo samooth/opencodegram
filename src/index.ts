@@ -747,8 +747,9 @@ async function main() {
         try {
           const diffs = await oc.diff(s.sessionId);
           if (!diffs.length) { await send("No changes."); continue; }
-          const rows = diffs.map((d: any) => `<tr><td><code>${esc(d.path ?? d.file ?? "")}</code></td><td>+${d.additions ?? 0}/-${d.deletions ?? 0}</td></tr>`).join("");
-          await send(`<b>Diff</b>\n<table><tr><th>File</th><th>Changes</th></tr>${rows}</table>`);
+          const rows = diffs.map((d: any) => `<tr><td><code>${esc(d.file ?? "")}</code></td><td>+${d.additions ?? 0}/-${d.deletions ?? 0}</td><td>${esc(d.status ?? "")}</td></tr>`).join("");
+          const details = diffs.map((d: any) => `<details><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${esc(d.patch ?? "")}</code></pre>\n</details>`).join("\n");
+          await send(`<b>Diff</b>\n<table><tr><th>File</th><th>Changes</th><th>Status</th></tr>${rows}</table>\n\n${details}`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
@@ -762,12 +763,15 @@ async function main() {
           const ctx = await oc.context(s.sessionId);
           const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
           if (!items.length) { await send("No context."); continue; }
-          const lines = items.slice(-10).map((m: any) => {
+          const sliced = items.slice(-10);
+          const blocks = sliced.map((m: any) => {
             const role = m.role ?? m.type ?? "msg";
-            const text = (m.text ?? m.content ?? "").toString().slice(0, 200);
-            return `<b>${esc(role)}</b>: ${esc(text)}`;
+            const text = (m.text ?? m.content ?? "").toString();
+            const short = text.slice(0, 120);
+            if (text.length <= 120) return `<b>${esc(role)}</b>: ${esc(text)}`;
+            return `<details><summary><b>${esc(role)}</b>: ${esc(short)}…</summary>\n<pre>${esc(text)}</pre>\n</details>`;
           });
-          await send(`<b>Context (last ${lines.length})</b>\n\n${lines.join("\n\n")}`);
+          await send(`<b>Context (last ${blocks.length})</b>\n\n${blocks.join("\n\n")}`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
