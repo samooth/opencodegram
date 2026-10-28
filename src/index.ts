@@ -627,6 +627,7 @@ async function main() {
           }
           if (!s.stopped) {
             await flushDraft(chatId);
+            await finishStatus(chatId, s);
             const parts: string[] = [];
             if (s.reasoningBuffer.trim()) {
               const r = s.reasoningBuffer.trim().slice(0, 3500);
@@ -670,7 +671,21 @@ async function main() {
             parts.push(finalText);
             const fullContent = parts.join("\n\n");
             const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
-            console.log("[send] final to chat=", chatId, "len=", fullContent.length);
+            // Send thinking and tool calls as separate messages (persist).
+            if (s.reasoningBuffer.trim()) {
+              const r = s.reasoningBuffer.trim().slice(0, 3500);
+              await tg.sendRichMessage(chatId, `<details open><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`, threadOpts).catch((err) => console.error("[send]", err));
+            }
+            if (s.toolCallDetails.length) {
+              const details = s.toolCallDetails.map((d) => {
+                const input = d.input ? `Input: ${esc(d.input.slice(0, 500))}` : "";
+                const output = d.output ? `Output: ${esc(d.output.slice(0, 500))}` : "";
+                const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
+                return `${status} ${esc(d.name)}\n${input}\n${output}`.trim();
+              }).join("\n\n");
+              await tg.sendRichMessage(chatId, `<details><summary>🔧 Tool calls (${s.toolCallDetails.length})</summary>\n<pre><code>${esc(details)}</code></pre>\n</details>`, threadOpts).catch((err) => console.error("[send]", err));
+            }
+            console.log("[send] final to chat=", chatId, "len=", finalText.length);
             await tg.sendRichMessageMarkdown(chatId, finalText, threadOpts).catch((err) => console.error("[send final]", err));
           }
           s.buffer = "";
