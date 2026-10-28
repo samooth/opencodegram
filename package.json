@@ -1,0 +1,21 @@
+{
+  "name": "opencodegram",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Remote control plane for OpenCode via Telegram",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "doctor": "bun run src/doctor.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p ."
+  },
+  "dependencies": {
+    "@opencode/client": "2.2.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0"
+  }
+}
