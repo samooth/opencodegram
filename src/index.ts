@@ -166,7 +166,7 @@ async function main() {
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, `<h4>Sessions</h4>\n<i>${start + 1}-${Math.min(start + pageSize, total)} of ${total}</i>\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function showCommands(chatId: number): Promise<void> {
@@ -223,14 +223,14 @@ async function main() {
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
-    await sendOrEditRich(chatId, messageId, `<h4>Models</h4>\n<i>${start + 1}-${Math.min(start + pageSize, total)} of ${total}</i>\n${currentLine}${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, `<b>Models</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function sendPanel(chatId: number): Promise<void> {
     const s = sessionsByChat.get(chatId);
     const ocInfo = await oc.serverInfo().catch(() => null);
     const text = [
-      `<h3>OpenCodegram</h3>`,
+      `<b>OpenCodegram</b>`,
       ``,
       s ? `<b>Session</b>: <code>${esc(s.sessionId)}</code>` : `<b>Session</b>: none`,
       s?.directory ? `<b>Directory</b>: <code>${esc(s.directory)}</code>` : "",
