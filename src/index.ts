@@ -418,9 +418,17 @@ async function main() {
     const lines: string[] = ["⏳ <b>Working…</b>"];
     if (s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(0, 300);
-      lines.push("<details><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
+      lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
     }
-    if (s.toolCalls.length) {
+    if (s.toolCallDetails.length) {
+      const details = s.toolCallDetails.slice(-5).map((d) => {
+        const input = d.input ? `\nInput: ${esc(d.input.slice(0, 200))}` : "";
+        const output = d.output ? `\nOutput: ${esc(d.output.slice(0, 200))}` : "";
+        const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
+        return `<details open><summary>${status} ${esc(d.name)}</summary>\n<pre>${input}${output}</pre>\n</details>`;
+      }).join("\n");
+      lines.push(details);
+    } else if (s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
     if (s.buffer.trim()) {
