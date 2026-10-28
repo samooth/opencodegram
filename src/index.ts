@@ -505,6 +505,11 @@ async function main() {
         continue;
       }
 
+      if (text === "/models") {
+        await showModels(chatId, 0);
+        continue;
+      }
+
       if (text === "/sessions" || text.startsWith("/sessions ")) {
         const arg = text.slice("/sessions".length).trim();
         const page = /^\d+$/.test(arg) ? Math.max(0, parseInt(arg, 10) - 1) : 0;
@@ -512,10 +517,10 @@ async function main() {
         continue;
       }
 
-      if (text.startsWith("/use ")) {
-        const sessionId = text.slice(5).trim();
+      if (text === "/use" || text.startsWith("/use ")) {
+        const sessionId = text.slice(4).trim();
         if (!sessionId) {
-          await tg.sendRichMessage(chatId, "usage: /use <session_id>");
+          await showSessions(chatId, 0);
           continue;
         }
         try {
