@@ -633,8 +633,11 @@ async function main() {
               if (msgId) {
                 const m = await oc.client.session.message.get({ sessionID: s.sessionId, messageID: msgId });
                 const t = (m as any)?.time;
-                if (t?.streamed && t?.completed && t.completed > t.streamed) {
-                  elapsed = (t.completed - t.streamed) / 1000;
+                if (t?.completed) {
+                  const start = t.streamed || t.created;
+                  if (start && t.completed > start) {
+                    elapsed = (t.completed - start) / 1000;
+                  }
                 }
               }
             } catch {
@@ -643,6 +646,7 @@ async function main() {
             if (!elapsed && s.promptStartTime) {
               elapsed = (Date.now() - s.promptStartTime) / 1000;
             }
+            if (elapsed > 0 && elapsed < 0.5) elapsed = 0.5;
             if (tokens && elapsed > 0) {
               const speed = (tokens / elapsed).toFixed(1);
               finalText += "\n\n⚡ " + speed + " tok/s";
