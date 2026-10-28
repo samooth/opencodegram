@@ -264,7 +264,7 @@ async function main() {
     await sendOrEditRich(chatId, messageId, `<b>Models</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
-  async function sendPanel(chatId: number): Promise<void> {
+  async function sendPanel(chatId: number, threadId?: number): Promise<void> {
     const s = sessionsByChat.get(chatId);
     const ocInfo = await oc.serverInfo().catch(() => null);
     let sessionCount = 0;
@@ -301,7 +301,7 @@ async function main() {
       [{ text: "📊 Status", callback_data: "panel:status" }, { text: "⏹ Stop", callback_data: "panel:stop" }],
       [{ text: "❓ Help", callback_data: "panel:help" }],
     ];
-    await tg.sendRichMessage(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+    await tg.sendRichMessage(chatId, text, { ...(threadId ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
   }
   const pendingPermissions = new Map<string, { chatId: number; sessionId: string; messageId?: number; decided: boolean; label: string; resource: string }>(); // requestId -> info
   const awaitingReason = new Map<number, string>(); // chatId -> requestId
@@ -431,7 +431,8 @@ async function main() {
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
-            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}`, threadId ? { message_thread_id: threadId } : {});
+            const hint = /rate limit|quota/i.test(msg) ? "\n\nTry switching model with /models." : "";
+            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadId ? { message_thread_id: threadId } : {});
           }
         }
 
@@ -536,7 +537,7 @@ async function main() {
 
         if (cbData === "panel:home" || cbData === "panel:status" || cbData === "panel:help") {
           await tg.answerCallbackQuery(cq.id);
-          await sendPanel(chatId);
+          await sendPanel(chatId, cq.message?.message_thread_id);
           continue;
         }
         if (cbData === "panel:sessions") {
@@ -730,15 +731,16 @@ async function main() {
       }
 
       if (!msg.text) continue;
-      const text = msg.text.trim();
+      let text = msg.text.trim();
+      text = text.replace(/^\/([a-zA-Z0-9_-]+)@\w+/, "/$1");
 
       if (text === "/start" || text === "/help") {
-        await sendPanel(chatId);
+        await sendPanel(chatId, replyThread);
         continue;
       }
 
       if (text === "/status") {
-        await sendPanel(chatId);
+        await sendPanel(chatId, replyThread);
         continue;
       }
 
@@ -882,10 +884,14 @@ async function main() {
             const role = m.role ?? m.type ?? "msg";
             let text = "";
             if (role === "user") {
-              text = m.text ?? "";
+              const t = m.text;
+              text = typeof t === "string" ? t : (t ? JSON.stringify(t) : "");
             } else if (role === "assistant") {
               const parts = Array.isArray(m.content) ? m.content : [];
-              const texts = parts.filter((p: any) => p.type === "text").map((p: any) => p.text ?? "");
+              const texts = parts.filter((p: any) => p.type === "text").map((p: any) => {
+                const t = p.text;
+                return typeof t === "string" ? t : (t ? JSON.stringify(t) : "");
+              });
               const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool");
               text = texts.join(" ").trim();
               if (!text && tools.length) text = `🔧 ${tools.join(", ")}`;
