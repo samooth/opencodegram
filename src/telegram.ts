@@ -16,6 +16,7 @@ export interface TelegramMessage {
   from?: { id: number; username?: string };
   text?: string;
   caption?: string;
+  reply_to_message?: { from?: { id: number } };
   date: number;
   photo?: Array<{ file_id: string; file_unique_id: string; width: number; height: number }>;
   document?: { file_id: string; file_unique_id: string; file_name?: string };

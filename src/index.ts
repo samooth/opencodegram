@@ -1005,7 +1005,8 @@ async function main() {
         const raw = (msg.text ?? msg.caption ?? "").trim();
         const isCommand = raw.startsWith("/");
         const isMention = !!me.username && raw.toLowerCase().includes("@" + me.username.toLowerCase());
-        if (!isCommand && !isMention) continue;
+        const isReplyToBot = !!msg.reply_to_message && msg.reply_to_message.from?.id === me.id;
+        if (!isCommand && !isMention && !isReplyToBot) continue;
       }
       const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
       console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
