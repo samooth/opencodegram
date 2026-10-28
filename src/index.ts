@@ -29,6 +29,8 @@ type ChatSession = {
   lastTyping?: number;
   statusMessageId?: number;
   statusLastUpdate?: number;
+  promptStartTime?: number;
+  lastOutputTokens?: number;
 };
 
 async function main() {
@@ -511,6 +513,17 @@ async function main() {
           }
         }
 
+        if (e.type === "session.step.ended") {
+          const sessionId = e.data?.sessionID;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
+          if (chatId === undefined) continue;
+          const s = _s0 ?? sessionsByChat.get(chatId);
+          if (!s) continue;
+          const out = e.data?.tokens?.output;
+          if (typeof out === "number") s.lastOutputTokens = out;
+        }
+
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
@@ -534,7 +547,15 @@ async function main() {
               const r = s.reasoningBuffer.trim().slice(0, 3500);
               await tg.sendRichMessage(chatId, `<details><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
             }
-            await tg.sendRichMessageMarkdown(chatId, s.buffer || "(empty response)", s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
+            let finalText = s.buffer || "(empty response)";
+            if (s.promptStartTime && s.lastOutputTokens) {
+              const elapsed = (Date.now() - s.promptStartTime) / 1000;
+              if (elapsed > 0) {
+                const speed = (s.lastOutputTokens / elapsed).toFixed(1);
+                finalText += `\n\n⚡ ${speed} tok/s`;
+              }
+            }
+            await tg.sendRichMessageMarkdown(chatId, finalText, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
           }
           s.buffer = "";
         }
@@ -1391,6 +1412,7 @@ async function main() {
 
       try {
         s.targetChatId = chatId;
+        s.promptStartTime = Date.now();
         lastChatBySession.set(s.sessionId, chatId);
         lastPromptBySession.set(s.sessionId, text);
         await startStatus(chatId, s);
