@@ -98,7 +98,8 @@ async function main() {
   };
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
-  const modelListByChat = new Map<number, Array<{ id: string; providerID: string; variant?: string }>>();
+  const modelListByChat = new Map<number, Array<any>>();
+  const pendingModelByChat = new Map<number, any>();
   let modelCache: { time: number; data: any[] } | null = null;
   const THREADS_FILE = join(process.cwd(), "data", "threads.json");
   const threadBySession = new Map<string, number>();
@@ -268,7 +269,7 @@ async function main() {
     const total = list.length;
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
-    modelListByChat.set(chatId, list.map((m: any) => ({ id: m.id, providerID: m.providerID, variant: m.variants?.[0]?.id })));
+    modelListByChat.set(chatId, list);
     const lines = slice.map((m: any, i: number) => {
       const name = esc(m.name ?? m.id);
       const variant = m.variants?.length ? esc(m.variants.map((v: any) => v.id).join(", ")) : "—";
@@ -633,18 +634,43 @@ async function main() {
           const idx = parseInt(modelMatch[1], 10);
           const models = modelListByChat.get(chatId) ?? [];
           const model = models[idx];
-          const s = sessionsByChat.get(chatId);
+          const s = getActiveSession(chatId, cq.message?.message_thread_id) ?? sessionsByChat.get(chatId);
           if (!model || !s) {
             await tg.answerCallbackQuery(cq.id, "No active session/model");
             continue;
           }
+          pendingModelByChat.set(chatId, model);
+          const variants = Array.isArray(model.variants) ? model.variants : [];
+          const keyboard: any[][] = [];
+          if (variants.length) {
+            for (const v of variants) {
+              keyboard.push([{ text: v.id === (model.variants?.[0]?.id) ? `${v.id} (default)` : v.id, callback_data: `variant:${v.id}` }]);
+            }
+          }
+          keyboard.push([{ text: "Default", callback_data: "variant:default" }]);
+          keyboard.push([{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+          await tg.answerCallbackQuery(cq.id);
+          if (cq.message?.message_id) {
+            await tg.editRichMessage(chatId, cq.message.message_id, `Select variant for <b>${esc(model.name ?? model.id)}</b>\n<code>${esc(model.providerID)}/${esc(model.id)}</code>`, { reply_markup: { inline_keyboard: keyboard } });
+          }
+          continue;
+        }
+        const variantMatch = cbData.match(/^variant:(.+)$/);
+        if (variantMatch) {
+          const variantId = variantMatch[1];
+          const model = pendingModelByChat.get(chatId);
+          const s = getActiveSession(chatId, cq.message?.message_thread_id) ?? sessionsByChat.get(chatId);
+          if (!model || !s) {
+            await tg.answerCallbackQuery(cq.id, "No pending model");
+            continue;
+          }
+          const variant = variantId === "default" ? undefined : variantId;
           await tg.answerCallbackQuery(cq.id, "Switching model…");
           try {
-            await oc.switchModel(s.sessionId, model);
+            await oc.switchModel(s.sessionId, { id: model.id, providerID: model.providerID, variant });
+            pendingModelByChat.delete(chatId);
             if (cq.message?.message_id) {
-              await tg.editRichMessage(chatId, cq.message.message_id, `✅ Model switched\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${model.variant ? " (" + esc(model.variant) + ")" : ""}`, { reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
-            } else {
-              await tg.sendRichMessage(chatId, `<b>Model switched</b>\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${model.variant ? " (" + esc(model.variant) + ")" : ""}`, s.threadId ? { message_thread_id: s.threadId } : {});
+              await tg.editRichMessage(chatId, cq.message.message_id, `✅ Model switched\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${variant ? " (" + esc(variant) + ")" : ""}`, { reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
             }
           } catch (err) {
             await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
