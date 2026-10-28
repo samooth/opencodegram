@@ -622,12 +622,27 @@ async function main() {
               await tg.sendRichMessage(chatId, `🔧 <b>Tool calls</b>\n\n${details}`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
             }
             let finalText = s.buffer || "(empty response)";
-            if (s.promptStartTime && s.lastOutputTokens) {
-              const elapsed = (Date.now() - s.promptStartTime) / 1000;
-              if (elapsed > 0) {
-                const speed = (s.lastOutputTokens / elapsed).toFixed(1);
-                finalText += `\n\n⚡ ${speed} tok/s`;
+            let elapsed = 0;
+            let tokens = s.lastOutputTokens ?? 0;
+            // Try to get accurate timing from the assistant message.
+            try {
+              const msgId = e.data?.assistantMessageID;
+              if (msgId) {
+                const m = await oc.client.session.message.get({ sessionID: s.sessionId, messageID: msgId });
+                const t = (m as any)?.time;
+                if (t?.streamed && t?.completed && t.completed > t.streamed) {
+                  elapsed = (t.completed - t.streamed) / 1000;
+                }
               }
+            } catch {
+              // ignore
+            }
+            if (!elapsed && s.promptStartTime) {
+              elapsed = (Date.now() - s.promptStartTime) / 1000;
+            }
+            if (tokens && elapsed > 0) {
+              const speed = (tokens / elapsed).toFixed(1);
+              finalText += `\n\n⚡ ${speed} tok/s`;
             }
             console.log("[send] final to chat=", chatId, "len=", finalText.length);
             await tg.sendRichMessageMarkdown(chatId, finalText, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send final]", err));
