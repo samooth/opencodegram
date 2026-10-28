@@ -825,12 +825,12 @@ async function main() {
         continue;
       }
 
-      if (text === "/models") {
+      if (text === "/models" || text === "/model") {
         await showModels(chatId, 0);
         continue;
       }
 
-      if (text === "/agents") {
+      if (text === "/agents" || text === "/agent") {
         const s = await ensureActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         const directory = s.directory ?? config.OPENCODE_DIRECTORY;
@@ -1101,7 +1101,7 @@ async function main() {
       }
 
       const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
-      const known = new Set(["start", "help", "status", "session", "sessions", "new", "stop", "abort", "commands", "models", "fork", "rename", "archive", "unarchive", "delete", "diff", "context", "compact"]);
+      const known = new Set(["start", "help", "status", "session", "sessions", "new", "stop", "abort", "commands", "model", "models", "agent", "agents", "fork", "rename", "archive", "unarchive", "delete", "diff", "context", "compact", "vcs", "worktrees", "usage"]);
       if (slash && !known.has(slash[1])) {
         const name = slash[1];
         const args = (slash[2] ?? "").trim();
