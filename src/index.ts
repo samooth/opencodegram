@@ -434,8 +434,7 @@ async function main() {
   const finishStatus = async (chatId: number, s: ChatSession) => {
     if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
     if (s.statusMessageId) {
-      const threadOpts = s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {};
-      await tg.editRichMessage(chatId, s.statusMessageId, "✅ <b>Done</b>", threadOpts).catch(() => {});
+      await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
       s.statusMessageId = undefined;
     }
   };
@@ -617,7 +616,8 @@ async function main() {
                 finalText += `\n\n⚡ ${speed} tok/s`;
               }
             }
-            await tg.sendRichMessageMarkdown(chatId, finalText, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
+            console.log("[send] final to chat=", chatId, "len=", finalText.length);
+            await tg.sendRichMessageMarkdown(chatId, finalText, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send final]", err));
           }
           s.buffer = "";
         }

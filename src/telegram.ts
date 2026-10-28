@@ -112,6 +112,10 @@ export class TelegramClient {
     return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown }, ...opts });
   }
 
+  deleteMessage(chatId: number, messageId: number): Promise<boolean> {
+    return this.call<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
+  }
+
   answerCallbackQuery(callbackQueryId: string, text?: string): Promise<boolean> {
     return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
   }
