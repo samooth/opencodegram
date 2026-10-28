@@ -20,6 +20,8 @@ type ChatSession = {
   timer?: ReturnType<typeof setTimeout>;
   stopped: boolean;
   threadId?: number;
+  userMessageId?: number;
+  lastTyping?: number;
 };
 
 async function main() {
@@ -652,6 +654,8 @@ async function main() {
       const replyThread = msg.message_thread_id;
       const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
       console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
+      tg.setMessageReaction(chatId, msg.message_id, "👀").catch(() => {});
+      tg.sendChatAction(chatId, "typing", replyThread).catch(() => {});
 
       // If we are awaiting a rejection reason, handle it.
       if (msg.text && awaitingReason.has(chatId)) {
@@ -855,8 +859,11 @@ async function main() {
           const diffs = await oc.diff(s.sessionId);
           if (!diffs.length) { await send("No changes."); continue; }
           const rows = diffs.map((d: any) => `<tr><td><code>${esc(d.file ?? "")}</code></td><td>+${d.additions ?? 0}/-${d.deletions ?? 0}</td><td>${esc(d.status ?? "")}</td></tr>`).join("");
-          const details = diffs.map((d: any) => `<details><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${esc(d.patch ?? "")}</code></pre>\n</details>`).join("\n");
-          await send(`<b>Diff</b>\n<table><tr><th>File</th><th>Changes</th><th>Status</th></tr>${rows}</table>\n\n${details}`);
+          await send(`<b>Diff summary</b>\n<table><tr><th>File</th><th>Changes</th><th>Status</th></tr>${rows}</table>`);
+          for (const d of diffs) {
+            const patch = (d.patch ?? "").slice(0, 3500);
+            await send(`<details open><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${esc(patch)}</code></pre>\n</details>`);
+          }
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
@@ -871,14 +878,17 @@ async function main() {
           const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
           if (!items.length) { await send("No context."); continue; }
           const sliced = items.slice(-10);
-          const blocks = sliced.map((m: any) => {
+          const sliced = items.slice(-10);
+          await send(`<b>Context (last ${sliced.length})</b>`);
+          for (const m of sliced) {
             const role = m.role ?? m.type ?? "msg";
-            const text = (m.text ?? m.content ?? "").toString();
-            const short = text.slice(0, 120);
-            if (text.length <= 120) return `<b>${esc(role)}</b>: ${esc(text)}`;
-            return `<details><summary><b>${esc(role)}</b>: ${esc(short)}…</summary>\n<pre>${esc(text)}</pre>\n</details>`;
-          });
-          await send(`<b>Context (last ${blocks.length})</b>\n\n${blocks.join("\n\n")}`);
+            const text = (m.text ?? m.content ?? m.payload?.text ?? (Array.isArray(m.parts) ? m.parts.map((p: any) => p.text ?? "").join("") : "") ?? "").toString().slice(0, 3000);
+            if (text.length < 200) {
+              await send(`<b>${esc(role)}</b>: ${esc(text)}`);
+            } else {
+              await send(`<details><summary><b>${esc(role)}</b>: ${esc(text.slice(0, 80))}…</summary>\n<pre>${esc(text)}</pre>\n</details>`);
+            }
+          }
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }

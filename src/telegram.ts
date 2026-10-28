@@ -114,6 +114,14 @@ export class TelegramClient {
     return this.call("createForumTopic", { chat_id: chatId, name });
   }
 
+  setMessageReaction(chatId: number, messageId: number, emoji: string): Promise<boolean> {
+    return this.call<boolean>("setMessageReaction", { chat_id: chatId, message_id: messageId, reaction: [{ type: "emoji", emoji }] });
+  }
+
+  sendChatAction(chatId: number, action: string, messageThreadId?: number): Promise<boolean> {
+    return this.call<boolean>("sendChatAction", { chat_id: chatId, action, ...(messageThreadId ? { message_thread_id: messageThreadId } : {}) });
+  }
+
   setMyCommands(commands: Array<{ command: string; description: string }>): Promise<boolean> {
     return this.call<boolean>("setMyCommands", { commands });
   }
