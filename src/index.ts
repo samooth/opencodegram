@@ -466,7 +466,7 @@ async function main() {
         if (e.type === "session.text.started") {
           const sessionId = e.data?.sessionID ?? e.data?.session?.id;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -486,7 +486,7 @@ async function main() {
         if (e.type === "session.reasoning.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -496,7 +496,7 @@ async function main() {
         if (e.type === "session.reasoning.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -507,7 +507,7 @@ async function main() {
         if (e.type === "session.tool.input.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -520,7 +520,7 @@ async function main() {
         if (e.type === "session.tool.called") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -536,7 +536,7 @@ async function main() {
         if (e.type === "session.tool.success") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -553,7 +553,7 @@ async function main() {
         if (e.type === "session.tool.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -569,7 +569,7 @@ async function main() {
         if (e.type === "session.text.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -583,7 +583,7 @@ async function main() {
         if (e.type === "session.step.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -594,7 +594,7 @@ async function main() {
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           console.log("[event] text.ended session=", sessionId, "chat=", chatId, "lastActive=", lastActiveChatId);
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
@@ -657,7 +657,7 @@ async function main() {
           const requestId = p.id;
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined || !requestId || !sessionId) continue;
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
@@ -700,7 +700,7 @@ async function main() {
           const p = e.data ?? {};
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             const title = p.title ?? "Form";
@@ -726,7 +726,7 @@ async function main() {
         if (e.type === "session.execution.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
@@ -766,7 +766,7 @@ async function main() {
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             await tg.sendRichMessage(chatId, "✓ session idle", threadId && chatId > 0 ? { message_thread_id: threadId } : {});
@@ -1508,6 +1508,7 @@ async function main() {
         s.targetThreadId = replyThread;
         s.promptStartTime = Date.now();
         lastActiveChatId = chatId;
+        (globalThis as any).__lastActiveChatId = chatId;
         lastChatBySession.set(s.sessionId, chatId);
         lastPromptBySession.set(s.sessionId, text);
         console.log("[prompt] sending to session", s.sessionId, "chat", chatId);
