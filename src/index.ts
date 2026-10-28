@@ -659,10 +659,10 @@ async function main() {
             if (cq.message?.message_id) {
               await tg.editRichMessage(chatId, cq.message.message_id, `✅ Agent switched to <b>${esc(name)}</b>`, { reply_markup: { inline_keyboard: [[{ text: "🏠 Panel", callback_data: "panel:home" }]] } });
             } else {
-              await send(`Agent switched to ${esc(name)}`);
+              await tg.sendRichMessage(chatId, `Agent switched to ${esc(name)}`);
             }
           } catch (err) {
-            await send(`❌ ${esc(String(err))}`);
+            await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
           }
           continue;
         }
