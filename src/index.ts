@@ -36,6 +36,8 @@ type ChatSession = {
   lastOutputTokens?: number;
 };
 
+let lastActiveChatId: number | undefined;
+
 async function main() {
   const config = loadConfig();
   const tg = new TelegramClient(config.TELEGRAM_BOT_TOKEN);
@@ -73,8 +75,6 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const sessionsByChat = new Map<number, ChatSession>();
-  let lastActiveChatId: number | undefined;
-  const lastPromptBySession = new Map<string, string>();
   const retryingSessions = new Set<string>();
   const lastChatBySession = new Map<string, number>(); // sessionId -> chatId where last prompted
   const findChatBySession = (sessionId: string): number | undefined => {
