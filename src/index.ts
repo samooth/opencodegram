@@ -608,7 +608,6 @@ async function main() {
             clearInterval(s.typingTimer);
             s.typingTimer = undefined;
           }
-          await finishStatus(chatId, s);
           if (!s.stopped) {
             await flushDraft(chatId);
             const parts: string[] = [];
@@ -651,7 +650,19 @@ async function main() {
             const fullContent = parts.join("\n\n");
             const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
             console.log("[send] final to chat=", chatId, "len=", fullContent.length);
-            await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err) => console.error("[send final]", err));
+            if (s.statusMessageId) {
+              try {
+                await tg.editRichMessageMarkdown(chatId, s.statusMessageId, fullContent, threadOpts);
+                s.statusMessageId = undefined;
+              } catch (err) {
+                console.error("[edit final]", err);
+                await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
+                s.statusMessageId = undefined;
+                await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err2) => console.error("[send final]", err2));
+              }
+            } else {
+              await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err) => console.error("[send final]", err));
+            }
           }
           s.buffer = "";
         }
