@@ -348,7 +348,6 @@ async function main() {
           const sessionId = p.sessionID;
           const chatId = sessionId ? findChatBySession(sessionId) : undefined;
           if (chatId === undefined || !requestId || !sessionId) continue;
-          pendingPermissions.set(requestId, { chatId, sessionId });
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
           const threadId = threadBySession.get(sessionId);
