@@ -876,10 +876,35 @@ async function main() {
         const s = await ensureActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
+          const session = await oc.client.session.get({ sessionID: s.sessionId });
+          const modelInfo = await (async () => {
+            try {
+              const res = await oc.client.model.list();
+              const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+              return list.find((m: any) => m.id === session.model?.id && m.providerID === session.model?.providerID);
+            } catch { return null; }
+          })();
+          const ctxLimit = modelInfo?.limit?.context ?? 0;
+          const tokens = session.tokens ?? {};
+          const inUse = (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0);
+          const pct = ctxLimit ? Math.min(100, Math.round((inUse / ctxLimit) * 100)) : 0;
+          const barLen = 20;
+          const filled = ctxLimit ? Math.round((pct / 100) * barLen) : 0;
+          const bar = "█".repeat(filled) + "░".repeat(barLen - filled);
           const ctx = await oc.context(s.sessionId);
           const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
-          if (!items.length) { await send("No context."); continue; }
-          const sliced = items.slice(-8);
+          const meaningful = items.filter((m: any) => {
+            const role = m.role ?? m.type;
+            if (role === "idle") return false;
+            if (role === "assistant") {
+              const parts = Array.isArray(m.content) ? m.content : [];
+              const hasText = parts.some((p: any) => p.type === "text" && p.text);
+              const hasTool = parts.some((p: any) => p.type === "tool");
+              return hasText || hasTool;
+            }
+            return role === "user" || role === "compaction";
+          });
+          const sliced = meaningful.slice(-6);
           const summaries = sliced.map((m: any) => {
             const role = m.role ?? m.type ?? "msg";
             let text = "";
@@ -894,21 +919,33 @@ async function main() {
               });
               const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool");
               text = texts.join(" ").trim();
-              if (!text && tools.length) text = `🔧 ${tools.join(", ")}`;
+              if (!text && tools.length) text = "🔧 " + tools.join(", ");
             } else if (role === "compaction") {
               text = (m.summary ?? "").toString().split("\n")[0].slice(0, 120);
             } else {
               text = "";
             }
-            text = text.replace(/\s+/g, " ").trim().slice(0, 200);
+            text = text.replace(/\s+/g, " ").trim().slice(0, 160);
             const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : role === "compaction" ? "📦" : "•";
-            return `${icon} <b>${esc(role)}</b>: ${esc(text || "(no text)")}`;
+            return icon + " <b>" + esc(role) + "</b>: " + esc(text || "(no text)");
           }).filter(Boolean);
-          await send(`<b>Context (last ${summaries.length})</b>\n\n${summaries.join("\n")}`);
+          const msg = [
+            "<b>🧠 Context</b>",
+            "",
+            "<b>Model</b>: <code>" + esc(session.model?.providerID ?? "") + "/" + esc(session.model?.id ?? "") + "</code>" + (session.model?.variant ? " (" + esc(session.model.variant) + ")" : ""),
+            ctxLimit ? "<b>Window</b>: " + ctxLimit.toLocaleString() + " tokens" : "",
+            ctxLimit ? "<b>In use (approx)</b>: " + inUse.toLocaleString() + " / " + ctxLimit.toLocaleString() + " (" + pct + "%)" : "<b>Tokens used</b>: " + inUse.toLocaleString(),
+            ctxLimit ? "<code>" + bar + "</code>" : "",
+            "",
+            "<b>Recent messages</b>",
+            summaries.join("\n") || "(none)",
+          ].filter(Boolean).join("\n");
+          await send(msg);
         } catch (err) {
-          await send(`❌ ${esc(String(err))}`);
+          await send("❌ " + esc(String(err)));
         }
         continue;
+
       }
 
       if (text === "/compact") {
