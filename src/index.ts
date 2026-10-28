@@ -862,7 +862,7 @@ async function main() {
           await send(`<b>Diff summary</b>\n<table><tr><th>File</th><th>Changes</th><th>Status</th></tr>${rows}</table>`);
           for (const d of diffs) {
             const patch = (d.patch ?? "").slice(0, 3500);
-            await send(`<details open><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${esc(patch)}</code></pre>\n</details>`);
+            await send(`<details><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${esc(patch)}</code></pre>\n</details>`);
           }
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
