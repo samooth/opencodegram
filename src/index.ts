@@ -42,6 +42,8 @@ async function main() {
     { command: "models", description: "List and switch models" },
     { command: "agents", description: "List and switch agents" },
     { command: "usage", description: "Show usage and cost stats" },
+    { command: "vcs", description: "Show VCS status" },
+    { command: "worktrees", description: "List worktrees" },
     { command: "commands", description: "List OpenCode commands" },
     { command: "fork", description: "Fork the active session" },
     { command: "rename", description: "Rename the active session" },
@@ -851,6 +853,38 @@ async function main() {
             `Tools: ${data.tools?.totals?.calls ?? 0} calls (${data.tools?.totals?.succeeded ?? 0} ok, ${data.tools?.totals?.failed ?? 0} failed)`,
           ].join("\n");
           await send(msg);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/vcs") {
+        const s = await ensureActiveSession(chatId, replyThread);
+        const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
+        try {
+          const info = await oc.vcsGet(directory);
+          const status = await oc.vcsStatus(directory);
+          const data = (info as any)?.data ?? info;
+          const st = (status as any)?.data ?? status;
+          const branch = data?.branch?.current ?? "?";
+          const files = Array.isArray(st) ? st.length : (st?.files?.length ?? 0);
+          await send(`<b>VCS</b>\nBranch: <code>${esc(branch)}</code>\nChanged files: ${files}`);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/worktrees") {
+        const s = await ensureActiveSession(chatId, replyThread);
+        const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
+        try {
+          const res = await oc.worktreeList(directory);
+          const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+          if (!list.length) { await send("no worktrees."); continue; }
+          const lines = list.map((w: any) => `• <code>${esc(w.path ?? w.directory ?? "")}</code>`);
+          await send(`<b>Worktrees</b>\n${lines.join("\n")}`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
