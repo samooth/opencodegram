@@ -86,6 +86,7 @@ async function main() {
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
   const modelListByChat = new Map<number, Array<{ id: string; providerID: string; variant?: string }>>();
+  let modelCache: { time: number; data: any[] } | null = null;
   const THREADS_FILE = join(process.cwd(), "data", "threads.json");
   const threadBySession = new Map<string, number>();
   try {
@@ -168,10 +169,14 @@ async function main() {
 
   async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}): Promise<void> {
     if (messageId) {
-      await tg.editRichMessage(chatId, messageId, html, opts);
-    } else {
-      await tg.sendRichMessage(chatId, html, opts);
+      try {
+        await tg.editRichMessage(chatId, messageId, html, opts);
+        return;
+      } catch (err) {
+        console.error("[edit]", err);
+      }
     }
+    await tg.sendRichMessage(chatId, html, opts);
   }
 
   async function showSessions(chatId: number, page = 0, messageId?: number): Promise<void> {
@@ -225,8 +230,15 @@ async function main() {
   async function showModels(chatId: number, page = 0, messageId?: number): Promise<void> {
     const s = sessionsByChat.get(chatId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
-    const res = await oc.client.model.list(directory ? { location: { directory } } as any : undefined);
-    const raw = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    let raw: any[];
+    const now = Date.now();
+    if (modelCache && now - modelCache.time < 60000) {
+      raw = modelCache.data;
+    } else {
+      const res = await oc.client.model.list(directory ? { location: { directory } } as any : undefined);
+      raw = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      modelCache = { time: now, data: raw };
+    }
     const list = [...raw].sort((a: any, b: any) => {
       const aFree = /free/i.test(a.id ?? "") || /free/i.test(a.name ?? "");
       const bFree = /free/i.test(b.id ?? "") || /free/i.test(b.name ?? "");
@@ -507,6 +519,9 @@ async function main() {
           if (action === "rejectreason") {
             // Set state to capture next text as reason
             awaitingReason.set(info.chatId, requestId);
+            setTimeout(() => {
+              if (awaitingReason.get(info.chatId) === requestId) awaitingReason.delete(info.chatId);
+            }, 2 * 60 * 1000);
             await tg.answerCallbackQuery(cq.id, "Send the reason as a message");
             if (info.messageId) {
               await tg.editRichMessage(info.chatId, info.messageId, `<b>Reject with reason</b>\nSend your reason in the next message.`).catch(() => {});
@@ -1001,7 +1016,11 @@ async function main() {
         continue;
       }
 
-      await oc.prompt(s.sessionId, text);
+      try {
+        await oc.prompt(s.sessionId, text);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
     }
   }
 }

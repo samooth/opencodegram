@@ -45,14 +45,19 @@ export interface TelegramUpdate {
 export class TelegramClient {
   constructor(private readonly token: string) {}
 
-  private async call<T>(method: string, body?: unknown): Promise<T> {
+  private async call<T>(method: string, body?: unknown, attempt = 0): Promise<T> {
     const res = await fetch(`${API}/bot${this.token}/${method}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number };
+    const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
+      if (json.error_code === 429 && attempt < 3) {
+        const wait = (json.parameters?.retry_after ?? 1) * 1000;
+        await new Promise((r) => setTimeout(r, wait));
+        return this.call<T>(method, body, attempt + 1);
+      }
       throw new Error(`Telegram ${method} failed: ${json.error_code ?? res.status} ${json.description ?? ""}`);
     }
     return json.result as T;
