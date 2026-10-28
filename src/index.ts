@@ -12,6 +12,7 @@ function esc(s: string): string {
 type ChatSession = {
   sessionId: string;
   directory?: string;
+  model?: { id: string; providerID: string; variant?: string };
   draftId: number;
   buffer: string;
   timer?: ReturnType<typeof setTimeout>;
@@ -86,7 +87,7 @@ async function main() {
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const title = (session as any)?.title ?? "Telegram session";
-    const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", stopped: false };
     if (topicsEnabled) {
       try {
         const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
@@ -109,7 +110,7 @@ async function main() {
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const old = sessionsByChat.get(chatId);
     if (old) chatBySession.delete(old.sessionId);
-    const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", stopped: false };
     if (topicsEnabled) {
       if (threadBySession.has(sessionId)) {
         cs.threadId = threadBySession.get(sessionId);
@@ -194,6 +195,7 @@ async function main() {
       if (aFree !== bFree) return aFree ? -1 : 1;
       return String(a.name ?? a.id).localeCompare(String(b.name ?? b.id));
     });
+    const current = s?.model;
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no models available.");
       return;
@@ -207,7 +209,9 @@ async function main() {
     const lines = slice.map((m: any, i: number) => {
       const name = esc(m.name ?? m.id);
       const variant = m.variants?.length ? ` · ${esc(m.variants.map((v: any) => v.id).join(", "))}` : "";
-      return `${start + i + 1}. <b>${name}</b>\n   <code>${esc(m.providerID)}/${esc(m.id)}</code>${variant}`;
+      const isCurrent = current && current.providerID === m.providerID && current.id === m.id;
+      const mark = isCurrent ? " ✅" : "";
+      return `${start + i + 1}. <b>${name}</b>${mark}\n   <code>${esc(m.providerID)}/${esc(m.id)}</code>${variant}`;
     });
     const keyboard: any[][] = slice.map((m: any, i: number) => {
       const label = `${m.name ?? m.id}`.slice(0, 48);
@@ -218,7 +222,8 @@ async function main() {
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, `<h4>Models</h4>\n<i>${start + 1}-${Math.min(start + pageSize, total)} of ${total}</i>\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
+    await sendOrEditRich(chatId, messageId, `<h4>Models</h4>\n<i>${start + 1}-${Math.min(start + pageSize, total)} of ${total}</i>\n${currentLine}${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function sendPanel(chatId: number): Promise<void> {
