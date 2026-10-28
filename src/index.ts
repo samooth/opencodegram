@@ -21,6 +21,7 @@ type ChatSession = {
   timer?: ReturnType<typeof setTimeout>;
   stopped: boolean;
   threadId?: number;
+  targetChatId?: number;
   userMessageId?: number;
   lastTyping?: number;
 };
@@ -69,6 +70,10 @@ async function main() {
     for (const [cid, s] of sessionsByChat) if (s.sessionId === sessionId) return cid;
     return undefined;
   };
+  const findSessionById = (sessionId: string): ChatSession | undefined => {
+    for (const s of sessionsByChat.values()) if (s.sessionId === sessionId) return s;
+    return undefined;
+  };
   const audit = (action: string, detail: string) => {
     try {
       mkdirSync(join(process.cwd(), "data"), { recursive: true });
@@ -94,7 +99,7 @@ async function main() {
       const res = await oc.client.session.list({ limit: 1, order: "desc" });
       const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
       if (list.length) {
-        await activateSession(chatId, list[0].id);
+        await activateSession(chatId, list[0].id, true);
         s = getActiveSession(chatId, threadId) ?? sessionsByChat.get(chatId);
       }
     } catch {
@@ -164,7 +169,7 @@ async function main() {
     }
   }
 
-  async function activateSession(chatId: number, sessionId: string): Promise<void> {
+  async function activateSession(chatId: number, sessionId: string, silent = true): Promise<void> {
     const session = await oc.client.session.get({ sessionID: sessionId });
     const s = session as any;
     const directory = s?.location?.directory ?? s?.directory;
@@ -187,7 +192,10 @@ async function main() {
       }
     }
     sessionsByChat.set(chatId, cs);
-    await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
+    cs.targetChatId = chatId;
+    if (!silent) {
+      await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, cs.threadId && chatId > 0 ? { message_thread_id: cs.threadId } : {});
+    }
   }
 
   async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}): Promise<void> {
@@ -389,9 +397,10 @@ async function main() {
 
         if (e.type === "session.text.started") {
           const sessionId = e.data?.sessionID ?? e.data?.session?.id;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId === undefined) continue;
-          const s = sessionsByChat.get(chatId);
+          const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           s.buffer = "";
           s.reasoningBuffer = "";
@@ -401,27 +410,30 @@ async function main() {
 
         if (e.type === "session.reasoning.started") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId === undefined) continue;
-          const s = sessionsByChat.get(chatId);
+          const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           s.reasoningBuffer = "";
         }
 
         if (e.type === "session.reasoning.delta") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId === undefined) continue;
-          const s = sessionsByChat.get(chatId);
+          const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           s.reasoningBuffer += e.data?.delta ?? "";
         }
 
         if (e.type === "session.text.delta") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId === undefined) continue;
-          const s = sessionsByChat.get(chatId);
+          const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           const delta = e.data?.delta ?? e.data?.text ?? "";
           s.buffer += delta;
@@ -432,10 +444,11 @@ async function main() {
 
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           console.log("[event] text.ended session=", sessionId, "chat=", chatId, "hasSession=", !!sessionsByChat.get(chatId ?? -1));
           if (chatId === undefined) continue;
-          const s = sessionsByChat.get(chatId);
+          const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           if (s.timer) {
             clearTimeout(s.timer);
@@ -456,7 +469,8 @@ async function main() {
           const p = e.data ?? {};
           const requestId = p.id;
           const sessionId = p.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId === undefined || !requestId || !sessionId) continue;
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
@@ -498,7 +512,8 @@ async function main() {
         if (e.type === "form.created") {
           const p = e.data ?? {};
           const sessionId = p.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             const title = p.title ?? "Form";
@@ -523,7 +538,8 @@ async function main() {
 
         if (e.type === "session.execution.failed") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
@@ -559,7 +575,8 @@ async function main() {
 
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
-          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             await tg.sendRichMessage(chatId, "✓ session idle", threadId && chatId > 0 ? { message_thread_id: threadId } : {});
@@ -1267,6 +1284,7 @@ async function main() {
         }
         try {
           await activateSession(chatId, sessionId);
+          await send(`✅ Switched to session\n<code>${esc(sessionId)}</code>`);
         } catch (err) {
           await send(`failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
         }
@@ -1295,6 +1313,7 @@ async function main() {
       }
 
       try {
+        s.targetChatId = chatId;
         lastChatBySession.set(s.sessionId, chatId);
         lastPromptBySession.set(s.sessionId, text);
         await oc.prompt(s.sessionId, text);
