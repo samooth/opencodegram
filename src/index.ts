@@ -62,6 +62,8 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const sessionsByChat = new Map<number, ChatSession>();
+  const lastPromptBySession = new Map<string, string>();
+  const retryingSessions = new Set<string>();
   const lastChatBySession = new Map<string, number>(); // sessionId -> chatId where last prompted
   const findChatBySession = (sessionId: string): number | undefined => {
     for (const [cid, s] of sessionsByChat) if (s.sessionId === sessionId) return cid;
@@ -525,8 +527,33 @@ async function main() {
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
-            const hint = /rate limit|quota/i.test(msg) ? "\n\nTry switching model with /models." : "";
+            const isRateLimit = /rate limit|quota/i.test(msg);
+            const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
             await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
+            if (isRateLimit && sessionId && !retryingSessions.has(sessionId)) {
+              const prompt = lastPromptBySession.get(sessionId);
+              if (prompt) {
+                retryingSessions.add(sessionId);
+                const now = new Date();
+                const retry = new Date(now);
+                if (now.getMinutes() < 15) {
+                  retry.setMinutes(15, 0, 0);
+                } else {
+                  retry.setHours(retry.getHours() + 1, 15, 0, 0);
+                }
+                const delay = retry.getTime() - now.getTime();
+                const timeStr = retry.toISOString().slice(11, 16);
+                await tg.sendRichMessage(chatId, `⏳ Rate limited. Will retry at ${timeStr} UTC.`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
+                setTimeout(async () => {
+                  retryingSessions.delete(sessionId);
+                  try {
+                    await oc.prompt(sessionId, prompt);
+                  } catch (err) {
+                    await tg.sendRichMessage(chatId, `❌ Retry failed: ${esc(String(err))}`, threadId && chatId > 0 ? { message_thread_id: threadId } : {}).catch(() => {});
+                  }
+                }, delay);
+              }
+            }
           }
         }
 
@@ -1262,6 +1289,7 @@ async function main() {
 
       try {
         lastChatBySession.set(s.sessionId, chatId);
+        lastPromptBySession.set(s.sessionId, text);
         await oc.prompt(s.sessionId, text);
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
