@@ -2,6 +2,8 @@ import { loadConfig } from "./config.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 
@@ -231,12 +233,33 @@ async function main() {
   async function sendPanel(chatId: number): Promise<void> {
     const s = sessionsByChat.get(chatId);
     const ocInfo = await oc.serverInfo().catch(() => null);
+    let sessionCount = 0;
+    try {
+      const res = await oc.client.session.list();
+      const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      sessionCount = list.length;
+    } catch {
+      // ignore
+    }
+    const cpuCount = os.cpus().length;
+    const load = os.loadavg().map((x) => x.toFixed(2)).join(" ");
+    const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
+    const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
+    let gpu = "";
+    try {
+      const out = execFileSync("nvidia-smi", ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
+      if (out) gpu = `\n<b>GPU</b>: ${esc(out)}`;
+    } catch {
+      // no gpu
+    }
     const text = [
       `<b>OpenCodegram</b>`,
       ``,
       s ? `<b>Session</b>: <code>${esc(s.sessionId)}</code>` : `<b>Session</b>: none`,
+      s?.model ? `<b>Model</b>: <code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}` : "",
       s?.directory ? `<b>Directory</b>: <code>${esc(s.directory)}</code>` : "",
-      ocInfo ? `<b>OpenCode</b>: v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""}` : "",
+      ocInfo ? `<b>OpenCode</b>: v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""} · sessions ${sessionCount}` : "",
+      `<b>Host</b>: ${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB${gpu}`,
     ].filter(Boolean).join("\n");
     const keyboard = [
       [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }],
