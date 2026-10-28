@@ -2,6 +2,10 @@ import { loadConfig } from "./config.js";
 import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 type ChatSession = {
   sessionId: string;
   directory?: string;
@@ -30,7 +34,7 @@ async function main() {
     if (!s) return;
     s.timer = undefined;
     try {
-      await tg.sendMessageDraft(chatId, s.draftId, s.buffer || "…", { can_stop: true });
+      await tg.sendRichMessageDraft(chatId, s.draftId, esc(s.buffer || "…"), { can_stop: true });
     } catch (err) {
       console.error("[draft]", err);
     }
@@ -82,7 +86,7 @@ async function main() {
           }
           if (!s.stopped) {
             await flushDraft(chatId);
-            await tg.sendMessage(chatId, s.buffer || "(empty response)");
+            await tg.sendRichMessage(chatId, `<pre>${esc(s.buffer || "(empty response)")}</pre>`);
           }
           s.buffer = "";
         }
@@ -96,7 +100,7 @@ async function main() {
           pendingPermissions.set(requestId, { chatId, sessionId });
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
-          await tg.sendMessage(chatId, `Permission requested: ${label}\n${resource}`, {
+          await tg.sendRichMessage(chatId, `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>`, {
             reply_markup: {
               inline_keyboard: [[
                 { text: "Allow once", callback_data: `perm:allow:${requestId}` },
@@ -211,7 +215,7 @@ async function main() {
 
       if (text === "/status") {
         const s = sessionsByChat.get(chatId);
-        await tg.sendMessage(chatId, s ? `active session: ${s.sessionId}\\ndir: ${s.directory}` : "no active session");
+        await tg.sendMessage(chatId, s ? `active session: ${s.sessionId}\ndir: ${s.directory}` : "no active session");
         continue;
       }
 
@@ -268,7 +272,7 @@ async function main() {
             const title = s.title ?? "(untitled)";
             const model = s.model ? `${s.model.providerID}/${s.model.id}` : "";
             const updated = s.time?.updated ? new Date(s.time.updated).toISOString().slice(0, 16).replace("T", " ") : "";
-            lines.push(`• ${title}\\n  ${s.id}${model ? "  " + model : ""}${updated ? "  " + updated : ""}`);
+            lines.push(`• ${title}\n  ${s.id}${model ? "  " + model : ""}${updated ? "  " + updated : ""}`);
             count++;
           }
           const c = (res as any)?.cursor;
@@ -286,7 +290,7 @@ async function main() {
             await tg.sendMessage(chatId, chunk);
             chunk = "";
           }
-          chunk += (chunk ? "\\n\\n" : "") + line;
+          chunk += (chunk ? "\n\n" : "") + line;
         }
         if (chunk) await tg.sendMessage(chatId, chunk);
         await tg.sendMessage(chatId, `listed ${count} session(s). Use /use <session_id> to switch.`);
@@ -309,7 +313,7 @@ async function main() {
           const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
           sessionsByChat.set(chatId, cs);
           chatBySession.set(sessionId, chatId);
-          await tg.sendMessage(chatId, `active session: ${sessionId}\\nmodel: ${model ? model.providerID + "/" + model.id : "default"}\\ndir: ${directory ?? "n/a"}`);
+          await tg.sendMessage(chatId, `active session: ${sessionId}\nmodel: ${model ? model.providerID + "/" + model.id : "default"}\ndir: ${directory ?? "n/a"}`);
         } catch (err) {
           await tg.sendMessage(chatId, `failed to switch: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -336,7 +340,7 @@ async function main() {
         s = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
         sessionsByChat.set(chatId, s);
         chatBySession.set(sessionId, chatId);
-        await tg.sendMessage(chatId, `Session created: ${sessionId}\\nmodel: ${model?.providerID}/${model?.id}${model?.variant ? " (" + model.variant + ")" : ""}\\ndir: ${directory}`);
+        await tg.sendRichMessage(chatId, `<b>Session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`);
       }
 
       const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\\s+(.*))?$/s);
