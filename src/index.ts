@@ -106,6 +106,15 @@ async function main() {
           });
         }
 
+        if (e.type === "session.execution.failed") {
+          const sessionId = e.data?.sessionID;
+          const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
+          if (chatId !== undefined) {
+            const msg = e.data?.error?.message ?? "execution failed";
+            await tg.sendMessage(chatId, `❌ ${msg}`);
+          }
+        }
+
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
           const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
