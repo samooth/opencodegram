@@ -277,7 +277,8 @@ async function main() {
     ];
     await tg.sendRichMessage(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
   }
-  const pendingPermissions = new Map<string, { chatId: number; sessionId: string }>(); // requestId -> info
+  const pendingPermissions = new Map<string, { chatId: number; sessionId: string; messageId?: number; decided: boolean; label: string; resource: string }>(); // requestId -> info
+  const awaitingReason = new Map<number, string>(); // chatId -> requestId
 
   const flushDraft = async (chatId: number) => {
     const s = sessionsByChat.get(chatId);
@@ -351,15 +352,52 @@ async function main() {
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
           const threadId = threadBySession.get(sessionId);
-          await tg.sendRichMessage(chatId, `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>`, {
+          const sent = await tg.sendRichMessage(chatId, `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>\n\n<i>Expires in 5 minutes</i>`, {
             ...(threadId ? { message_thread_id: threadId } : {}),
             reply_markup: {
-              inline_keyboard: [[
-                { text: "Allow once", callback_data: `perm:allow:${requestId}` },
-                { text: "Deny", callback_data: `perm:deny:${requestId}` },
-              ]],
+              inline_keyboard: [
+                [
+                  { text: "✅ Allow once", callback_data: `perm:allow:${requestId}` },
+                  { text: "✅ Always (admin)", callback_data: `perm:always:${requestId}` },
+                ],
+                [
+                  { text: "⛔ Reject", callback_data: `perm:reject:${requestId}` },
+                  { text: "🚫 Reject with reason", callback_data: `perm:rejectreason:${requestId}` },
+                ],
+              ],
             },
           });
+          pendingPermissions.set(requestId, { chatId, sessionId, messageId: sent.message_id, decided: false, label, resource });
+          // Auto-reject on timeout
+          setTimeout(async () => {
+            const info = pendingPermissions.get(requestId);
+            if (info && !info.decided) {
+              info.decided = true;
+              try {
+                await oc.replyPermission(info.sessionId, requestId, "reject");
+              } catch {
+                // ignore
+              }
+              if (info.messageId) {
+                await tg.editRichMessage(info.chatId, info.messageId, `<b>Permission auto-rejected (timeout)</b>\n<i>${esc(info.label)}</i>\n<code>${esc(info.resource)}</code>`).catch(() => {});
+              }
+              pendingPermissions.delete(requestId);
+            }
+          }, 5 * 60 * 1000);
+        }
+
+        if (e.type === "permission.replied") {
+          const p = e.data ?? {};
+          const requestId = p.requestID;
+          const info = requestId ? pendingPermissions.get(requestId) : undefined;
+          if (info && !info.decided) {
+            info.decided = true;
+            const reply = p.reply ?? "replied";
+            if (info.messageId) {
+              await tg.editRichMessage(info.chatId, info.messageId, `<b>Permission ${reply} (via OpenCode)</b>\n<i>${esc(info.label)}</i>\n<code>${esc(info.resource)}</code>`).catch(() => {});
+            }
+            pendingPermissions.delete(requestId);
+          }
         }
 
         if (e.type === "session.execution.failed") {
@@ -427,21 +465,45 @@ async function main() {
           continue;
         }
         const data = cq.data ?? "";
-        const m = data.match(/^perm:(allow|deny):(.+)$/);
+        const m = data.match(/^perm:(allow|always|reject|rejectreason):(.+)$/);
         if (m) {
-          const decision = m[1] === "allow" ? "once" : "reject";
+          const action = m[1];
           const requestId = m[2];
           const info = pendingPermissions.get(requestId);
-          if (info) {
-            await oc.replyPermission(info.sessionId, requestId, decision);
-            await tg.answerCallbackQuery(cq.id, decision === "once" ? "Allowed" : "Denied");
-            if (cq.message?.message_id) {
-              await tg.editMessageText(info.chatId, cq.message.message_id, `Permission ${decision}: ${requestId}`);
-            }
-          } else {
+          if (!info) {
             await tg.answerCallbackQuery(cq.id, "Unknown permission");
+            continue;
+          }
+          if (info.decided) {
+            await tg.answerCallbackQuery(cq.id, "Already decided");
+            continue;
+          }
+          if (action === "rejectreason") {
+            // Set state to capture next text as reason
+            awaitingReason.set(info.chatId, requestId);
+            await tg.answerCallbackQuery(cq.id, "Send the reason as a message");
+            if (info.messageId) {
+              await tg.editRichMessage(info.chatId, info.messageId, `<b>Reject with reason</b>\nSend your reason in the next message.`).catch(() => {});
+            }
+            continue;
+          }
+          let decision: "once" | "always" | "reject" = "reject";
+          if (action === "allow") decision = "once";
+          else if (action === "always") {
+            if (config.ADMIN_TELEGRAM_USER_ID && cq.from?.id !== config.ADMIN_TELEGRAM_USER_ID) {
+              await tg.answerCallbackQuery(cq.id, "Admin only");
+              continue;
+            }
+            decision = "always";
+          }
+          info.decided = true;
+          await oc.replyPermission(info.sessionId, requestId, decision);
+          await tg.answerCallbackQuery(cq.id, decision === "once" ? "Allowed" : decision === "always" ? "Always allowed" : "Rejected");
+          if (info.messageId) {
+            await tg.editRichMessage(info.chatId, info.messageId, `<b>Permission ${decision}</b>\n<i>${esc(info.label)}</i>\n<code>${esc(info.resource)}</code>`).catch(() => {});
           }
           pendingPermissions.delete(requestId);
+          continue;
         }
 
         const chatId = cq.message?.chat?.id ?? cq.from.id;
@@ -567,6 +629,28 @@ async function main() {
       const replyThread = msg.message_thread_id;
       const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
       console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
+
+      // If we are awaiting a rejection reason, handle it.
+      if (msg.text && awaitingReason.has(chatId)) {
+        const requestId = awaitingReason.get(chatId)!;
+        awaitingReason.delete(chatId);
+        const info = pendingPermissions.get(requestId);
+        if (info && !info.decided) {
+          info.decided = true;
+          const reason = msg.text;
+          try {
+            await oc.replyPermission(info.sessionId, requestId, "reject");
+          } catch (err) {
+            await send(`❌ ${esc(String(err))}`);
+          }
+          if (info.messageId) {
+            await tg.editRichMessage(info.chatId, info.messageId, `<b>Permission rejected</b>\n<i>${esc(info.label)}</i>\n<code>${esc(info.resource)}</code>\nReason: ${esc(reason)}`).catch(() => {});
+          }
+          pendingPermissions.delete(requestId);
+          await send(`Rejected with reason: ${esc(reason)}`);
+        }
+        continue;
+      }
 
       // Multimedia handling
       const mediaToAttach: Array<{ uri: string; name: string }> = [];
