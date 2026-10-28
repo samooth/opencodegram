@@ -594,6 +594,7 @@ async function main() {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
           const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          console.log("[event] text.ended session=", sessionId, "chat=", chatId, "hasStatus=", !!_s0?.statusMessageId);
           // debug removed
 
           if (chatId === undefined) continue;
