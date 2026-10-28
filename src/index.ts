@@ -44,6 +44,8 @@ async function main() {
     { command: "usage", description: "Show usage and cost stats" },
     { command: "vcs", description: "Show VCS status" },
     { command: "worktrees", description: "List worktrees" },
+    { command: "forms", description: "List pending forms" },
+    { command: "formreply", description: "Reply to a form" },
     { command: "commands", description: "List OpenCode commands" },
     { command: "fork", description: "Fork the active session" },
     { command: "rename", description: "Rename the active session" },
@@ -461,6 +463,18 @@ async function main() {
               pendingPermissions.delete(requestId);
             }
           }, 5 * 60 * 1000);
+        }
+
+        if (e.type === "form.created") {
+          const p = e.data ?? {};
+          const sessionId = p.sessionID;
+          const chatId = sessionId ? findChatBySession(sessionId) : undefined;
+          if (chatId !== undefined) {
+            const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
+            const title = p.title ?? "Form";
+            const formId = p.id ?? p.formID;
+            await tg.sendRichMessage(chatId, `<b>Form created</b>: ${esc(title)}\nID: <code>${esc(formId ?? "")}</code>\nUse /forms to view and reply.`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
+          }
         }
 
         if (e.type === "permission.replied") {
@@ -939,6 +953,46 @@ async function main() {
           if (!list.length) { await send("no worktrees."); continue; }
           const lines = list.map((w: any) => `• <code>${esc(w.path ?? w.directory ?? "")}</code>`);
           await send(`<b>Worktrees</b>\n${lines.join("\n")}`);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/forms") {
+        const s = await ensureActiveSession(chatId, replyThread);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          const forms = await oc.listForms(s.sessionId);
+          if (!forms.length) { await send("no pending forms."); continue; }
+          for (const f of forms) {
+            const fields = Array.isArray(f.fields) ? f.fields : [];
+            const fieldLines = fields.map((fld: any) => `• <b>${esc(fld.key)}</b> (${esc(fld.type)})${fld.required ? " *" : ""}${fld.description ? " — " + esc(fld.description) : ""}`);
+            await send(`<b>Form: ${esc(f.title)}</b>\nID: <code>${esc(f.id)}</code>\n\n${fieldLines.join("\n")}\n\nReply with <code>/formreply ${esc(f.id)} {\"key\":\"value\"}</code>`);
+          }
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text.startsWith("/formreply ")) {
+        const s = await ensureActiveSession(chatId, replyThread);
+        if (!s) { await send("no active session."); continue; }
+        const rest = text.slice(11).trim();
+        const spaceIdx = rest.indexOf(" ");
+        if (spaceIdx === -1) { await send("usage: /formreply <form_id> <json>"); continue; }
+        const formId = rest.slice(0, spaceIdx).trim();
+        const jsonStr = rest.slice(spaceIdx + 1).trim();
+        let answer: Record<string, unknown>;
+        try {
+          answer = JSON.parse(jsonStr);
+        } catch {
+          await send("invalid JSON."); continue;
+        }
+        try {
+          await oc.replyForm(s.sessionId, formId, answer);
+          await send(`Form ${esc(formId)} answered.`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }

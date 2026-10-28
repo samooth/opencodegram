@@ -123,6 +123,22 @@ export class OpenCodeBridge {
     return this.client.session.context({ sessionID: sessionId });
   }
 
+  async listForms(sessionId: string) {
+    return this.client.session.form.list({ sessionID: sessionId });
+  }
+
+  async getForm(sessionId: string, formId: string) {
+    return this.client.session.form.get({ sessionID: sessionId, formID: formId });
+  }
+
+  async replyForm(sessionId: string, formId: string, answer: Record<string, unknown>) {
+    return this.client.session.form.reply({ sessionID: sessionId, formID: formId, answer });
+  }
+
+  async cancelForm(sessionId: string, formId: string, message?: string) {
+    return this.client.session.form.cancel({ sessionID: sessionId, formID: formId, message });
+  }
+
   async diff(sessionId: string) {
     return this.client.session.diff({ sessionID: sessionId });
   }
