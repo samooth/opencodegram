@@ -239,7 +239,27 @@ async function main() {
     const table = `<table><tr><th>Command</th><th>Description</th></tr>${tableRows}</table>`;
     const keyboard = cmds.map((c: any) => [{ text: `/${c.name}`, callback_data: `cmd:${c.name}` }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${table}\n\n<i>Bot commands: /start /help /status /sessions /models /agents /usage /vcs /worktrees /fork /rename /archive /diff /context /compact /stop</i>`, { reply_markup: { inline_keyboard: keyboard } });
+    const botCmds = [
+      ["/start", "Welcome and control panel"],
+      ["/help", "Show help and panel"],
+      ["/status", "Show active session"],
+      ["/sessions", "List and switch sessions"],
+      ["/models", "List and switch models"],
+      ["/agents", "List and switch agents"],
+      ["/usage", "Show usage and cost stats"],
+      ["/vcs", "Show VCS status"],
+      ["/worktrees", "List worktrees"],
+      ["/fork", "Fork the active session"],
+      ["/rename", "Rename the active session"],
+      ["/archive", "Archive the active session"],
+      ["/diff", "Show session diff"],
+      ["/context", "Show session context"],
+      ["/compact", "Compact session history"],
+      ["/stop", "Stop the active turn"],
+    ];
+    const botRows = botCmds.map(([c, d]) => `<tr><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`).join("");
+    const botTable = `<table><tr><th>Bot command</th><th>Description</th></tr>${botRows}</table>`;
+    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${table}\n\n<b>Bot commands</b>\n\n${botTable}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function showModels(chatId: number, page = 0, messageId?: number): Promise<void> {
