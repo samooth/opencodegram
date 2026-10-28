@@ -779,8 +779,10 @@ async function main() {
       }
 
       if (!msg.text) continue;
-      let text = msg.text.trim();
+      let text = (msg.text ?? msg.caption ?? "").trim();
       text = text.replace(/^\/([a-zA-Z0-9_-]+)@\w+/, "/$1");
+      // Strip bot mentions anywhere in the text (group usage)
+      if (me.username) text = text.replace(new RegExp("@" + me.username, "gi"), "").trim();
 
       if (text === "/start" || text === "/help") {
         await sendPanel(chatId, replyThread);
