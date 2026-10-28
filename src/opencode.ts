@@ -122,6 +122,22 @@ export class OpenCodeBridge {
     return this.client.session.diff({ sessionID: sessionId });
   }
 
+  async vcsStatus(directory?: string) {
+    return this.client.vcs.status(directory ? { location: { directory } } as any : undefined);
+  }
+
+  async vcsGet(directory?: string) {
+    return this.client.vcs.get(directory ? { location: { directory } } as any : undefined);
+  }
+
+  async vcsBranches(directory?: string) {
+    return this.client.vcs.branch.list(directory ? { location: { directory } } as any : undefined);
+  }
+
+  async worktreeList(directory?: string) {
+    return this.client.worktree.list(directory ? { location: { directory } } as any : undefined);
+  }
+
   async interrupt(sessionId: string) {
     return this.client.session.interrupt({ sessionID: sessionId });
   }

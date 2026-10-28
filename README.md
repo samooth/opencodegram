@@ -24,6 +24,10 @@ pm2 save
 
 The app reads `.env` automatically when run with Bun. For PM2, either export the variables in the shell before `pm2 start`, or add them to `env` in `ecosystem.config.cjs`.
 
+## Docs
+
+See [docs/](./docs/).
+
 ## Commands
 
 - `/start` — welcome
