@@ -418,16 +418,16 @@ async function main() {
     const lines: string[] = ["⏳ <b>Working…</b>"];
     if (s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(0, 300);
-      lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
+      lines.push("🧠 <b>Thinking</b>\n<pre>" + esc(r) + "</pre>");
     }
     if (s.toolCallDetails.length) {
       const details = s.toolCallDetails.slice(-5).map((d) => {
-        const input = d.input ? `\nInput: ${esc(d.input.slice(0, 200))}` : "";
-        const output = d.output ? `\nOutput: ${esc(d.output.slice(0, 200))}` : "";
+        const input = d.input ? "\nInput: " + esc(d.input.slice(0, 200)) : "";
+        const output = d.output ? "\nOutput: " + esc(d.output.slice(0, 200)) : "";
         const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-        return `<details open><summary>${status} ${esc(d.name)}</summary>\n<pre>${input}${output}</pre>\n</details>`;
-      }).join("\n");
-      lines.push(details);
+        return status + " <b>" + esc(d.name) + "</b>" + input + output;
+      }).join("\n\n");
+      lines.push("🔧 <b>Tool calls</b>\n" + details);
     } else if (s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
@@ -610,16 +610,16 @@ async function main() {
             await flushDraft(chatId);
             if (s.reasoningBuffer.trim()) {
               const r = s.reasoningBuffer.trim().slice(0, 3500);
-              await tg.sendRichMessage(chatId, `<details open><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
+              await tg.sendRichMessage(chatId, `🧠 <b>Thinking</b>\n<pre>${esc(r)}</pre>`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
             }
             if (s.toolCallDetails.length) {
               const details = s.toolCallDetails.map((d) => {
                 const input = d.input ? `\nInput: ${esc(d.input.slice(0, 500))}` : "";
                 const output = d.output ? `\nOutput: ${esc(d.output.slice(0, 500))}` : "";
                 const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-                return `<details><summary>${status} <b>${esc(d.name)}</b></summary>\n<pre>${input}${output}</pre>\n</details>`;
-              }).join("\n");
-              await tg.sendRichMessage(chatId, `<b>Tool calls</b>\n${details}`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
+                return `${status} <b>${esc(d.name)}</b>${input}${output}`;
+              }).join("\n\n");
+              await tg.sendRichMessage(chatId, `🔧 <b>Tool calls</b>\n\n${details}`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
             }
             let finalText = s.buffer || "(empty response)";
             if (s.promptStartTime && s.lastOutputTokens) {
