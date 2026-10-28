@@ -13,6 +13,7 @@ type ChatSession = {
   buffer: string;
   timer?: ReturnType<typeof setTimeout>;
   stopped: boolean;
+  threadId?: number;
 };
 
 async function main() {
@@ -21,7 +22,8 @@ async function main() {
   const oc = new OpenCodeBridge(config.OPENCODE_BASE_URL, resolveServerPassword());
 
   const me = await tg.getMe();
-  console.log(`[opencodegram] bot: @${me.username ?? me.first_name} (id ${me.id}) topics=${me.has_topics_enabled ?? false}`);
+  const topicsEnabled = me.has_topics_enabled === true;
+  console.log(`[opencodegram] bot: @${me.username ?? me.first_name} (id ${me.id}) topics=${topicsEnabled}`);
   const info = await oc.serverInfo();
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
@@ -29,6 +31,7 @@ async function main() {
   const chatBySession = new Map<string, number>();
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
+  const threadBySession = new Map<string, number>();
 
   async function createNewSession(chatId: number): Promise<void> {
     const old = sessionsByChat.get(chatId);
@@ -48,9 +51,18 @@ async function main() {
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
+    if (topicsEnabled) {
+      try {
+        const topic = await tg.createForumTopic(chatId, (model ? `${model.id}` : "session").slice(0, 120));
+        cs.threadId = topic.message_thread_id;
+        threadBySession.set(sessionId, cs.threadId!);
+      } catch (err) {
+        console.error("[topic]", err);
+      }
+    }
     sessionsByChat.set(chatId, cs);
     chatBySession.set(sessionId, chatId);
-    await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`);
+    await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
   }
 
   async function activateSession(chatId: number, sessionId: string): Promise<void> {
@@ -61,9 +73,22 @@ async function main() {
     const old = sessionsByChat.get(chatId);
     if (old) chatBySession.delete(old.sessionId);
     const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
+    if (topicsEnabled) {
+      if (threadBySession.has(sessionId)) {
+        cs.threadId = threadBySession.get(sessionId);
+      } else {
+        try {
+          const topic = await tg.createForumTopic(chatId, (s.title ?? sessionId).slice(0, 120));
+          cs.threadId = topic.message_thread_id;
+          threadBySession.set(sessionId, cs.threadId!);
+        } catch (err) {
+          console.error("[topic]", err);
+        }
+      }
+    }
     sessionsByChat.set(chatId, cs);
     chatBySession.set(sessionId, chatId);
-    await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`);
+    await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
   }
 
   async function showSessions(chatId: number, page = 0): Promise<void> {
@@ -131,7 +156,7 @@ async function main() {
     if (!s) return;
     s.timer = undefined;
     try {
-      await tg.sendRichMessageDraft(chatId, s.draftId, esc(s.buffer || "…"), { can_stop: true });
+      await tg.sendRichMessageDraft(chatId, s.draftId, esc(s.buffer || "…"), { can_stop: true, ...(s.threadId ? { message_thread_id: s.threadId } : {}) });
     } catch (err) {
       console.error("[draft]", err);
     }
@@ -183,7 +208,7 @@ async function main() {
           }
           if (!s.stopped) {
             await flushDraft(chatId);
-            await tg.sendRichMessage(chatId, `<pre>${esc(s.buffer || "(empty response)")}</pre>`);
+            await tg.sendRichMessage(chatId, `<pre>${esc(s.buffer || "(empty response)")}</pre>`, s.threadId ? { message_thread_id: s.threadId } : {});
           }
           s.buffer = "";
         }
@@ -197,7 +222,9 @@ async function main() {
           pendingPermissions.set(requestId, { chatId, sessionId });
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
+          const threadId = threadBySession.get(sessionId);
           await tg.sendRichMessage(chatId, `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>`, {
+            ...(threadId ? { message_thread_id: threadId } : {}),
             reply_markup: {
               inline_keyboard: [[
                 { text: "Allow once", callback_data: `perm:allow:${requestId}` },
@@ -212,7 +239,8 @@ async function main() {
           const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
-            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}`);
+            const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
+            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}`, threadId ? { message_thread_id: threadId } : {});
           }
         }
 
@@ -220,7 +248,8 @@ async function main() {
           const sessionId = e.data?.sessionID;
           const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
           if (chatId !== undefined) {
-            await tg.sendRichMessage(chatId, "✓ session idle");
+            const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
+            await tg.sendRichMessage(chatId, "✓ session idle", threadId ? { message_thread_id: threadId } : {});
           }
         }
       }
@@ -402,7 +431,7 @@ async function main() {
         }
         try {
           await oc.interrupt(s.sessionId);
-          await tg.sendRichMessage(chatId, "⏹ stopped");
+          await tg.sendRichMessage(chatId, "⏹ stopped", s.threadId ? { message_thread_id: s.threadId } : {});
         } catch (err) {
           await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
         }
