@@ -179,9 +179,11 @@ async function main() {
     }
     commandListByChat.set(chatId, cmds.map((c: any) => c.name));
     const lines = cmds.map((c: any) => `• <b>/${esc(c.name)}</b>${c.description ? " — " + esc(c.description) : ""}`);
+    const tableRows = cmds.map((c: any) => `<tr><td><code>/${esc(c.name)}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");
+    const table = `<table><tr><th>Command</th><th>Description</th></tr>${tableRows}</table>`;
     const keyboard = cmds.map((c: any) => [{ text: `/${c.name}`, callback_data: `cmd:${c.name}` }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${lines.join("\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function showModels(chatId: number, page = 0, messageId?: number): Promise<void> {
