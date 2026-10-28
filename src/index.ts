@@ -42,7 +42,7 @@ async function main() {
       for await (const event of oc.events()) {
         const e = event as { type: string; data?: any };
         // Log a compact line for debugging.
-        if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle") {
+        if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle" || e.type.endsWith("failed") || e.type === "session.step.started" || e.type === "session.step.ended") {
           console.log("[event]", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
         }
 
@@ -191,19 +191,50 @@ async function main() {
       const text = msg.text.trim();
 
       if (text === "/start") {
-        await tg.sendMessage(chatId, "opencodegram ready. Send a prompt to create a session.");
+        await tg.sendMessage(chatId, "opencodegram ready. Send a prompt to create a session. Commands: /help /status /new");
+        continue;
+      }
+
+      if (text === "/help") {
+        await tg.sendMessage(chatId, "Send any text to prompt the active session. /status shows the active session. /new creates a new session. Other /commands are forwarded to OpenCode.");
+        continue;
+      }
+
+      if (text === "/status") {
+        const s = sessionsByChat.get(chatId);
+        await tg.sendMessage(chatId, s ? `active session: ${s.sessionId}\\ndir: ${s.directory}` : "no active session");
+        continue;
+      }
+
+      if (text === "/new") {
+        const old = sessionsByChat.get(chatId);
+        if (old) chatBySession.delete(old.sessionId);
+        sessionsByChat.delete(chatId);
+        await tg.sendMessage(chatId, "cleared active session; next message creates a new one.");
         continue;
       }
 
       // Create or reuse session
       let s = sessionsByChat.get(chatId);
       if (!s) {
-        const session = await oc.createSession("Telegram session");
+        const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
+        // Reuse the most recent session's model when possible, otherwise ask OpenCode for the default.
+        let model: { id: string; providerID: string; variant?: string } | undefined;
+        try {
+          const sessions = await oc.client.session.list();
+          const list = (sessions as any)?.data ?? (Array.isArray(sessions) ? sessions : []);
+          const latest = [...list].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0))[0];
+          if (latest?.model?.id && latest?.model?.providerID) model = { id: latest.model.id, providerID: latest.model.providerID, variant: latest.model.variant };
+        } catch {
+          // ignore
+        }
+        if (!model) model = await oc.defaultModel(directory);
+        const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
         const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
-        s = { sessionId, directory: config.OPENCODE_DIRECTORY, draftId: 0, buffer: "", stopped: false };
+        s = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
         sessionsByChat.set(chatId, s);
         chatBySession.set(sessionId, chatId);
-        await tg.sendMessage(chatId, `Session created: ${sessionId}`);
+        await tg.sendMessage(chatId, `Session created: ${sessionId}\\nmodel: ${model?.providerID}/${model?.id}${model?.variant ? " (" + model.variant + ")" : ""}\\ndir: ${directory}`);
       }
 
       await oc.prompt(s.sessionId, text);

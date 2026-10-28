@@ -31,8 +31,37 @@ export class OpenCodeBridge {
     return this.client.session.list();
   }
 
-  async createSession(title?: string) {
-    return this.client.session.create({ title });
+  async createSession(opts: { title?: string; directory?: string; model?: { id: string; providerID: string; variant?: string }; agent?: string } = {}) {
+    return this.client.session.create({
+      title: opts.title,
+      location: opts.directory ? { directory: opts.directory } : undefined,
+      model: opts.model ?? undefined,
+      agent: opts.agent ?? undefined,
+    });
+  }
+
+  async latestSessionDirectory(): Promise<string | undefined> {
+    try {
+      const res = await this.client.session.list();
+      const sessions = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      const sorted = [...sessions].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0));
+      return sorted[0]?.location?.directory ?? sorted[0]?.directory;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async defaultModel(directory?: string) {
+    try {
+      const res = await this.client.model.default(directory ? { location: { directory } } : undefined);
+      const data = (res as any)?.data ?? res;
+      if (data?.id && data?.providerID) {
+        return { id: data.id, providerID: data.providerID, variant: data.variants?.find((v: any) => v.id === "max")?.id };
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
   }
 
   async prompt(sessionId: string, text: string) {
