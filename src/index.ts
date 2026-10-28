@@ -207,9 +207,10 @@ async function main() {
     sessionListByChat.set(chatId, slice.map((s: any) => s.id));
     const lines = slice.map((s: any, i: number) => {
       const title = esc(s.title ?? "(untitled)");
-      const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "";
-      return `${start + i + 1}. <b>${title}</b>\n   <code>${esc(s.id)}</code>${model ? " · " + model : ""}`;
+      const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
+      return `<tr><td>${start + i + 1}</td><td><b>${title}</b></td><td><code>${esc(s.id)}</code></td><td>${model}</td></tr>`;
     });
+    const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model</th></tr>${lines.join("")}</table>`;
     const keyboard: any[][] = slice.map((s: any, i: number) => {
       const title = (s.title ?? "(untitled)").slice(0, 40);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
@@ -221,7 +222,7 @@ async function main() {
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function showCommands(chatId: number): Promise<void> {
