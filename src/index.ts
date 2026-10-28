@@ -1149,13 +1149,22 @@ async function main() {
             const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : role === "compaction" ? "📦" : "•";
             return icon + " <b>" + esc(role) + "</b>: " + esc(text || "(no text)");
           }).filter(Boolean);
+          const lastUser = [...items].reverse().find((m: any) => (m.role ?? m.type) === "user");
+          const lastAssistant = [...items].reverse().find((m: any) => (m.role ?? m.type) === "assistant");
+          const lastUserText = lastUser ? (typeof lastUser.text === "string" ? lastUser.text : JSON.stringify(lastUser.text ?? "")).slice(0, 200) : "";
+          const lastAssistantText = lastAssistant ? (Array.isArray(lastAssistant.content) ? lastAssistant.content.filter((p: any) => p.type === "text").map((p: any) => typeof p.text === "string" ? p.text : JSON.stringify(p.text ?? "")).join(" ") : "").toString().slice(0, 200) : "";
+          const tokenTable = "<table><tr><th>Metric</th><th>Value</th></tr><tr><td>Input</td><td>" + inTok.toLocaleString() + "</td></tr><tr><td>Output</td><td>" + outTok.toLocaleString() + "</td></tr><tr><td>Reasoning</td><td>" + reasonTok.toLocaleString() + "</td></tr><tr><td>Cache read</td><td>" + cacheRead.toLocaleString() + "</td></tr><tr><td>Cost</td><td>" + (session.cost ?? 0).toFixed(4) + "</td></tr></table>";
           const msg = [
             "<b>🧠 Context</b>",
             "",
-            "<b>Model</b>: <code>" + esc(session.model?.providerID ?? "") + "/" + esc(session.model?.id ?? "") + "</code>" + (session.model?.variant ? " (" + esc(session.model.variant) + ")" : ""),
-            ctxLimit ? "<b>Window</b>: " + ctxLimit.toLocaleString() + " tokens" : "",
-            "<b>Tokens</b>: in " + inTok.toLocaleString() + " · out " + outTok.toLocaleString() + " · reasoning " + reasonTok.toLocaleString() + " · cache " + cacheRead.toLocaleString(),
-            "<b>Cost</b>: " + (session.cost ?? 0).toFixed(4),
+            "<table><tr><td><b>Model</b></td><td><code>" + esc(session.model?.providerID ?? "") + "/" + esc(session.model?.id ?? "") + "</code>" + (session.model?.variant ? " (" + esc(session.model.variant) + ")" : "") + "</td></tr>",
+            ctxLimit ? "<tr><td><b>Window</b></td><td>" + ctxLimit.toLocaleString() + " tokens</td></tr>" : "",
+            "<tr><td><b>Updated</b></td><td>" + new Date(session.time?.updated ?? Date.now()).toISOString().slice(0, 16).replace("T", " ") + "</td></tr></table>",
+            "",
+            tokenTable,
+            "",
+            lastUserText ? "<blockquote><b>Last user:</b> " + esc(lastUserText) + "</blockquote>" : "",
+            lastAssistantText ? "<blockquote><b>Last assistant:</b> " + esc(lastAssistantText) + "</blockquote>" : "",
             "",
             "<b>Recent messages</b>",
             summaries.join("\n") || "(none)",
