@@ -886,11 +886,10 @@ async function main() {
           })();
           const ctxLimit = modelInfo?.limit?.context ?? 0;
           const tokens = session.tokens ?? {};
-          const inUse = (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0);
-          const pct = ctxLimit ? Math.min(100, Math.round((inUse / ctxLimit) * 100)) : 0;
-          const barLen = 20;
-          const filled = ctxLimit ? Math.round((pct / 100) * barLen) : 0;
-          const bar = "█".repeat(filled) + "░".repeat(barLen - filled);
+          const inTok = tokens.input ?? 0;
+          const outTok = tokens.output ?? 0;
+          const reasonTok = tokens.reasoning ?? 0;
+          const cacheRead = tokens.cache?.read ?? 0;
           const ctx = await oc.context(s.sessionId);
           const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
           const meaningful = items.filter((m: any) => {
@@ -934,8 +933,8 @@ async function main() {
             "",
             "<b>Model</b>: <code>" + esc(session.model?.providerID ?? "") + "/" + esc(session.model?.id ?? "") + "</code>" + (session.model?.variant ? " (" + esc(session.model.variant) + ")" : ""),
             ctxLimit ? "<b>Window</b>: " + ctxLimit.toLocaleString() + " tokens" : "",
-            ctxLimit ? "<b>In use (approx)</b>: " + inUse.toLocaleString() + " / " + ctxLimit.toLocaleString() + " (" + pct + "%)" : "<b>Tokens used</b>: " + inUse.toLocaleString(),
-            ctxLimit ? "<code>" + bar + "</code>" : "",
+            "<b>Tokens</b>: in " + inTok.toLocaleString() + " · out " + outTok.toLocaleString() + " · reasoning " + reasonTok.toLocaleString() + " · cache " + cacheRead.toLocaleString(),
+            "<b>Cost</b>: " + (session.cost ?? 0).toFixed(4),
             "",
             "<b>Recent messages</b>",
             summaries.join("\n") || "(none)",
