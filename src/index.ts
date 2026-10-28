@@ -31,6 +31,7 @@ async function main() {
   const chatBySession = new Map<string, number>();
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
+  const modelListByChat = new Map<number, Array<{ id: string; providerID: string; variant?: string }>>();
   const threadBySession = new Map<string, number>();
 
   async function createNewSession(chatId: number): Promise<void> {
@@ -114,7 +115,7 @@ async function main() {
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await tg.sendRichMessage(chatId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    await tg.sendRichMessage(chatId, `<h4>Sessions</h4>\n<i>${start + 1}-${Math.min(start + pageSize, total)} of ${total}</i>\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function showCommands(chatId: number): Promise<void> {
@@ -132,20 +133,50 @@ async function main() {
     await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${lines.join("\n")}`, { reply_markup: { inline_keyboard: keyboard } });
   }
 
+  async function showModels(chatId: number, page = 0): Promise<void> {
+    const s = sessionsByChat.get(chatId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
+    const res = await oc.client.model.list(directory ? { location: { directory } } as any : undefined);
+    const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    if (!list.length) {
+      await tg.sendRichMessage(chatId, "no models available.");
+      return;
+    }
+    // Flatten: each model entry already has providerID.
+    const pageSize = 8;
+    const total = list.length;
+    const start = page * pageSize;
+    const slice = list.slice(start, start + pageSize);
+    modelListByChat.set(chatId, slice.map((m: any) => ({ id: m.id, providerID: m.providerID, variant: m.variants?.[0]?.id })));
+    const lines = slice.map((m: any, i: number) => {
+      const name = esc(m.name ?? m.id);
+      const variant = m.variants?.length ? ` · ${esc(m.variants.map((v: any) => v.id).join(", "))}` : "";
+      return `${start + i + 1}. <b>${name}</b>\n   <code>${esc(m.providerID)}/${esc(m.id)}</code>${variant}`;
+    });
+    const keyboard: any[][] = slice.map((_: any, i: number) => [{ text: `Use ${i + 1}`, callback_data: `model:${i}` }]);
+    const nav: any[] = [];
+    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
+    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
+    if (nav.length) keyboard.push(nav);
+    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    await tg.sendRichMessage(chatId, `<h4>Models</h4>\n<i>${start + 1}-${Math.min(start + pageSize, total)} of ${total}</i>\n\n${lines.join("\n\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+  }
+
   async function sendPanel(chatId: number): Promise<void> {
     const s = sessionsByChat.get(chatId);
     const ocInfo = await oc.serverInfo().catch(() => null);
     const text = [
-      `<b>OpenCodegram</b>`,
+      `<h3>OpenCodegram</h3>`,
       ``,
       s ? `<b>Session</b>: <code>${esc(s.sessionId)}</code>` : `<b>Session</b>: none`,
       s?.directory ? `<b>Directory</b>: <code>${esc(s.directory)}</code>` : "",
       ocInfo ? `<b>OpenCode</b>: v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""}` : "",
     ].filter(Boolean).join("\n");
     const keyboard = [
-      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }],
-      [{ text: "⚡ Commands", callback_data: "panel:commands" }, { text: "📊 Status", callback_data: "panel:status" }],
-      [{ text: "⏹ Stop", callback_data: "panel:stop" }, { text: "❓ Help", callback_data: "panel:help" }],
+      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }],
+      [{ text: "➕ New", callback_data: "panel:new" }, { text: "⚡ Commands", callback_data: "panel:commands" }],
+      [{ text: "📊 Status", callback_data: "panel:status" }, { text: "⏹ Stop", callback_data: "panel:stop" }],
+      [{ text: "❓ Help", callback_data: "panel:help" }],
     ];
     await tg.sendRichMessage(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
   }
@@ -292,6 +323,7 @@ async function main() {
 
       if (u.callback_query) {
         const cq = u.callback_query;
+        console.log("[telegram] callback from", cq.from?.id, "data=", cq.data, "chat=", cq.message?.chat?.id);
         const userId = cq.from?.id;
         if (config.ADMIN_TELEGRAM_USER_ID && userId !== config.ADMIN_TELEGRAM_USER_ID) {
           await tg.answerCallbackQuery(cq.id, "Not authorized");
@@ -339,6 +371,11 @@ async function main() {
           await showCommands(chatId);
           continue;
         }
+        if (cbData === "panel:models") {
+          await tg.answerCallbackQuery(cq.id);
+          await showModels(chatId, 0);
+          continue;
+        }
         if (cbData === "panel:stop") {
           const s = sessionsByChat.get(chatId);
           if (s) {
@@ -350,7 +387,7 @@ async function main() {
           }
           continue;
         }
-        const useMatch = cbData.match(/^use:(\\d+)$/);
+        const useMatch = cbData.match(/^use:(\d+)$/);
         if (useMatch) {
           const idx = parseInt(useMatch[1], 10);
           const ids = sessionListByChat.get(chatId) ?? [];
@@ -363,10 +400,35 @@ async function main() {
           }
           continue;
         }
-        const pageMatch = cbData.match(/^sessions:page:(\\d+)$/);
+        const pageMatch = cbData.match(/^sessions:page:(\d+)$/);
         if (pageMatch) {
           await tg.answerCallbackQuery(cq.id);
           await showSessions(chatId, parseInt(pageMatch[1], 10));
+          continue;
+        }
+        const modelsPageMatch = cbData.match(/^models:page:(\d+)$/);
+        if (modelsPageMatch) {
+          await tg.answerCallbackQuery(cq.id);
+          await showModels(chatId, parseInt(modelsPageMatch[1], 10));
+          continue;
+        }
+        const modelMatch = cbData.match(/^model:(\d+)$/);
+        if (modelMatch) {
+          const idx = parseInt(modelMatch[1], 10);
+          const models = modelListByChat.get(chatId) ?? [];
+          const model = models[idx];
+          const s = sessionsByChat.get(chatId);
+          if (!model || !s) {
+            await tg.answerCallbackQuery(cq.id, "No active session/model");
+            continue;
+          }
+          await tg.answerCallbackQuery(cq.id, "Switching model…");
+          try {
+            await oc.switchModel(s.sessionId, model);
+            await tg.sendRichMessage(chatId, `<b>Model switched</b>\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${model.variant ? " (" + esc(model.variant) + ")" : ""}`, s.threadId ? { message_thread_id: s.threadId } : {});
+          } catch (err) {
+            await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
+          }
           continue;
         }
         const cmdMatch = cbData.match(/^cmd:(.+)$/);
@@ -471,7 +533,7 @@ async function main() {
         s = sessionsByChat.get(chatId)!;
       }
 
-      const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\\s+(.*))?$/s);
+      const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
       const known = new Set(["start", "help", "status", "new", "stop", "abort", "commands"]);
       if (slash && !known.has(slash[1])) {
         const name = slash[1];

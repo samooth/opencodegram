@@ -81,6 +81,10 @@ export class OpenCodeBridge {
     return this.client.session.prompt({ sessionID: sessionId, text });
   }
 
+  async switchModel(sessionId: string, model: { id: string; providerID: string; variant?: string }) {
+    return this.client.session.switchModel({ sessionID: sessionId, model });
+  }
+
   async interrupt(sessionId: string) {
     return this.client.session.interrupt({ sessionID: sessionId });
   }
