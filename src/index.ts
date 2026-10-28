@@ -47,6 +47,7 @@ async function main() {
   const me = await tg.getMe();
   const topicsEnabled = me.has_topics_enabled === true;
   console.log(`[opencodegram] bot: @${me.username ?? me.first_name} (id ${me.id}) topics=${topicsEnabled}`);
+  await tg.deleteMyCommands().catch(() => {});
   await tg.setMyCommands([
     { command: "start", description: "Welcome and control panel" },
     { command: "help", description: "Show help and panel" },

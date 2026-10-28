@@ -136,6 +136,10 @@ export class TelegramClient {
     return this.call<boolean>("setMyCommands", { commands });
   }
 
+  deleteMyCommands(): Promise<boolean> {
+    return this.call<boolean>("deleteMyCommands", {});
+  }
+
   getFile(fileId: string): Promise<{ file_id: string; file_unique_id: string; file_size?: number; file_path?: string }> {
     return this.call("getFile", { file_id: fileId });
   }
