@@ -1122,6 +1122,25 @@ async function main() {
           s = getActiveSession(chatId, replyThread) ?? sessionsByChat.get(chatId)!;
         }
         const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
+        // Auto-switch to a vision-capable model if needed.
+        if (msg.photo || msg.video) {
+          try {
+            const res = await oc.client.model.list();
+            const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+            const current = list.find((m: any) => m.id === s.model?.id && m.providerID === s.model?.providerID);
+            const supportsImage = Array.isArray(current?.capabilities?.input) && current.capabilities.input.includes("image");
+            if (!supportsImage) {
+              const visionModel = list.find((m: any) => Array.isArray(m.capabilities?.input) && m.capabilities.input.includes("image"));
+              if (visionModel) {
+                await oc.switchModel(s.sessionId, { id: visionModel.id, providerID: visionModel.providerID, variant: visionModel.variants?.[0]?.id });
+                s.model = { id: visionModel.id, providerID: visionModel.providerID, variant: visionModel.variants?.[0]?.id };
+                await send(`Switched to vision model: <code>${esc(visionModel.providerID)}/${esc(visionModel.id)}</code>`);
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
         try {
           lastChatBySession.set(s.sessionId, chatId);
           await oc.prompt(s.sessionId, text, mediaToAttach);
