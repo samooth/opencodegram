@@ -37,6 +37,7 @@ type ChatSession = {
 };
 
 let lastActiveChatId: number | undefined;
+const lastPromptBySession = new Map<string, string>();
 
 async function main() {
   const config = loadConfig();
