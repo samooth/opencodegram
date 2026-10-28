@@ -127,7 +127,7 @@ async function main() {
     }
   };
 
-  async function createNewSession(chatId: number): Promise<void> {
+  async function createNewSession(chatId: number, silent = false): Promise<void> {
     const old = sessionsByChat.get(chatId);
     sessionsByChat.delete(chatId);
     const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
@@ -156,7 +156,9 @@ async function main() {
       }
     }
     sessionsByChat.set(chatId, cs);
-    await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
+    if (!silent) {
+      await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
+    }
   }
 
   async function activateSession(chatId: number, sessionId: string): Promise<void> {
@@ -617,7 +619,7 @@ async function main() {
         }
         if (cbData === "panel:new") {
           await tg.answerCallbackQuery(cq.id, "Creating…");
-          await createNewSession(chatId);
+          await createNewSession(chatId, false);
           await sendPanel(chatId);
           continue;
         }
@@ -832,7 +834,7 @@ async function main() {
       if (mediaToAttach.length) {
         let s = await ensureActiveSession(chatId, replyThread);
         if (!s) {
-          await createNewSession(chatId);
+          await createNewSession(chatId, true);
           s = getActiveSession(chatId, replyThread) ?? sessionsByChat.get(chatId)!;
         }
         const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
@@ -869,7 +871,7 @@ async function main() {
       }
 
       if (text === "/new") {
-        await createNewSession(chatId);
+        await createNewSession(chatId, false);
         continue;
       }
 
@@ -1213,7 +1215,7 @@ async function main() {
       // Create or reuse session
       let s = await ensureActiveSession(chatId, replyThread);
       if (!s) {
-        await createNewSession(chatId);
+        await createNewSession(chatId, true);
         s = (await ensureActiveSession(chatId, replyThread))!;
       }
 
