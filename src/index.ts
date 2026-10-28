@@ -739,7 +739,7 @@ async function main() {
         continue;
       }
 
-      if (text === "/status") {
+      if (text === "/status" || text === "/session") {
         await sendPanel(chatId, replyThread);
         continue;
       }
@@ -988,7 +988,7 @@ async function main() {
       }
 
       const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
-      const known = new Set(["start", "help", "status", "new", "stop", "abort", "commands"]);
+      const known = new Set(["start", "help", "status", "session", "sessions", "new", "stop", "abort", "commands", "models", "fork", "rename", "archive", "unarchive", "delete", "diff", "context", "compact"]);
       if (slash && !known.has(slash[1])) {
         const name = slash[1];
         const args = (slash[2] ?? "").trim();
