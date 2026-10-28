@@ -85,6 +85,34 @@ export class OpenCodeBridge {
     return this.client.session.switchModel({ sessionID: sessionId, model });
   }
 
+  async forkSession(sessionId: string) {
+    return this.client.session.fork({ sessionID: sessionId });
+  }
+
+  async renameSession(sessionId: string, title: string) {
+    return this.client.session.update({ sessionID: sessionId, title });
+  }
+
+  async archiveSession(sessionId: string, archived: boolean) {
+    return this.client.session.update({ sessionID: sessionId, archived });
+  }
+
+  async deleteSession(sessionId: string) {
+    return this.client.session.remove({ sessionID: sessionId });
+  }
+
+  async compactSession(sessionId: string) {
+    return this.client.session.compact({ sessionID: sessionId });
+  }
+
+  async context(sessionId: string) {
+    return this.client.session.context({ sessionID: sessionId });
+  }
+
+  async diff(sessionId: string) {
+    return this.client.session.diff({ sessionID: sessionId });
+  }
+
   async interrupt(sessionId: string) {
     return this.client.session.interrupt({ sessionID: sessionId });
   }

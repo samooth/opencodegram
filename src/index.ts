@@ -39,6 +39,14 @@ async function main() {
     { command: "new", description: "Create a new session" },
     { command: "models", description: "List and switch models" },
     { command: "commands", description: "List OpenCode commands" },
+    { command: "fork", description: "Fork the active session" },
+    { command: "rename", description: "Rename the active session" },
+    { command: "archive", description: "Archive the active session" },
+    { command: "unarchive", description: "Unarchive the active session" },
+    { command: "delete", description: "Delete the active session" },
+    { command: "diff", description: "Show session diff" },
+    { command: "context", description: "Show session context" },
+    { command: "compact", description: "Compact session history" },
     { command: "stop", description: "Stop the active turn" },
   ]).catch((err) => console.error("[commands]", err));
   const info = await oc.serverInfo();
@@ -656,6 +664,125 @@ async function main() {
 
       if (text === "/models") {
         await showModels(chatId, 0);
+        continue;
+      }
+
+      if (text === "/fork") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          const forked = await oc.forkSession(s.sessionId);
+          const newId = (forked as any)?.id ?? (forked as any)?.sessionID ?? (forked as any)?.data?.id;
+          await activateSession(chatId, newId);
+          await send(`Forked session.\n<code>${esc(s.sessionId)}</code> → <code>${esc(newId)}</code>`);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text.startsWith("/rename ")) {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        const title = text.slice(8).trim();
+        if (!title) { await send("usage: /rename <title>"); continue; }
+        try {
+          await oc.renameSession(s.sessionId, title);
+          await send(`Renamed session to <b>${esc(title)}</b>.`);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/archive") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          await oc.archiveSession(s.sessionId, true);
+          await send("Session archived.");
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/unarchive") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          await oc.archiveSession(s.sessionId, false);
+          await send("Session unarchived.");
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/delete") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        // Simple confirmation via text; buttons would be better but keep simple.
+        await send(`Delete session <code>${esc(s.sessionId)}</code>? Reply /delete confirm to proceed.`);
+        continue;
+      }
+
+      if (text === "/delete confirm") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          await oc.deleteSession(s.sessionId);
+          sessionsByChat.delete(chatId);
+          await send("Session deleted.");
+          await sendPanel(chatId);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/diff") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          const diffs = await oc.diff(s.sessionId);
+          if (!diffs.length) { await send("No changes."); continue; }
+          const rows = diffs.map((d: any) => `<tr><td><code>${esc(d.path ?? d.file ?? "")}</code></td><td>+${d.additions ?? 0}/-${d.deletions ?? 0}</td></tr>`).join("");
+          await send(`<b>Diff</b>\n<table><tr><th>File</th><th>Changes</th></tr>${rows}</table>`);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/context") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          const ctx = await oc.context(s.sessionId);
+          const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
+          if (!items.length) { await send("No context."); continue; }
+          const lines = items.slice(-10).map((m: any) => {
+            const role = m.role ?? m.type ?? "msg";
+            const text = (m.text ?? m.content ?? "").toString().slice(0, 200);
+            return `<b>${esc(role)}</b>: ${esc(text)}`;
+          });
+          await send(`<b>Context (last ${lines.length})</b>\n\n${lines.join("\n\n")}`);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/compact") {
+        const s = sessionsByChat.get(chatId);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          await oc.compactSession(s.sessionId);
+          await send("Session compacted.");
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
         continue;
       }
 
