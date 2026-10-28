@@ -109,7 +109,7 @@ async function main() {
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "";
       return `${start + i + 1}. <b>${title}</b>\n   <code>${esc(s.id)}</code>${model ? " · " + model : ""}`;
     });
-    const keyboard: any[][] = slice.map((_: any, i: number) => [{ text: `Open ${i + 1}`, callback_data: `use:${i}` }]);
+    const keyboard: any[][] = slice.map((s: any, i: number) => [{ text: `Open ${i + 1}`, callback_data: `use:${s.id}` }]);
     const nav: any[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
@@ -387,16 +387,15 @@ async function main() {
           }
           continue;
         }
-        const useMatch = cbData.match(/^use:(\d+)$/);
+        const useMatch = cbData.match(/^use:(.+)$/);
         if (useMatch) {
-          const idx = parseInt(useMatch[1], 10);
-          const ids = sessionListByChat.get(chatId) ?? [];
-          const sessionId = ids[idx];
-          if (sessionId) {
-            await tg.answerCallbackQuery(cq.id, "Switching…");
+          const sessionId = useMatch[1];
+          await tg.answerCallbackQuery(cq.id, "Switching…");
+          try {
             await activateSession(chatId, sessionId);
-          } else {
-            await tg.answerCallbackQuery(cq.id, "Session not found");
+          } catch (err) {
+            await tg.answerCallbackQuery(cq.id, "Failed");
+            await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
           }
           continue;
         }
