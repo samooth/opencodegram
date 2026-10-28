@@ -109,7 +109,12 @@ async function main() {
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "";
       return `${start + i + 1}. <b>${title}</b>\n   <code>${esc(s.id)}</code>${model ? " · " + model : ""}`;
     });
-    const keyboard: any[][] = slice.map((s: any, i: number) => [{ text: `Open ${i + 1}`, callback_data: `use:${s.id}` }]);
+    const keyboard: any[][] = slice.map((s: any, i: number) => {
+      const title = (s.title ?? "(untitled)").slice(0, 40);
+      const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
+      const label = `${start + i + 1}. ${title}${model}`.slice(0, 64);
+      return [{ text: label, callback_data: `use:${s.id}` }];
+    });
     const nav: any[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
@@ -187,7 +192,7 @@ async function main() {
     if (!s) return;
     s.timer = undefined;
     try {
-      await tg.sendRichMessageDraft(chatId, s.draftId, esc(s.buffer || "…"), { can_stop: true, ...(s.threadId ? { message_thread_id: s.threadId } : {}) });
+      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.threadId ? { message_thread_id: s.threadId } : {}) });
     } catch (err) {
       console.error("[draft]", err);
     }
@@ -239,7 +244,7 @@ async function main() {
           }
           if (!s.stopped) {
             await flushDraft(chatId);
-            await tg.sendRichMessage(chatId, `<pre>${esc(s.buffer || "(empty response)")}</pre>`, s.threadId ? { message_thread_id: s.threadId } : {});
+            await tg.sendRichMessageMarkdown(chatId, s.buffer || "(empty response)", s.threadId ? { message_thread_id: s.threadId } : {});
           }
           s.buffer = "";
         }

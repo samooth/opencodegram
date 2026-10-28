@@ -72,12 +72,20 @@ export class TelegramClient {
     return this.call<TelegramMessage>("sendRichMessage", { chat_id: chatId, rich_message: { html }, ...opts });
   }
 
+  sendRichMessageMarkdown(chatId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
+    return this.call<TelegramMessage>("sendRichMessage", { chat_id: chatId, rich_message: { markdown }, ...opts });
+  }
+
   sendMessageDraft(chatId: number, draftId: number, text: string, opts: Record<string, unknown> = {}): Promise<boolean> {
     return this.call<boolean>("sendMessageDraft", { chat_id: chatId, draft_id: draftId, text, ...opts });
   }
 
   sendRichMessageDraft(chatId: number, draftId: number, html: string, opts: Record<string, unknown> = {}): Promise<boolean> {
     return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { html }, ...opts });
+  }
+
+  sendRichMessageDraftMarkdown(chatId: number, draftId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<boolean> {
+    return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { markdown }, ...opts });
   }
 
   editMessageText(chatId: number, messageId: number, text: string, opts: Record<string, unknown> = {}): Promise<unknown> {
