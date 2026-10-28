@@ -1513,6 +1513,7 @@ async function main() {
         lastActiveChatId = chatId;
         (globalThis as any).__lastActiveChatId = chatId;
         lastChatBySession.set(s.sessionId, chatId);
+        console.log("[prompt] set lastChatBySession size=", lastChatBySession.size, "global=", (globalThis as any).__lastActiveChatId);
         lastPromptBySession.set(s.sessionId, text);
         console.log("[prompt] sending to session", s.sessionId, "chat", chatId);
         await startStatus(chatId, s);
