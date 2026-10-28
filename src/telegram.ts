@@ -15,7 +15,13 @@ export interface TelegramMessage {
   message_thread_id?: number;
   from?: { id: number; username?: string };
   text?: string;
+  caption?: string;
   date: number;
+  photo?: Array<{ file_id: string; file_unique_id: string; width: number; height: number }>;
+  document?: { file_id: string; file_unique_id: string; file_name?: string };
+  audio?: { file_id: string; file_unique_id: string; file_name?: string };
+  voice?: { file_id: string; file_unique_id: string };
+  video?: { file_id: string; file_unique_id: string; file_name?: string };
 }
 
 export interface TelegramCallbackQuery {
@@ -98,5 +104,9 @@ export class TelegramClient {
 
   createForumTopic(chatId: number, name: string): Promise<{ message_thread_id: number; name: string }> {
     return this.call("createForumTopic", { chat_id: chatId, name });
+  }
+
+  getFile(fileId: string): Promise<{ file_id: string; file_unique_id: string; file_size?: number; file_path?: string }> {
+    return this.call("getFile", { file_id: fileId });
   }
 }

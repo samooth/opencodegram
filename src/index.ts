@@ -1,4 +1,6 @@
 import { loadConfig } from "./config.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 
@@ -457,8 +459,7 @@ async function main() {
       }
 
       const msg = u.message;
-      if (!msg?.text) continue;
-      console.log("[telegram] message from", msg.from?.id, msg.chat.id, JSON.stringify(msg.text.slice(0, 80)));
+      if (!msg) continue;
       const userId = msg.from?.id;
       if (config.ADMIN_TELEGRAM_USER_ID && userId !== config.ADMIN_TELEGRAM_USER_ID) {
         await tg.sendRichMessage(msg.chat.id, "Not authorized.");
@@ -466,6 +467,59 @@ async function main() {
       }
 
       const chatId = msg.chat.id;
+      console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
+
+      // Multimedia handling
+      const mediaToAttach: Array<{ uri: string; name: string }> = [];
+      const downloadOne = async (fileId: string, suggestedName: string) => {
+        const info = await tg.getFile(fileId);
+        if (!info.file_path) throw new Error("Telegram did not return a file path");
+        const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${info.file_path}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`download failed: ${res.status}`);
+        const buf = Buffer.from(await res.arrayBuffer());
+        const dir = join("/tmp/opencode/attachments", String(chatId));
+        await mkdir(dir, { recursive: true });
+        const name = suggestedName || info.file_path.split("/").pop() || `${fileId}.bin`;
+        const path = join(dir, name);
+        await writeFile(path, buf);
+        return { uri: `file://${path}`, name };
+      };
+
+      if (Array.isArray(msg.photo) && msg.photo.length) {
+        const largest = msg.photo[msg.photo.length - 1];
+        mediaToAttach.push(await downloadOne(largest.file_id, `photo_${largest.file_unique_id}.jpg`));
+      }
+      if (msg.document) {
+        mediaToAttach.push(await downloadOne(msg.document.file_id, msg.document.file_name ?? `document_${msg.document.file_unique_id}`));
+      }
+      if (msg.audio) {
+        mediaToAttach.push(await downloadOne(msg.audio.file_id, msg.audio.file_name ?? `audio_${msg.audio.file_unique_id}.mp3`));
+      }
+      if (msg.voice) {
+        mediaToAttach.push(await downloadOne(msg.voice.file_id, `voice_${msg.voice.file_unique_id}.ogg`));
+      }
+      if (msg.video) {
+        mediaToAttach.push(await downloadOne(msg.video.file_id, msg.video.file_name ?? `video_${msg.video.file_unique_id}.mp4`));
+      }
+
+      if (mediaToAttach.length) {
+        let s = sessionsByChat.get(chatId);
+        if (!s) {
+          await createNewSession(chatId);
+          s = sessionsByChat.get(chatId)!;
+        }
+        const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
+        try {
+          await oc.prompt(s.sessionId, text, mediaToAttach);
+          await tg.sendRichMessage(chatId, `📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.threadId ? { message_thread_id: s.threadId } : {});
+        } catch (err) {
+          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, s.threadId ? { message_thread_id: s.threadId } : {});
+        }
+        continue;
+      }
+
+      if (!msg.text) continue;
       const text = msg.text.trim();
 
       if (text === "/start" || text === "/help") {

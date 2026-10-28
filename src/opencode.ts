@@ -77,8 +77,8 @@ export class OpenCodeBridge {
     return undefined;
   }
 
-  async prompt(sessionId: string, text: string) {
-    return this.client.session.prompt({ sessionID: sessionId, text });
+  async prompt(sessionId: string, text: string, files?: Array<{ uri: string; name?: string }>) {
+    return this.client.session.prompt({ sessionID: sessionId, text, files });
   }
 
   async switchModel(sessionId: string, model: { id: string; providerID: string; variant?: string }) {
