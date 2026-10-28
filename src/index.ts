@@ -19,6 +19,7 @@ type ChatSession = {
   buffer: string;
   reasoningBuffer: string;
   toolCalls: string[];
+  toolCallDetails: Array<{ id: string; name: string; input?: string; output?: string; status?: string }>;
   timer?: ReturnType<typeof setTimeout>;
   typingTimer?: ReturnType<typeof setInterval>;
   statusTimer?: ReturnType<typeof setTimeout>;
@@ -160,7 +161,7 @@ async function main() {
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const title = (session as any)?.title ?? "Telegram session";
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false };
     if (topicsEnabled) {
       try {
         const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
@@ -184,7 +185,7 @@ async function main() {
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const old = sessionsByChat.get(chatId);
     // (no-op: sessionsByChat is keyed by chatId)
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false };
     if (topicsEnabled) {
       if (threadBySession.has(sessionId)) {
         cs.threadId = threadBySession.get(sessionId);
@@ -458,6 +459,7 @@ async function main() {
           s.buffer = "";
           s.reasoningBuffer = "";
           s.toolCalls = [];
+          s.toolCallDetails = [];
           s.draftId = Math.floor(Math.random() * 2147483647) + 1;
           s.stopped = false;
           if (s.typingTimer) clearInterval(s.typingTimer);
@@ -496,6 +498,57 @@ async function main() {
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
           if (e.data?.name) s.toolCalls.push(e.data.name);
+          const id = e.data?.id ?? String(s.toolCallDetails.length);
+          s.toolCallDetails.push({ id, name: e.data?.name ?? "tool", status: "running" });
+          updateStatus(chatId, s, true).catch(() => {});
+        }
+
+        if (e.type === "session.tool.called") {
+          const sessionId = e.data?.sessionID;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
+          if (chatId === undefined) continue;
+          const s = _s0 ?? sessionsByChat.get(chatId);
+          if (!s) continue;
+          const id = e.data?.id;
+          const detail = s.toolCallDetails.find((d) => d.id === id);
+          if (detail) {
+            const input = e.data?.input;
+            detail.input = typeof input === "string" ? input : JSON.stringify(input ?? "");
+          }
+          updateStatus(chatId, s, true).catch(() => {});
+        }
+
+        if (e.type === "session.tool.success") {
+          const sessionId = e.data?.sessionID;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
+          if (chatId === undefined) continue;
+          const s = _s0 ?? sessionsByChat.get(chatId);
+          if (!s) continue;
+          const id = e.data?.id;
+          const detail = s.toolCallDetails.find((d) => d.id === id);
+          if (detail) {
+            detail.status = "success";
+            const out = e.data?.content;
+            detail.output = typeof out === "string" ? out : JSON.stringify(out ?? "").slice(0, 500);
+          }
+          updateStatus(chatId, s, true).catch(() => {});
+        }
+
+        if (e.type === "session.tool.failed") {
+          const sessionId = e.data?.sessionID;
+          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined);
+          if (chatId === undefined) continue;
+          const s = _s0 ?? sessionsByChat.get(chatId);
+          if (!s) continue;
+          const id = e.data?.id;
+          const detail = s.toolCallDetails.find((d) => d.id === id);
+          if (detail) {
+            detail.status = "failed";
+            detail.output = e.data?.error?.message ?? "failed";
+          }
           updateStatus(chatId, s, true).catch(() => {});
         }
 
@@ -545,7 +598,16 @@ async function main() {
             await flushDraft(chatId);
             if (s.reasoningBuffer.trim()) {
               const r = s.reasoningBuffer.trim().slice(0, 3500);
-              await tg.sendRichMessage(chatId, `<details><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
+              await tg.sendRichMessage(chatId, `<details open><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
+            }
+            if (s.toolCallDetails.length) {
+              const details = s.toolCallDetails.map((d) => {
+                const input = d.input ? `\nInput: ${esc(d.input.slice(0, 500))}` : "";
+                const output = d.output ? `\nOutput: ${esc(d.output.slice(0, 500))}` : "";
+                const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
+                return `<details><summary>${status} <b>${esc(d.name)}</b></summary>\n<pre>${input}${output}</pre>\n</details>`;
+              }).join("\n");
+              await tg.sendRichMessage(chatId, `<b>Tool calls</b>\n${details}`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
             }
             let finalText = s.buffer || "(empty response)";
             if (s.promptStartTime && s.lastOutputTokens) {
