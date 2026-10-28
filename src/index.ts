@@ -1336,6 +1336,9 @@ async function main() {
         if (!title) { await send("usage: /rename <title>"); continue; }
         try {
           await oc.renameSession(s.sessionId, title);
+          if (s.threadId && chatId > 0) {
+            await tg.editForumTopic(chatId, s.threadId, title.slice(0, 120)).catch(() => {});
+          }
           await send(`Renamed session to <b>${esc(title)}</b>.`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);

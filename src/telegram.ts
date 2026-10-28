@@ -124,6 +124,10 @@ export class TelegramClient {
     return this.call("createForumTopic", { chat_id: chatId, name });
   }
 
+  editForumTopic(chatId: number, messageThreadId: number, name: string): Promise<boolean> {
+    return this.call<boolean>("editForumTopic", { chat_id: chatId, message_thread_id: messageThreadId, name });
+  }
+
   setMessageReaction(chatId: number, messageId: number, emoji: string): Promise<boolean> {
     return this.call<boolean>("setMessageReaction", { chat_id: chatId, message_id: messageId, reaction: [{ type: "emoji", emoji }] });
   }
