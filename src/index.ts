@@ -878,7 +878,6 @@ async function main() {
           const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
           if (!items.length) { await send("No context."); continue; }
           const sliced = items.slice(-10);
-          const sliced = items.slice(-10);
           await send(`<b>Context (last ${sliced.length})</b>`);
           for (const m of sliced) {
             const role = m.role ?? m.type ?? "msg";
