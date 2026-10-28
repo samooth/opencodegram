@@ -115,7 +115,7 @@ async function main() {
           const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
-            await tg.sendMessage(chatId, `❌ ${msg}`);
+            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}`);
           }
         }
 
@@ -123,7 +123,7 @@ async function main() {
           const sessionId = e.data?.sessionID;
           const chatId = sessionId ? chatBySession.get(sessionId) : undefined;
           if (chatId !== undefined) {
-            await tg.sendMessage(chatId, "✓ session idle");
+            await tg.sendRichMessage(chatId, "✓ session idle");
           }
         }
       }
@@ -158,7 +158,7 @@ async function main() {
               s.timer = undefined;
             }
             await oc.interrupt(s.sessionId);
-            await tg.sendMessage(chatId, "⏹ stopped");
+            await tg.sendRichMessage(chatId, "⏹ stopped");
           }
         }
         continue;
@@ -196,7 +196,7 @@ async function main() {
       console.log("[telegram] message from", msg.from?.id, msg.chat.id, JSON.stringify(msg.text.slice(0, 80)));
       const userId = msg.from?.id;
       if (config.ADMIN_TELEGRAM_USER_ID && userId !== config.ADMIN_TELEGRAM_USER_ID) {
-        await tg.sendMessage(msg.chat.id, "Not authorized.");
+        await tg.sendRichMessage(msg.chat.id, "Not authorized.");
         continue;
       }
 
@@ -204,18 +204,18 @@ async function main() {
       const text = msg.text.trim();
 
       if (text === "/start") {
-        await tg.sendMessage(chatId, "opencodegram ready. Send a prompt to create a session. Commands: /help /status /new");
+        await tg.sendRichMessage(chatId, "opencodegram ready. Send a prompt to create a session. Commands: /help /status /new");
         continue;
       }
 
       if (text === "/help") {
-        await tg.sendMessage(chatId, "Send any text to prompt the active session. /status shows the active session. /new creates a new session. Other /commands are forwarded to OpenCode.");
+        await tg.sendRichMessage(chatId, "Send any text to prompt the active session. /status shows the active session. /new creates a new session. Other /commands are forwarded to OpenCode.");
         continue;
       }
 
       if (text === "/status") {
         const s = sessionsByChat.get(chatId);
-        await tg.sendMessage(chatId, s ? `active session: ${s.sessionId}\ndir: ${s.directory}` : "no active session");
+        await tg.sendRichMessage(chatId, s ? `active session: ${s.sessionId}\ndir: ${s.directory}` : "no active session");
         continue;
       }
 
@@ -223,21 +223,21 @@ async function main() {
         const old = sessionsByChat.get(chatId);
         if (old) chatBySession.delete(old.sessionId);
         sessionsByChat.delete(chatId);
-        await tg.sendMessage(chatId, "cleared active session; next message creates a new one.");
+        await tg.sendRichMessage(chatId, "cleared active session; next message creates a new one.");
         continue;
       }
 
       if (text === "/stop" || text === "/abort") {
         const s = sessionsByChat.get(chatId);
         if (!s) {
-          await tg.sendMessage(chatId, "no active session");
+          await tg.sendRichMessage(chatId, "no active session");
           continue;
         }
         try {
           await oc.interrupt(s.sessionId);
-          await tg.sendMessage(chatId, "⏹ stopped");
+          await tg.sendRichMessage(chatId, "⏹ stopped");
         } catch (err) {
-          await tg.sendMessage(chatId, `❌ ${String(err)}`);
+          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
         }
         continue;
       }
@@ -247,11 +247,11 @@ async function main() {
         const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
         const cmds = await oc.listCommands(directory);
         if (!cmds.length) {
-          await tg.sendMessage(chatId, "no commands available");
+          await tg.sendRichMessage(chatId, "no commands available");
           continue;
         }
         const lines = cmds.map((c: any) => `/${c.name}${c.description ? " — " + c.description : ""}`);
-        await tg.sendMessage(chatId, "OpenCode commands:\n" + lines.join("\n"));
+        await tg.sendRichMessage(chatId, "OpenCode commands:\n" + lines.map(esc).join("\n"));
         continue;
       }
 
@@ -280,27 +280,27 @@ async function main() {
           if (!cursor || !all) break;
         }
         if (!lines.length) {
-          await tg.sendMessage(chatId, "no sessions found.");
+          await tg.sendRichMessage(chatId, "no sessions found.");
           continue;
         }
         // Send in chunks to respect Telegram's 4096-char limit.
         let chunk = "";
         for (const line of lines) {
           if (chunk.length + line.length + 2 > 3800) {
-            await tg.sendMessage(chatId, chunk);
+            await tg.sendRichMessage(chatId, chunk);
             chunk = "";
           }
           chunk += (chunk ? "\n\n" : "") + line;
         }
-        if (chunk) await tg.sendMessage(chatId, chunk);
-        await tg.sendMessage(chatId, `listed ${count} session(s). Use /use <session_id> to switch.`);
+        if (chunk) await tg.sendRichMessage(chatId, chunk);
+        await tg.sendRichMessage(chatId, `listed ${count} session(s). Use <code>/use &lt;session_id&gt;</code> to switch.`);
         continue;
       }
 
       if (text.startsWith("/use ")) {
         const sessionId = text.slice(5).trim();
         if (!sessionId) {
-          await tg.sendMessage(chatId, "usage: /use <session_id>");
+          await tg.sendRichMessage(chatId, "usage: /use <session_id>");
           continue;
         }
         try {
@@ -313,9 +313,9 @@ async function main() {
           const cs: ChatSession = { sessionId, directory, draftId: 0, buffer: "", stopped: false };
           sessionsByChat.set(chatId, cs);
           chatBySession.set(sessionId, chatId);
-          await tg.sendMessage(chatId, `active session: ${sessionId}\nmodel: ${model ? model.providerID + "/" + model.id : "default"}\ndir: ${directory ?? "n/a"}`);
+          await tg.sendRichMessage(chatId, `active session: ${sessionId}\nmodel: ${model ? model.providerID + "/" + model.id : "default"}\ndir: ${directory ?? "n/a"}`);
         } catch (err) {
-          await tg.sendMessage(chatId, `failed to switch: ${err instanceof Error ? err.message : String(err)}`);
+          await tg.sendRichMessage(chatId, `failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
         }
         continue;
       }
@@ -350,9 +350,9 @@ async function main() {
         const args = (slash[2] ?? "").trim();
         try {
           await oc.runCommand(s.sessionId, name, args);
-          await tg.sendMessage(chatId, `ran /${name}`);
+          await tg.sendRichMessage(chatId, `ran /${name}`);
         } catch (err) {
-          await tg.sendMessage(chatId, `❌ ${String(err)}`);
+          await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
         }
         continue;
       }

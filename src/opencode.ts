@@ -51,6 +51,19 @@ export class OpenCodeBridge {
     }
   }
 
+  async listCommands(directory?: string) {
+    try {
+      const res = await this.client.command.list(directory ? { location: { directory } } as any : undefined);
+      return (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    } catch {
+      return [];
+    }
+  }
+
+  async runCommand(sessionId: string, name: string, args: string) {
+    return this.client.session.command({ sessionID: sessionId, name, text: args });
+  }
+
   async defaultModel(directory?: string) {
     try {
       const res = await this.client.model.default(directory ? { location: { directory } } : undefined);
