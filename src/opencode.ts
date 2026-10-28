@@ -81,23 +81,6 @@ export class OpenCodeBridge {
     return this.client.session.prompt({ sessionID: sessionId, text });
   }
 
-  async listCommands(directory?: string) {
-    try {
-      const res = await this.client.command.list(directory ? { location: { directory } } : undefined);
-      return (res as any)?.data ?? (Array.isArray(res) ? res : []);
-    } catch {
-      return [];
-    }
-  }
-
-  async runCommand(sessionId: string, name: string, text = "") {
-    return this.client.session.command({
-      sessionID: sessionId,
-      name,
-      text,
-    });
-  }
-
   async interrupt(sessionId: string) {
     return this.client.session.interrupt({ sessionID: sessionId });
   }
