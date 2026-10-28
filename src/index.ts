@@ -17,6 +17,7 @@ type ChatSession = {
   model?: { id: string; providerID: string; variant?: string };
   draftId: number;
   buffer: string;
+  reasoningBuffer: string;
   timer?: ReturnType<typeof setTimeout>;
   stopped: boolean;
   threadId?: number;
@@ -144,7 +145,7 @@ async function main() {
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const title = (session as any)?.title ?? "Telegram session";
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", stopped: false };
     if (topicsEnabled) {
       try {
         const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
@@ -168,7 +169,7 @@ async function main() {
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const old = sessionsByChat.get(chatId);
     // (no-op: sessionsByChat is keyed by chatId)
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", stopped: false };
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", stopped: false };
     if (topicsEnabled) {
       if (threadBySession.has(sessionId)) {
         cs.threadId = threadBySession.get(sessionId);
@@ -391,8 +392,27 @@ async function main() {
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
           s.buffer = "";
+          s.reasoningBuffer = "";
           s.draftId = Math.floor(Math.random() * 2147483647) + 1;
           s.stopped = false;
+        }
+
+        if (e.type === "session.reasoning.started") {
+          const sessionId = e.data?.sessionID;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          if (chatId === undefined) continue;
+          const s = sessionsByChat.get(chatId);
+          if (!s) continue;
+          s.reasoningBuffer = "";
+        }
+
+        if (e.type === "session.reasoning.delta") {
+          const sessionId = e.data?.sessionID;
+          const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          if (chatId === undefined) continue;
+          const s = sessionsByChat.get(chatId);
+          if (!s) continue;
+          s.reasoningBuffer += e.data?.delta ?? "";
         }
 
         if (e.type === "session.text.delta") {
@@ -411,6 +431,7 @@ async function main() {
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
           const chatId = sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined;
+          console.log("[event] text.ended session=", sessionId, "chat=", chatId, "hasSession=", !!sessionsByChat.get(chatId ?? -1));
           if (chatId === undefined) continue;
           const s = sessionsByChat.get(chatId);
           if (!s) continue;
@@ -420,7 +441,11 @@ async function main() {
           }
           if (!s.stopped) {
             await flushDraft(chatId);
-            await tg.sendRichMessageMarkdown(chatId, s.buffer || "(empty response)", s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+            if (s.reasoningBuffer.trim()) {
+              const r = s.reasoningBuffer.trim().slice(0, 3500);
+              await tg.sendRichMessage(chatId, `<details><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`, s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
+            }
+            await tg.sendRichMessageMarkdown(chatId, s.buffer || "(empty response)", s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}).catch((err) => console.error("[send]", err));
           }
           s.buffer = "";
         }
