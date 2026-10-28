@@ -877,17 +877,28 @@ async function main() {
           const ctx = await oc.context(s.sessionId);
           const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
           if (!items.length) { await send("No context."); continue; }
-          const sliced = items.slice(-10);
-          await send(`<b>Context (last ${sliced.length})</b>`);
-          for (const m of sliced) {
+          const sliced = items.slice(-8);
+          const summaries = sliced.map((m: any) => {
             const role = m.role ?? m.type ?? "msg";
-            const text = (m.text ?? m.content ?? m.payload?.text ?? (Array.isArray(m.parts) ? m.parts.map((p: any) => p.text ?? "").join("") : "") ?? "").toString().slice(0, 3000);
-            if (text.length < 200) {
-              await send(`<b>${esc(role)}</b>: ${esc(text)}`);
+            let text = "";
+            if (role === "user") {
+              text = m.text ?? "";
+            } else if (role === "assistant") {
+              const parts = Array.isArray(m.content) ? m.content : [];
+              const texts = parts.filter((p: any) => p.type === "text").map((p: any) => p.text ?? "");
+              const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool");
+              text = texts.join(" ").trim();
+              if (!text && tools.length) text = `🔧 ${tools.join(", ")}`;
+            } else if (role === "compaction") {
+              text = (m.summary ?? "").toString().split("\n")[0].slice(0, 120);
             } else {
-              await send(`<details><summary><b>${esc(role)}</b>: ${esc(text.slice(0, 80))}…</summary>\n<pre>${esc(text)}</pre>\n</details>`);
+              text = "";
             }
-          }
+            text = text.replace(/\s+/g, " ").trim().slice(0, 200);
+            const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : role === "compaction" ? "📦" : "•";
+            return `${icon} <b>${esc(role)}</b>: ${esc(text || "(no text)")}`;
+          }).filter(Boolean);
+          await send(`<b>Context (last ${summaries.length})</b>\n\n${summaries.join("\n")}`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
