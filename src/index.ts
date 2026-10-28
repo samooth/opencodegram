@@ -448,7 +448,22 @@ async function main() {
   const finishStatus = async (chatId: number, s: ChatSession) => {
     if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
     if (s.statusMessageId) {
-      await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
+      const threadOpts = s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+      const lines: string[] = ["✅ <b>Done</b>"];
+      if (s.reasoningBuffer.trim()) {
+        const r = s.reasoningBuffer.trim().slice(0, 3500);
+        lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
+      }
+      if (s.toolCallDetails.length) {
+        const details = s.toolCallDetails.map((d) => {
+          const input = d.input ? "Input: " + esc(d.input.slice(0, 500)) : "";
+          const output = d.output ? "Output: " + esc(d.output.slice(0, 500)) : "";
+          const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
+          return status + " " + esc(d.name) + (input ? "\n" + input : "") + (output ? "\n" + output : "");
+        }).join("\n\n");
+        lines.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+      }
+      await tg.editRichMessage(chatId, s.statusMessageId, lines.join("\n"), threadOpts).catch(() => {});
       s.statusMessageId = undefined;
     }
   };
@@ -656,19 +671,7 @@ async function main() {
             const fullContent = parts.join("\n\n");
             const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
             console.log("[send] final to chat=", chatId, "len=", fullContent.length);
-            if (s.statusMessageId) {
-              try {
-                await tg.editRichMessageMarkdown(chatId, s.statusMessageId!, fullContent, threadOpts);
-                s.statusMessageId = undefined;
-              } catch (err) {
-                console.error("[edit final]", err);
-                await tg.deleteMessage(chatId, s.statusMessageId!).catch(() => {});
-                s.statusMessageId = undefined;
-                await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err2) => console.error("[send final]", err2));
-              }
-            } else {
-              await tg.sendRichMessageMarkdown(chatId, fullContent, threadOpts).catch((err) => console.error("[send final]", err));
-            }
+            await tg.sendRichMessageMarkdown(chatId, finalText, threadOpts).catch((err) => console.error("[send final]", err));
           }
           s.buffer = "";
         }
