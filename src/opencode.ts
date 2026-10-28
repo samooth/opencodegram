@@ -85,6 +85,15 @@ export class OpenCodeBridge {
     return this.client.session.switchModel({ sessionID: sessionId, model });
   }
 
+  async switchAgent(sessionId: string, agent: string) {
+    return this.client.session.switchAgent({ sessionID: sessionId, agent });
+  }
+
+  async listAgents(directory?: string) {
+    const res = await this.client.agent.list(directory ? { location: { directory } } as any : undefined);
+    return (res as any)?.data ?? (Array.isArray(res) ? res : []);
+  }
+
   async forkSession(sessionId: string) {
     return this.client.session.fork({ sessionID: sessionId });
   }

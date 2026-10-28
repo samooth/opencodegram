@@ -40,6 +40,8 @@ async function main() {
     { command: "use", description: "Switch to a session by ID" },
     { command: "new", description: "Create a new session" },
     { command: "models", description: "List and switch models" },
+    { command: "agents", description: "List and switch agents" },
+    { command: "usage", description: "Show usage and cost stats" },
     { command: "commands", description: "List OpenCode commands" },
     { command: "fork", description: "Fork the active session" },
     { command: "rename", description: "Rename the active session" },
@@ -58,6 +60,15 @@ async function main() {
   const findChatBySession = (sessionId: string): number | undefined => {
     for (const [cid, s] of sessionsByChat) if (s.sessionId === sessionId) return cid;
     return undefined;
+  };
+  const audit = (action: string, detail: string) => {
+    try {
+      mkdirSync(join(process.cwd(), "data"), { recursive: true });
+      const line = `${new Date().toISOString()} ${action} ${detail}\n`;
+      writeFileSync(join(process.cwd(), "data", "audit.log"), line, { flag: "a" });
+    } catch {
+      // ignore
+    }
   };
   const getActiveSession = (chatId: number, threadId?: number): ChatSession | undefined => {
     if (threadId) {
@@ -637,6 +648,25 @@ async function main() {
           }
           continue;
         }
+        const agentMatch = cbData.match(/^agent:(.+)$/);
+        if (agentMatch) {
+          const name = agentMatch[1];
+          const s = await ensureActiveSession(chatId, cq.message?.message_thread_id);
+          if (!s) { await tg.answerCallbackQuery(cq.id, "No active session"); continue; }
+          await tg.answerCallbackQuery(cq.id, `Switching to ${name}…`);
+          try {
+            await oc.switchAgent(s.sessionId, name);
+            if (cq.message?.message_id) {
+              await tg.editRichMessage(chatId, cq.message.message_id, `✅ Agent switched to <b>${esc(name)}</b>`, { reply_markup: { inline_keyboard: [[{ text: "🏠 Panel", callback_data: "panel:home" }]] } });
+            } else {
+              await send(`Agent switched to ${esc(name)}`);
+            }
+          } catch (err) {
+            await send(`❌ ${esc(String(err))}`);
+          }
+          continue;
+        }
+
         const cmdMatch = cbData.match(/^cmd:(.+)$/);
         if (cmdMatch) {
           const name = cmdMatch[1];
@@ -672,6 +702,7 @@ async function main() {
       console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
       tg.setMessageReaction(chatId, msg.message_id, "👀").catch(() => {});
       tg.sendChatAction(chatId, "typing", replyThread).catch(() => {});
+      audit("message", `${userId} ${chatId}: ${(msg.text ?? msg.caption ?? "").slice(0, 120)}`);
 
       // If we are awaiting a rejection reason, handle it.
       if (msg.text && awaitingReason.has(chatId)) {
@@ -792,6 +823,37 @@ async function main() {
 
       if (text === "/models") {
         await showModels(chatId, 0);
+        continue;
+      }
+
+      if (text === "/agents") {
+        const s = await ensureActiveSession(chatId, replyThread);
+        if (!s) { await send("no active session."); continue; }
+        const directory = s.directory ?? config.OPENCODE_DIRECTORY;
+        const agents = await oc.listAgents(directory);
+        if (!agents.length) { await send("no agents available."); continue; }
+        const lines = agents.map((a: any) => `• <b>${esc(a.name ?? a.id)}</b>${a.description ? " — " + esc(a.description) : ""}`);
+        const keyboard = agents.map((a: any) => [{ text: a.name ?? a.id, callback_data: `agent:${a.id}` }]);
+        keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+        await send(`<b>Agents</b>\n\n${lines.join("\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+        continue;
+      }
+
+      if (text === "/usage") {
+        try {
+          const stats = await oc.client.session.stats();
+          const data = (stats as any)?.data ?? stats;
+          const msg = [
+            `<b>Usage</b>`,
+            `Sessions: ${data.sessions ?? 0} · Prompts: ${data.prompts ?? 0} · Steps: ${data.steps ?? 0}`,
+            `Tokens: in ${(data.tokens?.input ?? 0).toLocaleString()} · out ${(data.tokens?.output ?? 0).toLocaleString()} · reasoning ${(data.tokens?.reasoning ?? 0).toLocaleString()}`,
+            `Cost: ${(data.cost ?? 0).toFixed(4)}`,
+            `Tools: ${data.tools?.totals?.calls ?? 0} calls (${data.tools?.totals?.succeeded ?? 0} ok, ${data.tools?.totals?.failed ?? 0} failed)`,
+          ].join("\n");
+          await send(msg);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
         continue;
       }
 
