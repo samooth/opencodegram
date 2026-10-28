@@ -30,6 +30,7 @@ type ChatSession = {
   lastTyping?: number;
   statusMessageId?: number;
   statusLastUpdate?: number;
+  statusEditing?: boolean;
   promptStartTime?: number;
   lastOutputTokens?: number;
 };
@@ -408,8 +409,10 @@ async function main() {
 
   const updateStatus = async (chatId: number, s: ChatSession, force = false) => {
     if (!s.statusMessageId) return;
+    if (s.statusEditing) return;
     const now = Date.now();
-    if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 2000) return;
+    if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 4000) return;
+    s.statusEditing = true;
     s.statusLastUpdate = now;
     const threadOpts = s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {};
     const lines: string[] = ["⏳ <b>Working…</b>"];
@@ -428,6 +431,8 @@ async function main() {
       await tg.editRichMessage(chatId, s.statusMessageId, lines.join("\n"), { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
     } catch (err) {
       console.error("[status]", err);
+    } finally {
+      s.statusEditing = false;
     }
   };
 
