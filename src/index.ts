@@ -88,6 +88,19 @@ async function main() {
     for (const s of sessionsByChat.values()) if (s.sessionId === sessionId) return s;
     return undefined;
   };
+
+  const resolveChatId = (sessionId: string | undefined): number | undefined => {
+    if (!sessionId) return undefined;
+    const s = findSessionById(sessionId);
+    return s?.targetChatId ?? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId);
+  };
+
+  const threadOptsFor = (s: ChatSession | undefined, chatId: number): Record<string, unknown> => {
+    if (!s) return {};
+    if (s.targetThreadId && chatId > 0) return { message_thread_id: s.targetThreadId };
+    if (s.threadId && chatId > 0) return { message_thread_id: s.threadId };
+    return {};
+  };
   const audit = (action: string, detail: string) => {
     try {
       mkdirSync(join(process.cwd(), "data"), { recursive: true });
@@ -446,14 +459,14 @@ async function main() {
     // Drafts are only available in private chats.
     if (chatId < 0) return;
     try {
-      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {})) });
+      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...(threadOptsFor(s, chatId)) });
     } catch (err) {
       console.error("[draft]", err);
     }
   };
 
   const startStatus = async (chatId: number, s: ChatSession) => {
-    const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+    const threadOpts = threadOptsFor(s, chatId);
     try {
       const sent = await tg.sendRichMessage(chatId, "⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>", { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
       s.statusMessageId = sent.message_id;
@@ -470,7 +483,7 @@ async function main() {
     if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 4000) return;
     s.statusEditing = true;
     s.statusLastUpdate = now;
-    const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+    const threadOpts = threadOptsFor(s, chatId);
     const lines: string[] = ["⏳ <b>Working…</b>"];
     if (s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(0, 300);
@@ -503,7 +516,7 @@ async function main() {
   const finishStatus = async (chatId: number, s: ChatSession) => {
     if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
     if (s.statusMessageId) {
-      const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+      const threadOpts = threadOptsFor(s, chatId);
       const lines: string[] = ["✅ <b>Done</b>"];
       if (s.reasoningBuffer.trim()) {
         const r = s.reasoningBuffer.trim().slice(0, 3500);
@@ -537,7 +550,7 @@ async function main() {
         if (e.type === "session.text.started") {
           const sessionId = e.data?.sessionID ?? e.data?.session?.id;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -557,7 +570,7 @@ async function main() {
         if (e.type === "session.reasoning.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -567,7 +580,7 @@ async function main() {
         if (e.type === "session.reasoning.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -578,7 +591,7 @@ async function main() {
         if (e.type === "session.tool.input.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -591,7 +604,7 @@ async function main() {
         if (e.type === "session.tool.called") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -607,7 +620,7 @@ async function main() {
         if (e.type === "session.tool.success") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -624,7 +637,7 @@ async function main() {
         if (e.type === "session.tool.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -640,7 +653,7 @@ async function main() {
         if (e.type === "session.text.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -654,7 +667,7 @@ async function main() {
         if (e.type === "session.step.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -665,7 +678,7 @@ async function main() {
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           // debug removed
           // debug removed
 
@@ -735,7 +748,7 @@ async function main() {
             }
             parts.push(finalText);
             const fullContent = parts.join("\n\n");
-            const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+            const threadOpts = threadOptsFor(s, chatId);
             // Send thinking and tool calls as separate messages (persist).
             if (s.reasoningBuffer.trim()) {
               const r = s.reasoningBuffer.trim().slice(0, 3500);
@@ -761,7 +774,7 @@ async function main() {
           const requestId = p.id;
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId === undefined || !requestId || !sessionId) continue;
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
@@ -804,7 +817,7 @@ async function main() {
           const p = e.data ?? {};
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             const title = p.title ?? "Form";
@@ -830,7 +843,7 @@ async function main() {
         if (e.type === "session.execution.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
@@ -870,7 +883,7 @@ async function main() {
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             await tg.sendRichMessage(chatId, "✓ session idle", threadId && chatId > 0 ? { message_thread_id: threadId } : {});
@@ -1235,9 +1248,9 @@ async function main() {
         try {
           lastChatBySession.set(s.sessionId, chatId);
           await oc.prompt(s.sessionId, text, mediaToAttach);
-          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
+          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, threadOptsFor(s, chatId));
         } catch (err) {
-          await send(`❌ ${esc(String(err))}`, s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
+          await send(`❌ ${esc(String(err))}`, threadOptsFor(s, chatId));
         }
         continue;
       }
@@ -1277,7 +1290,7 @@ async function main() {
         }
         try {
           await oc.interrupt(s.sessionId);
-          await send("⏹ stopped", s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {}));
+          await send("⏹ stopped", threadOptsFor(s, chatId));
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
