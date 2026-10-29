@@ -125,6 +125,7 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
     }
     if (s.statusMessageId) {
       const previousCot = s.cotBuffer?.trim() ?? "";
+      console.log("[status] finish reasoningLen=", s.reasoningBuffer.trim().length, "cotLen=", previousCot.length, "stopped=", s.stopped, "tools=", s.toolCallDetails.length, "statusMsg=", s.statusMessageId);
       const lines: string[] = [];
       if (previousCot) {
         const cot = previousCot.slice(-3500);
