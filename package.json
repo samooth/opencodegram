@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "doctor": "bun run src/doctor.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p ."
   },

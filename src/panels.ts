@@ -90,6 +90,9 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/agents", "List and switch agents"],
       ["/commands", "List OpenCode commands"],
       ["/file <path>", "Send a local file as a document"],
+      ["/ls [path] [-a]", "Browse a directory with buttons"],
+      ["/find <text> [-a]", "Search files"],
+      ["/read <path> [line]", "Preview a text file"],
       ["/usage", "Show usage and cost stats"],
       ["/vcs", "Show VCS status"],
       ["/worktrees", "List worktrees"],
@@ -198,10 +201,9 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     ].filter(Boolean).join("");
     const text = `<b>OpenCodegram</b>\n\n<table>${rows}</table>`;
     const keyboard = [
-      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }],
-      [{ text: "➕ New", callback_data: "panel:new" }, { text: "⚡ Commands", callback_data: "panel:commands" }],
-      [{ text: "📊 Status", callback_data: "panel:status" }, { text: "⏹ Stop", callback_data: "panel:stop" }],
-      [{ text: "❓ Help", callback_data: "panel:help" }],
+      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }, { text: "📁 Files", callback_data: "panel:files" }],
+      [{ text: "➕ New", callback_data: "panel:new" }, { text: "⚡ Commands", callback_data: "panel:commands" }, { text: "📊 Status", callback_data: "panel:status" }],
+      [{ text: "⏹ Stop", callback_data: "panel:stop" }, { text: "❓ Help", callback_data: "panel:help" }],
     ];
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }

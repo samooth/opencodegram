@@ -1,14 +1,49 @@
-import { realpath, stat } from "node:fs/promises";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
+import { fileErrorMessage, formatBytes, prepareDocument } from "./files.js";
 import { esc, threadOpts } from "./util.js";
 
 /**
  * Slash commands that do not prompt the model. Returns true when the text was
  * fully handled; false means the caller should send it as a prompt.
  */
+export const KNOWN_COMMANDS = new Set([
+  "start",
+  "help",
+  "status",
+  "session",
+  "sessions",
+  "new",
+  "stop",
+  "abort",
+  "commands",
+  "file",
+  "ls",
+  "find",
+  "read",
+  "model",
+  "models",
+  "agent",
+  "agents",
+  "fork",
+  "rename",
+  "archive",
+  "unarchive",
+  "delete",
+  "diff",
+  "context",
+  "compact",
+  "vcs",
+  "worktrees",
+  "usage",
+  "forms",
+  "formreply",
+  "sync",
+  "use",
+]);
+
 export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
-  const { config, tg, oc, panels, sessions } = deps;
+  const { config, tg, oc, panels, sessions, files } = deps;
   const { restoreActiveSession, activateSession } = sessions;
   const { sendPanel, showCommands, showModels, showSessions } = panels;
 
@@ -64,29 +99,57 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     const s = await restoreActiveSession(chatId, threadId);
     const base = resolve(s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd());
-    const target = isAbsolute(rawPath) ? resolve(rawPath) : resolve(base, rawPath);
     try {
-      // Resolve symlinks so a link inside the project cannot leak outside files.
-      const baseReal = await realpath(base);
-      const targetReal = await realpath(target);
-      const rel = relative(baseReal, targetReal);
-      if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
-        await send("❌ File is outside the session directory.");
-        return true;
-      }
-      const st = await stat(targetReal);
-      if (!st.isFile()) {
-        await send("❌ That path is not a file.");
-        return true;
-      }
-      if (st.size > 45 * 1024 * 1024) {
-        await send("❌ File too large (Telegram limit is 50 MB).");
-        return true;
-      }
-      const name = basename(targetReal);
-      await tg.sendDocument(chatId, targetReal, name, `<b>${esc(name)}</b>\n<code>${esc(targetReal)}</code>\n${(st.size / 1024).toFixed(1)} KB`, threadOpts(threadId));
+      // prepareDocument resolves symlinks and confines the real path to base.
+      const doc = await prepareDocument(base, rawPath);
+      await tg.sendDocument(
+        chatId,
+        doc.absolute,
+        doc.name,
+        `<b>${esc(doc.name)}</b>\n<code>${esc(doc.relative || doc.name)}</code>\n${formatBytes(doc.size)}`,
+        threadOpts(threadId),
+      );
     } catch (err) {
-      await send(`❌ ${esc(String(err))}`);
+      await send(`❌ ${esc(fileErrorMessage(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/ls" || text.startsWith("/ls ")) {
+    const { path, hidden } = parseListArgs(text.slice(3).trim());
+    try {
+      await files.showListing(chatId, threadId, path, { hidden });
+    } catch (err) {
+      await send(`❌ ${esc(fileErrorMessage(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/find" || text.startsWith("/find ")) {
+    const { query, hidden } = parseFindArgs(text.slice(5).trim());
+    if (!query) {
+      await send("usage: /find <text> [-a]");
+      return true;
+    }
+    try {
+      await files.showFind(chatId, threadId, query, { hidden });
+    } catch (err) {
+      await send(`❌ ${esc(fileErrorMessage(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/read" || text.startsWith("/read ")) {
+    const raw = text.slice(5).trim();
+    if (!raw) {
+      await send("usage: /read <path> [start_line]");
+      return true;
+    }
+    const { path, startLine } = parseReadArgs(raw);
+    try {
+      await files.showFile(chatId, threadId, path, { startLine });
+    } catch (err) {
+      await send(`❌ ${esc(fileErrorMessage(err))}`);
     }
     return true;
   }
@@ -561,4 +624,34 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
   }
 
   return false;
+}
+
+function stripHiddenFlag(raw: string): { rest: string; hidden: boolean } {
+  let hidden = false;
+  const kept: string[] = [];
+  for (const part of raw.split(/\s+/).filter(Boolean)) {
+    if (part === "-a" || part === "--all") hidden = true;
+    else kept.push(part);
+  }
+  return { rest: kept.join(" "), hidden };
+}
+
+function parseListArgs(raw: string): { path: string; hidden: boolean } {
+  const { rest, hidden } = stripHiddenFlag(raw);
+  return { path: rest, hidden };
+}
+
+function parseFindArgs(raw: string): { query: string; hidden: boolean } {
+  const { rest, hidden } = stripHiddenFlag(raw);
+  return { query: rest, hidden };
+}
+
+function parseReadArgs(raw: string): { path: string; startLine: number } {
+  // `/read <path> [start_line]`; only the last numeric token is a line number.
+  const match = raw.match(/^(.*?)\s+(\d+)$/s);
+  if (match && match[1].trim()) {
+    const line = parseInt(match[2], 10);
+    if (Number.isFinite(line) && line > 0) return { path: match[1].trim(), startLine: line };
+  }
+  return { path: raw.trim(), startLine: 1 };
 }

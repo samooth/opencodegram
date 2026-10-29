@@ -2,8 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BotDeps } from "./context.js";
 import type { TelegramMessage } from "./telegram.js";
-import { handleCommand } from "./commands.js";
-import { esc, threadOpts } from "./util.js";
+import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
+import { esc, normalizeCommandText, parseSlashCommand, threadOpts } from "./util.js";
 
 /**
  * A text/media message from Telegram: gate it, download attachments, handle
@@ -151,9 +151,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
 
   if (!msg.text) return;
   let text = (msg.text ?? msg.caption ?? "").trim();
-  text = text.replace(/^\/([a-zA-Z0-9_-]+)@\w+/, "/$1");
-  // Strip bot mentions anywhere in the text (group usage)
-  if (me.username) text = text.replace(new RegExp("@" + me.username, "gi"), "").trim();
+  text = normalizeCommandText(text, me.username);
 
   if (await handleCommand(deps, chatId, replyThread, text, send)) return;
 
@@ -168,37 +166,10 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     return;
   }
 
-  const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
-  const known = new Set([
-    "start",
-    "help",
-    "status",
-    "session",
-    "sessions",
-    "new",
-    "stop",
-    "abort",
-    "commands",
-    "file",
-    "model",
-    "models",
-    "agent",
-    "agents",
-    "fork",
-    "rename",
-    "archive",
-    "unarchive",
-    "delete",
-    "diff",
-    "context",
-    "compact",
-    "vcs",
-    "worktrees",
-    "usage",
-  ]);
-  if (slash && !known.has(slash[1])) {
-    const name = slash[1];
-    const args = (slash[2] ?? "").trim();
+  const slash = parseSlashCommand(text);
+  if (slash && !KNOWN_COMMANDS.has(slash.name)) {
+    const name = slash.name;
+    const args = slash.args;
     try {
       await oc.runCommand(s.sessionId, name, args);
       await send(`ran /${name}`);

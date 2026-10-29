@@ -17,6 +17,8 @@
 | `status.ts` | Status card lifecycle, drafts, thinking, tools, Stop |
 | `events.ts` | OpenCode event stream → Telegram |
 | `panels.ts` | Panel, sessions, models and commands views |
+| `files.ts` | Safe path resolution, listing, search, text preview and documents |
+| `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
 | `callbacks.ts` | Inline buttons and permission decisions |
 | `commands.ts` | Slash commands |
 | `messages.ts` | Access control, media download, prompts |
@@ -34,6 +36,28 @@
 - Only prompts and media use `ensureActiveSession`, which may create a session.
 - Replacing a session retires the previous one: stop the turn, remove its Stop
   button and clear its routing entries.
+
+## File access
+
+- Every path from Telegram is resolved with `realpath` before use.
+- The real target must remain inside the active session directory; `..`,
+  absolute paths and symlinks that escape are rejected.
+- `/file` is capped at 45 MB. `/read` reads at most 160 KB and 160 lines, and
+  binary files must be downloaded with `/file`.
+- The browser cache is keyed by Telegram `message_id`, so buttons on old
+  listings keep working without storing paths in callback data.
+
+## Tests
+
+`bun test` runs the Bun suite in `tests/`:
+
+- `store.test.ts` — route/tab isolation, persistence and retirement.
+- `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.
+- `filebrowser.test.ts` — listing, navigation, preview, search and expiry.
+- `commands.test.ts` — command dispatch, usage and safe `/file`.
+- `util.test.ts` — `:15` retry timing, mention normalization and parsing.
+
+`bun run typecheck` checks `src/` with `tsc --noEmit`.
 
 ## Turn lifecycle
 

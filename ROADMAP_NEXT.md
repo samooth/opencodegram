@@ -10,6 +10,10 @@
 - Permission approvals, including reject-with-reason.
 - Multimedia ingestion (photo/document/audio/voice/video) with vision auto-switch.
 - Outbound documents via `sendDocument` and `/file`.
+- Safe file browser: `/ls`, `/find`, `/read`, inline navigation, pagination,
+  hidden-file toggle, symlink confinement and text preview limits.
+- Automated Bun tests for routing/tab isolation, path guard, `/file`, file
+  browser, rate-limit retry and command parsing (`bun test`).
 - `/vcs` status, `/worktrees` listing, `/forms` + `/formreply`.
 - `/sync` history replay, `/context`, `/usage`, `/diff`, `/compact`.
 - Rate-limit retry at `:15` of the next hour.
@@ -17,24 +21,21 @@
 
 ## Next
 
-1. **Automated tests** – Bun tests for routing, tab isolation, path guard,
-   rate-limit retry and command parsing; smoke test with a fake OpenCode server.
-2. **File browser & artifacts** – `/ls`, `/find`, `/read`, `/zip`, artifact
-   delivery after a turn, safe path confinement and pagination.
-3. **MCP status** – list servers, connect/disconnect, show resources and read
+1. **Artifacts & archives** – `/zip` for directories, artifact delivery after a
+   turn, and cleanup of oversized previews.
+2. **MCP status** – list servers, connect/disconnect, show resources and read
    them from Telegram.
-4. **Voice notes** – transcribe locally (whisper.cpp or available CLI) and prompt
+3. **Voice notes** – transcribe locally (whisper.cpp or available CLI) and prompt
    the active session with the transcript.
-5. **Worktrees management** – create/remove/switch worktrees, not just list.
-6. **VCS actions** – switch branch, stage/unstage, commit with confirmation.
-7. **Webhook mode** – optional production mode with secret validation; keep
+4. **Worktrees management** – create/remove/switch worktrees, not just list.
+5. **VCS actions** – switch branch, stage/unstage, commit with confirmation.
+6. **Webhook mode** – optional production mode with secret validation; keep
    long polling as the default.
-8. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
-9. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
-10. **Operations** – health endpoint, metrics, log rotation, disk guard.
+7. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
+8. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
+9. **Operations** – health endpoint, metrics, log rotation, disk guard.
 
 ## Suggested order
 
-Ship **tests + file browser** first: they protect the session routing we just
-stabilized and make every later feature easier to verify. Then MCP, voice and
-the remaining control actions.
+Tests and the file browser are shipped. Next, add artifacts/`/zip` (reuses the
+same path guard), then MCP, voice and the remaining control actions.

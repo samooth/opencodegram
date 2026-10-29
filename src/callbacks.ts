@@ -1,4 +1,5 @@
 import type { BotDeps } from "./context.js";
+import { fileErrorMessage } from "./files.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { esc, threadOpts } from "./util.js";
 
@@ -68,6 +69,9 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const cbData = cq.data ?? "";
   const threadId = cq.message?.message_thread_id;
 
+  // File browser callbacks are namespaced with `fs:`.
+  if (await deps.files.handleCallback(cq)) return;
+
   if (cbData === "panel:home" || cbData === "panel:status" || cbData === "panel:help") {
     await tg.answerCallbackQuery(cq.id);
     await sendPanel(chatId, threadId);
@@ -87,6 +91,15 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   if (cbData === "panel:commands") {
     await tg.answerCallbackQuery(cq.id);
     await showCommands(chatId, threadId);
+    return;
+  }
+  if (cbData === "panel:files") {
+    await tg.answerCallbackQuery(cq.id);
+    try {
+      await deps.files.showListing(chatId, threadId, "", { messageId: cq.message?.message_id });
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(fileErrorMessage(err))}`, threadOpts(threadId));
+    }
     return;
   }
   if (cbData === "panel:models") {

@@ -6,6 +6,7 @@ import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 import { SessionStore } from "./store.js";
 import { createStatusManager } from "./status.js";
 import { createPanels } from "./panels.js";
+import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
 import { startEventLoop } from "./events.js";
 import { startPolling } from "./updates.js";
@@ -27,6 +28,9 @@ const BOT_COMMANDS = [
   { command: "formreply", description: "Reply to a form" },
   { command: "commands", description: "List OpenCode commands" },
   { command: "file", description: "Send a local file as a document" },
+  { command: "ls", description: "Browse a directory with buttons" },
+  { command: "find", description: "Search files in the session directory" },
+  { command: "read", description: "Preview a text file" },
   { command: "fork", description: "Fork the active session" },
   { command: "rename", description: "Rename the active session" },
   { command: "archive", description: "Archive the active session" },
@@ -78,6 +82,11 @@ async function main() {
     modelListByChat,
     routeKey: store.routeKey,
   });
+  const files = createFileBrowser({
+    tg,
+    config,
+    getActiveSession: store.getActiveSession,
+  });
 
   const audit = (action: string, detail: string) => {
     try {
@@ -99,6 +108,7 @@ async function main() {
     sessions,
     status,
     panels,
+    files,
     pendingPermissions: new Map(),
     awaitingReason: new Map(),
     modelListByChat,

@@ -15,6 +15,32 @@ export function threadOpts(threadId?: number): Record<string, unknown> {
   return threadId ? { message_thread_id: threadId } : {};
 }
 
+export type ParsedSlashCommand = {
+  name: string;
+  args: string;
+};
+
+/** Strip `/cmd@bot` and `@bot` mentions while preserving the rest of the text. */
+export function normalizeCommandText(text: string, botUsername?: string): string {
+  let normalized = text.trim();
+  normalized = normalized.replace(/^\/([a-zA-Z0-9_-]+)@\w+/, "/$1");
+  if (botUsername) {
+    normalized = normalized.replace(new RegExp("@" + escapeRegExp(botUsername), "gi"), "").trim();
+  }
+  return normalized;
+}
+
+/** Parse a leading slash command. Returns null for plain prompts. */
+export function parseSlashCommand(text: string): ParsedSlashCommand | null {
+  const match = text.trim().match(/^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  return { name: match[1].toLowerCase(), args: (match[2] ?? "").trim() };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Rate limits recover at :15 of the next hour. If we are already past that
  * mark, wait for the following hour.

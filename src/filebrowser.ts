@@ -1,0 +1,463 @@
+import { basename, join } from "node:path";
+import type { Config } from "./config.js";
+import {
+  fileErrorMessage,
+  findFiles,
+  formatBytes,
+  listDirectory,
+  readTextFile,
+  type FileEntry,
+  type ReadResult,
+} from "./files.js";
+import type { TelegramCallbackQuery, TelegramClient } from "./telegram.js";
+import type { ChatSession } from "./types.js";
+import { esc, threadOpts } from "./util.js";
+
+export type FileBrowserDeps = {
+  tg: TelegramClient;
+  config: Config;
+  getActiveSession: (chatId: number, threadId?: number) => ChatSession | undefined;
+};
+
+type ListingView = {
+  kind: "listing";
+  chatId: number;
+  threadId?: number;
+  base: string;
+  dir: string;
+  hidden: boolean;
+  entries: FileEntry[];
+  page: number;
+  total: number;
+  truncated: boolean;
+};
+
+type FindView = {
+  kind: "find";
+  chatId: number;
+  threadId?: number;
+  base: string;
+  query: string;
+  hidden: boolean;
+  entries: FileEntry[];
+  page: number;
+  scanned: number;
+  truncated: boolean;
+};
+
+type FileView = {
+  kind: "file";
+  chatId: number;
+  threadId?: number;
+  base: string;
+  path: string;
+  read: ReadResult;
+  back?: BrowseView;
+};
+
+type BrowseView = ListingView | FindView;
+type View = BrowseView | FileView;
+
+const PAGE_SIZE = 12;
+const MAX_CACHED_VIEWS = 120;
+
+export type FileBrowser = ReturnType<typeof createFileBrowser>;
+
+export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserDeps) {
+  // Buttons reference indexes into the listing attached to their own message.
+  // Keying by message_id keeps old messages functional when a new /ls arrives.
+  const views = new Map<number, View>();
+
+  function baseFor(chatId: number, threadId?: number): string {
+    const session = getActiveSession(chatId, threadId);
+    return session?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+  }
+
+  function remember(messageId: number, view: View): void {
+    views.set(messageId, view);
+    while (views.size > MAX_CACHED_VIEWS) {
+      const oldest = views.keys().next().value;
+      if (oldest === undefined) break;
+      views.delete(oldest);
+    }
+  }
+
+  async function sendOrEdit(
+    chatId: number,
+    threadId: number | undefined,
+    messageId: number | undefined,
+    html: string,
+    keyboard: Array<Array<{ text: string; callback_data: string }>>,
+  ): Promise<number | undefined> {
+    const opts = { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } };
+    if (messageId) {
+      try {
+        await tg.editRichMessage(chatId, messageId, html, opts);
+        return messageId;
+      } catch (err) {
+        console.error("[files] edit failed", err);
+      }
+    }
+    try {
+      const sent = await tg.sendRichMessage(chatId, html, opts);
+      return sent?.message_id;
+    } catch (err) {
+      console.error("[files] send failed", err);
+      return undefined;
+    }
+  }
+
+  async function render(view: View, messageId?: number): Promise<number | undefined> {
+    const html = view.kind === "file" ? renderFile(view) : view.kind === "find" ? renderFind(view) : renderListing(view);
+    const keyboard = view.kind === "file" ? fileKeyboard(view) : view.kind === "find" ? findKeyboard(view) : listingKeyboard(view);
+    const id = await sendOrEdit(view.chatId, view.threadId, messageId, html, keyboard);
+    if (id !== undefined) remember(id, view);
+    return id;
+  }
+
+  async function showListing(
+    chatId: number,
+    threadId: number | undefined,
+    path = "",
+    options: { hidden?: boolean; page?: number; messageId?: number } = {},
+  ): Promise<void> {
+    const base = baseFor(chatId, threadId);
+    const hidden = options.hidden ?? false;
+    const listing = await listDirectory(base, path, { includeHidden: hidden });
+    const page = clampPage(options.page ?? 0, listing.total);
+    const view: ListingView = {
+      kind: "listing",
+      chatId,
+      threadId,
+      base: listing.base,
+      dir: listing.path,
+      hidden,
+      entries: listing.entries,
+      page,
+      total: listing.total,
+      truncated: listing.truncated,
+    };
+    await render(view, options.messageId);
+  }
+
+  async function showFind(
+    chatId: number,
+    threadId: number | undefined,
+    query: string,
+    options: { hidden?: boolean; page?: number; messageId?: number } = {},
+  ): Promise<void> {
+    const base = baseFor(chatId, threadId);
+    const hidden = options.hidden ?? false;
+    const found = await findFiles(base, query, { includeHidden: hidden, limit: 100 });
+    const page = clampPage(options.page ?? 0, found.entries.length);
+    const view: FindView = {
+      kind: "find",
+      chatId,
+      threadId,
+      base: found.base,
+      query: query.trim(),
+      hidden,
+      entries: found.entries,
+      page,
+      scanned: found.scanned,
+      truncated: found.truncated,
+    };
+    await render(view, options.messageId);
+  }
+
+  async function showFile(
+    chatId: number,
+    threadId: number | undefined,
+    path: string,
+    options: { startLine?: number; messageId?: number; back?: BrowseView } = {},
+  ): Promise<void> {
+    const base = baseFor(chatId, threadId);
+    const read = await readTextFile(base, path, { startLine: options.startLine ?? 1, maxLines: 160 });
+    const view: FileView = {
+      kind: "file",
+      chatId,
+      threadId,
+      base: read.base,
+      path: read.relative,
+      read,
+      back: options.back,
+    };
+    await render(view, options.messageId);
+  }
+
+  function renderListing(view: ListingView): string {
+    const start = view.page * PAGE_SIZE;
+    const slice = view.entries.slice(start, start + PAGE_SIZE);
+    const absolute = view.dir ? join(view.base, view.dir) : view.base;
+    const rows = slice
+      .map((entry) => {
+        const size = entry.type === "directory" ? "—" : entry.type === "symlink" ? "external" : formatBytes(entry.size);
+        return `<tr><td>${entryIcon(entry)}</td><td><b>${esc(truncateText(entry.name, 80))}</b></td><td>${size}</td><td>${formatDate(entry.mtime)}</td></tr>`;
+      })
+      .join("");
+    const table = slice.length
+      ? `<table><tr><th>Type</th><th>Name</th><th>Size</th><th>Modified</th></tr>${rows}</table>`
+      : "<i>(empty directory)</i>";
+    const meta = [
+      `${view.total} entries`,
+      view.hidden ? "hidden visible" : "",
+      view.truncated ? "listing truncated" : "",
+      view.total > PAGE_SIZE ? `page ${view.page + 1}/${Math.ceil(view.total / PAGE_SIZE)}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<b>📂 ${esc(view.dir || ".")}</b>\n<code>${esc(absolute)}</code>\n<i>${esc(meta)}</i>\n\n${table}`;
+  }
+
+  function listingKeyboard(view: ListingView): Array<Array<{ text: string; callback_data: string }>> {
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    const start = view.page * PAGE_SIZE;
+    const slice = view.entries.slice(start, start + PAGE_SIZE);
+    slice.forEach((entry, index) => {
+      const label = `${entryIcon(entry)} ${entry.name}`.slice(0, 60);
+      keyboard.push([{ text: label, callback_data: `fs:e:${start + index}` }]);
+    });
+
+    const nav: Array<{ text: string; callback_data: string }> = [];
+    if (view.page > 0) nav.push({ text: "◀ Prev", callback_data: `fs:p:${view.page - 1}` });
+    if (start + PAGE_SIZE < view.total) nav.push({ text: "Next ▶", callback_data: `fs:p:${view.page + 1}` });
+    if (nav.length) keyboard.push(nav);
+
+    const actions: Array<{ text: string; callback_data: string }> = [];
+    if (view.dir) actions.push({ text: "⬆ Up", callback_data: "fs:u" });
+    if (view.dir) actions.push({ text: "📂 Root", callback_data: "fs:r" });
+    actions.push({ text: "🏠 Panel", callback_data: "panel:home" });
+    keyboard.push(actions);
+    return keyboard;
+  }
+
+  function renderFind(view: FindView): string {
+    const start = view.page * PAGE_SIZE;
+    const slice = view.entries.slice(start, start + PAGE_SIZE);
+    const rows = slice
+      .map((entry) => {
+        const size = entry.type === "directory" ? "—" : formatBytes(entry.size);
+        return `<tr><td>${entryIcon(entry)}</td><td><code>${esc(truncateText(entry.path, 100))}</code></td><td>${size}</td></tr>`;
+      })
+      .join("");
+    const table = slice.length
+      ? `<table><tr><th>Type</th><th>Path</th><th>Size</th></tr>${rows}</table>`
+      : "<i>no matches</i>";
+    const meta = [
+      `${view.entries.length} matches`,
+      `scanned ${view.scanned}`,
+      view.hidden ? "hidden visible" : "",
+      view.truncated ? "limited" : "",
+      view.entries.length > PAGE_SIZE ? `page ${view.page + 1}/${Math.ceil(view.entries.length / PAGE_SIZE)}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<b>🔎 ${esc(view.query)}</b>\n<code>${esc(view.base)}</code>\n<i>${esc(meta)}</i>\n\n${table}`;
+  }
+
+  function findKeyboard(view: FindView): Array<Array<{ text: string; callback_data: string }>> {
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    const start = view.page * PAGE_SIZE;
+    const slice = view.entries.slice(start, start + PAGE_SIZE);
+    slice.forEach((entry, index) => {
+      const label = `${entryIcon(entry)} ${entry.path}`.slice(0, 60);
+      keyboard.push([{ text: label, callback_data: `fs:e:${start + index}` }]);
+    });
+    const nav: Array<{ text: string; callback_data: string }> = [];
+    if (view.page > 0) nav.push({ text: "◀ Prev", callback_data: `fs:p:${view.page - 1}` });
+    if (start + PAGE_SIZE < view.entries.length) nav.push({ text: "Next ▶", callback_data: `fs:p:${view.page + 1}` });
+    if (nav.length) keyboard.push(nav);
+    keyboard.push([
+      { text: "📂 Browse root", callback_data: "fs:r" },
+      { text: "🏠 Panel", callback_data: "panel:home" },
+    ]);
+    return keyboard;
+  }
+
+  function renderFile(view: FileView): string {
+    const read = view.read;
+    const width = String(read.endLine).length;
+    const lines = read.text.split("\n");
+    const numbered = lines.map((line, index) => `${String(read.startLine + index).padStart(width, " ")} │ ${line}`).join("\n");
+    const preview = fitPreview(numbered, 3500);
+    const escapedPreview = escapeAndFit(preview, 3700);
+    const previewCut = preview !== numbered || escapedPreview !== esc(preview);
+    const meta = [
+      formatBytes(read.size),
+      `lines ${read.startLine}-${read.endLine}${read.totalLines !== undefined ? ` of ${read.totalLines}` : ""}`,
+      read.truncated || previewCut ? "preview truncated" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return [
+      `<b>📄 ${esc(basename(view.path) || view.path)}</b>`,
+      `<code>${esc(view.path || ".")}</code>`,
+      `<i>${esc(meta)}</i>`,
+      "",
+      `<pre><code>${escapedPreview || "(empty file)"}</code></pre>`,
+    ].join("\n");
+  }
+
+  function fileKeyboard(view: FileView): Array<Array<{ text: string; callback_data: string }>> {
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    if (view.back) {
+      keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
+    } else {
+      keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }]);
+    }
+    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    return keyboard;
+  }
+
+  async function openEntry(view: BrowseView, index: number, messageId: number, callbackId: string): Promise<void> {
+    const entry = view.entries[index];
+    if (!entry) {
+      await tg.answerCallbackQuery(callbackId, "Listing expired; run /ls again").catch(() => {});
+      return;
+    }
+    if (entry.external) {
+      await tg.answerCallbackQuery(callbackId, "This symlink points outside the session directory").catch(() => {});
+      return;
+    }
+    await tg.answerCallbackQuery(callbackId).catch(() => {});
+    if (entry.type === "directory") {
+      await showListing(view.chatId, view.threadId, entry.path, {
+        hidden: view.kind === "listing" ? view.hidden : false,
+        messageId,
+      });
+      return;
+    }
+    await showFile(view.chatId, view.threadId, entry.path, { messageId, back: view });
+  }
+
+  async function handleCallback(cq: TelegramCallbackQuery): Promise<boolean> {
+    const data = cq.data ?? "";
+    if (!data.startsWith("fs:")) return false;
+
+    const chatId = cq.message?.chat?.id;
+    if (!chatId) {
+      await tg.answerCallbackQuery(cq.id, "Missing chat").catch(() => {});
+      return true;
+    }
+    const threadId = cq.message?.message_thread_id;
+    const messageId = cq.message?.message_id;
+    const view = messageId !== undefined ? views.get(messageId) : undefined;
+
+    try {
+      if (data === "fs:r") {
+        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await showListing(chatId, threadId, "", { messageId });
+        return true;
+      }
+
+      if (data === "fs:u") {
+        if (!view) {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        if (view.kind === "file") {
+          if (!view.back) {
+            await tg.answerCallbackQuery(cq.id, "No previous listing").catch(() => {});
+            return true;
+          }
+          await tg.answerCallbackQuery(cq.id).catch(() => {});
+          await render(view.back, messageId);
+          return true;
+        }
+        if (view.kind === "find") {
+          await tg.answerCallbackQuery(cq.id).catch(() => {});
+          await showListing(chatId, threadId, "", { messageId, hidden: view.hidden });
+          return true;
+        }
+        if (!view.dir) {
+          await tg.answerCallbackQuery(cq.id, "Already at the root").catch(() => {});
+          return true;
+        }
+        const parent = parentPath(view.dir);
+        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await showListing(chatId, threadId, parent, { messageId, hidden: view.hidden });
+        return true;
+      }
+
+      const pageMatch = data.match(/^fs:p:(\d+)$/);
+      if (pageMatch) {
+        if (!view || view.kind === "file") {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        const page = clampPage(parseInt(pageMatch[1], 10), view.kind === "find" ? view.entries.length : view.total);
+        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await render({ ...view, page }, messageId);
+        return true;
+      }
+
+      const entryMatch = data.match(/^fs:e:(\d+)$/);
+      if (entryMatch) {
+        if (!view || view.kind === "file") {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        if (messageId === undefined) {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        await openEntry(view, parseInt(entryMatch[1], 10), messageId, cq.id);
+        return true;
+      }
+
+      await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+      return true;
+    } catch (err) {
+      console.error("[files] callback failed", err);
+      await tg.answerCallbackQuery(cq.id, truncateText(fileErrorMessage(err), 180)).catch(() => {});
+      await tg.sendRichMessage(chatId, `❌ ${esc(fileErrorMessage(err))}`, threadOpts(threadId)).catch(() => {});
+      return true;
+    }
+  }
+
+  return { showListing, showFind, showFile, handleCallback };
+}
+
+function entryIcon(entry: FileEntry): string {
+  if (entry.external) return "🔗";
+  if (entry.type === "directory") return "📁";
+  if (entry.type === "symlink") return "🔗";
+  return "📄";
+}
+
+function formatDate(ms: number): string {
+  if (!ms) return "—";
+  return new Date(ms).toISOString().slice(0, 16).replace("T", " ");
+}
+
+function clampPage(page: number, total: number): number {
+  const last = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  if (!Number.isFinite(page)) return 0;
+  return Math.max(0, Math.min(Math.floor(page), last));
+}
+
+function parentPath(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+function truncateText(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) + "…" : text;
+}
+
+function fitPreview(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max) + "\n…";
+}
+
+/** Escape a preview and truncate without cutting an HTML entity in half. */
+function escapeAndFit(text: string, max: number): string {
+  let out = "";
+  for (const char of text) {
+    const piece = esc(char);
+    if (out.length + piece.length > max) return out + "\n…";
+    out += piece;
+  }
+  return out;
+}

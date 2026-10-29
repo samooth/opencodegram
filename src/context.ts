@@ -1,4 +1,5 @@
 import type { Config } from "./config.js";
+import type { FileBrowser } from "./filebrowser.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { Panels } from "./panels.js";
 import type { SessionManager } from "./sessions.js";
@@ -28,6 +29,7 @@ export type BotDeps = {
   sessions: SessionManager;
   status: StatusManager;
   panels: Panels;
+  files: FileBrowser;
   pendingPermissions: Map<string, PermissionInfo>;
   awaitingReason: Map<string, string>;
   modelListByChat: Map<string, Array<any>>;
