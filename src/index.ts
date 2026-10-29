@@ -69,6 +69,7 @@ async function main() {
     { command: "delete", description: "Delete the active session" },
     { command: "diff", description: "Show session diff" },
     { command: "context", description: "Show session context" },
+    { command: "sync", description: "Sync session history to Telegram" },
     { command: "compact", description: "Compact session history" },
     { command: "stop", description: "Stop the active turn" },
   ]).catch((err) => console.error("[commands]", err));
@@ -1470,6 +1471,49 @@ async function main() {
           }
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
+        }
+        continue;
+      }
+
+      if (text === "/sync") {
+        const s = await ensureActiveSession(chatId, replyThread);
+        if (!s) { await send("no active session."); continue; }
+        try {
+          const ctx = await oc.context(s.sessionId);
+          const items = Array.isArray(ctx) ? ctx : (ctx as any)?.data ?? [];
+          const meaningful = items.filter((m: any) => {
+            const role = m.role ?? m.type;
+            return role === "user" || role === "assistant" || role === "compaction";
+          }).slice(-20);
+          if (!meaningful.length) { await send("No context to sync."); continue; }
+          await send("<b>Syncing " + meaningful.length + " messages…</b>");
+          for (const m of meaningful) {
+            const role = m.role ?? m.type ?? "msg";
+            let text = "";
+            if (role === "user") {
+              const t = m.text;
+              text = typeof t === "string" ? t : (t ? JSON.stringify(t) : "");
+            } else if (role === "assistant") {
+              const parts = Array.isArray(m.content) ? m.content : [];
+              const texts = parts.filter((p: any) => p.type === "text").map((p: any) => {
+                const t = p.text;
+                return typeof t === "string" ? t : (t ? JSON.stringify(t) : "");
+              });
+              text = texts.join(" ").trim();
+              if (!text) {
+                const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool");
+                if (tools.length) text = "🔧 " + tools.join(", ");
+              }
+            } else if (role === "compaction") {
+              text = (m.summary ?? "").toString().split("\n")[0].slice(0, 200);
+            }
+            text = text.replace(/\s+/g, " ").trim().slice(0, 1000);
+            const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : "📦";
+            await send(icon + " <b>" + esc(role) + "</b>:\n" + esc(text || "(no text)"));
+          }
+          await send("✅ Sync complete.");
+        } catch (err) {
+          await send("❌ " + esc(String(err)));
         }
         continue;
       }
