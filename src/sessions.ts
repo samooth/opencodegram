@@ -98,9 +98,9 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       sessionsByThread.set(targetThread, cs);
       threadBySession.set(sessionId, targetThread);
       saveThreads();
+      cs.topicTitle = title.slice(0, 120);
       try {
         await tg.editForumTopic(chatId, targetThread, title.slice(0, 120));
-        cs.topicTitle = title.slice(0, 120);
       } catch {
         // Topic titles are cosmetic; never block session creation on them.
       }
@@ -171,10 +171,11 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       saveThreads();
 
       // Keep the tab title in sync with the OpenCode session title.
-      try {
-        await tg.editForumTopic(chatId, targetThread, title);
-        cs.topicTitle = title;
-      } catch {
+      if (cs.topicTitle !== title) {
+        try {
+          await tg.editForumTopic(chatId, targetThread, title);
+          cs.topicTitle = title;
+        } catch {
         // Topic may have been deleted. Only recreate when we weren't explicitly
         // asked to bind to this particular tab.
         if (threadId === undefined) {
@@ -194,6 +195,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
             // keep the previous binding
           }
         }
+      }
       }
     } else {
       for (const [tid, existing] of sessionsByThread) if (existing.sessionId === sessionId) sessionsByThread.delete(tid);
