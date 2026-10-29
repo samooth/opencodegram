@@ -77,6 +77,7 @@ async function main() {
   const store = new SessionStore();
   const settings = new SettingsStore();
   const pendingEdits = new Map();
+  const messageToSession = new Map();
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),
@@ -105,6 +106,7 @@ async function main() {
     tg,
     config,
     getActiveSession: store.getActiveSession,
+    getSettings: (chatId, threadId) => settings.get(chatId),
   });
 
   const audit = (action: string, detail: string) => {
@@ -130,6 +132,7 @@ async function main() {
     files,
     settings,
     pendingEdits,
+    messageToSession,
     pendingPermissions: new Map(),
     pendingForms: new Map(),
     pendingFormsById: new Map(),
@@ -148,6 +151,7 @@ async function main() {
     pendingForms: deps.pendingForms,
     pendingFormsById: deps.pendingFormsById,
     settings: deps.settings,
+    messageToSession: deps.messageToSession,
     flushDraft: status.flushDraft,
     updateStatus: status.updateStatus,
     finishStatus: status.finishStatus,

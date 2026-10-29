@@ -3,6 +3,7 @@ import { fileErrorMessage } from "./files.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import { extractEditFile, formatEditDiff, isEditTool } from "./editutil.js";
 import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./settings.js";
+import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { esc, threadOpts } from "./util.js";
 
@@ -93,15 +94,40 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   }
 
   // Settings toggles.
+  if (cbData.startsWith("cycle:")) {
+    const key = cbData.slice(6);
+    if (key === "previewLines") {
+      const presets = [20, 40, 80, 160];
+      const current = deps.settings.get(chatId).previewLines;
+      const next = presets[(presets.indexOf(current) + 1) % presets.length] ?? presets[0];
+      const settings = deps.settings.set(chatId, "previewLines", next);
+      await deps.tg.answerCallbackQuery(cq.id, `${LABELS.previewLines} → ${next}`).catch(() => {});
+      if (messageId !== undefined) {
+        await deps.tg
+          .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+            ...threadOpts(threadId),
+            reply_markup: { inline_keyboard: settingsKeyboard(settings) },
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+    await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch(() => {});
+    return;
+  }
+
   if (cbData.startsWith("set:")) {
     const [, key, value] = cbData.split(":");
     if (!key || !isSettingsKey(key)) {
       await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch(() => {});
       return;
     }
-    const boolValue = value === "true";
-    const settings = deps.settings.set(chatId, key, boolValue);
-    await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${boolValue ? "on" : "off"}`).catch(() => {});
+    let parsedValue: ChatSettings[keyof ChatSettings];
+    if (key === "previewLines") parsedValue = Number(value);
+    else if (key === "diffStyle") parsedValue = value === "unified" ? "unified" : "simple";
+    else parsedValue = value === "true";
+    const settings = deps.settings.set(chatId, key, parsedValue);
+    await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${String(parsedValue)}`).catch(() => {});
     if (messageId !== undefined) {
       await deps.tg
         .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {

@@ -14,6 +14,7 @@ export type ChatSession = {
   threadId?: number;
   cotBuffer?: string;
   cotCount?: number;
+  expandedEditIndex?: number;
   targetChatId?: number;
   targetThreadId?: number;
   topicTitle?: string;

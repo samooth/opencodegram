@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { esc } from "./util.js";
 
+export type DiffStyle = "simple" | "unified";
+
 export type ChatSettings = {
   showThinking: boolean;
   showTools: boolean;
@@ -11,6 +13,10 @@ export type ChatSettings = {
   autoArtifacts: boolean;
   voiceTranscription: boolean;
   compactFinal: boolean;
+  showShell: boolean;
+  shellExpanded: boolean;
+  previewLines: number;
+  diffStyle: DiffStyle;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -22,6 +28,10 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   autoArtifacts: true,
   voiceTranscription: true,
   compactFinal: false,
+  showShell: true,
+  shellExpanded: false,
+  previewLines: 40,
+  diffStyle: "simple",
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -40,16 +50,19 @@ export class SettingsStore {
     return { ...DEFAULT_SETTINGS, ...(this.settings.get(chatId) ?? {}) };
   }
 
-  set(chatId: number, key: keyof ChatSettings, value: boolean): ChatSettings {
+  set(chatId: number, key: keyof ChatSettings, value: ChatSettings[keyof ChatSettings]): ChatSettings {
     const current = this.settings.get(chatId) ?? {};
-    current[key] = value;
+    (current as Record<string, unknown>)[key] = value;
     this.settings.set(chatId, current);
     this.save();
     return this.get(chatId);
   }
 
   toggle(chatId: number, key: keyof ChatSettings): ChatSettings {
-    return this.set(chatId, key, !this.get(chatId)[key]);
+    const current = this.get(chatId);
+    const value = current[key];
+    if (typeof value === "boolean") return this.set(chatId, key, !value);
+    return current;
   }
 
   private save(): void {
@@ -86,19 +99,26 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   autoArtifacts: "📎 Auto artifacts",
   voiceTranscription: "🎤 Voice transcription",
   compactFinal: "📦 Compact final",
+  showShell: "🖥 Shell",
+  shellExpanded: "🖥 Shell expanded",
+  previewLines: "📏 Preview lines",
+  diffStyle: "🧾 Diff style",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
   const sections: Array<{ title: string; keys: Array<keyof ChatSettings> }> = [
     { title: "Visualización", keys: ["showThinking", "showTools", "thinkingExpanded", "toolsExpanded", "showPartialText", "compactFinal"] },
-    { title: "Archivos", keys: ["autoArtifacts"] },
+    { title: "Shell", keys: ["showShell", "shellExpanded"] },
+    { title: "Archivos", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
     { title: "Voz", keys: ["voiceTranscription"] },
   ];
   const lines = [`<b>Settings</b>`, `Chat: <code>${chatId}</code>`, ""];
   for (const section of sections) {
     lines.push(`<b>${section.title}</b>`);
     for (const key of section.keys) {
-      lines.push(`  ${LABELS[key]}: <b>${settings[key] ? "on" : "off"}</b>`);
+      const value = settings[key];
+      const display = typeof value === "boolean" ? (value ? "on" : "off") : String(value);
+      lines.push(`  ${LABELS[key]}: <b>${esc(display)}</b>`);
     }
     lines.push("");
   }
@@ -108,9 +128,24 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
 
 export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: string; callback_data: string }>> {
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-  for (const key of SETTINGS_KEYS) {
+  const booleanKeys: Array<keyof ChatSettings> = [
+    "showThinking",
+    "showTools",
+    "thinkingExpanded",
+    "toolsExpanded",
+    "showPartialText",
+    "autoArtifacts",
+    "voiceTranscription",
+    "compactFinal",
+    "showShell",
+    "shellExpanded",
+  ];
+  for (const key of booleanKeys) {
     keyboard.push([{ text: `${LABELS[key]}: ${settings[key] ? "on" : "off"}`, callback_data: `set:${key}:${settings[key] ? "false" : "true"}` }]);
   }
+  const previewPresets = [20, 40, 80, 160];
+  keyboard.push([{ text: `${LABELS.previewLines}: ${settings.previewLines}`, callback_data: `cycle:previewLines` }]);
+  keyboard.push([{ text: `${LABELS.diffStyle}: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
   keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
   return keyboard;
 }

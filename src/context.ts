@@ -55,6 +55,7 @@ export type BotDeps = {
   files: FileBrowser;
   settings: SettingsStore;
   pendingEdits: Map<number, ChatSession>;
+  messageToSession: Map<number, string>;
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;

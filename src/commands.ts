@@ -187,7 +187,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     const { path, startLine } = parseReadArgs(raw);
     try {
-      await files.showFile(chatId, threadId, path, { startLine });
+      await files.showFile(chatId, threadId, path, { startLine, maxLines: deps.settings.get(chatId).previewLines });
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     }

@@ -13,12 +13,14 @@ import {
 } from "./files.js";
 import type { TelegramCallbackQuery, TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
+import type { ChatSettings } from "./settings.js";
 import { esc, threadOpts } from "./util.js";
 
 export type FileBrowserDeps = {
   tg: TelegramClient;
   config: Config;
   getActiveSession: (chatId: number, threadId?: number) => ChatSession | undefined;
+  getSettings?: (chatId: number, threadId?: number) => ChatSettings;
 };
 
 type ListingView = {
@@ -65,7 +67,7 @@ const MAX_CACHED_VIEWS = 120;
 
 export type FileBrowser = ReturnType<typeof createFileBrowser>;
 
-export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserDeps) {
+export function createFileBrowser({ tg, config, getActiveSession, getSettings }: FileBrowserDeps) {
   // Buttons reference indexes into the listing attached to their own message.
   // Keying by message_id keeps old messages functional when a new /ls arrives.
   const views = new Map<number, View>();
@@ -190,12 +192,14 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     chatId: number,
     threadId: number | undefined,
     path: string,
-    options: { startLine?: number; messageId?: number; back?: BrowseView; base?: string } = {},
+    options: { startLine?: number; maxLines?: number; messageId?: number; back?: BrowseView; base?: string } = {},
   ): Promise<void> {
     const base = options.base ?? baseFor(chatId, threadId);
+    const settings = getSettings?.(chatId, threadId);
+    const maxLines = Math.max(10, Math.min(500, options.maxLines ?? settings?.previewLines ?? 160));
     let read: ReadResult;
     try {
-      read = await readTextFile(base, path, { startLine: options.startLine ?? 1, maxLines: 160 });
+      read = await readTextFile(base, path, { startLine: options.startLine ?? 1, maxLines });
     } catch (err) {
       // A binary file cannot be previewed; deliver it as a document instead.
       if (err instanceof FileAccessError && err.code === "binary") {

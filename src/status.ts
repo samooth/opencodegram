@@ -174,9 +174,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
     const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name));
     const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
-    if (settings.showTools && shellDetails.length) {
+    if (settings.showTools && settings.showShell && shellDetails.length) {
       const shellText = renderShell(shellDetails.slice(-5), 200);
-      lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
+      lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
     }
     if (settings.showTools && otherDetails.length) {
       const details = renderTools(otherDetails.slice(-5), 200);
@@ -262,9 +262,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
       const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name));
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name));
-      if (settings.showTools && shellDetails.length) {
+      if (settings.showTools && settings.showShell && shellDetails.length) {
         const shellText = renderShell(shellDetails, 500);
-        lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
+        lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
       }
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails, 500);
@@ -276,7 +276,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           const detail = editDetails[expandedEditIndex];
           if (detail) {
             const file = relativeEditPath(target, extractEditFile(detail.input));
-            const diff = formatEditDiff(detail.input);
+            const diff = formatEditDiff(detail.input, settings.diffStyle, target.directory);
             lines.push(`<b>✏️ ${esc(file)}</b>`);
             lines.push(`<pre><code class="language-diff">${esc(diff)}</code></pre>`);
           }
