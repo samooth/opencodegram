@@ -183,6 +183,10 @@ async function main() {
     if (topicsEnabled) {
       if (threadBySession.has(sessionId)) {
         cs.threadId = threadBySession.get(sessionId);
+        // Keep topic name in sync with session title.
+        if (cs.threadId && topicsEnabled) {
+          await tg.editForumTopic(chatId, cs.threadId, (s.title ?? sessionId).slice(0, 120)).catch(() => {});
+        }
       } else {
         try {
           const topic = await tg.createForumTopic(chatId, (s.title ?? sessionId).slice(0, 120));
@@ -213,7 +217,7 @@ async function main() {
     await tg.sendRichMessage(chatId, html, opts);
   }
 
-  async function showSessions(chatId: number, page = 0, messageId?: number): Promise<void> {
+  async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
     const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
@@ -242,10 +246,10 @@ async function main() {
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, { ...(threadId ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
   }
 
-  async function showCommands(chatId: number): Promise<void> {
+  async function showCommands(chatId: number, threadId?: number): Promise<void> {
     const s = sessionsByChat.get(chatId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     const cmds = await oc.listCommands(directory);
@@ -280,10 +284,10 @@ async function main() {
     ];
     const botRows = botCmds.map(([c, d]) => `<tr><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`).join("");
     const botTable = `<table><tr><th>Bot command</th><th>Description</th></tr>${botRows}</table>`;
-    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${table}\n\n<b>Bot commands</b>\n\n${botTable}`, { reply_markup: { inline_keyboard: keyboard } });
+    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${table}\n\n<b>Bot commands</b>\n\n${botTable}`, { ...(threadId ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
   }
 
-  async function showModels(chatId: number, page = 0, messageId?: number): Promise<void> {
+  async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
     const s = sessionsByChat.get(chatId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     let raw: any[];
@@ -330,7 +334,7 @@ async function main() {
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
-    await sendOrEditRich(chatId, messageId, `<b>Models</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, { reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, `<b>Models</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, { ...(threadId ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {
@@ -903,23 +907,23 @@ async function main() {
         }
         if (cbData === "panel:sessions") {
           await tg.answerCallbackQuery(cq.id);
-          await showSessions(chatId, 0, cq.message?.message_id);
+          await showSessions(chatId, 0, cq.message?.message_id, cq.message?.message_thread_id);
           continue;
         }
         if (cbData === "panel:new") {
           await tg.answerCallbackQuery(cq.id, "Creating…");
           await createNewSession(chatId, false);
-          await sendPanel(chatId);
+          await sendPanel(chatId, cq.message?.message_thread_id);
           continue;
         }
         if (cbData === "panel:commands") {
           await tg.answerCallbackQuery(cq.id);
-          await showCommands(chatId);
+          await showCommands(chatId, cq.message?.message_thread_id);
           continue;
         }
         if (cbData === "panel:models") {
           await tg.answerCallbackQuery(cq.id);
-          await showModels(chatId, 0, cq.message?.message_id);
+          await showModels(chatId, 0, cq.message?.message_id, cq.message?.message_thread_id);
           continue;
         }
         if (cbData === "panel:stop") {
@@ -951,13 +955,13 @@ async function main() {
         const pageMatch = cbData.match(/^sessions:page:(\d+)$/);
         if (pageMatch) {
           await tg.answerCallbackQuery(cq.id);
-          await showSessions(chatId, parseInt(pageMatch[1], 10), cq.message?.message_id);
+          await showSessions(chatId, parseInt(pageMatch[1], 10), cq.message?.message_id, cq.message?.message_thread_id);
           continue;
         }
         const modelsPageMatch = cbData.match(/^models:page:(\d+)$/);
         if (modelsPageMatch) {
           await tg.answerCallbackQuery(cq.id);
-          await showModels(chatId, parseInt(modelsPageMatch[1], 10), cq.message?.message_id);
+          await showModels(chatId, parseInt(modelsPageMatch[1], 10), cq.message?.message_id, cq.message?.message_thread_id);
           continue;
         }
         const modelMatch = cbData.match(/^model:(\d+)$/);
@@ -1209,12 +1213,12 @@ async function main() {
       }
 
       if (text === "/commands") {
-        await showCommands(chatId);
+        await showCommands(chatId, replyThread);
         continue;
       }
 
       if (text === "/models" || text === "/model") {
-        await showModels(chatId, 0);
+        await showModels(chatId, 0, undefined, replyThread);
         continue;
       }
 
@@ -1515,7 +1519,7 @@ async function main() {
       if (text === "/sessions" || text.startsWith("/sessions ")) {
         const arg = text.slice("/sessions".length).trim();
         const page = /^\d+$/.test(arg) ? Math.max(0, parseInt(arg, 10) - 1) : 0;
-        await showSessions(chatId, page);
+        await showSessions(chatId, page, undefined, replyThread);
         continue;
       }
 
