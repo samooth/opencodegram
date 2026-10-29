@@ -218,7 +218,19 @@ async function main() {
         cs.threadId = threadBySession.get(sessionId);
         // Keep topic name in sync with session title.
         if (cs.threadId && topicsEnabled && chatId > 0) {
-          await tg.editForumTopic(chatId, cs.threadId, (s.title ?? sessionId).slice(0, 120)).catch(() => {});
+          try {
+            await tg.editForumTopic(chatId, cs.threadId, (s.title ?? sessionId).slice(0, 120));
+          } catch {
+            // Topic may have been deleted; create a new one.
+            try {
+              const topic = await tg.createForumTopic(chatId, (s.title ?? sessionId).slice(0, 120));
+              cs.threadId = topic.message_thread_id;
+              threadBySession.set(sessionId, cs.threadId!);
+              saveThreads();
+            } catch {
+              // fall back
+            }
+          }
         }
       } else if (topicsEnabled && chatId > 0) {
         try {
