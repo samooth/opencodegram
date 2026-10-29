@@ -186,7 +186,14 @@ if (e.type === "session.compaction.ended") {
     s.compactionSummary = summary || s.compactionSummary;
     updateStatus(chatId, s, true).catch(() => {});
   }
-  await tg.sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${summary ? "\\n" + esc(summary.slice(0, 500)) : ""}`, threadOpts(threadId)).catch(() => {});
+  const shortSummary = summary.slice(0, 900);
+  const truncated = summary.length > shortSummary.length;
+  const body = summary
+    ? `<details><summary>📦 Summary</summary>\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre>\n</details>`
+    : "";
+  await tg
+    .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\\n" + body : ""}`, threadOpts(threadId))
+    .catch(() => {});
 }
 
 if (e.type === "session.compaction.failed") {
