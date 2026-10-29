@@ -162,9 +162,14 @@ if (e.type === "session.step.ended") {
   // "tool-calls" means the turn continues with another step; any other
   // finish reason (stop / length / error) is the real end of the turn.
   const finish = e.data?.finish ?? e.data?.rawFinish;
+  console.log("[step.ended]", sessionId, "s=", !!_s0, "chatId=", chatId, "finish=", finish, "statusMsg=", _s0?.statusMessageId);
   if (finish && finish !== "tool-calls") {
     if (s.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
-    if (!s.stopped) await finishStatus(chatId, s);
+    try {
+      if (!s.stopped) await finishStatus(chatId, s);
+    } catch (err) {
+      console.error("[finishStatus error]", err);
+    }
     // Deliver files produced by the turn as Telegram documents.
     if (!s.stopped) {
       const artifacts = Array.isArray(e.data?.files) ? e.data.files : [];
