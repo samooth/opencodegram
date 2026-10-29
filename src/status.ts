@@ -233,7 +233,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           ...threadOptsFor(s),
           reply_markup: { inline_keyboard: [] },
         })
-        .catch(() => {});
+        .then(() => console.log("[status] finish edit OK", messageId))
+        .catch((err) => console.error("[status] finish edit FAILED", messageId, err));
       if (!s.stopped && s.reasoningBuffer.trim()) {
         const chunk = s.reasoningBuffer.trim();
         const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
