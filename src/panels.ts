@@ -89,6 +89,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/models", "List and switch models"],
       ["/agents", "List and switch agents"],
       ["/commands", "List OpenCode commands"],
+      ["/settings", "Bot settings and toggles"],
       ["/file <path>", "Send a local file as a document"],
       ["/ls [path] [-a]", "Browse a directory with buttons"],
       ["/find <text> [-a]", "Search files"],

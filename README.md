@@ -43,6 +43,7 @@ rate-limit retry timing and command parsing.
 - `/start`, `/help`, `/status` — panel and active session
 - `/sessions`, `/use <id>`, `/new` — session browser and switching
 - `/models`, `/agents` — model/variant and agent pickers
+- `/settings` — bot behavior toggles
 - `/file <path>` — send a local file as a document
 - `/ls [path] [-a]`, `/find <text> [-a]`, `/read <path> [line]` — file browser
   with previews and “send as document” buttons

@@ -3,6 +3,7 @@ import type { FileBrowser } from "./filebrowser.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { Panels } from "./panels.js";
 import type { SessionManager } from "./sessions.js";
+import type { SettingsStore } from "./settings.js";
 import type { StatusManager } from "./status.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient, TelegramUser } from "./telegram.js";
@@ -51,6 +52,7 @@ export type BotDeps = {
   status: StatusManager;
   panels: Panels;
   files: FileBrowser;
+  settings: SettingsStore;
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;

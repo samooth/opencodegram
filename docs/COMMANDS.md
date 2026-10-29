@@ -15,6 +15,11 @@
 - `/models`, `/model` — model picker, free models first, variant selection.
 - `/agents`, `/agent` — agent picker.
 
+## Settings
+
+- `/settings` — show and toggle bot behavior: thinking, tools, partial text,
+  auto artifacts, voice transcription and compact final.
+
 ## Files and media
 
 - Send a photo/document/audio/voice/video — attach it to the active session.

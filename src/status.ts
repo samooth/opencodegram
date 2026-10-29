@@ -1,5 +1,6 @@
 import type { ChatSession } from "./types.js";
 import type { TelegramClient } from "./telegram.js";
+import type { ChatSettings } from "./settings.js";
 import { clampText, esc } from "./util.js";
 
 function truncateText(text: string, max: number): string {
@@ -43,6 +44,7 @@ function prettyJson(value: string): string {
 export type StatusDeps = {
   tg: TelegramClient;
   threadOptsFor: (s: ChatSession | undefined) => Record<string, unknown>;
+  getSettings: (chatId: number) => ChatSettings;
 };
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -75,7 +77,7 @@ function renderTools(details: ChatSession["toolCallDetails"], limit: number): st
  * Owns the lifecycle of the single "status" card that accompanies a turn:
  * Working… (thinking, tools, partial text) → Done / Stopped, no Stop button.
  */
-export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings }: StatusDeps) {
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
     s.timer = undefined;
@@ -90,11 +92,10 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
 
   const startStatus = async (chatId: number, s: ChatSession) => {
     const opts = threadOptsFor(s);
+    const settings = getSettings(chatId);
     s.statusFinished = false;
     s.statusEditPromise = undefined;
     s.statusEditing = false;
-    // A new user prompt starts a new turn: clear the previous turn's artifacts.
-    // cotBuffer/cotCount persist so previous thinking stays available as COT.
     s.buffer = "";
     s.reasoningBuffer = "";
     s.toolCalls = [];
@@ -102,7 +103,7 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
     s.stopped = false;
     try {
       const lines: string[] = [];
-      if (s.cotBuffer?.trim()) {
+      if (settings.showThinking && s.cotBuffer?.trim()) {
         const cot = s.cotBuffer.trim().slice(-1500);
         lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
       }
@@ -122,27 +123,28 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
     if (!s.statusMessageId || s.statusFinished) return;
     if (s.statusEditing) return;
     const opts = threadOptsFor(s);
+    const settings = getSettings(chatId);
     const now = Date.now();
     if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 4000) return;
     s.statusEditing = true;
     s.statusLastUpdate = now;
     const lines: string[] = [];
-    if (s.cotBuffer?.trim()) {
+    if (settings.showThinking && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
       lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
     }
     lines.push("⏳ <b>Working…</b>");
-    if (s.reasoningBuffer.trim()) {
+    if (settings.showThinking && s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(0, 300);
-      lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
+      lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
     }
-    if (s.toolCallDetails.length) {
+    if (settings.showTools && s.toolCallDetails.length) {
       const details = renderTools(s.toolCallDetails.slice(-5), 200);
-      lines.push("<details open><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
-    } else if (s.toolCalls.length) {
+      lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+    } else if (settings.showTools && s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
-    if (s.buffer.trim()) {
+    if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
     }
     try {
@@ -175,20 +177,23 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
       s.statusEditPromise = undefined;
     }
     if (s.statusMessageId) {
+      const settings = getSettings(chatId);
       const previousCot = s.cotBuffer?.trim() ?? "";
       const lines: string[] = [];
-      if (previousCot) {
+      if (settings.showThinking && previousCot) {
         const cot = previousCot.slice(-3500);
         lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
       }
       lines.push("✅ <b>Done</b>");
-      if (!s.stopped && s.reasoningBuffer.trim()) {
-        const r = s.reasoningBuffer.trim().slice(0, 3500);
-        lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
-      }
-      if (!s.stopped && s.toolCallDetails.length) {
-        const details = renderTools(s.toolCallDetails, 500);
-        lines.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+      if (!settings.compactFinal) {
+        if (settings.showThinking && !s.stopped && s.reasoningBuffer.trim()) {
+          const r = s.reasoningBuffer.trim().slice(0, 3500);
+          lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
+        }
+        if (settings.showTools && !s.stopped && s.toolCallDetails.length) {
+          const details = renderTools(s.toolCallDetails, 500);
+          lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+        }
       }
       await tg
         .editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n")), {
@@ -196,7 +201,6 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
           reply_markup: { inline_keyboard: [] },
         })
         .catch(() => {});
-      // Accumulate this turn's thinking for the next turn's COT block.
       if (!s.stopped && s.reasoningBuffer.trim()) {
         const chunk = s.reasoningBuffer.trim();
         const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";

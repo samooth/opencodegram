@@ -1,6 +1,7 @@
 import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files.js";
 import { renderForm, formKeyboard } from "./formui.js";
+import { isSettingsKey, renderSettings, settingsKeyboard } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { esc, threadOpts } from "./util.js";
 
@@ -69,6 +70,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const chatId = cq.message?.chat?.id ?? cq.from.id;
   const cbData = cq.data ?? "";
   const threadId = cq.message?.message_thread_id;
+  const messageId = cq.message?.message_id;
 
   // File browser callbacks are namespaced with `fs:`.
   if (await deps.files.handleCallback(cq)) return;
@@ -77,6 +79,26 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const formCallbackHandled = await handleFormCallback(deps, cq);
   if (formCallbackHandled) return;
 
+  // Settings toggles.
+  if (cbData.startsWith("set:")) {
+    const [, key, value] = cbData.split(":");
+    if (!key || !isSettingsKey(key)) {
+      await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch(() => {});
+      return;
+    }
+    const boolValue = value === "true";
+    const settings = deps.settings.set(chatId, key, boolValue);
+    await deps.tg.answerCallbackQuery(cq.id, "Updated").catch(() => {});
+    if (messageId !== undefined) {
+      await deps.tg
+        .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+          ...threadOpts(threadId),
+          reply_markup: { inline_keyboard: settingsKeyboard(settings) },
+        })
+        .catch(() => {});
+    }
+    return;
+  }
   if (cbData === "panel:home" || cbData === "panel:status" || cbData === "panel:help") {
     await tg.answerCallbackQuery(cq.id);
     await sendPanel(chatId, threadId);

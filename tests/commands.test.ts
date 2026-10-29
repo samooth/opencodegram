@@ -65,6 +65,28 @@ function harness(activeSession: { directory: string } | undefined = undefined) {
         calls.push(`read:${path}:${options?.startLine ?? 1}`);
       },
     },
+    settings: {
+      get: () => ({
+        showThinking: true,
+        showTools: true,
+        thinkingExpanded: false,
+        toolsExpanded: true,
+        showPartialText: true,
+        autoArtifacts: true,
+        voiceTranscription: true,
+        compactFinal: false,
+      }),
+      set: () => ({
+        showThinking: true,
+        showTools: true,
+        thinkingExpanded: false,
+        toolsExpanded: true,
+        showPartialText: true,
+        autoArtifacts: true,
+        voiceTranscription: true,
+        compactFinal: false,
+      }),
+    },
   } as unknown as BotDeps;
 
   const send: SendFn = async (html: string) => {

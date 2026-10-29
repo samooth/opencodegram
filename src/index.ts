@@ -5,6 +5,7 @@ import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 import { SessionStore } from "./store.js";
 import { createStatusManager } from "./status.js";
+import { SettingsStore } from "./settings.js";
 import { createPanels } from "./panels.js";
 import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
@@ -27,6 +28,7 @@ const BOT_COMMANDS = [
   { command: "forms", description: "List pending forms" },
   { command: "formreply", description: "Reply to a form" },
   { command: "commands", description: "List OpenCode commands" },
+  { command: "settings", description: "Bot settings and toggles" },
   { command: "file", description: "Send a local file as a document" },
   { command: "ls", description: "Browse a directory with buttons" },
   { command: "find", description: "Search files in the session directory" },
@@ -72,9 +74,11 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const store = new SessionStore();
+  const settings = new SettingsStore();
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),
+    getSettings: (chatId) => settings.get(chatId),
   });
   const sessions = createSessionManager({
     config,
@@ -121,6 +125,7 @@ async function main() {
     status,
     panels,
     files,
+    settings,
     pendingPermissions: new Map(),
     pendingForms: new Map(),
     pendingFormsById: new Map(),
@@ -138,6 +143,7 @@ async function main() {
     pendingPermissions: deps.pendingPermissions,
     pendingForms: deps.pendingForms,
     pendingFormsById: deps.pendingFormsById,
+    settings: deps.settings,
     flushDraft: status.flushDraft,
     updateStatus: status.updateStatus,
     finishStatus: status.finishStatus,

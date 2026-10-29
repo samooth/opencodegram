@@ -3,6 +3,7 @@ import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { FormField, FormState } from "./context.js";
+import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import { esc, rateLimitRetryAt, threadOpts } from "./util.js";
 import { formatBytes, prepareDocument } from "./files.js";
@@ -24,6 +25,7 @@ export type EventsDeps = {
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;
+  settings: SettingsStore;
   flushDraft: (chatId: number, s: ChatSession | undefined) => Promise<void>;
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
@@ -31,7 +33,7 @@ export type EventsDeps = {
 };
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
-  const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
+  const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
 
   const e = event as { type: string; data?: any };
@@ -176,8 +178,9 @@ if (e.type === "session.step.ended") {
     }
     // Deliver files produced by the turn as Telegram documents.
     if (!s.stopped) {
+      const settings = deps.settings.get(chatId);
       const artifacts = Array.isArray(e.data?.files) ? e.data.files : [];
-      if (artifacts.length) {
+      if (settings.autoArtifacts && artifacts.length) {
         const artifactThread = s.targetThreadId ?? s.threadId ?? resolveThreadId(sessionId);
         const base = s.directory ?? process.cwd();
         const maxArtifacts = 5;

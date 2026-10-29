@@ -106,7 +106,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
 
   let voiceTranscript: string | null = null;
-  if (voiceAttachments.length && isTranscriptionEnabled(config)) {
+  if (voiceAttachments.length && isTranscriptionEnabled(config) && deps.settings.get(chatId).voiceTranscription) {
     await send("🎤 Transcribing voice note…");
     try {
       const transcripts: string[] = [];

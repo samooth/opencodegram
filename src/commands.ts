@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
 import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument } from "./files.js";
+import { isSettingsKey, renderSettings, settingsKeyboard } from "./settings.js";
 import { esc, threadOpts } from "./util.js";
 
 /**
@@ -17,6 +18,7 @@ export const KNOWN_COMMANDS = new Set([
   "stop",
   "abort",
   "commands",
+  "settings",
   "file",
   "ls",
   "find",
@@ -89,6 +91,12 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
 
   if (text === "/commands") {
     await showCommands(chatId, threadId);
+    return true;
+  }
+
+  if (text === "/settings") {
+    const settings = deps.settings.get(chatId);
+    await send(renderSettings(chatId, settings), { reply_markup: { inline_keyboard: settingsKeyboard(settings) } });
     return true;
   }
 
