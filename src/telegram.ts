@@ -98,7 +98,18 @@ export class TelegramClient {
   }
 
   sendMessage(chatId: number, text: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    return this.call<TelegramMessage>("sendMessage", { chat_id: chatId, text, ...opts });
+    const body = { chat_id: chatId, text, ...opts };
+    return this.call<TelegramMessage>("sendMessage", body).catch(async (err) => {
+      if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, text };
+        for (const [key, value] of Object.entries(opts)) {
+          if (key === "message_thread_id" || value === undefined || value === null) continue;
+          retryBody[key] = value;
+        }
+        return this.call<TelegramMessage>("sendMessage", retryBody);
+      }
+      throw err;
+    });
   }
 
   /** Send a local file as a document (multipart upload). */
@@ -112,15 +123,53 @@ export class TelegramClient {
       if (value === undefined || value === null) continue;
       form.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
     }
-    return this.callForm<TelegramMessage>("sendDocument", form);
+    try {
+      return await this.callForm<TelegramMessage>("sendDocument", form);
+    } catch (err) {
+      if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
+        const { message_thread_id, ...rest } = opts;
+        const retryForm = new FormData();
+        retryForm.set("chat_id", String(chatId));
+        retryForm.set("document", new Blob([data]), filename);
+        if (caption) retryForm.set("caption", caption);
+        for (const [key, value] of Object.entries(rest)) {
+          if (value === undefined || value === null) continue;
+          retryForm.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+        }
+        return this.callForm<TelegramMessage>("sendDocument", retryForm);
+      }
+      throw err;
+    }
   }
 
   sendRichMessage(chatId: number, html: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    return this.call<TelegramMessage>("sendRichMessage", { chat_id: chatId, rich_message: { html }, ...opts });
+    const body = { chat_id: chatId, rich_message: { html }, ...opts };
+    return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
+      if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { html } };
+        for (const [key, value] of Object.entries(opts)) {
+          if (key === "message_thread_id" || value === undefined || value === null) continue;
+          retryBody[key] = value;
+        }
+        return this.call<TelegramMessage>("sendRichMessage", retryBody);
+      }
+      throw err;
+    });
   }
 
   sendRichMessageMarkdown(chatId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    return this.call<TelegramMessage>("sendRichMessage", { chat_id: chatId, rich_message: { markdown }, ...opts });
+    const body = { chat_id: chatId, rich_message: { markdown }, ...opts };
+    return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
+      if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { markdown } };
+        for (const [key, value] of Object.entries(opts)) {
+          if (key === "message_thread_id" || value === undefined || value === null) continue;
+          retryBody[key] = value;
+        }
+        return this.call<TelegramMessage>("sendRichMessage", retryBody);
+      }
+      throw err;
+    });
   }
 
   sendMessageDraft(chatId: number, draftId: number, text: string, opts: Record<string, unknown> = {}): Promise<boolean> {
