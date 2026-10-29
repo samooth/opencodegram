@@ -107,7 +107,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         doc.absolute,
         doc.name,
         `<b>${esc(doc.name)}</b>\n<code>${esc(doc.relative || doc.name)}</code>\n${formatBytes(doc.size)}`,
-        threadOpts(threadId),
+        { ...threadOpts(threadId), parse_mode: "HTML" },
       );
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);

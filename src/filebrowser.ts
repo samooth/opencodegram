@@ -128,7 +128,7 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     ]
       .filter(Boolean)
       .join("\n");
-    await tg.sendDocument(chatId, doc.absolute, doc.name, caption, threadOpts(threadId));
+    await tg.sendDocument(chatId, doc.absolute, doc.name, caption, { ...threadOpts(threadId), parse_mode: "HTML" });
   }
 
   async function showListing(
