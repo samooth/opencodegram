@@ -124,22 +124,17 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
       s.statusEditPromise = undefined;
     }
     if (s.statusMessageId) {
-      // Accumulate this turn's thinking into the persistent COT block.
-      if (!s.stopped && s.reasoningBuffer.trim()) {
-        const chunk = s.reasoningBuffer.trim();
-        const previous = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
-        let next = previous + chunk;
-        if (next.length > 4000) next = next.slice(next.length - 4000);
-        s.cotBuffer = next;
-        s.cotCount = (s.cotCount ?? 0) + 1;
-        s.reasoningBuffer = "";
-      }
+      const previousCot = s.cotBuffer?.trim() ?? "";
       const lines: string[] = [];
-      if (s.cotBuffer?.trim()) {
-        const cot = s.cotBuffer.trim().slice(-3500);
+      if (previousCot) {
+        const cot = previousCot.slice(-3500);
         lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
       }
       lines.push("✅ <b>Done</b>");
+      if (!s.stopped && s.reasoningBuffer.trim()) {
+        const r = s.reasoningBuffer.trim().slice(0, 3500);
+        lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
+      }
       if (!s.stopped && s.toolCallDetails.length) {
         const details = renderTools(s.toolCallDetails, 500);
         lines.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
@@ -150,6 +145,16 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
           reply_markup: { inline_keyboard: [] },
         })
         .catch(() => {});
+      // Accumulate this turn's thinking for the next turn's COT block.
+      if (!s.stopped && s.reasoningBuffer.trim()) {
+        const chunk = s.reasoningBuffer.trim();
+        const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
+        let next = prev + chunk;
+        if (next.length > 4000) next = next.slice(next.length - 4000);
+        s.cotBuffer = next;
+        s.cotCount = (s.cotCount ?? 0) + 1;
+        s.reasoningBuffer = "";
+      }
       s.statusMessageId = undefined;
     }
   };
