@@ -77,6 +77,7 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const sessionsByChat = new Map<number, ChatSession>();
+  const sessionsByThread = new Map<number, ChatSession>(); // threadId -> session (for topics)
   const retryingSessions = new Set<string>();
   const lastChatBySession = new Map<string, number>(); // sessionId -> chatId where last prompted
   const findChatBySession = (sessionId: string): number | undefined => {
@@ -98,6 +99,8 @@ async function main() {
   };
   const getActiveSession = (chatId: number, threadId?: number): ChatSession | undefined => {
     if (threadId) {
+      const byThread = sessionsByThread.get(threadId);
+      if (byThread) return byThread;
       for (const s of sessionsByChat.values()) if (s.threadId === threadId) return s;
     }
     return sessionsByChat.get(chatId);
@@ -199,6 +202,7 @@ async function main() {
       }
     }
     sessionsByChat.set(chatId, cs);
+    if (cs.threadId) sessionsByThread.set(cs.threadId, cs);
     rememberSessionChat(sessionId, chatId);
     if (!silent) {
       await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
@@ -244,6 +248,7 @@ async function main() {
       }
     }
     sessionsByChat.set(chatId, cs);
+    if (cs.threadId) sessionsByThread.set(cs.threadId, cs);
     cs.targetChatId = chatId;
     rememberSessionChat(sessionId, chatId);
     if (!silent) {
