@@ -28,6 +28,7 @@ function makeBrowser() {
   const sent: Sent[] = [];
   const edits: Array<Sent & { messageId: number }> = [];
   const answers: Array<string | undefined> = [];
+  const documents: Array<{ path: string; name: string; caption?: string }> = [];
   let nextMessageId = 50;
 
   const tg = {
@@ -37,6 +38,10 @@ function makeBrowser() {
     },
     editRichMessage: async (chatId: number, messageId: number, html: string, opts: any) => {
       edits.push({ chatId, messageId, html, opts });
+    },
+    sendDocument: async (_chatId: number, path: string, name: string, caption?: string) => {
+      documents.push({ path, name, caption });
+      return { message_id: nextMessageId++ };
     },
     answerCallbackQuery: async (_id: string, text?: string) => {
       answers.push(text);
@@ -50,7 +55,7 @@ function makeBrowser() {
     getActiveSession: () => undefined,
   });
 
-  return { browser, sent, edits, answers };
+  return { browser, sent, edits, answers, documents };
 }
 
 function buttons(opts: any): Array<{ text: string; callback_data: string }> {
@@ -73,13 +78,19 @@ function callback(messageId: number, data: string, id = "cb"): TelegramCallbackQ
 
 describe("file browser", () => {
   test("lists, navigates into a directory, previews a file and goes back", async () => {
-    const { browser, sent, edits, answers } = makeBrowser();
+    const { browser, sent, edits, answers, documents } = makeBrowser();
     await browser.showListing(100, 10, "");
 
     expect(sent).toHaveLength(1);
     expect(sent[0].html).toContain("README.md");
     expect(sent[0].html).toContain("src");
     const firstId = 50;
+
+    const readmeSend = buttons(sent[0].opts).find((button) => button.text === "📎 Send");
+    expect(readmeSend?.callback_data.startsWith("fs:d:")).toBe(true);
+    await browser.handleCallback(callback(firstId, readmeSend!.callback_data, "cb-send-list"));
+    expect(documents.at(-1)?.name).toBe("README.md");
+    expect(answers.at(-1)).toBe("Sending…");
 
     const srcButton = buttons(sent[0].opts).find((button) => button.text.includes("src"));
     expect(srcButton?.callback_data.startsWith("fs:e:")).toBe(true);
@@ -90,13 +101,19 @@ describe("file browser", () => {
     expect(edits[0].html).toContain("app.ts");
     expect(answers.at(-1)).toBeUndefined();
 
-    const appButton = buttons(edits[0].opts).find((button) => button.text.includes("app.ts"));
+    const appButton = buttons(edits[0].opts).find((button) => button.text.includes("app.ts") && button.callback_data.startsWith("fs:e:"));
     expect(appButton?.callback_data.startsWith("fs:e:")).toBe(true);
     await browser.handleCallback(callback(firstId, appButton!.callback_data, "cb-file"));
 
     expect(edits).toHaveLength(2);
     expect(edits[1].html).toContain("export const x = 1;");
     expect(edits[1].html).toContain("src/app.ts");
+
+    const sendFile = buttons(edits[1].opts).find((button) => button.text.includes("Send as document"));
+    expect(sendFile?.callback_data).toBe("fs:send");
+    await browser.handleCallback(callback(firstId, "fs:send", "cb-send-file"));
+    expect(documents.at(-1)?.name).toBe("app.ts");
+    expect(documents.at(-1)?.caption).toContain("src/app.ts");
 
     const backButton = buttons(edits[1].opts).find((button) => button.text.includes("Back"));
     expect(backButton?.callback_data).toBe("fs:u");
@@ -105,6 +122,19 @@ describe("file browser", () => {
     expect(edits).toHaveLength(3);
     expect(edits[2].html).toContain("app.ts");
     expect(edits[2].html).not.toContain("export const x = 1;");
+  });
+
+  test("sends binary files as documents instead of previewing them", async () => {
+    writeFileSync(join(base, "bin.dat"), Buffer.from([0, 1, 2, 3]));
+    const { browser, sent, edits, documents } = makeBrowser();
+    await browser.showListing(100, 10, "");
+
+    const binary = buttons(sent[0].opts).find((button) => button.text.includes("bin.dat") && button.callback_data.startsWith("fs:e:"));
+    await browser.handleCallback(callback(50, binary!.callback_data, "cb-binary"));
+
+    expect(edits).toHaveLength(0);
+    expect(documents.at(-1)?.name).toBe("bin.dat");
+    expect(documents.at(-1)?.caption).toContain("Binary file");
   });
 
   test("searches files and opens a result", async () => {

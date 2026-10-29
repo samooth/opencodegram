@@ -1,10 +1,12 @@
 import { basename, join } from "node:path";
 import type { Config } from "./config.js";
 import {
+  FileAccessError,
   fileErrorMessage,
   findFiles,
   formatBytes,
   listDirectory,
+  prepareDocument,
   readTextFile,
   type FileEntry,
   type ReadResult,
@@ -115,13 +117,27 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     return id;
   }
 
+  /** Send a file from the browser as a Telegram document. */
+  async function sendAsDocument(chatId: number, threadId: number | undefined, base: string, path: string, note?: string): Promise<void> {
+    const doc = await prepareDocument(base, path);
+    const caption = [
+      `<b>${esc(doc.name)}</b>`,
+      `<code>${esc(doc.relative || doc.name)}</code>`,
+      formatBytes(doc.size),
+      note ? `<i>${esc(note)}</i>` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await tg.sendDocument(chatId, doc.absolute, doc.name, caption, threadOpts(threadId));
+  }
+
   async function showListing(
     chatId: number,
     threadId: number | undefined,
     path = "",
-    options: { hidden?: boolean; page?: number; messageId?: number } = {},
+    options: { hidden?: boolean; page?: number; messageId?: number; base?: string } = {},
   ): Promise<void> {
-    const base = baseFor(chatId, threadId);
+    const base = options.base ?? baseFor(chatId, threadId);
     const hidden = options.hidden ?? false;
     const listing = await listDirectory(base, path, { includeHidden: hidden });
     const page = clampPage(options.page ?? 0, listing.total);
@@ -144,9 +160,9 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     chatId: number,
     threadId: number | undefined,
     query: string,
-    options: { hidden?: boolean; page?: number; messageId?: number } = {},
+    options: { hidden?: boolean; page?: number; messageId?: number; base?: string } = {},
   ): Promise<void> {
-    const base = baseFor(chatId, threadId);
+    const base = options.base ?? baseFor(chatId, threadId);
     const hidden = options.hidden ?? false;
     const found = await findFiles(base, query, { includeHidden: hidden, limit: 100 });
     const page = clampPage(options.page ?? 0, found.entries.length);
@@ -169,10 +185,20 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     chatId: number,
     threadId: number | undefined,
     path: string,
-    options: { startLine?: number; messageId?: number; back?: BrowseView } = {},
+    options: { startLine?: number; messageId?: number; back?: BrowseView; base?: string } = {},
   ): Promise<void> {
-    const base = baseFor(chatId, threadId);
-    const read = await readTextFile(base, path, { startLine: options.startLine ?? 1, maxLines: 160 });
+    const base = options.base ?? baseFor(chatId, threadId);
+    let read: ReadResult;
+    try {
+      read = await readTextFile(base, path, { startLine: options.startLine ?? 1, maxLines: 160 });
+    } catch (err) {
+      // A binary file cannot be previewed; deliver it as a document instead.
+      if (err instanceof FileAccessError && err.code === "binary") {
+        await sendAsDocument(chatId, threadId, base, path, "Binary file sent as a document.");
+        return;
+      }
+      throw err;
+    }
     const view: FileView = {
       kind: "file",
       chatId,
@@ -214,8 +240,13 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     const start = view.page * PAGE_SIZE;
     const slice = view.entries.slice(start, start + PAGE_SIZE);
     slice.forEach((entry, index) => {
+      const callbackIndex = start + index;
       const label = `${entryIcon(entry)} ${entry.name}`.slice(0, 60);
-      keyboard.push([{ text: label, callback_data: `fs:e:${start + index}` }]);
+      const row = [{ text: label, callback_data: `fs:e:${callbackIndex}` }];
+      if (entry.type === "file" && !entry.external) {
+        row.push({ text: "📎 Send", callback_data: `fs:d:${callbackIndex}` });
+      }
+      keyboard.push(row);
     });
 
     const nav: Array<{ text: string; callback_data: string }> = [];
@@ -260,8 +291,13 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     const start = view.page * PAGE_SIZE;
     const slice = view.entries.slice(start, start + PAGE_SIZE);
     slice.forEach((entry, index) => {
+      const callbackIndex = start + index;
       const label = `${entryIcon(entry)} ${entry.path}`.slice(0, 60);
-      keyboard.push([{ text: label, callback_data: `fs:e:${start + index}` }]);
+      const row = [{ text: label, callback_data: `fs:e:${callbackIndex}` }];
+      if (entry.type === "file" && !entry.external) {
+        row.push({ text: "📎 Send", callback_data: `fs:d:${callbackIndex}` });
+      }
+      keyboard.push(row);
     });
     const nav: Array<{ text: string; callback_data: string }> = [];
     if (view.page > 0) nav.push({ text: "◀ Prev", callback_data: `fs:p:${view.page - 1}` });
@@ -299,7 +335,9 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
   }
 
   function fileKeyboard(view: FileView): Array<Array<{ text: string; callback_data: string }>> {
-    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [
+      [{ text: "📎 Send as document", callback_data: "fs:send" }],
+    ];
     if (view.back) {
       keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
     } else {
@@ -324,10 +362,11 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
       await showListing(view.chatId, view.threadId, entry.path, {
         hidden: view.kind === "listing" ? view.hidden : false,
         messageId,
+        base: view.base,
       });
       return;
     }
-    await showFile(view.chatId, view.threadId, entry.path, { messageId, back: view });
+    await showFile(view.chatId, view.threadId, entry.path, { messageId, back: view, base: view.base });
   }
 
   async function handleCallback(cq: TelegramCallbackQuery): Promise<boolean> {
@@ -346,7 +385,17 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     try {
       if (data === "fs:r") {
         await tg.answerCallbackQuery(cq.id).catch(() => {});
-        await showListing(chatId, threadId, "", { messageId });
+        await showListing(chatId, threadId, "", { messageId, base: view?.base });
+        return true;
+      }
+
+      if (data === "fs:send") {
+        if (!view || view.kind !== "file") {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        await tg.answerCallbackQuery(cq.id, "Sending…").catch(() => {});
+        await sendAsDocument(chatId, threadId, view.base, view.path);
         return true;
       }
 
@@ -366,7 +415,7 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
         }
         if (view.kind === "find") {
           await tg.answerCallbackQuery(cq.id).catch(() => {});
-          await showListing(chatId, threadId, "", { messageId, hidden: view.hidden });
+          await showListing(chatId, threadId, "", { messageId, hidden: view.hidden, base: view.base });
           return true;
         }
         if (!view.dir) {
@@ -375,7 +424,31 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
         }
         const parent = parentPath(view.dir);
         await tg.answerCallbackQuery(cq.id).catch(() => {});
-        await showListing(chatId, threadId, parent, { messageId, hidden: view.hidden });
+        await showListing(chatId, threadId, parent, { messageId, hidden: view.hidden, base: view.base });
+        return true;
+      }
+
+      const downloadMatch = data.match(/^fs:d:(\d+)$/);
+      if (downloadMatch) {
+        if (!view || view.kind === "file") {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        const entry = view.entries[parseInt(downloadMatch[1], 10)];
+        if (!entry) {
+          await tg.answerCallbackQuery(cq.id, "Listing expired; run /ls again").catch(() => {});
+          return true;
+        }
+        if (entry.external) {
+          await tg.answerCallbackQuery(cq.id, "This symlink points outside the session directory").catch(() => {});
+          return true;
+        }
+        if (entry.type !== "file") {
+          await tg.answerCallbackQuery(cq.id, "That entry is not a file").catch(() => {});
+          return true;
+        }
+        await tg.answerCallbackQuery(cq.id, "Sending…").catch(() => {});
+        await sendAsDocument(chatId, threadId, view.base, entry.path);
         return true;
       }
 

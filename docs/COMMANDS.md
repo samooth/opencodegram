@@ -20,11 +20,13 @@
 - Send a photo/document/audio/voice/video — attach it to the active session.
 - `/file <path>` — send a local file (inside the session directory, ≤ 45 MB).
 - `/ls [path] [-a]` — browse a directory with inline buttons; `-a` shows hidden
-  entries and `⬆ Up` navigates to the parent.
+  entries and `⬆ Up` navigates to the parent. Each file has a `📄` preview and a
+  `📎 Send` action that uploads it as a document.
 - `/find <text> [-a]` — search names and paths recursively (skips
-  `node_modules`, `.git` and build caches by default).
+  `node_modules`, `.git` and build caches by default); results can also be
+  previewed or sent as documents.
 - `/read <path> [start_line]` — preview a UTF-8 text file with line numbers;
-  binary and oversized previews are rejected.
+  binary files are sent as documents automatically.
 - `/diff` — diff summary and per-file patches.
 
 All file commands resolve symlinks and confine the real target to the active
