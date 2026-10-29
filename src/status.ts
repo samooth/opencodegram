@@ -228,6 +228,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (editDetails.length) pendingEdits.set(messageId, s);
       const text = clampText(renderFinished(s, undefined, settings));
       const keyboard = finishedKeyboard(editDetails, undefined, s);
+      console.log("[status] finish edits=", editDetails.length, "keyboard=", keyboard.length, "statusMsg=", messageId);
       await tg
         .editRichMessage(chatId, messageId, text, {
           ...threadOptsFor(s),
