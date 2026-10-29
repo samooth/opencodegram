@@ -219,11 +219,11 @@ async function main() {
         // Keep topic name in sync with session title.
         if (cs.threadId && topicsEnabled && chatId > 0) {
           try {
-            await tg.editForumTopic(chatId, cs.threadId, (s.title ?? sessionId).slice(0, 120));
+            await tg.editForumTopic(chatId, cs.threadId, (s.title || sessionId).slice(0, 120));
           } catch {
             // Topic may have been deleted; create a new one.
             try {
-              const topic = await tg.createForumTopic(chatId, (s.title ?? sessionId).slice(0, 120));
+              const topic = await tg.createForumTopic(chatId, (s.title || sessionId).slice(0, 120));
               cs.threadId = topic.message_thread_id;
               threadBySession.set(sessionId, cs.threadId!);
               saveThreads();
@@ -234,7 +234,7 @@ async function main() {
         }
       } else if (topicsEnabled && chatId > 0) {
         try {
-          const topic = await tg.createForumTopic(chatId, (s.title ?? sessionId).slice(0, 120));
+          const topic = await tg.createForumTopic(chatId, (s.title || sessionId).slice(0, 120));
           cs.threadId = topic.message_thread_id;
           threadBySession.set(sessionId, cs.threadId!);
           saveThreads();
@@ -248,7 +248,7 @@ async function main() {
     rememberSessionChat(sessionId, chatId);
     if (!silent) {
       if (cs.threadId && chatId > 0) {
-        await tg.sendRichMessage(chatId, `✅ Session activated: <b>${esc(s.title ?? sessionId)}</b>\nOpen the topic above to continue.`).catch(() => {});
+        await tg.sendRichMessage(chatId, `✅ Session activated: <b>${esc(s.title || sessionId)}</b>\nOpen the topic above to continue.`).catch(() => {});
         await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, { message_thread_id: cs.threadId });
       } else {
         await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, {});
