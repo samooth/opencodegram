@@ -83,19 +83,12 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   // Show an edit from a finished status card as a diff.
   const editMatch = (cq.data ?? "").match(/^edit:(\d+)$/);
   if (editMatch && cq.message?.message_id !== undefined) {
-    const state = deps.pendingEdits.get(cq.message.message_id);
-    const edits = state?.toolCallDetails.filter((detail) => isEditTool(detail.name)) ?? [];
-    const detail = edits[Number(editMatch[1])];
-    if (!state || !detail) {
-      await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch(() => {});
+    const handled = await deps.status.showEditDiff(chatId, cq.message.message_id, Number(editMatch[1]));
+    if (handled) {
+      await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
       return;
     }
-    const file = extractEditFile(detail.input) ?? `edit ${Number(editMatch[1]) + 1}`;
-    const diff = formatEditDiff(detail.input);
-    await deps.tg.answerCallbackQuery(cq.id, "Sending diff").catch(() => {});
-    await deps.tg
-      .sendRichMessage(chatId, `<b>✏️ ${esc(file)}</b>\n<pre><code class="language-diff">${esc(diff)}</code></pre>`, threadOpts(threadId))
-      .catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch(() => {});
     return;
   }
 

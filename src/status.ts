@@ -19,17 +19,35 @@ function parseShellCommand(input: string): string | null {
 }
 
 function parseShellOutput(output: string): string | null {
+  const trimmed = output.trim();
   try {
-    const parsed = JSON.parse(output);
+    const parsed = JSON.parse(trimmed);
     if (Array.isArray(parsed)) {
       const texts = parsed
-        .map((item: { text?: unknown }) => (typeof item?.text === "string" ? item.text : ""))
+        .map((item: { text?: unknown; content?: unknown }) => {
+          if (typeof item?.text === "string") return item.text;
+          if (typeof item?.content === "string") return item.content;
+          return "";
+        })
         .filter(Boolean);
       if (texts.length) return texts.join("\n");
     }
     if (parsed && typeof parsed.text === "string") return parsed.text;
+    if (parsed && typeof parsed.content === "string") return parsed.content;
   } catch {
-    // Not JSON or not a tool result envelope.
+    // Fall back to extracting text fields from truncated JSON.
+  }
+  const matches = [...trimmed.matchAll(/"text"\s*:\s*"((?:\\.|[^"\\])*)"/g)];
+  if (matches.length) {
+    return matches
+      .map((match) => {
+        try {
+          return JSON.parse(`"${match[1]}"`) as string;
+        } catch {
+          return match[1];
+        }
+      })
+      .join("\n");
   }
   return null;
 }
@@ -154,7 +172,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
-    const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name));
+    const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name));
+    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
     if (settings.showTools && shellDetails.length) {
       const shellText = renderShell(shellDetails.slice(-5), 200);
       lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
@@ -162,8 +181,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showTools && otherDetails.length) {
       const details = renderTools(otherDetails.slice(-5), 200);
       lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
-    } else if (settings.showTools && !shellDetails.length && s.toolCalls.length) {
+    } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
+    }
+    if (settings.showTools && editDetails.length) {
+      lines.push(`✏️ Edits: ${editDetails.length}`);
     }
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
@@ -199,42 +221,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     if (s.statusMessageId) {
       const settings = getSettings(chatId);
-      const previousCot = s.cotBuffer?.trim() ?? "";
-      const lines: string[] = [];
-      if (settings.showThinking && previousCot) {
-        const cot = previousCot.slice(-3500);
-        lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
-      }
-      lines.push("✅ <b>Done</b>");
-      if (!settings.compactFinal) {
-        if (settings.showThinking && !s.stopped && s.reasoningBuffer.trim()) {
-          const r = s.reasoningBuffer.trim().slice(0, 3500);
-          lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
-        }
-        const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
-        const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name));
-        if (settings.showTools && shellDetails.length) {
-          const shellText = renderShell(shellDetails, 500);
-          lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
-        }
-        if (settings.showTools && otherDetails.length) {
-          const details = renderTools(otherDetails, 500);
-          lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
-        }
-      }
+      const messageId = s.statusMessageId;
+      s.expandedEditIndex = undefined;
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
-      const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-      if (editDetails.length) {
-        editDetails.forEach((detail, index) => {
-          const file = extractEditFile(detail.input) ?? `edit ${index + 1}`;
-          keyboard.push([{ text: `✏️ ${file}`.slice(0, 64), callback_data: `edit:${index}` }]);
-        });
-      }
-      if (s.statusMessageId !== undefined && keyboard.length) {
-        pendingEdits.set(s.statusMessageId, s);
-      }
+      if (editDetails.length) pendingEdits.set(messageId, s);
+      const text = clampText(renderFinished(s, undefined, settings));
+      const keyboard = finishedKeyboard(editDetails, undefined, s);
       await tg
-        .editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n")), {
+        .editRichMessage(chatId, messageId, text, {
           ...threadOptsFor(s),
           reply_markup: { inline_keyboard: keyboard },
         })
@@ -252,5 +246,80 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
   };
 
-  return { flushDraft, startStatus, updateStatus, finishStatus };
+  const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings): string => {
+    const previousCot = target.cotBuffer?.trim() ?? "";
+    const lines: string[] = [];
+    if (settings.showThinking && previousCot) {
+      const cot = previousCot.slice(-3500);
+      lines.push(`<details><summary>🧾 COT (${target.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+    }
+    lines.push("✅ <b>Done</b>");
+    if (!settings.compactFinal) {
+      if (settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
+        const r = target.reasoningBuffer.trim().slice(0, 3500);
+        lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
+      }
+      const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
+      const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name));
+      const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name));
+      if (settings.showTools && shellDetails.length) {
+        const shellText = renderShell(shellDetails, 500);
+        lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
+      }
+      if (settings.showTools && otherDetails.length) {
+        const details = renderTools(otherDetails, 500);
+        lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+      }
+      if (settings.showTools && editDetails.length) {
+        lines.push(`✏️ Edits: ${editDetails.length}`);
+        if (expandedEditIndex !== undefined) {
+          const detail = editDetails[expandedEditIndex];
+          if (detail) {
+            const file = relativeEditPath(target, extractEditFile(detail.input));
+            const diff = formatEditDiff(detail.input);
+            lines.push(`<b>✏️ ${esc(file)}</b>`);
+            lines.push(`<pre><code class="language-diff">${esc(diff)}</code></pre>`);
+          }
+        }
+      }
+    }
+    return lines.join("\n");
+  };
+
+  const finishedKeyboard = (editDetails: ChatSession["toolCallDetails"], expandedEditIndex: number | undefined, target: ChatSession): Array<Array<{ text: string; callback_data: string }>> => {
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    editDetails.forEach((detail, index) => {
+      const file = relativeEditPath(target, extractEditFile(detail.input) ?? `edit ${index + 1}`);
+      const label = expandedEditIndex === index ? `✏️ ${file} ▾` : `✏️ ${file}`;
+      keyboard.push([{ text: label.slice(0, 64), callback_data: `edit:${index}` }]);
+    });
+    return keyboard;
+  };
+
+  const relativeEditPath = (target: ChatSession, file: string | null): string => {
+    if (!file) return "edit";
+    if (!target.directory) return file.split("/").pop() ?? file;
+    const prefix = target.directory.endsWith("/") ? target.directory : target.directory + "/";
+    if (file.startsWith(prefix)) return file.slice(prefix.length);
+    return file.split("/").pop() ?? file;
+  };
+
+  const showEditDiff = async (chatId: number, messageId: number, index: number): Promise<boolean> => {
+    const s = pendingEdits.get(messageId);
+    if (!s) return false;
+    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
+    if (!editDetails[index]) return false;
+    if (s.expandedEditIndex === index) s.expandedEditIndex = undefined;
+    else s.expandedEditIndex = index;
+    const settings = getSettings(chatId);
+    const text = clampText(renderFinished(s, s.expandedEditIndex, settings));
+    const keyboard = finishedKeyboard(editDetails, s.expandedEditIndex, s);
+    await tg.editRichMessage(chatId, messageId, text, {
+      ...threadOptsFor(s),
+      reply_markup: { inline_keyboard: keyboard },
+    }).catch(() => {});
+    return true;
+  };
+
+  return { flushDraft, startStatus, updateStatus, finishStatus, showEditDiff };
 }
