@@ -11,9 +11,9 @@ import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
  * commands, or forward it to the session bound to this tab as a prompt.
  */
 export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promise<void> {
-  const { config, tg, oc, store, me, sessions, status } = deps;
+  const { config, tg, oc, store, me, sessions, status, messageToSession } = deps;
   const { rememberSessionChat, rememberActiveRoute, routeKey, lastChatBySession, lastPromptBySession } = store;
-  const { ensureActiveSession, createNewSession, restoreActiveSession } = sessions;
+  const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
   const { startStatus, updateStatus, finishStatus } = status;
 
   const userId = msg.from?.id;
@@ -26,6 +26,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
 
   const chatId = msg.chat.id;
   const replyThread = msg.message_thread_id;
+  const repliedSessionId = msg.reply_to_message?.message_id ? messageToSession.get(msg.reply_to_message.message_id) : undefined;
   // Ignore commands explicitly addressed to another bot.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
   const commandTarget = rawText.match(/^\/[a-zA-Z0-9_-]+@([A-Za-z0-9_]+)/)?.[1];
@@ -140,9 +141,17 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
 
   if (mediaToAttach.length) {
-    const s = await ensureActiveSession(chatId, replyThread);
+    let s = await ensureActiveSession(chatId, replyThread);
+    if (!s && repliedSessionId) {
+      try {
+        await activateSession(chatId, repliedSessionId, true, replyThread);
+        s = await restoreActiveSession(chatId, replyThread);
+      } catch {
+        s = undefined;
+      }
+    }
     if (!s) {
-      await send("no active session.");
+      await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
       return;
     }
     const text = voiceTranscript
@@ -176,6 +185,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       lastChatBySession.set(s.sessionId, chatId);
       lastPromptBySession.set(s.sessionId, text);
       await startStatus(chatId, s);
+      if (s.statusMessageId) messageToSession.set(s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {
         updateStatus(chatId, s).catch(() => {});
       }, 3000);
@@ -239,6 +249,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     lastChatBySession.set(s.sessionId, chatId);
     lastPromptBySession.set(s.sessionId, text);
     await startStatus(chatId, s);
+    if (s.statusMessageId) messageToSession.set(s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {
       updateStatus(chatId, s).catch(() => {});
     }, 3000);

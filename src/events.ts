@@ -25,6 +25,7 @@ export type EventsDeps = {
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;
+  messageToSession: Map<number, string>;
   settings: SettingsStore;
   flushDraft: (chatId: number, s: ChatSession | undefined) => Promise<void>;
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
@@ -33,7 +34,7 @@ export type EventsDeps = {
 };
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
-  const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
+  const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, messageToSession, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
 
   const e = event as { type: string; data?: any };
@@ -121,7 +122,7 @@ if (e.type === "session.tool.success") {
   if (detail) {
     detail.status = "success";
     const out = e.data?.content;
-    detail.output = typeof out === "string" ? out : JSON.stringify(out ?? "").slice(0, 500);
+    detail.output = typeof out === "string" ? out.slice(0, 2000) : JSON.stringify(out ?? "").slice(0, 2000);
   }
   updateStatus(chatId, s, true).catch(() => {});
 }
@@ -259,7 +260,11 @@ if (e.type === "session.text.ended") {
     }
     const threadOpts = store.threadOptsFor(s);
     console.log("[send] final to chat=", chatId, "thread=", s.targetThreadId ?? s.threadId, "len=", finalText.length);
-    await tg.sendRichMessageMarkdown(chatId, finalText, threadOpts).catch((err) => console.error("[send final]", err));
+    const finalMessage = await tg.sendRichMessageMarkdown(chatId, finalText, threadOpts).catch((err) => {
+      console.error("[send final]", err);
+      return undefined;
+    });
+    if (finalMessage?.message_id) messageToSession.set(finalMessage.message_id, s.sessionId);
     await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";
