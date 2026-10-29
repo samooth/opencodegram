@@ -106,6 +106,11 @@ async function main() {
   const ensureActiveSession = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
     let s = getActiveSession(chatId, threadId);
     if (s) return s;
+    // In groups, never reuse a session from another chat; create a dedicated one.
+    if (chatId < 0) {
+      await createNewSession(chatId, true);
+      return sessionsByChat.get(chatId);
+    }
     // Try to activate the most recent session.
     try {
       const res = await oc.client.session.list({ limit: 1, order: "desc" });
