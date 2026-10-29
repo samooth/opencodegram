@@ -199,12 +199,12 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
 
   // Create or restore the session bound to this tab.
   let s = await ensureActiveSession(chatId, replyThread);
-  if (!s) {
+  if (!s && chatId >= 0) {
     await createNewSession(chatId, true, replyThread);
     s = (await restoreActiveSession(chatId, replyThread))!;
   }
   if (!s) {
-    await send("could not create a session.");
+    await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
     return;
   }
 

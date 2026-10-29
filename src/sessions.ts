@@ -61,7 +61,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
   };
 
   async function createNewSession(chatId: number, silent = false, threadId?: number): Promise<ChatSession | undefined> {
-    const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
+    const directory = config.OPENCODE_DIRECTORY ?? process.cwd();
     let model: { id: string; providerID: string; variant?: string } | undefined;
     try {
       const sessions = await oc.client.session.list();
@@ -254,6 +254,9 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
   const ensureActiveSession = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
     const restored = await restoreActiveSession(chatId, threadId);
     if (restored) return restored;
+    // In groups, do not silently spawn sessions on replies; require an
+    // explicit activation to avoid cross-project surprises.
+    if (chatId < 0) return undefined;
     await createNewSession(chatId, true, threadId);
     return getActiveSession(chatId, threadId);
   };
