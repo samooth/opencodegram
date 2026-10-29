@@ -106,23 +106,9 @@ async function main() {
   const ensureActiveSession = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
     let s = getActiveSession(chatId, threadId);
     if (s) return s;
-    // In groups, never reuse a session from another chat; create a dedicated one.
-    if (chatId < 0) {
-      await createNewSession(chatId, true);
-      return sessionsByChat.get(chatId);
-    }
-    // Try to activate the most recent session.
-    try {
-      const res = await oc.client.session.list({ limit: 1, order: "desc" });
-      const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
-      if (list.length) {
-        await activateSession(chatId, list[0].id, true);
-        s = sessionsByChat.get(chatId);
-      }
-    } catch (err) {
-      console.error("[ensureActive]", err);
-    }
-    return s;
+    // Never reuse a session from another chat; always create a dedicated one.
+    await createNewSession(chatId, true);
+    return sessionsByChat.get(chatId);
   };
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
