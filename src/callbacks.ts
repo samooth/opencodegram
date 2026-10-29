@@ -1,5 +1,6 @@
 import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files.js";
+import { renderForm, formKeyboard } from "./formui.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { esc, threadOpts } from "./util.js";
 
@@ -71,6 +72,10 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   // File browser callbacks are namespaced with `fs:`.
   if (await deps.files.handleCallback(cq)) return;
+
+  // Interactive forms (model questions with options).
+  const formCallbackHandled = await handleFormCallback(deps, cq);
+  if (formCallbackHandled) return;
 
   if (cbData === "panel:home" || cbData === "panel:status" || cbData === "panel:help") {
     await tg.answerCallbackQuery(cq.id);
@@ -285,4 +290,85 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     }
     return;
   }
+}
+
+async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Promise<boolean> {
+  const data = cq.data ?? "";
+  if (data !== "forms:submit" && data !== "forms:cancel" && !data.startsWith("fq:")) return false;
+
+  const chatId = cq.message?.chat?.id ?? cq.from.id;
+  const threadId = cq.message?.message_thread_id;
+  const messageId = cq.message?.message_id;
+  if (messageId === undefined) {
+    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+    return true;
+  }
+  const state = deps.pendingForms.get(messageId);
+  if (!state) {
+    await deps.tg.answerCallbackQuery(cq.id, "Form expired").catch(() => {});
+    return true;
+  }
+
+  if (data === "forms:cancel") {
+    await deps.tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
+    await deps.tg
+      .editRichMessage(chatId, messageId, `<b>Form cancelled</b>\n<code>${esc(state.formId)}</code>`, {
+        reply_markup: { inline_keyboard: [] },
+      })
+      .catch(() => {});
+    deps.pendingForms.delete(messageId);
+    deps.pendingFormsById.delete(state.formId);
+    return true;
+  }
+
+  if (data === "forms:submit") {
+    if (state.submitted) {
+      await deps.tg.answerCallbackQuery(cq.id, "Already submitted").catch(() => {});
+      return true;
+    }
+    const allRequired = state.fields.filter((field) => field.required).every((field) => state.answers[field.key] !== undefined);
+    if (!allRequired) {
+      await deps.tg.answerCallbackQuery(cq.id, "Required fields missing").catch(() => {});
+      return true;
+    }
+    state.submitted = true;
+    await deps.tg.answerCallbackQuery(cq.id, "Submitting…").catch(() => {});
+    try {
+      await deps.oc.replyForm(state.sessionId, state.formId, state.answers as Record<string, string | number | boolean | string[]>);
+      await deps.tg
+        .editRichMessage(chatId, messageId, `<b>Form submitted</b>\n<code>${esc(state.formId)}</code>`, {
+          reply_markup: { inline_keyboard: [] },
+        })
+        .catch(() => {});
+    } catch (err) {
+      state.submitted = false;
+      await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+    }
+    deps.pendingForms.delete(messageId);
+    deps.pendingFormsById.delete(state.formId);
+    return true;
+  }
+
+  const match = data.match(/^fq:(\d+):(\d+)$/);
+  if (!match) {
+    await deps.tg.answerCallbackQuery(cq.id, "Unknown form action").catch(() => {});
+    return true;
+  }
+  const fieldIndex = Number(match[1]);
+  const optionIndex = Number(match[2]);
+  const field = state.fields[fieldIndex];
+  const option = field?.options?.[optionIndex];
+  if (!field || !option) {
+    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+    return true;
+  }
+  state.answers[field.key] = option.value;
+  await deps.tg.answerCallbackQuery(cq.id, `Selected ${option.label}`).catch(() => {});
+  await deps.tg
+    .editRichMessage(chatId, messageId, renderForm(state), {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: formKeyboard(state) },
+    })
+    .catch(() => {});
+  return true;
 }

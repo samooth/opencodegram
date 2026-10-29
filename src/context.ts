@@ -16,6 +16,27 @@ export type PermissionInfo = {
   resource: string;
 };
 
+export type FormField = {
+  key: string;
+  title?: string;
+  description?: string;
+  required?: boolean;
+  type: string;
+  options?: Array<{ value: string; label: string; description?: string }>;
+};
+
+export type FormState = {
+  formId: string;
+  sessionId: string;
+  chatId: number;
+  threadId?: number;
+  title: string;
+  fields: FormField[];
+  answers: Record<string, string>;
+  messageId?: number;
+  submitted: boolean;
+};
+
 export type SendFn = (html: string, opts?: Record<string, unknown>) => Promise<unknown>;
 
 /** Everything the Telegram update handlers need, wired once in index.ts. */
@@ -31,6 +52,8 @@ export type BotDeps = {
   panels: Panels;
   files: FileBrowser;
   pendingPermissions: Map<string, PermissionInfo>;
+  pendingForms: Map<number, FormState>;
+  pendingFormsById: Map<string, number>;
   awaitingReason: Map<string, string>;
   modelListByChat: Map<string, Array<any>>;
   pendingModelByChat: Map<string, any>;

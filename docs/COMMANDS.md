@@ -46,7 +46,8 @@ documents.
 - `/usage` — global usage and cost.
 - `/vcs` — branch and changed-file count.
 - `/worktrees` — list worktrees.
-- `/forms`, `/formreply <form_id> <json>` — pending forms and answers.
+- `/forms`, `/formreply <form_id> <json>` — pending forms and answers. Forms with
+  options also get inline buttons for selecting and submitting answers.
 - `/commands` — OpenCode command table plus this bot command list.
 - Any other text — prompt the active session.
 - Any other `/name args` — run the OpenCode command in the active session.

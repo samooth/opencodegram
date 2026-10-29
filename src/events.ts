@@ -2,6 +2,8 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
+import type { FormField, FormState } from "./context.js";
+import { renderForm, formKeyboard } from "./formui.js";
 import { esc, rateLimitRetryAt, threadOpts } from "./util.js";
 import { formatBytes, prepareDocument } from "./files.js";
 
@@ -20,6 +22,8 @@ export type EventsDeps = {
   store: SessionStore;
   retryingSessions: Set<string>;
   pendingPermissions: Map<string, PermissionInfo>;
+  pendingForms: Map<number, FormState>;
+  pendingFormsById: Map<string, number>;
   flushDraft: (chatId: number, s: ChatSession | undefined) => Promise<void>;
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
@@ -27,7 +31,7 @@ export type EventsDeps = {
 };
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
-  const { tg, oc, store, retryingSessions, pendingPermissions, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
+  const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
 
   const e = event as { type: string; data?: any };
@@ -304,14 +308,55 @@ if (e.type === "permission.asked") {
 
 if (e.type === "form.created") {
   const p = e.data ?? {};
-  const sessionId = p.sessionID;
+  const form = p.form ?? p;
+  const sessionId = p.sessionID ?? form.sessionID;
+  const formId = form.id ?? form.formID ?? p.id ?? p.formID;
+  const title = form.title ?? p.title ?? "Form";
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId !== undefined) {
+  if (chatId !== undefined && formId) {
     const threadId = resolveThreadId(sessionId);
-    const title = p.title ?? "Form";
-    const formId = p.id ?? p.formID;
-    await tg.sendRichMessage(chatId, `<b>Form created</b>: ${esc(title)}\nID: <code>${esc(formId ?? "")}</code>\nUse /forms to view and reply.`, threadOpts(threadId));
+    const rawFields = Array.isArray(form.fields) ? form.fields : [];
+    const fields: FormField[] = rawFields.map((field: any) => {
+      const normalized: FormField = {
+        key: field.key,
+        title: field.title,
+        description: field.description,
+        required: field.required,
+        type: field.type,
+        options: Array.isArray(field.options)
+          ? field.options.map((option: any) => ({
+              value: String(option.value),
+              label: option.label ?? String(option.value),
+              description: option.description,
+            }))
+          : undefined,
+      };
+      if (normalized.type === "boolean" && !normalized.options) {
+        normalized.options = [
+          { value: "true", label: "Yes" },
+          { value: "false", label: "No" },
+        ];
+      }
+      return normalized;
+    });
+    const state: FormState = {
+      formId,
+      sessionId,
+      chatId,
+      threadId,
+      title,
+      fields,
+      answers: {},
+      submitted: false,
+    };
+    const sent = await tg.sendRichMessage(chatId, renderForm(state), {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: formKeyboard(state) },
+    });
+    state.messageId = sent.message_id;
+    pendingForms.set(sent.message_id, state);
+    pendingFormsById.set(formId, sent.message_id);
   }
 }
 
