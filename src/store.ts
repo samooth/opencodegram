@@ -67,17 +67,7 @@ export class SessionStore {
 
   getActiveSession = (chatId: number, threadId?: number): ChatSession | undefined => {
     // A topic must never fall back to another tab's session.
-    if (threadId !== undefined) {
-      const topicSession = this.sessionsByThread.get(threadId);
-      if (topicSession) return topicSession;
-      // Groups often share one session across the chat; fall back to the
-      // chat-level binding instead of spawning a surprise session.
-      if (chatId < 0) {
-        const chatSession = this.sessionsByChat.get(chatId);
-        if (chatSession) return chatSession;
-      }
-      return undefined;
-    }
+    if (threadId !== undefined) return this.sessionsByThread.get(threadId);
     return this.sessionsByChat.get(chatId);
   };
 

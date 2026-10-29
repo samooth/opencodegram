@@ -142,7 +142,10 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       await finishStatus(chatId, stale).catch(() => {});
     }
 
-    let targetThread = threadId ?? threadBySession.get(sessionId);
+    let targetThread = threadId;
+    if (targetThread === undefined && chatId > 0) {
+      targetThread = threadBySession.get(sessionId);
+    }
     if (targetThread === undefined && topicsEnabled && chatId > 0) {
       try {
         const topic = await tg.createForumTopic(chatId, title);
@@ -223,21 +226,6 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       } catch (err) {
         console.error("[session] restore failed", mapped, err);
         forgetSession(mapped);
-      }
-    }
-
-    // In groups, reuse the chat-level session instead of creating a surprise
-    // session when a message arrives in a topic without its own binding.
-    if (threadId !== undefined && chatId < 0) {
-      const chatMapped = activeSessionByRoute.get(routeKey(chatId));
-      if (chatMapped) {
-        try {
-          await activateSession(chatId, chatMapped, true, undefined);
-          return getActiveSession(chatId, threadId);
-        } catch (err) {
-          console.error("[session] group chat restore failed", chatMapped, err);
-          forgetSession(chatMapped);
-        }
       }
     }
 

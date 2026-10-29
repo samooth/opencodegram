@@ -84,25 +84,30 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     return { uri: `file://${path}`, name };
   };
 
-  if (Array.isArray(msg.photo) && msg.photo.length) {
-    const largest = msg.photo[msg.photo.length - 1];
-    mediaToAttach.push(await downloadOne(largest.file_id, `photo_${largest.file_unique_id}.jpg`));
-  }
-  if (msg.document) {
-    mediaToAttach.push(await downloadOne(msg.document.file_id, msg.document.file_name ?? `document_${msg.document.file_unique_id}`));
-  }
-  if (msg.audio) {
-    const audioAttachment = await downloadOne(msg.audio.file_id, msg.audio.file_name ?? `audio_${msg.audio.file_unique_id}.mp3`);
-    mediaToAttach.push(audioAttachment);
-    voiceAttachments.push(audioAttachment);
-  }
-  if (msg.voice) {
-    const voiceAttachment = await downloadOne(msg.voice.file_id, `voice_${msg.voice.file_unique_id}.ogg`);
-    mediaToAttach.push(voiceAttachment);
-    voiceAttachments.push(voiceAttachment);
-  }
-  if (msg.video) {
-    mediaToAttach.push(await downloadOne(msg.video.file_id, msg.video.file_name ?? `video_${msg.video.file_unique_id}.mp4`));
+  try {
+    if (Array.isArray(msg.photo) && msg.photo.length) {
+      const largest = msg.photo[msg.photo.length - 1];
+      mediaToAttach.push(await downloadOne(largest.file_id, `photo_${largest.file_unique_id}.jpg`));
+    }
+    if (msg.document) {
+      mediaToAttach.push(await downloadOne(msg.document.file_id, msg.document.file_name ?? `document_${msg.document.file_unique_id}`));
+    }
+    if (msg.audio) {
+      const audioAttachment = await downloadOne(msg.audio.file_id, msg.audio.file_name ?? `audio_${msg.audio.file_unique_id}.mp3`);
+      mediaToAttach.push(audioAttachment);
+      voiceAttachments.push(audioAttachment);
+    }
+    if (msg.voice) {
+      const voiceAttachment = await downloadOne(msg.voice.file_id, `voice_${msg.voice.file_unique_id}.ogg`);
+      mediaToAttach.push(voiceAttachment);
+      voiceAttachments.push(voiceAttachment);
+    }
+    if (msg.video) {
+      mediaToAttach.push(await downloadOne(msg.video.file_id, msg.video.file_name ?? `video_${msg.video.file_unique_id}.mp4`));
+    }
+  } catch (err) {
+    await send(`❌ Could not download attachment: ${esc(String(err))}`);
+    return;
   }
 
   let voiceTranscript: string | null = null;
@@ -133,7 +138,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   if (mediaToAttach.length) {
     const s = await ensureActiveSession(chatId, replyThread);
     if (!s) {
-      await send("no active session");
+      await send("no active session.");
       return;
     }
     const text = voiceTranscript

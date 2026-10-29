@@ -133,7 +133,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings }: StatusDe
       const cot = s.cotBuffer.trim().slice(-1500);
       lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
     }
-    lines.push("⏳ <b>Working…</b>");
+    const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
+    lines.push("⏳ <b>Working…</b>" + (elapsed ? ` <i>(${elapsed}s)</i>` : ""));
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(0, 300);
       lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
