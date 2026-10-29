@@ -36,7 +36,6 @@ type ChatSession = {
   lastOutputTokens?: number;
 };
 
-let lastActiveChatId: number | undefined;
 const lastPromptBySession = new Map<string, string>();
 
 async function main() {
@@ -116,7 +115,10 @@ async function main() {
   const pendingModelByChat = new Map<number, any>();
   let modelCache: { time: number; data: any[] } | null = null;
   const THREADS_FILE = join(process.cwd(), "data", "threads.json");
+  const CHATS_FILE = join(process.cwd(), "data", "chats.json");
+  const LASTACTIVE_FILE = join(process.cwd(), "data", "lastactive.json");
   const threadBySession = new Map<string, number>();
+  const chatBySession = new Map<string, number>();
   const forumChats = new Set<number>();
   try {
     if (existsSync(THREADS_FILE)) {
@@ -127,6 +129,25 @@ async function main() {
   } catch (err) {
     console.error("[threads] load failed", err);
   }
+  try {
+    if (existsSync(CHATS_FILE)) {
+      const raw = readFileSync(CHATS_FILE, "utf8");
+      const parsed = JSON.parse(raw) as Record<string, number>;
+      for (const [k, v] of Object.entries(parsed)) chatBySession.set(k, v);
+    }
+  } catch (err) {
+    console.error("[chats] load failed", err);
+  }
+  let lastActiveChatId: number | undefined;
+  try {
+    if (existsSync(LASTACTIVE_FILE)) {
+      const raw = readFileSync(LASTACTIVE_FILE, "utf8");
+      const parsed = JSON.parse(raw) as { chatId?: number };
+      if (typeof parsed.chatId === "number") lastActiveChatId = parsed.chatId;
+    }
+  } catch (err) {
+    console.error("[lastactive] load failed", err);
+  }
   const saveThreads = () => {
     try {
       mkdirSync(join(process.cwd(), "data"), { recursive: true });
@@ -135,6 +156,16 @@ async function main() {
       writeFileSync(THREADS_FILE, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[threads] save failed", err);
+    }
+  };
+  const saveChats = () => {
+    try {
+      mkdirSync(join(process.cwd(), "data"), { recursive: true });
+      const obj: Record<string, number> = {};
+      for (const [k, v] of chatBySession) obj[k] = v;
+      writeFileSync(CHATS_FILE, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[chats] save failed", err);
     }
   };
 
@@ -167,6 +198,7 @@ async function main() {
       }
     }
     sessionsByChat.set(chatId, cs);
+    rememberSessionChat(sessionId, chatId);
     if (!silent) {
       await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
     }
@@ -200,8 +232,14 @@ async function main() {
     }
     sessionsByChat.set(chatId, cs);
     cs.targetChatId = chatId;
+    rememberSessionChat(sessionId, chatId);
     if (!silent) {
-      await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, cs.threadId && chatId > 0 ? { message_thread_id: cs.threadId } : {});
+      if (cs.threadId && chatId > 0) {
+        await tg.sendRichMessage(chatId, `✅ Session activated: <b>${esc(s.title ?? sessionId)}</b>\nOpen the topic above to continue.`).catch(() => {});
+        await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, { message_thread_id: cs.threadId });
+      } else {
+        await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, {});
+      }
     }
   }
 
@@ -376,6 +414,10 @@ async function main() {
     ];
     await tg.sendRichMessage(chatId, text, { ...(threadId && chatId > 0 ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
   }
+  const rememberSessionChat = (sessionId: string, chatId: number) => {
+    chatBySession.set(sessionId, chatId);
+    saveChats();
+  };
   const pendingPermissions = new Map<string, { chatId: number; sessionId: string; messageId?: number; decided: boolean; label: string; resource: string }>(); // requestId -> info
   const awaitingReason = new Map<number, string>(); // chatId -> requestId
 
@@ -465,9 +507,10 @@ async function main() {
 
   // Event stream
   (async () => {
-    try {
-      for await (const event of oc.events()) {
-        const e = event as { type: string; data?: any };
+    while (true) {
+      try {
+        for await (const event of oc.events()) {
+          const e = event as { type: string; data?: any };
         // Log a compact line for debugging.
         if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle" || e.type.endsWith("failed") || e.type === "session.step.started" || e.type === "session.step.ended") {
           console.log("[event]", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
@@ -476,7 +519,7 @@ async function main() {
         if (e.type === "session.text.started") {
           const sessionId = e.data?.sessionID ?? e.data?.session?.id;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -496,7 +539,7 @@ async function main() {
         if (e.type === "session.reasoning.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -506,7 +549,7 @@ async function main() {
         if (e.type === "session.reasoning.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -517,7 +560,7 @@ async function main() {
         if (e.type === "session.tool.input.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -530,7 +573,7 @@ async function main() {
         if (e.type === "session.tool.called") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -546,7 +589,7 @@ async function main() {
         if (e.type === "session.tool.success") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -563,7 +606,7 @@ async function main() {
         if (e.type === "session.tool.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -579,7 +622,7 @@ async function main() {
         if (e.type === "session.text.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -593,7 +636,7 @@ async function main() {
         if (e.type === "session.step.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined) continue;
           const s = _s0 ?? sessionsByChat.get(chatId);
           if (!s) continue;
@@ -604,13 +647,21 @@ async function main() {
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           // debug removed
           // debug removed
 
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
-          if (!s) continue;
+          let s = _s0 ?? sessionsByChat.get(chatId);
+          if (!s) {
+            // No in-memory session (e.g. after restart). Still deliver the final text if available.
+            const fallbackText = (e.data?.text ?? "").toString().trim();
+            if (fallbackText) {
+              const threadOpts = threadBySession.has(sessionId ?? "") && chatId > 0 ? { message_thread_id: threadBySession.get(sessionId!) } : {};
+              await tg.sendRichMessageMarkdown(chatId, fallbackText, threadOpts).catch((err) => console.error("[send final]", err));
+            }
+            continue;
+          }
           // debug removed
           if (s.timer) {
             clearTimeout(s.timer);
@@ -637,7 +688,8 @@ async function main() {
               }).join("\n\n");
               parts.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
             }
-            let finalText = s.buffer || "(empty response)";
+            const endedText = (e.data?.text ?? "").toString().trim();
+            let finalText = endedText || s.buffer || "(empty response)";
             let elapsed = 0;
             let tokens = s.lastOutputTokens ?? 0;
             try {
@@ -691,7 +743,7 @@ async function main() {
           const requestId = p.id;
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId === undefined || !requestId || !sessionId) continue;
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
@@ -734,7 +786,7 @@ async function main() {
           const p = e.data ?? {};
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             const title = p.title ?? "Form";
@@ -760,7 +812,7 @@ async function main() {
         if (e.type === "session.execution.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
@@ -800,7 +852,7 @@ async function main() {
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
+          const chatId = _s0?.targetChatId ?? (sessionId ? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId) ?? chatBySession.get(sessionId) : undefined) ?? lastActiveChatId ?? (globalThis as any).__lastActiveChatId;
           if (chatId !== undefined) {
             const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
             await tg.sendRichMessage(chatId, "✓ session idle", threadId && chatId > 0 ? { message_thread_id: threadId } : {});
@@ -810,6 +862,8 @@ async function main() {
     } catch (err) {
       console.error("[events] stream ended", err);
     }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
   })();
 
   // Telegram polling
@@ -1562,9 +1616,11 @@ async function main() {
       try {
         s.targetChatId = chatId;
         s.targetThreadId = replyThread;
+        rememberSessionChat(s.sessionId, chatId);
         s.promptStartTime = Date.now();
         lastActiveChatId = chatId;
         (globalThis as any).__lastActiveChatId = chatId;
+        try { writeFileSync(LASTACTIVE_FILE, JSON.stringify({ chatId })); } catch {}
         lastChatBySession.set(s.sessionId, chatId);
         lastPromptBySession.set(s.sessionId, text);
         await startStatus(chatId, s);

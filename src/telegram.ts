@@ -54,6 +54,10 @@ export class TelegramClient {
     });
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
+      // Treat "message is not modified" as success for edit calls (no-op).
+      if (json.error_code === 400 && /not modified/i.test(json.description ?? "") && method.toLowerCase().includes("edit")) {
+        return (undefined as unknown) as T;
+      }
       if (json.error_code === 429 && attempt < 3) {
         const wait = (json.parameters?.retry_after ?? 1) * 1000;
         await new Promise((r) => setTimeout(r, wait));
