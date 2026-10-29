@@ -172,8 +172,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
-    const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name));
-    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
+    const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
+    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
+    console.log("[status] update tools=", s.toolCallDetails.length, "shell=", shellDetails.length, "other=", otherDetails.length, "edits=", editDetails.length, "names=", s.toolCallDetails.map((d) => d.name).join(","));
     if (settings.showTools && settings.showShell && shellDetails.length) {
       const shellText = renderShell(shellDetails.slice(-5), 200);
       lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
@@ -223,7 +224,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const settings = getSettings(chatId);
       const messageId = s.statusMessageId;
       s.expandedEditIndex = undefined;
-      const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
+      const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (editDetails.length) pendingEdits.set(messageId, s);
       const text = clampText(renderFinished(s, undefined, settings));
       const keyboard = finishedKeyboard(editDetails, undefined, s);
@@ -260,8 +261,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
       }
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
-      const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name));
-      const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name));
+      const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
+      const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (settings.showTools && settings.showShell && shellDetails.length) {
         const shellText = renderShell(shellDetails, 500);
         lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
@@ -307,7 +308,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const showEditDiff = async (chatId: number, messageId: number, index: number): Promise<boolean> => {
     const s = pendingEdits.get(messageId);
     if (!s) return false;
-    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
+    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
     if (!editDetails[index]) return false;
     if (s.expandedEditIndex === index) s.expandedEditIndex = undefined;
     else s.expandedEditIndex = index;

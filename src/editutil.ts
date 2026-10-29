@@ -1,8 +1,23 @@
 export type DiffStyle = "simple" | "unified";
 
-export function isEditTool(name: string): boolean {
+export function isEditTool(name: string, input?: string): boolean {
   const normalized = name.toLowerCase();
-  return normalized === "edit" || normalized.includes("edit") || normalized === "apply_patch" || normalized.includes("patch") || normalized === "write";
+  if (
+    normalized === "edit" ||
+    normalized.includes("edit") ||
+    normalized === "apply_patch" ||
+    normalized.includes("patch") ||
+    normalized === "write" ||
+    normalized.includes("write") ||
+    normalized === "multiedit" ||
+    normalized.includes("multiedit")
+  ) {
+    return true;
+  }
+  if (input && (/"old[Ss]tring"/.test(input) || /"new[Ss]tring"/.test(input) || /"old_string"/.test(input) || /"new_string"/.test(input))) {
+    return true;
+  }
+  return false;
 }
 
 export function extractEditFile(input: string | undefined): string | null {
