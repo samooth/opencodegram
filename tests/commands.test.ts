@@ -32,6 +32,8 @@ function harness(activeSession: { directory: string } | undefined = undefined) {
       sendDocument: async (_chatId: number, _path: string, name: string) => {
         documents.push(name);
       },
+      sendRichMessage: async () => ({ message_id: 1 }),
+      deleteMessage: async () => true,
     },
     oc: {},
     store: { threadOptsFor: () => ({}) },

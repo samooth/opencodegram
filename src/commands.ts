@@ -111,13 +111,18 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     try {
       // prepareDocument resolves symlinks and confines the real path to base.
       const doc = await prepareDocument(base, rawPath);
-      await tg.sendDocument(
-        chatId,
-        doc.absolute,
-        doc.name,
-        `<b>${esc(doc.name)}</b>\n<code>${esc(doc.relative || doc.name)}</code>\n${formatBytes(doc.size)}`,
-        { ...threadOpts(threadId), parse_mode: "HTML" },
-      );
+      const progress = await tg.sendRichMessage(chatId, `📎 Sending <b>${esc(doc.name)}</b> (${formatBytes(doc.size)})…`, threadOpts(threadId));
+      try {
+        await tg.sendDocument(
+          chatId,
+          doc.absolute,
+          doc.name,
+          `<b>${esc(doc.name)}</b>\n<code>${esc(doc.relative || doc.name)}</code>\n${formatBytes(doc.size)}`,
+          { ...threadOpts(threadId), parse_mode: "HTML" },
+        );
+      } finally {
+        await tg.deleteMessage(chatId, progress.message_id).catch(() => {});
+      }
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     }
@@ -153,8 +158,10 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     const s = await restoreActiveSession(chatId, threadId);
     const base = resolve(s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd());
     let archive: Awaited<ReturnType<typeof createZipArchive>> | undefined;
+    const progress = await tg.sendRichMessage(chatId, "🗜 Creating archive…", threadOpts(threadId));
     try {
       archive = await createZipArchive(base, rawPath);
+      await tg.editRichMessage(chatId, progress.message_id, `📎 Sending <b>${esc(archive.name)}</b> (${formatBytes(archive.size)})…`, threadOpts(threadId)).catch(() => {});
       await tg.sendDocument(
         chatId,
         archive.absolute,
@@ -166,6 +173,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     } finally {
       await archive?.cleanup();
+      await tg.deleteMessage(chatId, progress.message_id).catch(() => {});
     }
     return true;
   }
@@ -199,7 +207,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     const directory = s.directory ?? config.OPENCODE_DIRECTORY;
     const agents = await oc.listAgents(directory);
     if (!agents.length) {
-      await send("no agents available.");
+      await send("no agents available. Configure agents in OpenCode.");
       return true;
     }
     const lines = agents.map((a: any) => `• <b>${esc(a.name ?? a.id)}</b>${a.description ? " — " + esc(a.description) : ""}`);
@@ -396,7 +404,16 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       await send("no active session.");
       return true;
     }
-    await send(`Delete session <code>${esc(s.sessionId)}</code>? Reply /delete confirm to proceed.`);
+    await send(`Delete session <code>${esc(s.sessionId)}</code>?`, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Confirm delete", callback_data: `delete:confirm:${s.sessionId}` },
+            { text: "❌ Cancel", callback_data: "delete:cancel" },
+          ],
+        ],
+      },
+    });
     return true;
   }
 
