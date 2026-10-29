@@ -184,10 +184,10 @@ async function main() {
       if (threadBySession.has(sessionId)) {
         cs.threadId = threadBySession.get(sessionId);
         // Keep topic name in sync with session title.
-        if (cs.threadId && topicsEnabled) {
+        if (cs.threadId && topicsEnabled && chatId > 0) {
           await tg.editForumTopic(chatId, cs.threadId, (s.title ?? sessionId).slice(0, 120)).catch(() => {});
         }
-      } else {
+      } else if (topicsEnabled && chatId > 0) {
         try {
           const topic = await tg.createForumTopic(chatId, (s.title ?? sessionId).slice(0, 120));
           cs.threadId = topic.message_thread_id;
