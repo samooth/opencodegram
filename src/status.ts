@@ -12,10 +12,11 @@ export type StatusManager = ReturnType<typeof createStatusManager>;
 function renderTools(details: ChatSession["toolCallDetails"], limit: number): string {
   return details
     .map((d) => {
-      const input = d.input ? "Input: " + esc(d.input.slice(0, limit)) : "";
-      const output = d.output ? "Output: " + esc(d.output.slice(0, limit)) : "";
       const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-      return status + " " + esc(d.name) + (input ? "\n" + input : "") + (output ? "\n" + output : "");
+      const lines = [status + " " + d.name];
+      if (d.input) lines.push("   in: " + d.input.slice(0, limit));
+      if (d.output) lines.push("   out: " + d.output.slice(0, limit));
+      return lines.join("\n");
     })
     .join("\n\n");
 }
@@ -87,7 +88,7 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
     }
     if (s.toolCallDetails.length) {
       const details = renderTools(s.toolCallDetails.slice(-5), 200);
-      lines.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+      lines.push("<details open><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
     } else if (s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
@@ -125,7 +126,6 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
     }
     if (s.statusMessageId) {
       const previousCot = s.cotBuffer?.trim() ?? "";
-      console.log("[status] finish reasoningLen=", s.reasoningBuffer.trim().length, "cotLen=", previousCot.length, "stopped=", s.stopped, "tools=", s.toolCallDetails.length, "statusMsg=", s.statusMessageId);
       const lines: string[] = [];
       if (previousCot) {
         const cot = previousCot.slice(-3500);

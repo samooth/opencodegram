@@ -32,7 +32,7 @@ export async function handleEvent(event: { type: string; data?: any }, deps: Eve
 
   const e = event as { type: string; data?: any };
 // Log a compact line for debugging.
-if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle" || e.type.endsWith("failed") || e.type === "session.step.started" || e.type === "session.step.ended" || e.type.startsWith("session.reasoning")) {
+if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle" || e.type.endsWith("failed") || e.type === "session.step.started" || e.type === "session.step.ended" || e.type === "session.reasoning.started" || e.type === "session.reasoning.ended") {
   console.log("[event]", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
 }
 
