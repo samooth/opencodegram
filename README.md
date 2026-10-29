@@ -46,6 +46,7 @@ rate-limit retry timing and command parsing.
 - `/file <path>` — send a local file as a document
 - `/ls [path] [-a]`, `/find <text> [-a]`, `/read <path> [line]` — file browser
   with previews and “send as document” buttons
+- `/zip [path]` — archive a file or directory and send it
 - `/diff`, `/context`, `/sync`, `/compact`, `/usage` — session tools
 - `/vcs`, `/worktrees`, `/forms`, `/formreply` — project tools
 - `/stop` — stop the active turn

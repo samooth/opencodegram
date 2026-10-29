@@ -27,10 +27,14 @@
   previewed or sent as documents.
 - `/read <path> [start_line]` — preview a UTF-8 text file with line numbers;
   binary files are sent as documents automatically.
+- `/zip [path]` — archive a file or directory and send it as a document (≤ 45 MB;
+  excludes `node_modules`, `.git`, `dist` and caches).
 - `/diff` — diff summary and per-file patches.
 
 All file commands resolve symlinks and confine the real target to the active
 session directory. External symlinks are shown as `🔗` but cannot be opened.
+After a turn, files reported by OpenCode are also sent automatically as
+documents.
 
 ## Context and usage
 

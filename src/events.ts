@@ -3,6 +3,7 @@ import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import { esc, rateLimitRetryAt, threadOpts } from "./util.js";
+import { formatBytes, prepareDocument } from "./files.js";
 
 export type PermissionInfo = {
   chatId: number;
@@ -165,6 +166,28 @@ if (e.type === "session.step.ended") {
   if (finish && finish !== "tool-calls") {
     if (s.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
     if (!s.stopped) await finishStatus(chatId, s);
+    // Deliver files produced by the turn as Telegram documents.
+    if (!s.stopped) {
+      const artifacts = Array.isArray(e.data?.files) ? e.data.files : [];
+      if (artifacts.length) {
+        const artifactThread = s.targetThreadId ?? s.threadId ?? resolveThreadId(sessionId);
+        const base = s.directory ?? process.cwd();
+        const maxArtifacts = 5;
+        for (const relativePath of artifacts.slice(0, maxArtifacts)) {
+          try {
+            const doc = await prepareDocument(base, String(relativePath));
+            if (doc.size <= 45 * 1024 * 1024) {
+              await tg.sendDocument(chatId, doc.absolute, doc.name, `<b>Artifact</b>\n<code>${esc(doc.relative || doc.name)}</code>\n${formatBytes(doc.size)}`, { ...threadOpts(artifactThread), parse_mode: "HTML" });
+            }
+          } catch (err) {
+            console.error("[artifact]", err);
+          }
+        }
+        if (artifacts.length > maxArtifacts) {
+          await tg.sendRichMessage(chatId, `📎 ${artifacts.length - maxArtifacts} more artifact(s) not sent (limit ${maxArtifacts}).`, threadOpts(artifactThread)).catch(() => {});
+        }
+      }
+    }
   }
 }
 

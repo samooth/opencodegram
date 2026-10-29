@@ -93,6 +93,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/ls [path] [-a]", "Browse a directory with buttons"],
       ["/find <text> [-a]", "Search files"],
       ["/read <path> [line]", "Preview a text file"],
+      ["/zip [path]", "Archive a file or directory and send it"],
       ["/usage", "Show usage and cost stats"],
       ["/vcs", "Show VCS status"],
       ["/worktrees", "List worktrees"],

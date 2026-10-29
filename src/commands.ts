@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
-import { fileErrorMessage, formatBytes, prepareDocument } from "./files.js";
+import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument } from "./files.js";
 import { esc, threadOpts } from "./util.js";
 
 /**
@@ -21,6 +21,7 @@ export const KNOWN_COMMANDS = new Set([
   "ls",
   "find",
   "read",
+  "zip",
   "model",
   "models",
   "agent",
@@ -135,6 +136,28 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       await files.showFind(chatId, threadId, query, { hidden });
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/zip" || text.startsWith("/zip ")) {
+    const rawPath = text.slice("/zip".length).trim() || ".";
+    const s = await restoreActiveSession(chatId, threadId);
+    const base = resolve(s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd());
+    let archive: Awaited<ReturnType<typeof createZipArchive>> | undefined;
+    try {
+      archive = await createZipArchive(base, rawPath);
+      await tg.sendDocument(
+        chatId,
+        archive.absolute,
+        archive.name,
+        `<b>${esc(archive.name)}</b>\n<code>${esc(rawPath)}</code>\n${formatBytes(archive.size)}`,
+        { ...threadOpts(threadId), parse_mode: "HTML" },
+      );
+    } catch (err) {
+      await send(`❌ ${esc(fileErrorMessage(err))}`);
+    } finally {
+      await archive?.cleanup();
     }
     return true;
   }

@@ -1,4 +1,6 @@
-import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { lstat, mkdtemp, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /**
@@ -22,6 +24,8 @@ export type FileEntry = {
   /** Symlink that points outside the session directory or is broken. */
   external: boolean;
 };
+
+const execFileAsync = promisify(execFile);
 
 export type SafePath = {
   /** Real path of the session directory. */
@@ -411,6 +415,62 @@ export function isProbablyBinary(buffer: Buffer): boolean {
     if (byte < 32) control++;
   }
   return sample.length > 0 && control / sample.length > 0.3;
+}
+
+export type ArchiveResult = {
+  absolute: string;
+  name: string;
+  size: number;
+  cleanup: () => Promise<void>;
+};
+
+export async function createZipArchive(
+  base: string,
+  input = ".",
+  maxBytes = MAX_DOCUMENT_BYTES,
+): Promise<ArchiveResult> {
+  const safe = await resolveSafePath(base, input || ".");
+  const st = await stat(safe.absolute).catch(() => null);
+  if (!st) throw new FileAccessError("not_found", `Path not found: ${input || "."}`);
+  if (!st.isDirectory() && !st.isFile()) {
+    throw new FileAccessError("invalid", "That path cannot be archived.");
+  }
+
+  const tmpDir = await mkdtemp(join("/tmp/opencode", "zip-"));
+  const archiveName = `${basename(safe.absolute) || "archive"}.zip`;
+  const archivePath = join(tmpDir, archiveName);
+  const target = safe.relative || ".";
+
+  try {
+    await execFileAsync(
+      "zip",
+      ["-r", "-y", "-q", archivePath, target, "-x", "*/node_modules/*", "*/.git/*", "*/dist/*", "*/.cache/*", "*/coverage/*"],
+      { cwd: safe.base },
+    );
+  } catch (err) {
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    const message = err instanceof Error ? err.message : String(err);
+    throw new FileAccessError("invalid", `Could not create archive: ${message}`);
+  }
+
+  const archiveStat = await stat(archivePath).catch(() => null);
+  if (!archiveStat) {
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    throw new FileAccessError("not_found", "Archive was not created.");
+  }
+  if (archiveStat.size > maxBytes) {
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    throw new FileAccessError("too_large", `Archive too large (${formatBytes(archiveStat.size)}; limit ${formatBytes(maxBytes)}).`);
+  }
+
+  return {
+    absolute: archivePath,
+    name: archiveName,
+    size: archiveStat.size,
+    cleanup: async () => {
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    },
+  };
 }
 
 export function formatBytes(bytes: number): string {
