@@ -264,7 +264,7 @@ if (e.type === "session.text.ended") {
       console.error("[send final]", err);
       return undefined;
     });
-    if (finalMessage?.message_id) messageToSession.set(finalMessage.message_id, s.sessionId);
+    if (finalMessage?.message_id) store.rememberMessageSession(finalMessage.message_id, s.sessionId);
     await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";

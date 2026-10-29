@@ -185,7 +185,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       lastChatBySession.set(s.sessionId, chatId);
       lastPromptBySession.set(s.sessionId, text);
       await startStatus(chatId, s);
-      if (s.statusMessageId) messageToSession.set(s.statusMessageId, s.sessionId);
+      if (s.statusMessageId) store.rememberMessageSession(s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {
         updateStatus(chatId, s).catch(() => {});
       }, 3000);
@@ -249,7 +249,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     lastChatBySession.set(s.sessionId, chatId);
     lastPromptBySession.set(s.sessionId, text);
     await startStatus(chatId, s);
-    if (s.statusMessageId) messageToSession.set(s.statusMessageId, s.sessionId);
+    if (s.statusMessageId) store.rememberMessageSession(s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {
       updateStatus(chatId, s).catch(() => {});
     }, 3000);

@@ -21,17 +21,20 @@ export class SessionStore {
   readonly activeSessionByRoute = new Map<string, string>();
   readonly threadBySession = new Map<string, number>();
   readonly chatBySession = new Map<string, number>();
+  readonly messageToSession = new Map<number, string>();
 
   readonly dataDir: string;
   private readonly threadsFile: string;
   private readonly chatsFile: string;
   private readonly activeFile: string;
+  private readonly messagesFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
     this.threadsFile = join(dataDir, "threads.json");
     this.chatsFile = join(dataDir, "chats.json");
     this.activeFile = join(dataDir, "active.json");
+    this.messagesFile = join(dataDir, "messages.json");
     this.load();
   }
 
@@ -89,6 +92,11 @@ export class SessionStore {
     this.saveActiveSessions();
   };
 
+  rememberMessageSession = (messageId: number, sessionId: string) => {
+    this.messageToSession.set(messageId, sessionId);
+    this.saveMessages();
+  };
+
   forgetSession = (sessionId: string) => {
     this.sessionsById.delete(sessionId);
     for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);
@@ -98,9 +106,11 @@ export class SessionStore {
     this.chatBySession.delete(sessionId);
     this.lastChatBySession.delete(sessionId);
     this.lastPromptBySession.delete(sessionId);
+    for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
     this.saveThreads();
     this.saveChats();
     this.saveActiveSessions();
+    this.saveMessages();
   };
 
   saveThreads = () => {
@@ -119,6 +129,17 @@ export class SessionStore {
       writeFileSync(this.activeFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[active] save failed", err);
+    }
+  };
+
+  saveMessages = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, string> = {};
+      for (const [mid, sid] of this.messageToSession) obj[String(mid)] = sid;
+      writeFileSync(this.messagesFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[messages] save failed", err);
     }
   };
 
@@ -149,6 +170,17 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[chats] load failed", err);
+    }
+    try {
+      if (existsSync(this.messagesFile)) {
+        const parsed = JSON.parse(readFileSync(this.messagesFile, "utf8")) as Record<string, string>;
+        for (const [k, v] of Object.entries(parsed)) {
+          const messageId = Number(k);
+          if (Number.isFinite(messageId) && v) this.messageToSession.set(messageId, v);
+        }
+      }
+    } catch (err) {
+      console.error("[messages] load failed", err);
     }
 
     // Explicit tab bindings.
