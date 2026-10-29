@@ -67,6 +67,24 @@ function renderTools(details: ChatSession["toolCallDetails"], limit: number): st
     .join("\n\n");
 }
 
+function isShellTool(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return normalized === "shell" || normalized === "bash" || normalized === "sh" || normalized.includes("shell");
+}
+
+function renderShell(details: ChatSession["toolCallDetails"], limit: number): string {
+  return details
+    .map((d) => {
+      const command = parseShellCommand(d.input ?? "") ?? d.input?.trim() ?? d.name;
+      const output = (parseShellOutput(d.output ?? "") ?? d.output ?? "").trim();
+      const lines = ["$ " + command];
+      if (output) lines.push(truncateText(output, limit));
+      if (d.status === "failed") lines.push("(failed)");
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
 /**
  * Owns the lifecycle of the single "status" card that accompanies a turn:
  * Working… (thinking, tools, partial text) → Done / Stopped, no Stop button.
@@ -133,10 +151,16 @@ export function createStatusManager({ tg, threadOptsFor, getSettings }: StatusDe
       const r = s.reasoningBuffer.trim().slice(0, 300);
       lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
     }
-    if (settings.showTools && s.toolCallDetails.length) {
-      const details = renderTools(s.toolCallDetails.slice(-5), 200);
-      lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
-    } else if (settings.showTools && s.toolCalls.length) {
+    const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
+    const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name));
+    if (settings.showTools && shellDetails.length) {
+      const shellText = renderShell(shellDetails.slice(-5), 200);
+      lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
+    }
+    if (settings.showTools && otherDetails.length) {
+      const details = renderTools(otherDetails.slice(-5), 200);
+      lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+    } else if (settings.showTools && !shellDetails.length && s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
     if (settings.showPartialText && s.buffer.trim()) {
@@ -185,9 +209,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings }: StatusDe
           const r = s.reasoningBuffer.trim().slice(0, 3500);
           lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
         }
-        if (settings.showTools && !s.stopped && s.toolCallDetails.length) {
-          const details = renderTools(s.toolCallDetails, 500);
-          lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+        const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
+        const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name));
+        if (settings.showTools && shellDetails.length) {
+          const shellText = renderShell(shellDetails, 500);
+          lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
+        }
+        if (settings.showTools && otherDetails.length) {
+          const details = renderTools(otherDetails, 500);
+          lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
         }
       }
       await tg
