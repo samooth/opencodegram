@@ -44,7 +44,6 @@ if (e.type === "session.text.started") {
   const s = _s0;
   if (!s) return;
   s.buffer = "";
-  s.reasoningBuffer = "";
   s.draftId = Math.floor(Math.random() * 2147483647) + 1;
   s.stopped = false;
   if (s.typingTimer) clearInterval(s.typingTimer);
