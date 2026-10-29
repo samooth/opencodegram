@@ -227,12 +227,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (editDetails.length) pendingEdits.set(messageId, s);
       const text = clampText(renderFinished(s, undefined, settings));
-      const keyboard = finishedKeyboard(editDetails, undefined, s);
-      console.log("[status] finish edits=", editDetails.length, "keyboard=", keyboard.length, "statusMsg=", messageId);
       await tg
         .editRichMessage(chatId, messageId, text, {
           ...threadOptsFor(s),
-          reply_markup: { inline_keyboard: keyboard },
+          reply_markup: { inline_keyboard: [] },
         })
         .catch(() => {});
       if (!s.stopped && s.reasoningBuffer.trim()) {
@@ -274,15 +272,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
       if (settings.showTools && editDetails.length) {
         const editLines = [`✏️ Edits: ${editDetails.length}`];
-        if (expandedEditIndex !== undefined) {
-          const detail = editDetails[expandedEditIndex];
-          if (detail) {
-            const file = relativeEditPath(target, extractEditFile(detail.input));
-            const diff = formatEditDiff(detail.input, settings.diffStyle, target.directory);
-            editLines.push(`<details open><summary>✏️ ${esc(file)}</summary>\n<pre><code class="language-diff">${esc(diff)}</code></pre>\n</details>`);
-          }
-        } else {
-          editLines.push("<i>Tap a file below to view its diff.</i>");
+        for (const detail of editDetails) {
+          const file = relativeEditPath(target, extractEditFile(detail.input));
+          const diff = formatEditDiff(detail.input, settings.diffStyle, target.directory);
+          editLines.push(`<details><summary>✏️ ${esc(file)}</summary>\n<pre><code class="language-diff">${esc(diff)}</code></pre>\n</details>`);
         }
         lines.push(editLines.join("\n"));
       }
