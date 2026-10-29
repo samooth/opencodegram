@@ -140,12 +140,12 @@ export class TelegramClient {
     return this.call<boolean>("sendChatAction", { chat_id: chatId, action, ...(messageThreadId ? { message_thread_id: messageThreadId } : {}) });
   }
 
-  setMyCommands(commands: Array<{ command: string; description: string }>): Promise<boolean> {
-    return this.call<boolean>("setMyCommands", { commands });
+  setMyCommands(commands: Array<{ command: string; description: string }>, scope?: Record<string, unknown>): Promise<boolean> {
+    return this.call<boolean>("setMyCommands", { commands, ...(scope ? { scope } : {}) });
   }
 
-  deleteMyCommands(): Promise<boolean> {
-    return this.call<boolean>("deleteMyCommands", {});
+  deleteMyCommands(scope?: Record<string, unknown>): Promise<boolean> {
+    return this.call<boolean>("deleteMyCommands", scope ? { scope } : {});
   }
 
   getFile(fileId: string): Promise<{ file_id: string; file_unique_id: string; file_size?: number; file_path?: string }> {

@@ -6,36 +6,11 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
-import { createState, findSessionById, findChatBySession, getActiveSession } from "./state.js";
+import type { ChatSession } from "./types.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-
-type ChatSession = {
-  sessionId: string;
-  directory?: string;
-  model?: { id: string; providerID: string; variant?: string };
-  draftId: number;
-  buffer: string;
-  reasoningBuffer: string;
-  toolCalls: string[];
-  toolCallDetails: Array<{ id: string; name: string; input?: string; output?: string; status?: string }>;
-  timer?: ReturnType<typeof setTimeout>;
-  typingTimer?: ReturnType<typeof setInterval>;
-  statusTimer?: ReturnType<typeof setTimeout>;
-  stopped: boolean;
-  threadId?: number;
-  targetChatId?: number;
-  targetThreadId?: number;
-  userMessageId?: number;
-  lastTyping?: number;
-  statusMessageId?: number;
-  statusLastUpdate?: number;
-  statusEditing?: boolean;
-  promptStartTime?: number;
-  lastOutputTokens?: number;
-};
 
 const lastPromptBySession = new Map<string, string>();
 
@@ -47,8 +22,8 @@ async function main() {
   const me = await tg.getMe();
   const topicsEnabled = me.has_topics_enabled === true;
   console.log(`[opencodegram] bot: @${me.username ?? me.first_name} (id ${me.id}) topics=${topicsEnabled}`);
-  await tg.deleteMyCommands().catch(() => {});
-  await tg.setMyCommands([
+
+  const botCommands = [
     { command: "start", description: "Welcome and control panel" },
     { command: "help", description: "Show help and panel" },
     { command: "status", description: "Show active session" },
@@ -73,19 +48,29 @@ async function main() {
     { command: "sync", description: "Sync session history to Telegram" },
     { command: "compact", description: "Compact session history" },
     { command: "stop", description: "Stop the active turn" },
-  ]).catch((err) => console.error("[commands]", err));
+  ];
+  await tg.deleteMyCommands().catch(() => {});
+  await tg.setMyCommands(botCommands).catch((err) => console.error("[commands]", err));
+  await tg.setMyCommands(botCommands, { type: "all_private_chats" }).catch(() => {});
+  await tg.setMyCommands(botCommands, { type: "all_group_chats" }).catch(() => {});
   const info = await oc.serverInfo();
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const sessionsByChat = new Map<number, ChatSession>();
   const sessionsByThread = new Map<number, ChatSession>(); // threadId -> session (for topics)
+  const sessionsById = new Map<string, ChatSession>(); // canonical session index
   const retryingSessions = new Set<string>();
   const lastChatBySession = new Map<string, number>(); // sessionId -> chatId where last prompted
-  const findChatBySession = (sessionId: string): number | undefined => {
-    for (const [cid, s] of sessionsByChat) if (s.sessionId === sessionId) return cid;
-    return undefined;
-  };
+
+  // Every route (chat + optional topic) owns exactly one session.
+  // Persisted in data/active.json so restarts never silently create a new session.
+  const activeSessionByRoute = new Map<string, string>(); // "chatId:threadId" -> sessionId
+  const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
+
   const findSessionById = (sessionId: string): ChatSession | undefined => {
+    const indexed = sessionsById.get(sessionId);
+    if (indexed) return indexed;
+    for (const s of sessionsByThread.values()) if (s.sessionId === sessionId) return s;
     for (const s of sessionsByChat.values()) if (s.sessionId === sessionId) return s;
     return undefined;
   };
@@ -93,15 +78,23 @@ async function main() {
   const resolveChatId = (sessionId: string | undefined): number | undefined => {
     if (!sessionId) return undefined;
     const s = findSessionById(sessionId);
-    return s?.targetChatId ?? lastChatBySession.get(sessionId) ?? findChatBySession(sessionId);
+    if (s?.targetChatId !== undefined) return s.targetChatId;
+    return chatBySession.get(sessionId) ?? lastChatBySession.get(sessionId);
   };
 
-  const threadOptsFor = (s: ChatSession | undefined, chatId: number): Record<string, unknown> => {
-    if (!s) return {};
-    if (s.targetThreadId && chatId > 0) return { message_thread_id: s.targetThreadId };
-    if (s.threadId && chatId > 0) return { message_thread_id: s.threadId };
-    return {};
+  const resolveThreadId = (sessionId: string | undefined): number | undefined => {
+    if (!sessionId) return undefined;
+    const s = findSessionById(sessionId);
+    if (s?.targetThreadId !== undefined) return s.targetThreadId;
+    if (s?.threadId !== undefined) return s.threadId;
+    return threadBySession.get(sessionId);
   };
+
+  const threadOptsFor = (s: ChatSession | undefined, _chatId?: number): Record<string, unknown> => {
+    const tid = s?.targetThreadId ?? s?.threadId;
+    return tid ? { message_thread_id: tid } : {};
+  };
+  const threadOpts = (threadId?: number): Record<string, unknown> => (threadId ? { message_thread_id: threadId } : {});
   const audit = (action: string, detail: string) => {
     try {
       mkdirSync(join(process.cwd(), "data"), { recursive: true });
@@ -112,36 +105,71 @@ async function main() {
     }
   };
   const getActiveSession = (chatId: number, threadId?: number): ChatSession | undefined => {
-    if (threadId) {
-      const byThread = sessionsByThread.get(threadId);
-      if (byThread) return byThread;
-      for (const s of sessionsByChat.values()) if (s.threadId === threadId) return s;
-    }
+    // A topic must never fall back to another tab's session.
+    if (threadId !== undefined) return sessionsByThread.get(threadId);
     return sessionsByChat.get(chatId);
   };
 
-  const ensureActiveSession = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
-    let s = getActiveSession(chatId, threadId);
-    if (s) return s;
-    // Never reuse a session from another chat; always create a dedicated one.
-    if (threadId) {
-      const existing = sessionsByThread.get(threadId);
-      if (existing) return existing;
+  // Rebind the session that this exact tab had before a restart. Never creates.
+  const restoreActiveSession = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
+    const existing = getActiveSession(chatId, threadId);
+    if (existing) return existing;
+
+    // Restore the persisted binding for this exact tab.
+    const mapped = activeSessionByRoute.get(routeKey(chatId, threadId));
+    if (mapped) {
+      try {
+        await activateSession(chatId, mapped, true, threadId);
+        return getActiveSession(chatId, threadId);
+      } catch (err) {
+        console.error("[session] restore failed", mapped, err);
+        activeSessionByRoute.delete(routeKey(chatId, threadId));
+        threadBySession.delete(mapped);
+        chatBySession.delete(mapped);
+        sessionsById.delete(mapped);
+        lastChatBySession.delete(mapped);
+        saveActiveSessions();
+        saveThreads();
+        saveChats();
+      }
     }
-    await createNewSession(chatId, true, threadId);
-    return threadId ? sessionsByThread.get(threadId) : sessionsByChat.get(chatId);
+
+    // One-time migration for installs that predate active.json: threads.json
+    // already records which session belongs to each topic.
+    if (threadId !== undefined) {
+      const candidates = [...threadBySession.entries()]
+        .filter(([sid, tid]) => tid === threadId && (chatBySession.get(sid) ?? chatId) === chatId)
+        .map(([sid]) => sid);
+      for (const sid of candidates) {
+        try {
+          await activateSession(chatId, sid, true, threadId);
+          return getActiveSession(chatId, threadId);
+        } catch {
+          // try the next candidate
+        }
+      }
+    }
+
+    return undefined;
   };
-  const sessionListByChat = new Map<number, string[]>();
-  const commandListByChat = new Map<number, string[]>();
-  const modelListByChat = new Map<number, Array<any>>();
-  const pendingModelByChat = new Map<number, any>();
+
+  // Used only when a prompt needs a session: reuse the tab binding or create a
+  // dedicated session. Commands use restoreActiveSession so they never spawn
+  // sessions as a side effect.
+  const ensureActiveSession = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
+    const restored = await restoreActiveSession(chatId, threadId);
+    if (restored) return restored;
+    await createNewSession(chatId, true, threadId);
+    return getActiveSession(chatId, threadId);
+  };
+
+  const modelListByChat = new Map<string, Array<any>>();
+  const pendingModelByChat = new Map<string, any>();
   let modelCache: { time: number; data: any[] } | null = null;
   const THREADS_FILE = join(process.cwd(), "data", "threads.json");
   const CHATS_FILE = join(process.cwd(), "data", "chats.json");
-  const LASTACTIVE_FILE = join(process.cwd(), "data", "lastactive.json");
   const threadBySession = new Map<string, number>();
   const chatBySession = new Map<string, number>();
-  const forumChats = new Set<number>();
   try {
     if (existsSync(THREADS_FILE)) {
       const raw = readFileSync(THREADS_FILE, "utf8");
@@ -159,16 +187,6 @@ async function main() {
     }
   } catch (err) {
     console.error("[chats] load failed", err);
-  }
-  let lastActiveChatId: number | undefined;
-  try {
-    if (existsSync(LASTACTIVE_FILE)) {
-      const raw = readFileSync(LASTACTIVE_FILE, "utf8");
-      const parsed = JSON.parse(raw) as { chatId?: number };
-      if (typeof parsed.chatId === "number") lastActiveChatId = parsed.chatId;
-    }
-  } catch (err) {
-    console.error("[lastactive] load failed", err);
   }
   const saveThreads = () => {
     try {
@@ -191,9 +209,96 @@ async function main() {
     }
   };
 
-  async function createNewSession(chatId: number, silent = false, threadId?: number): Promise<void> {
-    const old = sessionsByChat.get(chatId);
-    sessionsByChat.delete(chatId);
+  const ACTIVE_FILE = join(process.cwd(), "data", "active.json");
+  const saveActiveSessions = () => {
+    try {
+      mkdirSync(join(process.cwd(), "data"), { recursive: true });
+      const obj: Record<string, { sessionId: string; updated: number }> = {};
+      for (const [k, v] of activeSessionByRoute) obj[k] = { sessionId: v, updated: Date.now() };
+      writeFileSync(ACTIVE_FILE, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[active] save failed", err);
+    }
+  };
+  const rememberActiveRoute = (chatId: number, threadId: number | undefined, sessionId: string) => {
+    const key = routeKey(chatId, threadId);
+    const previous = activeSessionByRoute.get(key);
+    if (previous && previous !== sessionId) {
+      const stillUsed = [...activeSessionByRoute.entries()].some(([k, v]) => v === previous && k !== key);
+      if (!stillUsed) {
+        // The tab changed owner: stop routing the old session's events here.
+        forgetSession(previous);
+      }
+    }
+    // One session can only live in one tab at a time.
+    for (const [k, v] of activeSessionByRoute) if (v === sessionId && k !== key) activeSessionByRoute.delete(k);
+    activeSessionByRoute.set(key, sessionId);
+    saveActiveSessions();
+  };
+  const forgetSession = (sessionId: string) => {
+    sessionsById.delete(sessionId);
+    for (const [cid, cs] of sessionsByChat) if (cs.sessionId === sessionId) sessionsByChat.delete(cid);
+    for (const [tid, cs] of sessionsByThread) if (cs.sessionId === sessionId) sessionsByThread.delete(tid);
+    for (const [k, v] of activeSessionByRoute) if (v === sessionId) activeSessionByRoute.delete(k);
+    threadBySession.delete(sessionId);
+    chatBySession.delete(sessionId);
+    lastChatBySession.delete(sessionId);
+    lastPromptBySession.delete(sessionId);
+    saveThreads();
+    saveChats();
+    saveActiveSessions();
+  };
+
+  // Load explicit tab bindings.
+  try {
+    if (existsSync(ACTIVE_FILE)) {
+      const raw = readFileSync(ACTIVE_FILE, "utf8");
+      const parsed = JSON.parse(raw) as Record<string, string | { sessionId?: string; threadId?: number }>;
+      for (const [key, value] of Object.entries(parsed)) {
+        const entry = typeof value === "string" ? { sessionId: value } : value;
+        if (!entry?.sessionId) continue;
+        const [chatPart, threadPart] = key.split(":");
+        const chatId = Number(chatPart);
+        const threadId = Number(threadPart) || undefined;
+        if (!Number.isFinite(chatId) || chatId === 0) continue;
+        activeSessionByRoute.set(routeKey(chatId, threadId), entry.sessionId);
+        if (threadId) threadBySession.set(entry.sessionId, threadId);
+        chatBySession.set(entry.sessionId, chatId);
+      }
+    }
+  } catch (err) {
+    console.error("[active] load failed", err);
+  }
+
+  // Migration for installs created before active.json existed: each topic in
+  // threads.json is already bound to a session, so reuse that binding.
+  for (const [sessionId, threadId] of threadBySession) {
+    const chatId = chatBySession.get(sessionId);
+    if (chatId === undefined) continue;
+    const key = routeKey(chatId, threadId);
+    if (!activeSessionByRoute.has(key)) activeSessionByRoute.set(key, sessionId);
+  }
+  if (activeSessionByRoute.size) saveActiveSessions();
+
+  // A tab only ever shows one session. When its owner changes, stop the old
+  // turn, remove its Stop button and drop it from the routing tables.
+  const retireSession = async (chatId: number, previous: ChatSession) => {
+    previous.stopped = true;
+    if (previous.timer) { clearTimeout(previous.timer); previous.timer = undefined; }
+    if (previous.typingTimer) { clearInterval(previous.typingTimer); previous.typingTimer = undefined; }
+    if (previous.statusTimer) { clearInterval(previous.statusTimer); previous.statusTimer = undefined; }
+    await oc.interrupt(previous.sessionId).catch(() => {});
+    if (previous.statusMessageId) {
+      await tg.editRichMessage(chatId, previous.statusMessageId, "⏹ <b>Replaced by another session</b>", {
+        ...threadOptsFor(previous, chatId),
+        reply_markup: { inline_keyboard: [] },
+      }).catch(() => {});
+      previous.statusMessageId = undefined;
+    }
+    forgetSession(previous.sessionId);
+  };
+
+  async function createNewSession(chatId: number, silent = false, threadId?: number): Promise<ChatSession | undefined> {
     const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
     let model: { id: string; providerID: string; variant?: string } | undefined;
     try {
@@ -208,77 +313,133 @@ async function main() {
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const title = (session as any)?.title ?? "Telegram session";
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false };
-    if (threadId) {
-      cs.threadId = threadId;
-    } else if (topicsEnabled) {
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId };
+
+    let targetThread = threadId;
+    if (targetThread === undefined && topicsEnabled && chatId > 0) {
       try {
         const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
-        cs.threadId = topic.message_thread_id;
-        threadBySession.set(sessionId, cs.threadId!);
-        saveThreads();
+        targetThread = topic.message_thread_id;
       } catch {
         // Topic creation may fail in non-forum chats; fall back to general chat.
       }
     }
-    sessionsByChat.set(chatId, cs);
-    if (cs.threadId) sessionsByThread.set(cs.threadId, cs);
-    rememberSessionChat(sessionId, chatId);
-    if (!silent) {
-      await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, cs.threadId ? { message_thread_id: cs.threadId } : {});
+
+    if (targetThread !== undefined) {
+      cs.threadId = targetThread;
+      cs.targetThreadId = targetThread;
+      // One topic = one session. Retire the session previously shown there.
+      const previous = sessionsByThread.get(targetThread);
+      if (previous && previous.sessionId !== sessionId) await retireSession(chatId, previous);
+      for (const [tid, existing] of sessionsByThread) if (tid !== targetThread && existing.sessionId === sessionId) sessionsByThread.delete(tid);
+      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== sessionId) threadBySession.delete(sid);
+      sessionsByThread.set(targetThread, cs);
+      threadBySession.set(sessionId, targetThread);
+      saveThreads();
+      try {
+        await tg.editForumTopic(chatId, targetThread, title.slice(0, 120));
+        cs.topicTitle = title.slice(0, 120);
+      } catch {
+        // Topic titles are cosmetic; never block session creation on them.
+      }
+    } else {
+      const prev = sessionsByChat.get(chatId);
+      if (prev && prev.sessionId !== sessionId) await retireSession(chatId, prev);
+      sessionsByChat.set(chatId, cs);
     }
+
+    sessionsById.set(sessionId, cs);
+    rememberSessionChat(sessionId, chatId);
+    rememberActiveRoute(chatId, targetThread, sessionId);
+    if (!silent) {
+      await tg.sendRichMessage(chatId, `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`, threadOpts(targetThread));
+    }
+    return cs;
   }
 
-  async function activateSession(chatId: number, sessionId: string, silent = true): Promise<void> {
+  async function activateSession(chatId: number, sessionId: string, silent = true, threadId?: number): Promise<ChatSession | undefined> {
     const session = await oc.client.session.get({ sessionID: sessionId });
     const s = session as any;
     const directory = s?.location?.directory ?? s?.directory;
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
-    const old = sessionsByChat.get(chatId);
-    // (no-op: sessionsByChat is keyed by chatId)
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false };
-    if (topicsEnabled) {
-      if (threadBySession.has(sessionId)) {
-        cs.threadId = threadBySession.get(sessionId);
-        // Keep topic name in sync with session title.
-        if (cs.threadId && topicsEnabled && chatId > 0) {
-          try {
-            await tg.editForumTopic(chatId, cs.threadId, (s.title || sessionId).slice(0, 120));
-          } catch {
-            // Topic may have been deleted; create a new one.
+    const title = (s.title || sessionId).slice(0, 120);
+    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId };
+
+    // If this session was already tracked, retire its old status message so it
+    // doesn't keep a stale Stop button when the session moves to another tab.
+    const stale = sessionsById.get(sessionId);
+    if (stale && stale !== cs) {
+      if (stale.statusTimer) { clearInterval(stale.statusTimer); stale.statusTimer = undefined; }
+      await finishStatus(chatId, stale).catch(() => {});
+    }
+
+    let targetThread = threadId ?? threadBySession.get(sessionId);
+    if (targetThread === undefined && topicsEnabled && chatId > 0) {
+      try {
+        const topic = await tg.createForumTopic(chatId, title);
+        targetThread = topic.message_thread_id;
+      } catch {
+        // Topic creation may fail in non-forum chats; fall back to general chat.
+      }
+    }
+
+    if (targetThread !== undefined) {
+      cs.threadId = targetThread;
+      cs.targetThreadId = targetThread;
+      // A tab always shows exactly one session. Retire whatever was there before.
+      const previous = sessionsByThread.get(targetThread);
+      if (previous && previous.sessionId !== sessionId) await retireSession(chatId, previous);
+      // Move the session to this tab and remove duplicates from other tabs.
+      for (const [tid, existing] of sessionsByThread) {
+        if (tid !== targetThread && existing.sessionId === sessionId) sessionsByThread.delete(tid);
+      }
+      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== sessionId) threadBySession.delete(sid);
+      sessionsByThread.set(targetThread, cs);
+      threadBySession.set(sessionId, targetThread);
+      saveThreads();
+
+      // Keep the tab title in sync with the OpenCode session title.
+      if (targetThread !== undefined) {
+        try {
+          await tg.editForumTopic(chatId, targetThread, title);
+          cs.topicTitle = title;
+        } catch {
+          // Topic may have been deleted. Only recreate when we weren't explicitly
+          // asked to bind to this particular tab.
+          if (threadId === undefined) {
             try {
-              const topic = await tg.createForumTopic(chatId, (s.title || sessionId).slice(0, 120));
-              cs.threadId = topic.message_thread_id;
-              threadBySession.set(sessionId, cs.threadId!);
+              const topic = await tg.createForumTopic(chatId, title);
+              const oldTarget = targetThread;
+              sessionsByThread.delete(targetThread);
+              threadBySession.delete(sessionId);
+              targetThread = topic.message_thread_id;
+              if (oldTarget !== undefined) activeSessionByRoute.delete(routeKey(chatId, oldTarget));
+              cs.threadId = targetThread;
+              cs.targetThreadId = targetThread;
+              sessionsByThread.set(targetThread, cs);
+              threadBySession.set(sessionId, targetThread);
               saveThreads();
             } catch {
-              // fall back
+              // keep the previous binding
             }
           }
         }
-      } else if (topicsEnabled && chatId > 0) {
-        try {
-          const topic = await tg.createForumTopic(chatId, (s.title || sessionId).slice(0, 120));
-          cs.threadId = topic.message_thread_id;
-          threadBySession.set(sessionId, cs.threadId!);
-          saveThreads();
-        } catch {
-          // Topic creation may fail in non-forum chats; fall back to general chat.
-        }
       }
+    } else {
+      for (const [tid, existing] of sessionsByThread) if (existing.sessionId === sessionId) sessionsByThread.delete(tid);
+      const prev = sessionsByChat.get(chatId);
+      if (prev && prev.sessionId !== sessionId) await retireSession(chatId, prev);
+      sessionsByChat.set(chatId, cs);
     }
-    sessionsByChat.set(chatId, cs);
-    if (cs.threadId) sessionsByThread.set(cs.threadId, cs);
-    cs.targetChatId = chatId;
+
+    sessionsById.set(sessionId, cs);
     rememberSessionChat(sessionId, chatId);
+    rememberActiveRoute(chatId, targetThread, sessionId);
     if (!silent) {
-      if (cs.threadId && chatId > 0) {
-        await tg.sendRichMessage(chatId, `✅ Session activated: <b>${esc(s.title || sessionId)}</b>\nOpen the topic above to continue.`).catch(() => {});
-        await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, { message_thread_id: cs.threadId });
-      } else {
-        await tg.sendRichMessage(chatId, `<b>Active session</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`, {});
-      }
+      const text = `<b>Active session</b>\n<code>${esc(sessionId)}</code>\n${esc(title)}\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`;
+      await tg.sendRichMessage(chatId, text, threadOpts(targetThread)).catch(() => {});
     }
+    return cs;
   }
 
   async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}): Promise<void> {
@@ -298,13 +459,12 @@ async function main() {
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
     const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
     if (!list.length) {
-      await tg.sendRichMessage(chatId, "no sessions found.");
+      await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
       return;
     }
     const total = list.length;
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
-    sessionListByChat.set(chatId, slice.map((s: any) => s.id));
     const lines = slice.map((s: any, i: number) => {
       const title = esc(s.title ?? "(untitled)");
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
@@ -326,14 +486,13 @@ async function main() {
   }
 
   async function showCommands(chatId: number, threadId?: number): Promise<void> {
-    const s = sessionsByChat.get(chatId);
+    const s = getActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     const cmds = await oc.listCommands(directory);
     if (!cmds.length) {
-      await tg.sendRichMessage(chatId, "no commands available.");
+      await tg.sendRichMessage(chatId, "no commands available.", threadOpts(threadId));
       return;
     }
-    commandListByChat.set(chatId, cmds.map((c: any) => c.name));
     const lines = cmds.map((c: any) => `• <b>/${esc(c.name)}</b>${c.description ? " — " + esc(c.description) : ""}`);
     const tableRows = cmds.map((c: any) => `<tr><td><code>/${esc(c.name)}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");
     const table = `<table><tr><th>Command</th><th>Description</th></tr>${tableRows}</table>`;
@@ -345,16 +504,24 @@ async function main() {
       ["/help", "Show help and panel"],
       ["/status", "Show active session"],
       ["/sessions", "List and switch sessions"],
+      ["/use <id>", "Switch to a session by ID"],
+      ["/new", "Create a new session"],
       ["/models", "List and switch models"],
       ["/agents", "List and switch agents"],
+      ["/commands", "List OpenCode commands"],
       ["/usage", "Show usage and cost stats"],
       ["/vcs", "Show VCS status"],
       ["/worktrees", "List worktrees"],
+      ["/forms", "List pending forms"],
+      ["/formreply", "Reply to a form"],
       ["/fork", "Fork the active session"],
-      ["/rename", "Rename the active session"],
+      ["/rename <title>", "Rename the active session"],
       ["/archive", "Archive the active session"],
+      ["/unarchive", "Unarchive the active session"],
+      ["/delete", "Delete the active session"],
       ["/diff", "Show session diff"],
       ["/context", "Show session context"],
+      ["/sync", "Sync session history to Telegram"],
       ["/compact", "Compact session history"],
       ["/stop", "Stop the active turn"],
     ];
@@ -364,7 +531,7 @@ async function main() {
   }
 
   async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
-    const s = sessionsByChat.get(chatId);
+    const s = getActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     let raw: any[];
     const now = Date.now();
@@ -383,7 +550,7 @@ async function main() {
     });
     const current = s?.model;
     if (!list.length) {
-      await tg.sendRichMessage(chatId, "no models available.");
+      await tg.sendRichMessage(chatId, "no models available.", threadOpts(threadId));
       return;
     }
     // Flatten: each model entry already has providerID.
@@ -391,7 +558,7 @@ async function main() {
     const total = list.length;
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
-    modelListByChat.set(chatId, list);
+    modelListByChat.set(routeKey(chatId, threadId), list);
     const lines = slice.map((m: any, i: number) => {
       const name = esc(m.name ?? m.id);
       const variant = m.variants?.length ? esc(m.variants.map((v: any) => v.id).join(", ")) : "—";
@@ -414,7 +581,7 @@ async function main() {
   }
 
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {
-    const s = sessionsByChat.get(chatId);
+    const s = getActiveSession(chatId, threadId);
     const ocInfo = await oc.serverInfo().catch(() => null);
     let sessionCount = 0;
     try {
@@ -450,17 +617,16 @@ async function main() {
       [{ text: "📊 Status", callback_data: "panel:status" }, { text: "⏹ Stop", callback_data: "panel:stop" }],
       [{ text: "❓ Help", callback_data: "panel:help" }],
     ];
-    await tg.sendRichMessage(chatId, text, { ...(threadId && chatId > 0 ? { message_thread_id: threadId } : {}), reply_markup: { inline_keyboard: keyboard } });
+    await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
   const rememberSessionChat = (sessionId: string, chatId: number) => {
     chatBySession.set(sessionId, chatId);
     saveChats();
   };
   const pendingPermissions = new Map<string, { chatId: number; sessionId: string; messageId?: number; decided: boolean; label: string; resource: string }>(); // requestId -> info
-  const awaitingReason = new Map<number, string>(); // chatId -> requestId
+  const awaitingReason = new Map<string, string>(); // routeKey -> requestId
 
-  const flushDraft = async (chatId: number) => {
-    const s = sessionsByChat.get(chatId);
+  const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
     s.timer = undefined;
     // Drafts are only available in private chats.
@@ -474,6 +640,15 @@ async function main() {
 
   const startStatus = async (chatId: number, s: ChatSession) => {
     const threadOpts = threadOptsFor(s, chatId);
+    s.statusFinished = false;
+    s.statusEditPromise = undefined;
+    s.statusEditing = false;
+    // A new user prompt starts a new turn: clear the previous turn's artifacts.
+    s.buffer = "";
+    s.reasoningBuffer = "";
+    s.toolCalls = [];
+    s.toolCallDetails = [];
+    s.stopped = false;
     try {
       const sent = await tg.sendRichMessage(chatId, "⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>", { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
       s.statusMessageId = sent.message_id;
@@ -484,7 +659,7 @@ async function main() {
   };
 
   const updateStatus = async (chatId: number, s: ChatSession, force = false) => {
-    if (!s.statusMessageId) return;
+    if (!s.statusMessageId || s.statusFinished) return;
     if (s.statusEditing) return;
     const now = Date.now();
     if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 4000) return;
@@ -512,24 +687,31 @@ async function main() {
       lines.push("<pre>" + esc(b) + "</pre>");
     }
     try {
-      await tg.editRichMessage(chatId, s.statusMessageId, lines.join("\n"), { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
+      const edit = tg.editRichMessage(chatId, s.statusMessageId, lines.join("\n"), { ...threadOpts, reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] } });
+      s.statusEditPromise = edit.then(() => undefined, () => undefined);
+      await edit;
     } catch (err) {
       console.error("[status]", err);
     } finally {
       s.statusEditing = false;
+      s.statusEditPromise = undefined;
     }
   };
 
   const finishStatus = async (chatId: number, s: ChatSession) => {
     if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+    s.statusFinished = true;
+    if (s.statusEditPromise) {
+      await s.statusEditPromise.catch(() => {});
+      s.statusEditPromise = undefined;
+    }
     if (s.statusMessageId) {
-      const threadOpts = threadOptsFor(s, chatId);
       const lines: string[] = ["✅ <b>Done</b>"];
-      if (s.reasoningBuffer.trim()) {
+      if (!s.stopped && s.reasoningBuffer.trim()) {
         const r = s.reasoningBuffer.trim().slice(0, 3500);
         lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
       }
-      if (s.toolCallDetails.length) {
+      if (!s.stopped && s.toolCallDetails.length) {
         const details = s.toolCallDetails.map((d) => {
           const input = d.input ? "Input: " + esc(d.input.slice(0, 500)) : "";
           const output = d.output ? "Output: " + esc(d.output.slice(0, 500)) : "";
@@ -538,8 +720,29 @@ async function main() {
         }).join("\n\n");
         lines.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
       }
-      await tg.editRichMessage(chatId, s.statusMessageId, lines.join("\n"), threadOpts).catch(() => {});
+      const body = lines.join("\n");
+      const safe = body.length > 3900 ? body.slice(0, 3900) + "\n…" : body;
+      await tg.editRichMessage(chatId, s.statusMessageId, safe, {
+        ...threadOptsFor(s, chatId),
+        reply_markup: { inline_keyboard: [] },
+      }).catch(() => {});
       s.statusMessageId = undefined;
+    }
+  };
+
+  // OpenCode renames sessions automatically (e.g. after the first prompt).
+  // Mirror that title into the Telegram tab so both always match.
+  const syncTopicTitle = async (chatId: number, s: ChatSession) => {
+    const threadId = s.targetThreadId ?? s.threadId;
+    if (!threadId) return;
+    try {
+      const res = await oc.client.session.get({ sessionID: s.sessionId });
+      const title = String((res as any)?.title ?? "").trim().slice(0, 120);
+      if (!title || title === s.topicTitle) return;
+      await tg.editForumTopic(chatId, threadId, title);
+      s.topicTitle = title;
+    } catch {
+      // Cosmetic only: never fail a turn because a topic title could not be updated.
     }
   };
 
@@ -559,29 +762,27 @@ async function main() {
         if (e.type === "session.text.started") {
           const sessionId = e.data?.sessionID ?? e.data?.session?.id;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           s.buffer = "";
           s.reasoningBuffer = "";
-          s.toolCalls = [];
-          s.toolCallDetails = [];
           s.draftId = Math.floor(Math.random() * 2147483647) + 1;
           s.stopped = false;
           if (s.typingTimer) clearInterval(s.typingTimer);
           s.typingTimer = setInterval(() => {
-            tg.sendChatAction(chatId, "typing", chatId > 0 ? s.threadId : undefined).catch(() => {});
+            tg.sendChatAction(chatId, "typing", s.threadId).catch(() => {});
           }, 4000);
-          tg.sendChatAction(chatId, "typing", chatId > 0 ? s.threadId : undefined).catch(() => {});
+          tg.sendChatAction(chatId, "typing", s.threadId).catch(() => {});
         }
 
         if (e.type === "session.reasoning.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           s.reasoningBuffer = "";
         }
@@ -589,9 +790,9 @@ async function main() {
         if (e.type === "session.reasoning.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           s.reasoningBuffer += e.data?.delta ?? "";
           updateStatus(chatId, s).catch(() => {});
@@ -600,9 +801,9 @@ async function main() {
         if (e.type === "session.tool.input.started") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           if (e.data?.name) s.toolCalls.push(e.data.name);
           const id = e.data?.id ?? String(s.toolCallDetails.length);
@@ -613,9 +814,9 @@ async function main() {
         if (e.type === "session.tool.called") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           const id = e.data?.id;
           const detail = s.toolCallDetails.find((d) => d.id === id);
@@ -629,9 +830,9 @@ async function main() {
         if (e.type === "session.tool.success") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           const id = e.data?.id;
           const detail = s.toolCallDetails.find((d) => d.id === id);
@@ -646,9 +847,9 @@ async function main() {
         if (e.type === "session.tool.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           const id = e.data?.id;
           const detail = s.toolCallDetails.find((d) => d.id === id);
@@ -662,43 +863,49 @@ async function main() {
         if (e.type === "session.text.delta") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           const delta = e.data?.delta ?? e.data?.text ?? "";
           s.buffer += delta;
           if (!s.timer) {
-            s.timer = setTimeout(() => void flushDraft(chatId), 250);
+            s.timer = setTimeout(() => void flushDraft(chatId, s), 250);
           }
         }
 
         if (e.type === "session.step.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined) continue;
-          const s = _s0 ?? sessionsByChat.get(chatId);
+          const s = _s0;
           if (!s) continue;
           const out = e.data?.tokens?.output;
           if (typeof out === "number") s.lastOutputTokens = out;
+          // "tool-calls" means the turn continues with another step; any other
+          // finish reason (stop / length / error) is the real end of the turn.
+          const finish = e.data?.finish ?? e.data?.rawFinish;
+          if (finish && finish !== "tool-calls") {
+            if (s.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
+            if (!s.stopped) await finishStatus(chatId, s);
+          }
         }
 
         if (e.type === "session.text.ended") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           // debug removed
           // debug removed
 
           if (chatId === undefined) continue;
-          let s = _s0 ?? sessionsByChat.get(chatId);
+          let s = _s0;
           if (!s) {
             // No in-memory session (e.g. after restart). Still deliver the final text if available.
             const fallbackText = (e.data?.text ?? "").toString().trim();
             if (fallbackText) {
-              const threadOpts = threadBySession.has(sessionId ?? "") && chatId > 0 ? { message_thread_id: threadBySession.get(sessionId!) } : {};
-              await tg.sendRichMessageMarkdown(chatId, fallbackText, threadOpts).catch((err) => console.error("[send final]", err));
+              await tg.sendRichMessageMarkdown(chatId, fallbackText, threadOpts(resolveThreadId(sessionId))).catch((err) => console.error("[send final]", err));
             }
             continue;
           }
@@ -712,8 +919,7 @@ async function main() {
             s.typingTimer = undefined;
           }
           if (!s.stopped) {
-            await flushDraft(chatId);
-            await finishStatus(chatId, s);
+            await flushDraft(chatId, s);
             const endedText = (e.data?.text ?? "").toString().trim();
             let finalText = endedText || s.buffer || "(empty response)";
             let elapsed = 0;
@@ -742,8 +948,9 @@ async function main() {
               finalText += "\n\n⚡ " + speed + " tok/s";
             }
             const threadOpts = threadOptsFor(s, chatId);
-            console.log("[send] final to chat=", chatId, "len=", finalText.length);
+            console.log("[send] final to chat=", chatId, "thread=", s.targetThreadId ?? s.threadId, "len=", finalText.length);
             await tg.sendRichMessageMarkdown(chatId, finalText, threadOpts).catch((err) => console.error("[send final]", err));
+            await syncTopicTitle(chatId, s).catch(() => {});
           }
           s.buffer = "";
         }
@@ -753,13 +960,13 @@ async function main() {
           const requestId = p.id;
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId === undefined || !requestId || !sessionId) continue;
           const label = p.tool ?? p.action ?? "permission";
           const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
-          const threadId = threadBySession.get(sessionId);
+          const threadId = resolveThreadId(sessionId);
           const sent = await tg.sendRichMessage(chatId, `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>\n\n<i>Expires in 5 minutes</i>`, {
-            ...(threadId && chatId > 0 ? { message_thread_id: threadId } : {}),
+            ...threadOpts(threadId),
             reply_markup: {
               inline_keyboard: [
                 [
@@ -796,12 +1003,12 @@ async function main() {
           const p = e.data ?? {};
           const sessionId = p.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId !== undefined) {
-            const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
+            const threadId = resolveThreadId(sessionId);
             const title = p.title ?? "Form";
             const formId = p.id ?? p.formID;
-            await tg.sendRichMessage(chatId, `<b>Form created</b>: ${esc(title)}\nID: <code>${esc(formId ?? "")}</code>\nUse /forms to view and reply.`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
+            await tg.sendRichMessage(chatId, `<b>Form created</b>: ${esc(title)}\nID: <code>${esc(formId ?? "")}</code>\nUse /forms to view and reply.`, threadOpts(threadId));
           }
         }
 
@@ -822,16 +1029,16 @@ async function main() {
         if (e.type === "session.execution.failed") {
           const sessionId = e.data?.sessionID;
           const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
+          const chatId = resolveChatId(sessionId);
           if (chatId !== undefined) {
             const msg = e.data?.error?.message ?? "execution failed";
-            const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
+            const threadId = resolveThreadId(sessionId);
             const isRateLimit = /rate limit|quota/i.test(msg);
             const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
-            const s2 = _s0 ?? (chatId ? sessionsByChat.get(chatId) : undefined);
+            const s2 = _s0;
             if (s2?.typingTimer) { clearInterval(s2.typingTimer); s2.typingTimer = undefined; }
             if (s2) await finishStatus(chatId, s2);
-            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
+            await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId));
             if (isRateLimit && sessionId && !retryingSessions.has(sessionId)) {
               const prompt = lastPromptBySession.get(sessionId);
               if (prompt) {
@@ -845,13 +1052,13 @@ async function main() {
                 }
                 const delay = retry.getTime() - now.getTime();
                 const timeStr = retry.toISOString().slice(11, 16);
-                await tg.sendRichMessage(chatId, `⏳ Rate limited. Will retry at ${timeStr} UTC.`, threadId && chatId > 0 ? { message_thread_id: threadId } : {});
+                await tg.sendRichMessage(chatId, `⏳ Rate limited. Will retry at ${timeStr} UTC.`, threadOpts(threadId));
                 setTimeout(async () => {
                   retryingSessions.delete(sessionId);
                   try {
                     await oc.prompt(sessionId, prompt);
                   } catch (err) {
-                    await tg.sendRichMessage(chatId, `❌ Retry failed: ${esc(String(err))}`, threadId && chatId > 0 ? { message_thread_id: threadId } : {}).catch(() => {});
+                    await tg.sendRichMessage(chatId, `❌ Retry failed: ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
                   }
                 }, delay);
               }
@@ -861,11 +1068,15 @@ async function main() {
 
         if (e.type === "session.idle") {
           const sessionId = e.data?.sessionID;
-          const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-          const chatId = resolveChatId(sessionId) ; // no fallback to lastActiveChatId: only respond for tracked sessions
-          if (chatId !== undefined) {
-            const threadId = sessionId ? threadBySession.get(sessionId) : undefined;
-            await tg.sendRichMessage(chatId, "✓ session idle", threadId && chatId > 0 ? { message_thread_id: threadId } : {});
+          const s = sessionId ? findSessionById(sessionId) : undefined;
+          if (s?.typingTimer) {
+            clearInterval(s.typingTimer);
+            s.typingTimer = undefined;
+          }
+          // Fallback turn-end signal for servers that emit session.idle.
+          const chatId = resolveChatId(sessionId);
+          if (s && chatId !== undefined && s.statusMessageId && !s.stopped) {
+            await finishStatus(chatId, s).catch(() => {});
           }
         }
       }
@@ -893,17 +1104,29 @@ async function main() {
 
       if (u.stopped_message_generation) {
         const d = u.stopped_message_generation;
-        // find session whose draft matches
-        for (const [chatId, s] of sessionsByChat) {
-          if (s.draftId === d.draft_id) {
-            s.stopped = true;
-            if (s.timer) {
-              clearTimeout(s.timer);
-              s.timer = undefined;
-            }
-            await oc.interrupt(s.sessionId);
-            await tg.sendRichMessage(chatId, "⏹ stopped");
+        // Find the session whose draft matches.
+        for (const s of sessionsById.values()) {
+          if (s.draftId !== d.draft_id) continue;
+          s.stopped = true;
+          if (s.timer) {
+            clearTimeout(s.timer);
+            s.timer = undefined;
           }
+          if (s.typingTimer) {
+            clearInterval(s.typingTimer);
+            s.typingTimer = undefined;
+          }
+          const chatId = s.targetChatId ?? d.chat.id;
+          await oc.interrupt(s.sessionId).catch(() => {});
+          if (s.statusMessageId) {
+            await tg.editRichMessage(chatId, s.statusMessageId, "⏹ <b>Stopped</b>", {
+              ...threadOptsFor(s, chatId),
+              reply_markup: { inline_keyboard: [] },
+            }).catch(() => {});
+            s.statusMessageId = undefined;
+          }
+          await tg.sendRichMessage(chatId, "⏹ stopped", threadOptsFor(s, chatId)).catch(() => {});
+          break;
         }
         continue;
       }
@@ -931,10 +1154,11 @@ async function main() {
             continue;
           }
           if (action === "rejectreason") {
-            // Set state to capture next text as reason
-            awaitingReason.set(info.chatId, requestId);
+            // Set state to capture the next text as the reason, scoped to this tab.
+            const reasonKey = routeKey(info.chatId, cq.message?.message_thread_id);
+            awaitingReason.set(reasonKey, requestId);
             setTimeout(() => {
-              if (awaitingReason.get(info.chatId) === requestId) awaitingReason.delete(info.chatId);
+              if (awaitingReason.get(reasonKey) === requestId) awaitingReason.delete(reasonKey);
             }, 2 * 60 * 1000);
             await tg.answerCallbackQuery(cq.id, "Send the reason as a message");
             if (info.messageId) {
@@ -976,7 +1200,7 @@ async function main() {
         }
         if (cbData === "panel:new") {
           await tg.answerCallbackQuery(cq.id, "Creating…");
-          await createNewSession(chatId, false);
+          await createNewSession(chatId, false, cq.message?.message_thread_id);
           await sendPanel(chatId, cq.message?.message_thread_id);
           continue;
         }
@@ -991,11 +1215,21 @@ async function main() {
           continue;
         }
         if (cbData === "panel:stop") {
-          const s = sessionsByChat.get(chatId);
+          const threadId = cq.message?.message_thread_id;
+          const s = getActiveSession(chatId, threadId);
           if (s) {
-            await oc.interrupt(s.sessionId);
+            s.stopped = true;
+            if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+            await oc.interrupt(s.sessionId).catch(() => {});
             await tg.answerCallbackQuery(cq.id, "Stopped");
-            await tg.sendRichMessage(chatId, "⏹ stopped");
+            if (s.statusMessageId) {
+              await tg.editRichMessage(chatId, s.statusMessageId, "⏹ <b>Stopped</b>", {
+                ...threadOptsFor(s, chatId),
+                reply_markup: { inline_keyboard: [] },
+              }).catch(() => {});
+              s.statusMessageId = undefined;
+            }
+            await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => {});
           } else {
             await tg.answerCallbackQuery(cq.id, "No active session");
           }
@@ -1004,9 +1238,10 @@ async function main() {
         const useMatch = cbData.match(/^use:(.+)$/);
         if (useMatch) {
           const sessionId = useMatch[1];
+          const threadId = cq.message?.message_thread_id;
           await tg.answerCallbackQuery(cq.id, "Switching…");
           try {
-            await activateSession(chatId, sessionId);
+            await activateSession(chatId, sessionId, true, threadId);
             if (cq.message?.message_id) {
               await tg.editRichMessage(chatId, cq.message.message_id, `✅ Switched to session\n<code>${esc(sessionId)}</code>`, { reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
             }
@@ -1031,14 +1266,16 @@ async function main() {
         const modelMatch = cbData.match(/^model:(\d+)$/);
         if (modelMatch) {
           const idx = parseInt(modelMatch[1], 10);
-          const models = modelListByChat.get(chatId) ?? [];
+          const threadId = cq.message?.message_thread_id;
+          const scope = routeKey(chatId, threadId);
+          const models = modelListByChat.get(scope) ?? [];
           const model = models[idx];
-          const s = getActiveSession(chatId, cq.message?.message_thread_id) ?? sessionsByChat.get(chatId);
+          const s = getActiveSession(chatId, threadId);
           if (!model || !s) {
             await tg.answerCallbackQuery(cq.id, "No active session/model");
             continue;
           }
-          pendingModelByChat.set(chatId, model);
+          pendingModelByChat.set(scope, model);
           const variants = Array.isArray(model.variants) ? model.variants : [];
           const keyboard: any[][] = [];
           if (variants.length) {
@@ -1057,8 +1294,10 @@ async function main() {
         const variantMatch = cbData.match(/^variant:(.+)$/);
         if (variantMatch) {
           const variantId = variantMatch[1];
-          const model = pendingModelByChat.get(chatId);
-          const s = getActiveSession(chatId, cq.message?.message_thread_id) ?? sessionsByChat.get(chatId);
+          const threadId = cq.message?.message_thread_id;
+          const scope = routeKey(chatId, threadId);
+          const model = pendingModelByChat.get(scope);
+          const s = getActiveSession(chatId, threadId);
           if (!model || !s) {
             await tg.answerCallbackQuery(cq.id, "No pending model");
             continue;
@@ -1067,7 +1306,8 @@ async function main() {
           await tg.answerCallbackQuery(cq.id, "Switching model…");
           try {
             await oc.switchModel(s.sessionId, { id: model.id, providerID: model.providerID, variant });
-            pendingModelByChat.delete(chatId);
+            pendingModelByChat.delete(scope);
+            s.model = { id: model.id, providerID: model.providerID, variant };
             if (cq.message?.message_id) {
               await tg.editRichMessage(chatId, cq.message.message_id, `✅ Model switched\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${variant ? " (" + esc(variant) + ")" : ""}`, { reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] } });
             }
@@ -1098,7 +1338,8 @@ async function main() {
         const cmdMatch = cbData.match(/^cmd:(.+)$/);
         if (cmdMatch) {
           const name = cmdMatch[1];
-          const s = sessionsByChat.get(chatId);
+          const threadId = cq.message?.message_thread_id;
+          const s = getActiveSession(chatId, threadId);
           if (!s) {
             await tg.answerCallbackQuery(cq.id, "No active session");
             continue;
@@ -1106,9 +1347,9 @@ async function main() {
           await tg.answerCallbackQuery(cq.id, `Running /${name}…`);
           try {
             await oc.runCommand(s.sessionId, name, "");
-            await tg.sendRichMessage(chatId, `ran /${esc(name)}`);
+            await tg.sendRichMessage(chatId, `ran /${esc(name)}`, threadOpts(threadId));
           } catch (err) {
-            await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
+            await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
           }
           continue;
         }
@@ -1143,9 +1384,10 @@ async function main() {
       audit("message", `${userId} ${chatId}: ${(msg.text ?? msg.caption ?? "").slice(0, 120)}`);
 
       // If we are awaiting a rejection reason, handle it.
-      if (msg.text && awaitingReason.has(chatId)) {
-        const requestId = awaitingReason.get(chatId)!;
-        awaitingReason.delete(chatId);
+      const reasonKey = routeKey(chatId, replyThread);
+      if (msg.text && awaitingReason.has(reasonKey)) {
+        const requestId = awaitingReason.get(reasonKey)!;
+        awaitingReason.delete(reasonKey);
         const info = pendingPermissions.get(requestId);
         if (info && !info.decided) {
           info.decided = true;
@@ -1199,10 +1441,10 @@ async function main() {
       }
 
       if (mediaToAttach.length) {
-        let s = await ensureActiveSession(chatId, replyThread);
+        const s = await ensureActiveSession(chatId, replyThread);
         if (!s) {
-          await createNewSession(chatId, true);
-          s = getActiveSession(chatId, replyThread) ?? sessionsByChat.get(chatId)!;
+          await send("no active session");
+          continue;
         }
         const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
         // Auto-switch to a vision-capable model if needed.
@@ -1225,10 +1467,19 @@ async function main() {
           }
         }
         try {
+          s.targetChatId = chatId;
+          s.targetThreadId = replyThread;
+          rememberSessionChat(s.sessionId, chatId);
+          rememberActiveRoute(chatId, replyThread, s.sessionId);
+          s.promptStartTime = Date.now();
           lastChatBySession.set(s.sessionId, chatId);
+          lastPromptBySession.set(s.sessionId, text);
+          await startStatus(chatId, s);
+          s.statusTimer = setInterval(() => { updateStatus(chatId, s).catch(() => {}); }, 3000);
           await oc.prompt(s.sessionId, text, mediaToAttach);
-          await send(`📎 Attached ${mediaToAttach.length} file(s) to the session.`, threadOptsFor(s, chatId));
         } catch (err) {
+          if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+          await finishStatus(chatId, s).catch(() => {});
           await send(`❌ ${esc(String(err))}`, threadOptsFor(s, chatId));
         }
         continue;
@@ -1250,25 +1501,28 @@ async function main() {
         continue;
       }
 
-      if (text === "/status") {
-        const s = await ensureActiveSession(chatId, replyThread);
-        await send(s ? `active session: ${s.sessionId}\ndir: ${s.directory}` : "no active session");
-        continue;
-      }
-
       if (text === "/new") {
-        await createNewSession(chatId, false);
+        await createNewSession(chatId, false, replyThread);
         continue;
       }
 
       if (text === "/stop" || text === "/abort") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) {
           await send("no active session");
           continue;
         }
         try {
+          s.stopped = true;
+          if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
           await oc.interrupt(s.sessionId);
+          if (s.statusMessageId) {
+            await tg.editRichMessage(chatId, s.statusMessageId, "⏹ <b>Stopped</b>", {
+              ...threadOptsFor(s, chatId),
+              reply_markup: { inline_keyboard: [] },
+            }).catch(() => {});
+            s.statusMessageId = undefined;
+          }
           await send("⏹ stopped", threadOptsFor(s, chatId));
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
@@ -1287,7 +1541,7 @@ async function main() {
       }
 
       if (text === "/agents" || text === "/agent") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         const directory = s.directory ?? config.OPENCODE_DIRECTORY;
         const agents = await oc.listAgents(directory);
@@ -1318,7 +1572,7 @@ async function main() {
       }
 
       if (text === "/vcs") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
         try {
           const info = await oc.vcsGet(directory);
@@ -1335,7 +1589,7 @@ async function main() {
       }
 
       if (text === "/worktrees") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
         try {
           const res = await oc.worktreeList(directory);
@@ -1350,7 +1604,7 @@ async function main() {
       }
 
       if (text === "/forms") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const forms = await oc.listForms(s.sessionId);
@@ -1367,7 +1621,7 @@ async function main() {
       }
 
       if (text.startsWith("/formreply ")) {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         const rest = text.slice(11).trim();
         const spaceIdx = rest.indexOf(" ");
@@ -1390,12 +1644,12 @@ async function main() {
       }
 
       if (text === "/fork") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const forked = await oc.forkSession(s.sessionId);
           const newId = (forked as any)?.id ?? (forked as any)?.sessionID ?? (forked as any)?.data?.id;
-          await activateSession(chatId, newId);
+          await activateSession(chatId, newId, true, replyThread);
           await send(`Forked session.\n<code>${esc(s.sessionId)}</code> → <code>${esc(newId)}</code>`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
@@ -1404,14 +1658,15 @@ async function main() {
       }
 
       if (text.startsWith("/rename ")) {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         const title = text.slice(8).trim();
         if (!title) { await send("usage: /rename <title>"); continue; }
         try {
           await oc.renameSession(s.sessionId, title);
-          if (s.threadId && chatId > 0) {
+          if (s.threadId) {
             await tg.editForumTopic(chatId, s.threadId, title.slice(0, 120)).catch(() => {});
+            s.topicTitle = title.slice(0, 120);
           }
           await send(`Renamed session to <b>${esc(title)}</b>.`);
         } catch (err) {
@@ -1421,7 +1676,7 @@ async function main() {
       }
 
       if (text === "/archive") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.archiveSession(s.sessionId, true);
@@ -1433,7 +1688,7 @@ async function main() {
       }
 
       if (text === "/unarchive") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.archiveSession(s.sessionId, false);
@@ -1445,7 +1700,7 @@ async function main() {
       }
 
       if (text === "/delete") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         // Simple confirmation via text; buttons would be better but keep simple.
         await send(`Delete session <code>${esc(s.sessionId)}</code>? Reply /delete confirm to proceed.`);
@@ -1453,13 +1708,13 @@ async function main() {
       }
 
       if (text === "/delete confirm") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.deleteSession(s.sessionId);
-          sessionsByChat.delete(chatId);
+          forgetSession(s.sessionId);
           await send("Session deleted.");
-          await sendPanel(chatId);
+          await sendPanel(chatId, replyThread);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
@@ -1467,7 +1722,7 @@ async function main() {
       }
 
       if (text === "/diff") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const diffs = await oc.diff(s.sessionId);
@@ -1485,7 +1740,7 @@ async function main() {
       }
 
       if (text === "/sync") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const ctx = await oc.context(s.sessionId);
@@ -1528,7 +1783,7 @@ async function main() {
       }
 
       if (text === "/context") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           const session = await oc.client.session.get({ sessionID: s.sessionId });
@@ -1612,7 +1867,7 @@ async function main() {
       }
 
       if (text === "/compact") {
-        const s = await ensureActiveSession(chatId, replyThread);
+        const s = await restoreActiveSession(chatId, replyThread);
         if (!s) { await send("no active session."); continue; }
         try {
           await oc.compactSession(s.sessionId);
@@ -1633,11 +1888,11 @@ async function main() {
       if (text === "/use" || text.startsWith("/use ")) {
         const sessionId = text.slice(4).trim();
         if (!sessionId) {
-          await showSessions(chatId, 0);
+          await showSessions(chatId, 0, undefined, replyThread);
           continue;
         }
         try {
-          await activateSession(chatId, sessionId);
+          await activateSession(chatId, sessionId, true, replyThread);
           await send(`✅ Switched to session\n<code>${esc(sessionId)}</code>`);
         } catch (err) {
           await send(`failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
@@ -1645,11 +1900,11 @@ async function main() {
         continue;
       }
 
-      // Create or reuse session
+      // Create or restore the session bound to this tab.
       let s = await ensureActiveSession(chatId, replyThread);
       if (!s) {
-        await createNewSession(chatId, true);
-        s = (await ensureActiveSession(chatId, replyThread))!;
+        await createNewSession(chatId, true, replyThread);
+        s = (await restoreActiveSession(chatId, replyThread))!;
       }
 
       const slash = text.match(/^\/([a-zA-Z0-9_-]+)(?:\s+(.*))?$/s);
@@ -1670,16 +1925,16 @@ async function main() {
         s.targetChatId = chatId;
         s.targetThreadId = replyThread;
         rememberSessionChat(s.sessionId, chatId);
+        rememberActiveRoute(chatId, replyThread, s.sessionId);
         s.promptStartTime = Date.now();
-        lastActiveChatId = chatId;
-        (globalThis as any).__lastActiveChatId = chatId;
-        try { writeFileSync(LASTACTIVE_FILE, JSON.stringify({ chatId })); } catch {}
         lastChatBySession.set(s.sessionId, chatId);
         lastPromptBySession.set(s.sessionId, text);
         await startStatus(chatId, s);
         s.statusTimer = setInterval(() => { updateStatus(chatId, s).catch(() => {}); }, 3000);
         await oc.prompt(s.sessionId, text);
       } catch (err) {
+        if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+        await finishStatus(chatId, s).catch(() => {});
         await send(`❌ ${esc(String(err))}`);
       }
     }

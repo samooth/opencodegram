@@ -14,10 +14,14 @@ export type ChatSession = {
   threadId?: number;
   targetChatId?: number;
   targetThreadId?: number;
+  topicTitle?: string;
   userMessageId?: number;
   lastTyping?: number;
   statusMessageId?: number;
   statusLastUpdate?: number;
+  statusEditing?: boolean;
+  statusFinished?: boolean;
+  statusEditPromise?: Promise<unknown>;
   promptStartTime?: number;
   lastOutputTokens?: number;
 };
