@@ -2,6 +2,44 @@ import type { ChatSession } from "./types.js";
 import type { TelegramClient } from "./telegram.js";
 import { clampText, esc } from "./util.js";
 
+function truncateText(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) + "…" : text;
+}
+
+function parseShellCommand(input: string): string | null {
+  try {
+    const parsed = JSON.parse(input);
+    if (parsed && typeof parsed.command === "string") return parsed.command;
+  } catch {
+    // Not JSON or not a shell command.
+  }
+  return null;
+}
+
+function parseShellOutput(output: string): string | null {
+  try {
+    const parsed = JSON.parse(output);
+    if (Array.isArray(parsed)) {
+      const texts = parsed
+        .map((item: { text?: unknown }) => (typeof item?.text === "string" ? item.text : ""))
+        .filter(Boolean);
+      if (texts.length) return texts.join("\n");
+    }
+    if (parsed && typeof parsed.text === "string") return parsed.text;
+  } catch {
+    // Not JSON or not a tool result envelope.
+  }
+  return null;
+}
+
+function prettyJson(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 export type StatusDeps = {
   tg: TelegramClient;
   threadOptsFor: (s: ChatSession | undefined) => Record<string, unknown>;
@@ -13,9 +51,21 @@ function renderTools(details: ChatSession["toolCallDetails"], limit: number): st
   return details
     .map((d) => {
       const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-      const lines = [status + " " + d.name];
-      if (d.input) lines.push("   in: " + d.input.slice(0, limit));
-      if (d.output) lines.push("   out: " + d.output.slice(0, limit));
+      const name = esc(d.name);
+      let inputLine = "";
+      if (d.input) {
+        const command = parseShellCommand(d.input);
+        const prettyInput = command ? `$ ${command}` : prettyJson(d.input);
+        inputLine = `in: ${prettyInput}`;
+      }
+      let outputText = "";
+      if (d.output) {
+        outputText = parseShellOutput(d.output) ?? d.output;
+      }
+      const outputLine = outputText ? `out: ${truncateText(outputText, limit)}` : "";
+      const lines = [`${status} ${name}`];
+      if (inputLine) lines.push("  " + truncateText(inputLine, limit));
+      if (outputLine) lines.push("  " + outputLine);
       return lines.join("\n");
     })
     .join("\n\n");
