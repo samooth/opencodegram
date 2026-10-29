@@ -191,6 +191,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
     }
+    if (s.compacting) {
+      lines.push("📦 <b>Compacting context…</b>");
+    } else if (s.compactionSummary?.trim()) {
+      lines.push("📦 " + esc(s.compactionSummary.trim().slice(0, 200)));
+    }
     try {
       const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n")), {
         ...opts,
@@ -281,6 +286,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         }
         lines.push(editLines.join("\n"));
       }
+    }
+    if (target.compacting) {
+      lines.push("📦 <b>Compacting context…</b>");
+    } else if (target.compactionSummary?.trim()) {
+      lines.push("📦 " + esc(target.compactionSummary.trim().slice(0, 300)));
     }
     return lines.join("\n");
   };

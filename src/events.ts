@@ -143,6 +143,67 @@ if (e.type === "session.tool.failed") {
   updateStatus(chatId, s, true).catch(() => {});
 }
 
+if (e.type === "session.compaction.started") {
+  const sessionId = e.data?.sessionID;
+  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+  const chatId = resolveChatId(sessionId);
+  if (chatId === undefined) return;
+  const s = _s0;
+  if (s) {
+    s.compacting = true;
+    s.compactionSummary = undefined;
+    updateStatus(chatId, s, true).catch(() => {});
+  } else {
+    const threadId = resolveThreadId(sessionId);
+    await tg.sendRichMessage(chatId, "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
+  }
+}
+
+if (e.type === "session.compaction.delta") {
+  const sessionId = e.data?.sessionID;
+  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+  const chatId = resolveChatId(sessionId);
+  if (chatId === undefined) return;
+  const s = _s0;
+  if (s) {
+    s.compactionSummary = (s.compactionSummary ?? "") + (e.data?.text ?? "");
+    updateStatus(chatId, s).catch(() => {});
+  }
+}
+
+if (e.type === "session.compaction.ended") {
+  const sessionId = e.data?.sessionID;
+  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+  const chatId = resolveChatId(sessionId);
+  if (chatId === undefined) return;
+  const s = _s0;
+  const threadId = resolveThreadId(sessionId);
+  const summary = (e.data?.text ?? "").trim();
+  const tokens = e.data?.tokens;
+  const tokenText = tokens ? ` · ${((tokens.input ?? 0) + (tokens.output ?? 0)).toLocaleString()} tokens` : "";
+  if (s) {
+    s.compacting = false;
+    s.compactionSummary = summary || s.compactionSummary;
+    updateStatus(chatId, s, true).catch(() => {});
+  }
+  await tg.sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${summary ? "\\n" + esc(summary.slice(0, 500)) : ""}`, threadOpts(threadId)).catch(() => {});
+}
+
+if (e.type === "session.compaction.failed") {
+  const sessionId = e.data?.sessionID;
+  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+  const chatId = resolveChatId(sessionId);
+  if (chatId === undefined) return;
+  const s = _s0;
+  const threadId = resolveThreadId(sessionId);
+  const msg = e.data?.error?.message ?? "compaction failed";
+  if (s) {
+    s.compacting = false;
+    updateStatus(chatId, s, true).catch(() => {});
+  }
+  await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
+}
+
 if (e.type === "session.text.delta") {
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
