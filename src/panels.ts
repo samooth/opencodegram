@@ -178,6 +178,73 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     });
   }
 
+  async function showStatus(chatId: number, threadId?: number): Promise<void> {
+    const s = getActiveSession(chatId, threadId);
+    const ocInfo = await oc.serverInfo().catch(() => null);
+    let sessionCount = 0;
+    try {
+      const res = await oc.client.session.list();
+      const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      sessionCount = list.length;
+    } catch {
+      // ignore
+    }
+    const cpuCount = os.cpus().length;
+    const load = os.loadavg().map((x) => x.toFixed(2)).join(" ");
+    const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
+    const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
+    let gpu = "";
+    try {
+      const out = execFileSync("nvidia-smi", ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
+      if (out) gpu = esc(out);
+    } catch {
+      // no gpu
+    }
+
+    let title = s?.sessionId ? "(loading…)" : "none";
+    let modelLine = "—";
+    let directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? "—";
+    let tokensLine = "—";
+    let costLine = "—";
+    let updatedLine = "—";
+    let turnLine = s?.statusMessageId ? "⏳ active" : "✅ idle";
+    if (s?.sessionId) {
+      try {
+        const session = (await oc.client.session.get({ sessionID: s.sessionId })) as any;
+        title = session?.title ?? s.sessionId;
+        const model = session?.model ?? s.model;
+        modelLine = model ? `${esc(model.providerID ?? "")}/${esc(model.id ?? "")}${model.variant ? " (" + esc(model.variant) + ")" : ""}` : "—";
+        directory = session?.location?.directory ?? session?.directory ?? directory;
+        const tokens = session?.tokens ?? {};
+        tokensLine = `in ${(tokens.input ?? 0).toLocaleString()} · out ${(tokens.output ?? 0).toLocaleString()} · reasoning ${(tokens.reasoning ?? 0).toLocaleString()}`;
+        costLine = (session?.cost ?? 0).toFixed(4);
+        if (session?.time?.updated) updatedLine = new Date(session.time.updated).toISOString().slice(0, 16).replace("T", " ");
+      } catch {
+        title = s.sessionId;
+        if (s.model) modelLine = `${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}`;
+      }
+    }
+
+    const rows = [
+      `<tr><td><b>Session</b></td><td><code>${esc(s?.sessionId ?? "none")}</code></td></tr>`,
+      s?.sessionId ? `<tr><td><b>Title</b></td><td>${esc(title)}</td></tr>` : "",
+      s?.sessionId ? `<tr><td><b>Model</b></td><td>${modelLine}</td></tr>` : "",
+      s?.sessionId ? `<tr><td><b>Directory</b></td><td><code>${esc(directory)}</code></td></tr>` : "",
+      s?.sessionId ? `<tr><td><b>Tokens</b></td><td>${tokensLine}</td></tr>` : "",
+      s?.sessionId ? `<tr><td><b>Cost</b></td><td>${costLine}</td></tr>` : "",
+      s?.sessionId ? `<tr><td><b>Updated</b></td><td>${updatedLine}</td></tr>` : "",
+      s?.sessionId ? `<tr><td><b>Turn</b></td><td>${turnLine}</td></tr>` : "",
+      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
+      `<tr><td><b>Host</b></td><td>${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB</td></tr>`,
+      gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
+    ].filter(Boolean).join("");
+    const text = `<b>📊 Status</b>\n\n<table>${rows}</table>`;
+    const keyboard: any[][] = [];
+    if (s?.statusMessageId) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
+    keyboard.push([{ text: "🔄 Refresh", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+  }
+
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {
     const s = getActiveSession(chatId, threadId);
     const ocInfo = await oc.serverInfo().catch(() => null);
@@ -217,5 +284,5 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
 
-  return { showSessions, showCommands, showModels, sendPanel };
+  return { showSessions, showCommands, showModels, showStatus, sendPanel };
 }
