@@ -225,6 +225,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const messageId = s.statusMessageId;
       s.expandedEditIndex = undefined;
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
+      console.log("[status] finish statusMsg=", messageId, "edits=", editDetails.length, "stopped=", s.stopped, "settings.showTools=", settings.showTools);
       if (editDetails.length) pendingEdits.set(messageId, s);
       const text = clampText(renderFinished(s, undefined, settings));
       await tg
