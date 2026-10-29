@@ -498,7 +498,7 @@ async function main() {
   const finishStatus = async (chatId: number, s: ChatSession) => {
     if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
     if (s.statusMessageId) {
-      const threadOpts = s.targetThreadId ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
+      const threadOpts = s.targetThreadId && chatId > 0 ? { message_thread_id: s.targetThreadId } : (s.threadId && chatId > 0 ? { message_thread_id: s.threadId } : {});
       const lines: string[] = ["✅ <b>Done</b>"];
       if (s.reasoningBuffer.trim()) {
         const r = s.reasoningBuffer.trim().slice(0, 3500);
