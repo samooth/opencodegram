@@ -26,9 +26,13 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
 
   const chatId = msg.chat.id;
   const replyThread = msg.message_thread_id;
+  // Ignore commands explicitly addressed to another bot.
+  const rawText = (msg.text ?? msg.caption ?? "").trim();
+  const commandTarget = rawText.match(/^\/[a-zA-Z0-9_-]+@([A-Za-z0-9_]+)/)?.[1];
+  if (commandTarget && commandTarget.toLowerCase() !== (me.username ?? "").toLowerCase()) return;
   // In groups, only respond to commands, mentions or replies to the bot.
   if (chatId < 0) {
-    const raw = (msg.text ?? msg.caption ?? "").trim();
+    const raw = rawText;
     const isCommand = raw.startsWith("/");
     const isMention = !!me.username && raw.toLowerCase().includes("@" + me.username.toLowerCase());
     const isReplyToBot = !!msg.reply_to_message && msg.reply_to_message.from?.id === me.id;
