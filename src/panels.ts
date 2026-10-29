@@ -48,13 +48,17 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       const title = esc(s.title ?? "(untitled)");
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
       const mark = activeId && activeId === s.id ? " ✅" : "";
-      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}</td><td><code>${esc(s.id)}</code></td><td>${model}</td></tr>`;
+      const directory = esc((s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "");
+      const dirSuffix = directory ? ` · ${directory}` : "";
+      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}</td><td><code>${esc(s.id)}</code></td><td>${model}${dirSuffix}</td></tr>`;
     });
-    const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model</th></tr>${lines.join("")}</table>`;
+    const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model / Dir</th></tr>${lines.join("")}</table>`;
     const keyboard: any[][] = slice.map((s: any, i: number) => {
       const title = (s.title ?? "(untitled)").slice(0, 40);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
-      const label = `${start + i + 1}. ${title}${model}`.slice(0, 64);
+      const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
+      const dirSuffix = directory ? ` · ${directory}` : "";
+      const label = `${start + i + 1}. ${title}${model}${dirSuffix}`.slice(0, 64);
       return [{ text: label, callback_data: `use:${s.id}` }];
     });
     const nav: any[] = [];

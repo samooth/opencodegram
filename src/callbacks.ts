@@ -212,6 +212,11 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const useMatch = cbData.match(/^use:(.+)$/);
   if (useMatch) {
     const sessionId = useMatch[1];
+    const current = getActiveSession(chatId, threadId);
+    if (current && current.statusMessageId) {
+      await tg.answerCallbackQuery(cq.id, "Stop the current turn first").catch(() => {});
+      return;
+    }
     await tg.answerCallbackQuery(cq.id, "Switching…");
     try {
       await activateSession(chatId, sessionId, true, threadId);

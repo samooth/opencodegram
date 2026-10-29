@@ -43,6 +43,7 @@ function makeBrowser() {
       documents.push({ path, name, caption });
       return { message_id: nextMessageId++ };
     },
+    deleteMessage: async () => true,
     answerCallbackQuery: async (_id: string, text?: string) => {
       answers.push(text);
       return true;
