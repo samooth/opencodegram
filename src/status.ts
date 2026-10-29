@@ -53,21 +53,15 @@ function renderTools(details: ChatSession["toolCallDetails"], limit: number): st
   return details
     .map((d) => {
       const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-      const name = esc(d.name);
-      let inputLine = "";
+      const lines = [status + " " + d.name];
       if (d.input) {
         const command = parseShellCommand(d.input);
-        const prettyInput = command ? `$ ${command}` : prettyJson(d.input);
-        inputLine = `in: ${prettyInput}`;
+        lines.push(command ? "$ " + command : prettyJson(d.input));
       }
-      let outputText = "";
       if (d.output) {
-        outputText = parseShellOutput(d.output) ?? d.output;
+        const output = parseShellOutput(d.output) ?? d.output;
+        lines.push(truncateText(output, limit));
       }
-      const outputLine = outputText ? `out: ${truncateText(outputText, limit)}` : "";
-      const lines = [`${status} ${name}`];
-      if (inputLine) lines.push("  " + truncateText(inputLine, limit));
-      if (outputLine) lines.push("  " + outputLine);
       return lines.join("\n");
     })
     .join("\n\n");
