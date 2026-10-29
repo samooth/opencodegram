@@ -237,7 +237,6 @@ if (e.type === "session.step.ended") {
   // "tool-calls" means the turn continues with another step; any other
   // finish reason (stop / length / error) is the real end of the turn.
   const finish = e.data?.finish ?? e.data?.rawFinish;
-  console.log("[step.ended]", sessionId, "s=", !!_s0, "chatId=", chatId, "finish=", finish, "statusMsg=", _s0?.statusMessageId);
   if (finish && finish !== "tool-calls") {
     if (s.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
     try {
@@ -275,7 +274,6 @@ if (e.type === "session.text.ended") {
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  console.log("[text.ended] entry", sessionId, "s=", !!_s0, "chatId=", chatId, "inById=", store.sessionsById.has(sessionId), "inChatBySession=", store.chatBySession.has(sessionId), "threads=", store.sessionsByThread.size, "chats=", store.sessionsByChat.size);
   // debug removed
   // debug removed
 
@@ -300,7 +298,6 @@ if (e.type === "session.text.ended") {
   }
   if (!s.stopped) {
     await flushDraft(chatId, s);
-    console.log("[text.ended]", sessionId, "s=", !!s, "statusMsg=", s?.statusMessageId, "finished=", s?.statusFinished);
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }

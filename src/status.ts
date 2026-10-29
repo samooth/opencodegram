@@ -174,7 +174,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
     const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
     const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
-    console.log("[status] update tools=", s.toolCallDetails.length, "shell=", shellDetails.length, "other=", otherDetails.length, "edits=", editDetails.length, "names=", s.toolCallDetails.map((d) => d.name).join(","), "editInputs=", editDetails.map((d) => (d.input ?? "").slice(0, 120)).join(" | "));
     if (settings.showTools && settings.showShell && shellDetails.length) {
       const shellText = renderShell(shellDetails.slice(-5), 200);
       lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
@@ -230,7 +229,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const messageId = s.statusMessageId;
       s.expandedEditIndex = undefined;
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
-      console.log("[status] finish statusMsg=", messageId, "edits=", editDetails.length, "stopped=", s.stopped, "settings.showTools=", settings.showTools, "tools=", s.toolCallDetails.length, "names=", s.toolCallDetails.map((d) => d.name).join(","));
       if (editDetails.length) pendingEdits.set(messageId, s);
       const text = clampText(renderFinished(s, undefined, settings));
       await tg
@@ -238,7 +236,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           ...threadOptsFor(s),
           reply_markup: { inline_keyboard: [] },
         })
-        .then(() => console.log("[status] finish edit OK", messageId))
         .catch((err) => console.error("[status] finish edit FAILED", messageId, err));
       if (!s.stopped && s.reasoningBuffer.trim()) {
         const chunk = s.reasoningBuffer.trim();
