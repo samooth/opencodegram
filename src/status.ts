@@ -186,7 +186,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
     if (settings.showTools && editDetails.length) {
-      lines.push(`✏️ Edits: ${editDetails.length}`);
+      lines.push(`<details><summary>✏️ Edits (${editDetails.length})</summary>\n<i>Tap a file after completion to view its diff.</i>\n</details>`);
     }
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
@@ -272,16 +272,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
       }
       if (settings.showTools && editDetails.length) {
-        lines.push(`✏️ Edits: ${editDetails.length}`);
+        const editLines = [`✏️ Edits: ${editDetails.length}`];
         if (expandedEditIndex !== undefined) {
           const detail = editDetails[expandedEditIndex];
           if (detail) {
             const file = relativeEditPath(target, extractEditFile(detail.input));
             const diff = formatEditDiff(detail.input, settings.diffStyle, target.directory);
-            lines.push(`<b>✏️ ${esc(file)}</b>`);
-            lines.push(`<pre><code class="language-diff">${esc(diff)}</code></pre>`);
+            editLines.push(`<details open><summary>✏️ ${esc(file)}</summary>\n<pre><code class="language-diff">${esc(diff)}</code></pre>\n</details>`);
           }
+        } else {
+          editLines.push("<i>Tap a file below to view its diff.</i>");
         }
+        lines.push(editLines.join("\n"));
       }
     }
     return lines.join("\n");
