@@ -3,7 +3,8 @@ import { join } from "node:path";
 import type { BotDeps } from "./context.js";
 import type { TelegramMessage } from "./telegram.js";
 import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
-import { esc, normalizeCommandText, parseSlashCommand, threadOpts } from "./util.js";
+import { clampText, esc, normalizeCommandText, parseSlashCommand, threadOpts } from "./util.js";
+import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
 
 /**
  * A text/media message from Telegram: gate it, download attachments, handle
@@ -66,7 +67,8 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
 
   // Multimedia handling
-  const mediaToAttach: Array<{ uri: string; name: string }> = [];
+  let mediaToAttach: Array<{ uri: string; name: string }> = [];
+  const voiceAttachments: Array<{ uri: string; name: string }> = [];
   const downloadOne = async (fileId: string, suggestedName: string) => {
     const info = await tg.getFile(fileId);
     if (!info.file_path) throw new Error("Telegram did not return a file path");
@@ -90,13 +92,42 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     mediaToAttach.push(await downloadOne(msg.document.file_id, msg.document.file_name ?? `document_${msg.document.file_unique_id}`));
   }
   if (msg.audio) {
-    mediaToAttach.push(await downloadOne(msg.audio.file_id, msg.audio.file_name ?? `audio_${msg.audio.file_unique_id}.mp3`));
+    const audioAttachment = await downloadOne(msg.audio.file_id, msg.audio.file_name ?? `audio_${msg.audio.file_unique_id}.mp3`);
+    mediaToAttach.push(audioAttachment);
+    voiceAttachments.push(audioAttachment);
   }
   if (msg.voice) {
-    mediaToAttach.push(await downloadOne(msg.voice.file_id, `voice_${msg.voice.file_unique_id}.ogg`));
+    const voiceAttachment = await downloadOne(msg.voice.file_id, `voice_${msg.voice.file_unique_id}.ogg`);
+    mediaToAttach.push(voiceAttachment);
+    voiceAttachments.push(voiceAttachment);
   }
   if (msg.video) {
     mediaToAttach.push(await downloadOne(msg.video.file_id, msg.video.file_name ?? `video_${msg.video.file_unique_id}.mp4`));
+  }
+
+  let voiceTranscript: string | null = null;
+  if (voiceAttachments.length && isTranscriptionEnabled(config)) {
+    await send("🎤 Transcribing voice note…");
+    try {
+      const transcripts: string[] = [];
+      for (const attachment of voiceAttachments) {
+        const filePath = attachment.uri.replace(/^file:\/\//, "");
+        const transcript = await transcribeFile(filePath, config);
+        if (transcript) transcripts.push(transcript);
+      }
+      if (transcripts.length) {
+        voiceTranscript = transcripts.join("\n\n");
+        await send(`📝 Transcript:\n${clampText(voiceTranscript, 3500)}`);
+        const voiceNames = new Set(voiceAttachments.map((attachment) => attachment.name));
+        mediaToAttach = mediaToAttach.filter((attachment) => !voiceNames.has(attachment.name));
+        if (!mediaToAttach.length) {
+          // Fall through to the normal text prompt path with the transcript.
+          msg.text = voiceTranscript;
+        }
+      }
+    } catch (err) {
+      await send(`❌ Transcription failed: ${esc(String(err))}; sending audio as attachment.`);
+    }
   }
 
   if (mediaToAttach.length) {
@@ -105,7 +136,9 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       await send("no active session");
       return;
     }
-    const text = (msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file");
+    const text = voiceTranscript
+      ? ((msg.caption ?? "").trim() ? `${(msg.caption ?? "").trim()}\n\n${voiceTranscript}` : voiceTranscript)
+      : ((msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file"));
     // Auto-switch to a vision-capable model if needed.
     if (msg.photo || msg.video) {
       try {

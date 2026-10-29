@@ -18,6 +18,8 @@
 ## Files and media
 
 - Send a photo/document/audio/voice/video — attach it to the active session.
+- Voice notes and audio are transcribed locally when a transcriber is configured;
+  the transcript is shown and used as the prompt.
 - `/file <path>` — send a local file (inside the session directory, ≤ 45 MB).
 - `/ls [path] [-a]` — browse a directory with inline buttons; `-a` shows hidden
   entries and `⬆ Up` navigates to the parent. Each file has a `📄` preview and a

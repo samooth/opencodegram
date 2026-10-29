@@ -72,6 +72,7 @@ Main modules:
 | `telegram.ts` | Telegram client |
 | `util.ts` | Escaping, clamping, thread options, retry time, command parsing |
 | `files.ts` | Safe path resolution, listing, search, text preview, documents, zip |
+| `transcribe.ts` | Local voice-note transcription |
 | `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
 
 ## Routing invariants

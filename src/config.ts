@@ -7,6 +7,11 @@ const schema = z.object({
   ADMIN_TELEGRAM_USER_ID: z.coerce.number().int().positive().optional(),
   PILOT_PROJECT: z.string().optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
+  VOICE_TRANSCRIBER: z.string().optional(),
+  VOICE_TRANSCRIBER_ARGS: z.string().optional(),
+  VOICE_TRANSCRIPTION_LANGUAGE: z.string().optional(),
+  VOICE_TRANSCRIPTION_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  VOICE_ATTACH_AUDIO: z.string().optional().default("false").transform((v) => v === "true" || v === "1"),
 });
 
 export type Config = z.infer<typeof schema>;

@@ -13,8 +13,9 @@
 - Safe file browser: `/ls`, `/find`, `/read`, inline navigation, pagination,
   hidden-file toggle, symlink confinement and text preview limits.
 - `/zip` archives and automatic delivery of files produced by a turn.
+- Local voice-note transcription with configurable Whisper-compatible CLI.
 - Automated Bun tests for routing/tab isolation, path guard, `/file`, file
-  browser, rate-limit retry and command parsing (`bun test`).
+  browser, transcription, rate-limit retry and command parsing (`bun test`).
 - `/vcs` status, `/worktrees` listing, `/forms` + `/formreply`.
 - `/sync` history replay, `/context`, `/usage`, `/diff`, `/compact`.
 - Rate-limit retry at `:15` of the next hour.
@@ -24,15 +25,13 @@
 
 1. **MCP status** – list servers, connect/disconnect, show resources and read
    them from Telegram.
-2. **Voice notes** – transcribe locally (whisper.cpp or available CLI) and prompt
-   the active session with the transcript.
-3. **Worktrees management** – create/remove/switch worktrees, not just list.
-4. **VCS actions** – switch branch, stage/unstage, commit with confirmation.
-5. **Webhook mode** – optional production mode with secret validation; keep
+2. **Worktrees management** – create/remove/switch worktrees, not just list.
+3. **VCS actions** – switch branch, stage/unstage, commit with confirmation.
+4. **Webhook mode** – optional production mode with secret validation; keep
    long polling as the default.
-6. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
-7. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
-8. **Operations** – health endpoint, metrics, log rotation, disk guard.
+5. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
+6. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
+7. **Operations** – health endpoint, metrics, log rotation, disk guard.
 
 ## Suggested order
 
