@@ -89,6 +89,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/models", "List and switch models"],
       ["/agents", "List and switch agents"],
       ["/commands", "List OpenCode commands"],
+      ["/file <path>", "Send a local file as a document"],
       ["/usage", "Show usage and cost stats"],
       ["/vcs", "Show VCS status"],
       ["/worktrees", "List worktrees"],

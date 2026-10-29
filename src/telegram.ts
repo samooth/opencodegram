@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 const API = "https://api.telegram.org";
 
 export interface TelegramUser {
@@ -68,6 +70,21 @@ export class TelegramClient {
     return json.result as T;
   }
 
+  /** Multipart upload endpoint (documents/photos), with the same retry policy. */
+  private async callForm<T>(method: string, form: FormData, attempt = 0): Promise<T> {
+    const res = await fetch(`${API}/bot${this.token}/${method}`, { method: "POST", body: form });
+    const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
+    if (!json.ok) {
+      if (json.error_code === 429 && attempt < 3) {
+        const wait = (json.parameters?.retry_after ?? 1) * 1000;
+        await new Promise((r) => setTimeout(r, wait));
+        return this.callForm<T>(method, form, attempt + 1);
+      }
+      throw new Error(`Telegram ${method} failed: ${json.error_code ?? res.status} ${json.description ?? ""}`);
+    }
+    return json.result as T;
+  }
+
   getMe(): Promise<TelegramUser> {
     return this.call<TelegramUser>("getMe");
   }
@@ -82,6 +99,20 @@ export class TelegramClient {
 
   sendMessage(chatId: number, text: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
     return this.call<TelegramMessage>("sendMessage", { chat_id: chatId, text, ...opts });
+  }
+
+  /** Send a local file as a document (multipart upload). */
+  async sendDocument(chatId: number, filePath: string, filename: string, caption?: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
+    const data = await readFile(filePath);
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    form.set("document", new Blob([data]), filename);
+    if (caption) form.set("caption", caption);
+    for (const [key, value] of Object.entries(opts)) {
+      if (value === undefined || value === null) continue;
+      form.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+    }
+    return this.callForm<TelegramMessage>("sendDocument", form);
   }
 
   sendRichMessage(chatId: number, html: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {

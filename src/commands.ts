@@ -1,5 +1,7 @@
+import { realpath, stat } from "node:fs/promises";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
-import { esc } from "./util.js";
+import { esc, threadOpts } from "./util.js";
 
 /**
  * Slash commands that do not prompt the model. Returns true when the text was
@@ -51,6 +53,41 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
 
   if (text === "/commands") {
     await showCommands(chatId, threadId);
+    return true;
+  }
+
+  if (text === "/file" || text.startsWith("/file ")) {
+    const rawPath = text.slice("/file".length).trim();
+    if (!rawPath) {
+      await send("usage: /file <path> (relative to the session directory)");
+      return true;
+    }
+    const s = await restoreActiveSession(chatId, threadId);
+    const base = resolve(s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd());
+    const target = isAbsolute(rawPath) ? resolve(rawPath) : resolve(base, rawPath);
+    try {
+      // Resolve symlinks so a link inside the project cannot leak outside files.
+      const baseReal = await realpath(base);
+      const targetReal = await realpath(target);
+      const rel = relative(baseReal, targetReal);
+      if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+        await send("❌ File is outside the session directory.");
+        return true;
+      }
+      const st = await stat(targetReal);
+      if (!st.isFile()) {
+        await send("❌ That path is not a file.");
+        return true;
+      }
+      if (st.size > 45 * 1024 * 1024) {
+        await send("❌ File too large (Telegram limit is 50 MB).");
+        return true;
+      }
+      const name = basename(targetReal);
+      await tg.sendDocument(chatId, targetReal, name, `<b>${esc(name)}</b>\n<code>${esc(targetReal)}</code>\n${(st.size / 1024).toFixed(1)} KB`, threadOpts(threadId));
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
     return true;
   }
 

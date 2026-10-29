@@ -26,6 +26,7 @@ const BOT_COMMANDS = [
   { command: "forms", description: "List pending forms" },
   { command: "formreply", description: "Reply to a form" },
   { command: "commands", description: "List OpenCode commands" },
+  { command: "file", description: "Send a local file as a document" },
   { command: "fork", description: "Fork the active session" },
   { command: "rename", description: "Rename the active session" },
   { command: "archive", description: "Archive the active session" },

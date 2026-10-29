@@ -179,6 +179,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     "stop",
     "abort",
     "commands",
+    "file",
     "model",
     "models",
     "agent",
