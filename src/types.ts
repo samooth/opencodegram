@@ -12,6 +12,8 @@ export type ChatSession = {
   statusTimer?: ReturnType<typeof setInterval>;
   stopped: boolean;
   threadId?: number;
+  cotBuffer?: string;
+  cotCount?: number;
   targetChatId?: number;
   targetThreadId?: number;
   topicTitle?: string;

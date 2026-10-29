@@ -43,13 +43,20 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
     s.statusEditPromise = undefined;
     s.statusEditing = false;
     // A new user prompt starts a new turn: clear the previous turn's artifacts.
+    // cotBuffer/cotCount persist so previous thinking stays available as COT.
     s.buffer = "";
     s.reasoningBuffer = "";
     s.toolCalls = [];
     s.toolCallDetails = [];
     s.stopped = false;
     try {
-      const sent = await tg.sendRichMessage(chatId, "⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>", {
+      const lines: string[] = [];
+      if (s.cotBuffer?.trim()) {
+        const cot = s.cotBuffer.trim().slice(-1500);
+        lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+      }
+      lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
+      const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n")), {
         ...opts,
         reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
       });
@@ -63,12 +70,17 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
   const updateStatus = async (chatId: number, s: ChatSession, force = false) => {
     if (!s.statusMessageId || s.statusFinished) return;
     if (s.statusEditing) return;
+    const opts = threadOptsFor(s);
     const now = Date.now();
     if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 4000) return;
     s.statusEditing = true;
     s.statusLastUpdate = now;
-    const opts = threadOptsFor(s);
-    const lines: string[] = ["⏳ <b>Working…</b>"];
+    const lines: string[] = [];
+    if (s.cotBuffer?.trim()) {
+      const cot = s.cotBuffer.trim().slice(-1500);
+      lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+    }
+    lines.push("⏳ <b>Working…</b>");
     if (s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(0, 300);
       lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
@@ -83,7 +95,7 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
     }
     try {
-      const edit = tg.editRichMessage(chatId, s.statusMessageId, lines.join("\n"), {
+      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n")), {
         ...opts,
         reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
       });
@@ -112,11 +124,22 @@ export function createStatusManager({ tg, threadOptsFor }: StatusDeps) {
       s.statusEditPromise = undefined;
     }
     if (s.statusMessageId) {
-      const lines: string[] = ["✅ <b>Done</b>"];
+      // Accumulate this turn's thinking into the persistent COT block.
       if (!s.stopped && s.reasoningBuffer.trim()) {
-        const r = s.reasoningBuffer.trim().slice(0, 3500);
-        lines.push("<details open><summary>🧠 Thinking</summary>\n<pre>" + esc(r) + "</pre>\n</details>");
+        const chunk = s.reasoningBuffer.trim();
+        const previous = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
+        let next = previous + chunk;
+        if (next.length > 4000) next = next.slice(next.length - 4000);
+        s.cotBuffer = next;
+        s.cotCount = (s.cotCount ?? 0) + 1;
+        s.reasoningBuffer = "";
       }
+      const lines: string[] = [];
+      if (s.cotBuffer?.trim()) {
+        const cot = s.cotBuffer.trim().slice(-3500);
+        lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+      }
+      lines.push("✅ <b>Done</b>");
       if (!s.stopped && s.toolCallDetails.length) {
         const details = renderTools(s.toolCallDetails, 500);
         lines.push("<details><summary>🔧 Tool calls (" + s.toolCallDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
