@@ -226,6 +226,21 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       }
     }
 
+    // In groups, reuse the chat-level session instead of creating a surprise
+    // session when a message arrives in a topic without its own binding.
+    if (threadId !== undefined && chatId < 0) {
+      const chatMapped = activeSessionByRoute.get(routeKey(chatId));
+      if (chatMapped) {
+        try {
+          await activateSession(chatId, chatMapped, true, undefined);
+          return getActiveSession(chatId, threadId);
+        } catch (err) {
+          console.error("[session] group chat restore failed", chatMapped, err);
+          forgetSession(chatMapped);
+        }
+      }
+    }
+
     // One-time migration for installs that predate active.json: threads.json
     // already records which session belongs to each topic.
     if (threadId !== undefined) {
