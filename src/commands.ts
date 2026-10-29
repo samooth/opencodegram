@@ -38,6 +38,7 @@ export const KNOWN_COMMANDS = new Set([
   "compact",
   "vcs",
   "worktrees",
+  "worktree",
   "usage",
   "forms",
   "formreply",
@@ -256,17 +257,108 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     const s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     try {
-      const res = await oc.worktreeList(directory);
-      const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      const list = await oc.worktreeList(directory);
       if (!list.length) {
         await send("no worktrees.");
         return true;
       }
-      const lines = list.map((w: any) => `• <code>${esc(w.path ?? w.directory ?? "")}</code>`);
+      const lines = list.map((w: any) => `• <code>${esc(w.directory ?? w.path ?? "")}</code>`);
       await send(`<b>Worktrees</b>\n${lines.join("\n")}`);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
+    return true;
+  }
+
+  if (text === "/worktree" || text.startsWith("/worktree ")) {
+    const args = text.slice("/worktree".length).trim().split(/\s+/).filter(Boolean);
+    const subcommand = (args[0] ?? "list").toLowerCase();
+    const s = await restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+
+    if (subcommand === "list" || subcommand === "ls") {
+      try {
+        const list = await oc.worktreeList(directory);
+        if (!list.length) {
+          await send("no worktrees.");
+          return true;
+        }
+        const lines = list.map((w: any) => `• <code>${esc(w.directory ?? w.path ?? "")}</code>`);
+        await send(`<b>Worktrees</b>\n${lines.join("\n")}`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+
+    if (subcommand === "create" || subcommand === "add") {
+      const name = args[1];
+      if (!name) {
+        await send("usage: /worktree create <name> [branch]");
+        return true;
+      }
+      const branch = args[2];
+      try {
+        const info = await oc.worktreeCreate(directory, name, branch);
+        const created = info?.directory ?? info?.path ?? name;
+        await send(`✅ Worktree created\n<code>${esc(created)}</code>\nUse /worktree switch ${esc(created)}`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+
+    if (subcommand === "remove" || subcommand === "rm" || subcommand === "delete") {
+      if (args[1] === "confirm") {
+        const target = args.slice(2).join(" ");
+        if (!target) {
+          await send("usage: /worktree remove confirm <directory>");
+          return true;
+        }
+        try {
+          await oc.worktreeRemove(directory, target, true);
+          await send(`✅ Worktree removed\n<code>${esc(target)}</code>`);
+        } catch (err) {
+          await send(`❌ ${esc(String(err))}`);
+        }
+        return true;
+      }
+      const target = args.slice(1).join(" ");
+      if (!target) {
+        await send("usage: /worktree remove <directory>");
+        return true;
+      }
+      await send(`Remove worktree <code>${esc(target)}</code>?\nReply /worktree remove confirm ${esc(target)} to proceed.`);
+      return true;
+    }
+
+    if (subcommand === "switch" || subcommand === "use" || subcommand === "cd") {
+      const target = args.slice(1).join(" ");
+      if (!target) {
+        await send("usage: /worktree switch <directory>");
+        return true;
+      }
+      if (!s) {
+        await send("no active session.");
+        return true;
+      }
+      try {
+        const list = await oc.worktreeList(directory);
+        const directories = list.map((w: any) => w.directory ?? w.path).filter(Boolean);
+        if (!directories.includes(target)) {
+          await send(`❌ Not a known worktree:\n<code>${esc(target)}</code>`);
+          return true;
+        }
+        await oc.sessionMove(s.sessionId, target);
+        s.directory = target;
+        await send(`✅ Switched session to\n<code>${esc(target)}</code>`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+
+    await send("usage: /worktree [list|create <name> [branch]|remove <directory>|switch <directory>]");
     return true;
   }
 

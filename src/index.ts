@@ -25,6 +25,7 @@ const BOT_COMMANDS = [
   { command: "usage", description: "Show usage and cost stats" },
   { command: "vcs", description: "Show VCS status" },
   { command: "worktrees", description: "List worktrees" },
+  { command: "worktree", description: "Create, remove or switch worktrees" },
   { command: "forms", description: "List pending forms" },
   { command: "formreply", description: "Reply to a form" },
   { command: "commands", description: "List OpenCode commands" },

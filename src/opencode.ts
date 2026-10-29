@@ -156,7 +156,41 @@ export class OpenCodeBridge {
   }
 
   async worktreeList(directory?: string) {
-    return this.client.worktree.list(directory ? { location: { directory } } as any : undefined);
+    const projectID = await this.projectID(directory);
+    if (!projectID) return [];
+    const res = await this.client.worktree.list({ projectID });
+    return (res as any)?.data ?? (Array.isArray(res) ? res : []);
+  }
+
+  async projectID(directory?: string) {
+    const target = directory ?? process.cwd();
+    const res = await this.client.project.list();
+    const projects = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    const match = projects.find((project: any) => project.canonical === target || project.directory === target);
+    return match?.id;
+  }
+
+  async worktreeCreate(directory: string | undefined, name: string, branch?: string) {
+    const projectID = await this.projectID(directory);
+    if (!projectID) throw new Error("Project not found for this directory");
+    const res = await this.client.worktree.create({ projectID, name, branch });
+    return (res as any)?.data ?? res;
+  }
+
+  async worktreeRemove(directory: string | undefined, worktreeDirectory: string, force = false) {
+    const projectID = await this.projectID(directory);
+    if (!projectID) throw new Error("Project not found for this directory");
+    await this.client.worktree.remove({ projectID, directory: worktreeDirectory, force });
+  }
+
+  async worktreeRefresh(directory?: string) {
+    const projectID = await this.projectID(directory);
+    if (!projectID) return;
+    await this.client.worktree.refresh({ projectID });
+  }
+
+  async sessionMove(sessionId: string, directory: string) {
+    await this.client.session.move({ sessionID: sessionId, directory });
   }
 
   async interrupt(sessionId: string) {

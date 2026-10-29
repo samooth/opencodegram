@@ -37,16 +37,18 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
     const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
     if (!list.length) {
-      await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
+      await tg.sendRichMessage(chatId, "no sessions found. Use /new to create one.", threadOpts(threadId));
       return;
     }
     const total = list.length;
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
+    const activeId = getActiveSession(chatId, threadId)?.sessionId;
     const lines = slice.map((s: any, i: number) => {
       const title = esc(s.title ?? "(untitled)");
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
-      return `<tr><td>${start + i + 1}</td><td><b>${title}</b></td><td><code>${esc(s.id)}</code></td><td>${model}</td></tr>`;
+      const mark = activeId && activeId === s.id ? " ✅" : "";
+      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}</td><td><code>${esc(s.id)}</code></td><td>${model}</td></tr>`;
     });
     const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model</th></tr>${lines.join("")}</table>`;
     const keyboard: any[][] = slice.map((s: any, i: number) => {
@@ -98,6 +100,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/usage", "Show usage and cost stats"],
       ["/vcs", "Show VCS status"],
       ["/worktrees", "List worktrees"],
+      ["/worktree create|remove|switch", "Manage worktrees"],
       ["/forms", "List pending forms"],
       ["/formreply", "Reply to a form"],
       ["/fork", "Fork the active session"],
