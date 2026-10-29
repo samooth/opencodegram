@@ -275,7 +275,7 @@ if (e.type === "session.text.ended") {
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  console.log("[text.ended] entry", sessionId, "s=", !!_s0, "chatId=", chatId);
+  console.log("[text.ended] entry", sessionId, "s=", !!_s0, "chatId=", chatId, "inById=", store.sessionsById.has(sessionId), "threads=", [...store.sessionsByThread.keys()], "chats=", [...store.sessionsByChat.keys()]);
   // debug removed
   // debug removed
 
