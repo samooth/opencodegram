@@ -11,7 +11,7 @@ import { esc, threadOpts } from "./util.js";
 export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): Promise<void> {
   const { config, tg, oc, store, pendingPermissions, awaitingReason, panels, sessions, modelListByChat, pendingModelByChat } = deps;
   const { routeKey, getActiveSession, threadOptsFor } = store;
-  const { showSessions, showModels, showCommands, sendPanel } = panels;
+  const { showSessions, showModels, showCommands, showStatus, sendPanel } = panels;
   const { activateSession, ensureActiveSession, createNewSession } = sessions;
 
   console.log("[telegram] callback from", cq.from?.id, "data=", cq.data, "chat=", cq.message?.chat?.id);
@@ -138,9 +138,14 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     }
     return;
   }
-  if (cbData === "panel:home" || cbData === "panel:status" || cbData === "panel:help") {
+  if (cbData === "panel:home" || cbData === "panel:help") {
     await tg.answerCallbackQuery(cq.id);
     await sendPanel(chatId, threadId);
+    return;
+  }
+  if (cbData === "panel:status") {
+    await tg.answerCallbackQuery(cq.id);
+    await showStatus(chatId, threadId);
     return;
   }
   if (cbData === "panel:sessions") {

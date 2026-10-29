@@ -22,12 +22,14 @@ export class SessionStore {
   readonly threadBySession = new Map<string, number>();
   readonly chatBySession = new Map<string, number>();
   readonly messageToSession = new Map<number, string>();
+  readonly topicTitleBySession = new Map<string, string>();
 
   readonly dataDir: string;
   private readonly threadsFile: string;
   private readonly chatsFile: string;
   private readonly activeFile: string;
   private readonly messagesFile: string;
+  private readonly topicTitlesFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
@@ -35,6 +37,7 @@ export class SessionStore {
     this.chatsFile = join(dataDir, "chats.json");
     this.activeFile = join(dataDir, "active.json");
     this.messagesFile = join(dataDir, "messages.json");
+    this.topicTitlesFile = join(dataDir, "topicTitles.json");
     this.load();
   }
 

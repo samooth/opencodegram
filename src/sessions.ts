@@ -98,11 +98,15 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       sessionsByThread.set(targetThread, cs);
       threadBySession.set(sessionId, targetThread);
       saveThreads();
-      cs.topicTitle = title.slice(0, 120);
-      try {
-        await tg.editForumTopic(chatId, targetThread, title.slice(0, 120));
-      } catch {
-        // Topic titles are cosmetic; never block session creation on them.
+      if (cs.topicTitle !== title.slice(0, 120)) {
+        try {
+          await tg.editForumTopic(chatId, targetThread, title.slice(0, 120));
+          cs.topicTitle = title.slice(0, 120);
+        } catch {
+          // Topic titles are cosmetic; never block session creation on them.
+        }
+      } else {
+        cs.topicTitle = title.slice(0, 120);
       }
     } else {
       const prev = sessionsByChat.get(chatId);

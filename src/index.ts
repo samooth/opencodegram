@@ -77,7 +77,7 @@ async function main() {
   const store = new SessionStore();
   const settings = new SettingsStore();
   const pendingEdits = new Map();
-  const messageToSession = new Map();
+  const messageToSession = store.messageToSession;
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),

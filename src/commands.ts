@@ -49,10 +49,15 @@ export const KNOWN_COMMANDS = new Set([
 export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
   const { config, tg, oc, panels, sessions, files } = deps;
   const { restoreActiveSession, activateSession } = sessions;
-  const { sendPanel, showCommands, showModels, showSessions } = panels;
+  const { sendPanel, showCommands, showModels, showSessions, showStatus } = panels;
 
-  if (text === "/start" || text === "/help" || text === "/status" || text === "/session") {
+  if (text === "/start" || text === "/help") {
     await sendPanel(chatId, threadId);
+    return true;
+  }
+
+  if (text === "/status" || text === "/session") {
+    await showStatus(chatId, threadId);
     return true;
   }
 
