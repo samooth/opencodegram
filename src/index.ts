@@ -6,6 +6,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
+import { createState, findSessionById, findChatBySession, getActiveSession } from "./state.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -123,8 +124,12 @@ async function main() {
     let s = getActiveSession(chatId, threadId);
     if (s) return s;
     // Never reuse a session from another chat; always create a dedicated one.
-    await createNewSession(chatId, true);
-    return sessionsByChat.get(chatId);
+    if (threadId) {
+      const existing = sessionsByThread.get(threadId);
+      if (existing) return existing;
+    }
+    await createNewSession(chatId, true, threadId);
+    return threadId ? sessionsByThread.get(threadId) : sessionsByChat.get(chatId);
   };
   const sessionListByChat = new Map<number, string[]>();
   const commandListByChat = new Map<number, string[]>();
@@ -186,7 +191,7 @@ async function main() {
     }
   };
 
-  async function createNewSession(chatId: number, silent = false): Promise<void> {
+  async function createNewSession(chatId: number, silent = false, threadId?: number): Promise<void> {
     const old = sessionsByChat.get(chatId);
     sessionsByChat.delete(chatId);
     const directory = config.OPENCODE_DIRECTORY ?? (await oc.latestSessionDirectory()) ?? process.cwd();
@@ -204,7 +209,9 @@ async function main() {
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const title = (session as any)?.title ?? "Telegram session";
     const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false };
-    if (topicsEnabled) {
+    if (threadId) {
+      cs.threadId = threadId;
+    } else if (topicsEnabled) {
       try {
         const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
         cs.threadId = topic.message_thread_id;
@@ -536,7 +543,9 @@ async function main() {
     }
   };
 
-  // Event stream
+  // ============================================================
+  // EVENT STREAM (OpenCode → Telegram)
+  // ============================================================
   (async () => {
     while (true) {
       try {
