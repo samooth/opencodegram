@@ -30,13 +30,14 @@ See [docs/](./docs/).
 
 ## Commands
 
-- `/start` — welcome
-- `/help` — help
-- `/status` — active session
-- `/sessions` — list recent sessions
-- `/sessions all` — list all sessions
-- `/use <session_id>` — switch active session
-- `/new` — create a new session
+- `/start`, `/help`, `/status` — panel and active session
+- `/sessions`, `/use <id>`, `/new` — session browser and switching
+- `/models`, `/agents` — model/variant and agent pickers
+- `/file <path>` — send a local file as a document
+- `/diff`, `/context`, `/sync`, `/compact`, `/usage` — session tools
+- `/vcs`, `/worktrees`, `/forms`, `/formreply` — project tools
+- `/stop` — stop the active turn
 - any other text — prompt the active session
-- `/stop` is handled via Telegram's native stop button on streamed drafts
+
+Full reference: [docs/COMMANDS.md](docs/COMMANDS.md).
 EOF
