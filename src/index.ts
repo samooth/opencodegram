@@ -76,10 +76,12 @@ async function main() {
 
   const store = new SessionStore();
   const settings = new SettingsStore();
+  const pendingEdits = new Map();
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),
     getSettings: (chatId) => settings.get(chatId),
+    pendingEdits,
   });
   const sessions = createSessionManager({
     config,
@@ -127,6 +129,7 @@ async function main() {
     panels,
     files,
     settings,
+    pendingEdits,
     pendingPermissions: new Map(),
     pendingForms: new Map(),
     pendingFormsById: new Map(),

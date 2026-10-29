@@ -77,7 +77,7 @@ export class SettingsStore {
   }
 }
 
-const LABELS: Record<keyof ChatSettings, string> = {
+export const LABELS: Record<keyof ChatSettings, string> = {
   showThinking: "🧠 Thinking",
   showTools: "🔧 Tools",
   thinkingExpanded: "🧠 Thinking expanded",
@@ -89,10 +89,20 @@ const LABELS: Record<keyof ChatSettings, string> = {
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
+  const sections: Array<{ title: string; keys: Array<keyof ChatSettings> }> = [
+    { title: "Visualización", keys: ["showThinking", "showTools", "thinkingExpanded", "toolsExpanded", "showPartialText", "compactFinal"] },
+    { title: "Archivos", keys: ["autoArtifacts"] },
+    { title: "Voz", keys: ["voiceTranscription"] },
+  ];
   const lines = [`<b>Settings</b>`, `Chat: <code>${chatId}</code>`, ""];
-  for (const key of SETTINGS_KEYS) {
-    lines.push(`${LABELS[key]}: <b>${settings[key] ? "on" : "off"}</b>`);
+  for (const section of sections) {
+    lines.push(`<b>${section.title}</b>`);
+    for (const key of section.keys) {
+      lines.push(`  ${LABELS[key]}: <b>${settings[key] ? "on" : "off"}</b>`);
+    }
+    lines.push("");
   }
+  lines.push("<i>Changes apply immediately.</i>");
   return lines.join("\n");
 }
 

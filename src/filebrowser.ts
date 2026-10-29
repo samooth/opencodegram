@@ -128,7 +128,12 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     ]
       .filter(Boolean)
       .join("\n");
-    await tg.sendDocument(chatId, doc.absolute, doc.name, caption, { ...threadOpts(threadId), parse_mode: "HTML" });
+    const progress = await tg.sendRichMessage(chatId, `📎 Sending <b>${esc(doc.name)}</b> (${formatBytes(doc.size)})…`, threadOpts(threadId));
+    try {
+      await tg.sendDocument(chatId, doc.absolute, doc.name, caption, { ...threadOpts(threadId), parse_mode: "HTML" });
+    } finally {
+      await tg.deleteMessage(chatId, progress.message_id).catch(() => {});
+    }
   }
 
   async function showListing(
@@ -253,6 +258,17 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     if (view.page > 0) nav.push({ text: "◀ Prev", callback_data: `fs:p:${view.page - 1}` });
     if (start + PAGE_SIZE < view.total) nav.push({ text: "Next ▶", callback_data: `fs:p:${view.page + 1}` });
     if (nav.length) keyboard.push(nav);
+
+    if (view.dir) {
+      const crumbs: Array<{ text: string; callback_data: string }> = [{ text: "🏠", callback_data: "fs:cd:" }];
+      let cumulative = "";
+      for (const segment of view.dir.split("/").filter(Boolean)) {
+        cumulative = cumulative ? `${cumulative}/${segment}` : segment;
+        const callbackData = `fs:cd:${cumulative}`;
+        if (callbackData.length <= 64) crumbs.push({ text: `📂 ${segment}`.slice(0, 18), callback_data: callbackData });
+      }
+      if (crumbs.length > 1) keyboard.push(crumbs);
+    }
 
     const actions: Array<{ text: string; callback_data: string }> = [];
     if (view.dir) actions.push({ text: "⬆ Up", callback_data: "fs:u" });
@@ -383,6 +399,13 @@ export function createFileBrowser({ tg, config, getActiveSession }: FileBrowserD
     const view = messageId !== undefined ? views.get(messageId) : undefined;
 
     try {
+      if (data.startsWith("fs:cd:")) {
+        const target = data.slice(6);
+        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await showListing(chatId, threadId, target, { messageId, base: view?.base });
+        return true;
+      }
+
       if (data === "fs:r") {
         await tg.answerCallbackQuery(cq.id).catch(() => {});
         await showListing(chatId, threadId, "", { messageId, base: view?.base });
@@ -495,7 +518,19 @@ function entryIcon(entry: FileEntry): string {
   if (entry.external) return "🔗";
   if (entry.type === "directory") return "📁";
   if (entry.type === "symlink") return "🔗";
-  return "📄";
+  const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
+  const icons: Record<string, string> = {
+    c: "🔧", cc: "🔧", cpp: "🔧", h: "🔧", hpp: "🔧", rs: "🦀", go: "🐹",
+    js: "📜", ts: "📜", jsx: "📜", tsx: "📜", json: "🧩", yaml: "🧩", yml: "🧩", toml: "🧩",
+    md: "📝", txt: "📝", log: "📝",
+    png: "🖼", jpg: "🖼", jpeg: "🖼", gif: "🖼", svg: "🖼", webp: "🖼",
+    mp3: "🎵", wav: "🎵", ogg: "🎵", flac: "🎵",
+    mp4: "🎬", mov: "🎬", avi: "🎬", mkv: "🎬", webm: "🎬",
+    zip: "📦", tar: "📦", gz: "📦", tgz: "📦", "7z": "📦",
+    pdf: "📕", html: "🌐", css: "🎨",
+    sh: "⚙️", py: "🐍",
+  };
+  return icons[ext] ?? "📄";
 }
 
 function formatDate(ms: number): string {

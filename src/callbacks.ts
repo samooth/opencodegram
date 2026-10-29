@@ -1,7 +1,8 @@
 import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { isSettingsKey, renderSettings, settingsKeyboard } from "./settings.js";
+import { extractEditFile, formatEditDiff, isEditTool } from "./editutil.js";
+import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { esc, threadOpts } from "./util.js";
 
@@ -79,6 +80,25 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const formCallbackHandled = await handleFormCallback(deps, cq);
   if (formCallbackHandled) return;
 
+  // Show an edit from a finished status card as a diff.
+  const editMatch = (cq.data ?? "").match(/^edit:(\d+)$/);
+  if (editMatch && cq.message?.message_id !== undefined) {
+    const state = deps.pendingEdits.get(cq.message.message_id);
+    const edits = state?.toolCallDetails.filter((detail) => isEditTool(detail.name)) ?? [];
+    const detail = edits[Number(editMatch[1])];
+    if (!state || !detail) {
+      await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch(() => {});
+      return;
+    }
+    const file = extractEditFile(detail.input) ?? `edit ${Number(editMatch[1]) + 1}`;
+    const diff = formatEditDiff(detail.input);
+    await deps.tg.answerCallbackQuery(cq.id, "Sending diff").catch(() => {});
+    await deps.tg
+      .sendRichMessage(chatId, `<b>✏️ ${esc(file)}</b>\n<pre><code class="language-diff">${esc(diff)}</code></pre>`, threadOpts(threadId))
+      .catch(() => {});
+    return;
+  }
+
   // Settings toggles.
   if (cbData.startsWith("set:")) {
     const [, key, value] = cbData.split(":");
@@ -88,7 +108,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     }
     const boolValue = value === "true";
     const settings = deps.settings.set(chatId, key, boolValue);
-    await deps.tg.answerCallbackQuery(cq.id, "Updated").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${boolValue ? "on" : "off"}`).catch(() => {});
     if (messageId !== undefined) {
       await deps.tg
         .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
@@ -157,6 +177,35 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       s.statusMessageId = undefined;
     }
     await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+
+  const deleteMatch = cbData.match(/^delete:(confirm|cancel)(?::(.+))?$/);
+  if (deleteMatch) {
+    const action = deleteMatch[1];
+    const sessionId = deleteMatch[2];
+    if (action === "cancel") {
+      await tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
+      if (messageId !== undefined) {
+        await tg.editRichMessage(chatId, messageId, "Deletion cancelled.", { reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      }
+      return;
+    }
+    if (!sessionId) {
+      await tg.answerCallbackQuery(cq.id, "Missing session").catch(() => {});
+      return;
+    }
+    await tg.answerCallbackQuery(cq.id, "Deleting…").catch(() => {});
+    try {
+      await oc.deleteSession(sessionId);
+      store.forgetSession(sessionId);
+      if (messageId !== undefined) {
+        await tg.editRichMessage(chatId, messageId, `✅ Session deleted\n<code>${esc(sessionId)}</code>`, { reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      }
+      await sendPanel(chatId, threadId);
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+    }
     return;
   }
 

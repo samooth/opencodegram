@@ -1,3 +1,4 @@
+import type { ChatSession } from "./types.js";
 import type { Config } from "./config.js";
 import type { FileBrowser } from "./filebrowser.js";
 import type { OpenCodeBridge } from "./opencode.js";
@@ -53,6 +54,7 @@ export type BotDeps = {
   panels: Panels;
   files: FileBrowser;
   settings: SettingsStore;
+  pendingEdits: Map<number, ChatSession>;
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;

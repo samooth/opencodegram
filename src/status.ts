@@ -1,6 +1,7 @@
 import type { ChatSession } from "./types.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
+import { isEditTool, extractEditFile, formatEditDiff } from "./editutil.js";
 import { clampText, esc } from "./util.js";
 
 function truncateText(text: string, max: number): string {
@@ -45,6 +46,7 @@ export type StatusDeps = {
   tg: TelegramClient;
   threadOptsFor: (s: ChatSession | undefined) => Record<string, unknown>;
   getSettings: (chatId: number) => ChatSettings;
+  pendingEdits: Map<number, ChatSession>;
 };
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -89,7 +91,7 @@ function renderShell(details: ChatSession["toolCallDetails"], limit: number): st
  * Owns the lifecycle of the single "status" card that accompanies a turn:
  * Working… (thinking, tools, partial text) → Done / Stopped, no Stop button.
  */
-export function createStatusManager({ tg, threadOptsFor, getSettings }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits }: StatusDeps) {
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
     s.timer = undefined;
@@ -220,10 +222,21 @@ export function createStatusManager({ tg, threadOptsFor, getSettings }: StatusDe
           lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
         }
       }
+      const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name));
+      const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+      if (editDetails.length) {
+        editDetails.forEach((detail, index) => {
+          const file = extractEditFile(detail.input) ?? `edit ${index + 1}`;
+          keyboard.push([{ text: `✏️ ${file}`.slice(0, 64), callback_data: `edit:${index}` }]);
+        });
+      }
+      if (s.statusMessageId !== undefined && keyboard.length) {
+        pendingEdits.set(s.statusMessageId, s);
+      }
       await tg
         .editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n")), {
           ...threadOptsFor(s),
-          reply_markup: { inline_keyboard: [] },
+          reply_markup: { inline_keyboard: keyboard },
         })
         .catch(() => {});
       if (!s.stopped && s.reasoningBuffer.trim()) {
