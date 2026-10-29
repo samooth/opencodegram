@@ -292,9 +292,9 @@ if (e.type === "session.text.ended") {
   }
   if (!s.stopped) {
     await flushDraft(chatId, s);
-    // Freeze the status card if the turn has not been finalized yet.
-    if (s.statusMessageId && !s.statusFinished) {
-      await finishStatus(chatId, s).catch(() => {});
+    console.log("[text.ended]", sessionId, "s=", !!s, "statusMsg=", s?.statusMessageId, "finished=", s?.statusFinished);
+    if (s && s.statusMessageId && !s.statusFinished) {
+      await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
     const endedText = (e.data?.text ?? "").toString().trim();
     let finalText = endedText || s.buffer || "(empty response)";
