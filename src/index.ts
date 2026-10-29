@@ -57,7 +57,18 @@ async function main() {
   await tg.setMyCommands(BOT_COMMANDS).catch((err) => console.error("[commands]", err));
   await tg.setMyCommands(BOT_COMMANDS, { type: "all_private_chats" }).catch(() => {});
   await tg.setMyCommands(BOT_COMMANDS, { type: "all_group_chats" }).catch(() => {});
-  const info = await oc.serverInfo();
+  // Wait for the OpenCode server to be ready; PM2 may start us before it.
+  let info: any;
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    try {
+      info = await oc.serverInfo();
+      break;
+    } catch (err) {
+      console.error(`[opencodegram] waiting for opencode (attempt ${attempt}/30): ${err instanceof Error ? err.message : String(err)}`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  if (!info) throw new Error("OpenCode server not reachable after retries");
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const store = new SessionStore();
