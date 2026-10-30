@@ -185,7 +185,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
     if (settings.showTools && editDetails.length) {
-      lines.push(`<details><summary>✏️ Edits (${editDetails.length})</summary>\n<i>Tap a file after completion to view its diff.</i>\n</details>`);
+      const names = editDetails.map((detail) => extractEditFile(detail.input) ?? "edit").join(", ");
+      lines.push(`<details><summary>✏️ Edits (${editDetails.length})</summary>\n${esc(names)}</details>`);
     }
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
