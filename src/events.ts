@@ -292,8 +292,10 @@ if (e.type === "session.step.ended") {
 
 if (e.type === "session.text.ended") {
   const sessionId = e.data?.sessionID;
+  console.log("@@@TEXTENDED_ENTRY", sessionId);
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
+  console.log("@@@TEXTENDED", sessionId, "s=", !!_s0, "chatId=", chatId);
 
   if (chatId === undefined) return;
   let s = _s0;
