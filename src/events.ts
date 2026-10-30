@@ -211,6 +211,26 @@ if (e.type === "session.compaction.failed") {
   await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
 }
 
+if (e.type === "mcp.status.changed") {
+  const server = e.data?.server;
+  const chatId = resolveChatId(e.data?.sessionID);
+  if (chatId !== undefined && server) {
+    const threadId = resolveThreadId(e.data?.sessionID);
+    await tg.sendRichMessage(chatId, `🔌 MCP status changed: <b>${esc(server)}</b>\nUse /mcp to inspect.`, threadOpts(threadId)).catch(() => {});
+  }
+  return;
+}
+
+if (e.type === "mcp.resources.changed") {
+  const server = e.data?.server;
+  const chatId = resolveChatId(e.data?.sessionID);
+  if (chatId !== undefined && server) {
+    const threadId = resolveThreadId(e.data?.sessionID);
+    await tg.sendRichMessage(chatId, `📚 MCP resources changed: <b>${esc(server)}</b>\nUse /mcp resources.`, threadOpts(threadId)).catch(() => {});
+  }
+  return;
+}
+
 if (e.type === "session.text.delta") {
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
@@ -296,6 +316,7 @@ if (e.type === "session.text.ended") {
   }
   if (!s.stopped) {
     await flushDraft(chatId, s);
+    console.log("[text.ended] s=", !!s, "statusMsg=", s.statusMessageId, "finished=", s.statusFinished, "stopped=", s.stopped);
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
