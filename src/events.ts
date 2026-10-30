@@ -34,7 +34,6 @@ export type EventsDeps = {
 };
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
-  console.log("@@@HANDLEEVENT", event?.type);
   const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, messageToSession, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
 
@@ -275,8 +274,6 @@ if (e.type === "session.text.ended") {
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  console.log("@@@TEXTENDED", sessionId, "s=", !!_s0, "chatId=", chatId);
-  console.log("[text.ended]", sessionId, "s=", !!_s0, "chatId=", chatId, "inById=", store.sessionsById.has(sessionId), "chatBySession=", store.chatBySession.has(sessionId ?? ""));
 
   if (chatId === undefined) return;
   let s = _s0;
@@ -299,7 +296,6 @@ if (e.type === "session.text.ended") {
   }
   if (!s.stopped) {
     await flushDraft(chatId, s);
-    console.log("[text.ended] running finish? statusMsg=", s.statusMessageId, "finished=", s.statusFinished, "stopped=", s.stopped);
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
