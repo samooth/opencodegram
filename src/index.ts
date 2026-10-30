@@ -24,6 +24,7 @@ const BOT_COMMANDS = [
   { command: "agents", description: "List and switch agents" },
   { command: "usage", description: "Show usage and cost stats" },
   { command: "vcs", description: "Show VCS status" },
+  { command: "mcp", description: "MCP servers and resources" },
   { command: "branches", description: "List branches" },
   { command: "branch", description: "Switch branches" },
   { command: "stage", description: "Stage a file" },

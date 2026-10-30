@@ -2,6 +2,7 @@ import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import { extractEditFile, formatEditDiff, isEditTool } from "./editutil.js";
+import * as mcp from "./mcp.js";
 import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./settings.js";
 import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
@@ -76,6 +77,55 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   // File browser callbacks are namespaced with `fs:`.
   if (await deps.files.handleCallback(cq)) return;
+
+  // MCP callbacks are namespaced with `mcp:`.
+  const mcpData = cq.data ?? "";
+  if (mcpData.startsWith("mcp:")) {
+    const chatId = cq.message?.chat?.id ?? cq.from.id;
+    const threadId = cq.message?.message_thread_id;
+    const messageId = cq.message?.message_id;
+    const s = getActiveSession(chatId, threadId);
+    const directory = s?.directory ?? deps.config.OPENCODE_DIRECTORY ?? process.cwd();
+    const parts = mcpData.split(":");
+    const action = parts[1];
+    const name = parts.slice(2).join(":");
+    try {
+      if (action === "connect" && name) {
+        await deps.oc.client.mcp.connect({ server: name, location: { directory } } as any);
+        await deps.tg.answerCallbackQuery(cq.id, "Connected").catch(() => {});
+      } else if (action === "disconnect" && name) {
+        await deps.oc.client.mcp.disconnect({ server: name, location: { directory } } as any);
+        await deps.tg.answerCallbackQuery(cq.id, "Disconnected").catch(() => {});
+      } else if (action === "remove" && name) {
+        await deps.oc.client.mcp.remove({ server: name, location: { directory } } as any);
+        await deps.tg.answerCallbackQuery(cq.id, "Removed").catch(() => {});
+      } else if (action === "resources") {
+        await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+        const { resources, templates } = await mcp.listMcpResources(deps.oc, directory);
+        const all = [...resources, ...templates];
+        if (!all.length) {
+          await deps.tg.sendRichMessage(chatId, "No MCP resources available.", threadOpts(threadId));
+          return;
+        }
+        const lines = all.map((resource) => `• <b>${esc(resource.name)}</b> (${esc(resource.server)})\n  <code>${esc(resource.uri)}</code>`);
+        await deps.tg.sendRichMessage(chatId, `<b>MCP resources</b>\n${lines.join("\n\n")}\n\nUse /mcp read <uri>`, threadOpts(threadId));
+        return;
+      } else {
+        await deps.tg.answerCallbackQuery(cq.id, "Unknown MCP action").catch(() => {});
+        return;
+      }
+      const { text, keyboard } = await mcp.renderMcpList(deps.oc, directory);
+      if (messageId !== undefined) {
+        await deps.tg.editRichMessage(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => {});
+      } else {
+        await deps.tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+      }
+    } catch (err) {
+      await deps.tg.answerCallbackQuery(cq.id, "Failed").catch(() => {});
+      await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+    }
+    return;
+  }
 
   // Interactive forms (model questions with options).
   const formCallbackHandled = await handleFormCallback(deps, cq);

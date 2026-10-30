@@ -104,6 +104,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/usage", "Show usage and cost stats"],
       ["/vcs", "Show VCS status"],
       ["/vcs diff [--cached]", "Show git diff"],
+      ["/mcp", "MCP servers and resources"],
       ["/branches", "List branches"],
       ["/branch switch <name>", "Switch branch"],
       ["/stage <path>", "Stage a file"],

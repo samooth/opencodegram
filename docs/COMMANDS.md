@@ -20,6 +20,14 @@
 - `/settings` — show and toggle bot behavior: thinking, tools, partial text,
   auto artifacts, voice transcription and compact final.
 
+## MCP
+
+- `/mcp`, `/mcp list` — list MCP servers with status.
+- `/mcp connect <name>` / `/mcp disconnect <name>` / `/mcp remove <name>` —
+  manage servers.
+- `/mcp resources` — list resources and templates.
+- `/mcp read <uri>` — read a resource (HTTP/file URIs supported).
+
 ## Files and media
 
 - Send a photo/document/audio/voice/video — attach it to the active session.
