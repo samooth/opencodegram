@@ -66,7 +66,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
       } catch (err) {
         // One bad update must never stop the bot from polling.
         console.error("[update]", err);
-        metrics?.inc("update_errors");
+        metrics?.recordError(String(err));
       }
     }
   }

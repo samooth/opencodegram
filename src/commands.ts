@@ -250,37 +250,51 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     return true;
   }
 
-  if (text === "/vcs") {
+  if (text === "/vcs" || text.startsWith("/vcs ")) {
+    const args = text.slice(4).trim().split(/\s+/).filter(Boolean);
+    const subcommand = args[0]?.toLowerCase();
     const s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
-    try {
-      const info = await oc.vcsGet(directory);
-      const status = await oc.vcsStatus(directory);
-      const data = (info as any)?.data ?? info;
-      const st = (status as any)?.data ?? status;
-      const branch = data?.branch?.current ?? "?";
-      const files = Array.isArray(st) ? st.length : (st?.files?.length ?? 0);
-      await send(`<b>VCS</b>\nBranch: <code>${esc(branch)}</code>\nChanged files: ${files}\n\nUse /branches, /stage, /unstage, /commit or /vcs diff.`);
-    } catch (err) {
-      await send(`❌ ${esc(String(err))}`);
-    }
-    return true;
-  }
 
-  if (text === "/vcs diff" || text === "/vcs diff --cached") {
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
-    const cached = text.includes("--cached");
-    try {
-      const diff = await vcs.vcsDiff(directory, cached);
-      if (!diff) {
-        await send(cached ? "No staged changes." : "No changes.");
-        return true;
+    if (!subcommand || subcommand === "status") {
+      try {
+        const status = await vcs.vcsStatus(directory);
+        const lines = status.files.slice(0, 20).map((file) => `• <code>${esc(file)}</code>`);
+        const fileList = status.clean ? "Working tree clean." : lines.join("\n");
+        await send(`<b>VCS</b>\nBranch: <code>${esc(status.branch)}</code>\nChanged: ${status.changed}\n\n${fileList}\n\nUse /branches, /vcs diff, /stage, /unstage, /commit.`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
       }
-      await send(`<b>${cached ? "Staged diff" : "Working tree diff"}</b>\n<pre><code class="language-diff">${esc(diff.slice(0, 3500))}</code></pre>`);
-    } catch (err) {
-      await send(`❌ ${esc(String(err))}`);
+      return true;
     }
+
+    if (subcommand === "diff") {
+      const cached = args.includes("--cached");
+      const path = args.filter((arg) => arg !== "diff" && arg !== "--cached").join(" ") || undefined;
+      try {
+        const diff = await vcs.vcsDiff(directory, cached, path);
+        if (!diff) {
+          await send(cached ? "No staged changes." : "No changes.");
+          return true;
+        }
+        await send(`<b>${cached ? "Staged diff" : "Working tree diff"}${path ? " · " + esc(path) : ""}</b>\n<pre><code class="language-diff">${esc(diff.slice(0, 3500))}</code></pre>`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+
+    if (subcommand === "log") {
+      try {
+        const log = await vcs.vcsLog(directory);
+        await send(`<b>Recent commits</b>\n<pre>${esc(log || "(none)")}</pre>`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+
+    await send("usage: /vcs [status|diff [--cached] [path]|log]");
     return true;
   }
 
@@ -742,7 +756,16 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       await send("no active session.");
       return true;
     }
-    await send(`Delete session <code>${esc(s.sessionId)}</code>? Reply /delete confirm to proceed.`);
+    await send(`Delete session <code>${esc(s.sessionId)}</code>?`, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🗑 Delete", callback_data: `delete:confirm:${s.sessionId}` },
+            { text: "Cancel", callback_data: "delete:cancel" },
+          ],
+        ],
+      },
+    });
     return true;
   }
 

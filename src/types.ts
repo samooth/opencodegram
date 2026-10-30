@@ -17,6 +17,8 @@ export type ChatSession = {
   expandedEditIndex?: number;
   compacting?: boolean;
   compactionSummary?: string;
+  cpuHistory?: number[];
+  memHistory?: number[];
   targetChatId?: number;
   targetThreadId?: number;
   topicTitle?: string;

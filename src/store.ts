@@ -23,6 +23,7 @@ export class SessionStore {
   readonly chatBySession = new Map<string, number>();
   readonly messageToSession = new Map<number, string>();
   readonly topicTitleBySession = new Map<string, string>();
+  readonly cotBySession = new Map<string, { buffer: string; count: number }>();
 
   readonly dataDir: string;
   private readonly threadsFile: string;
@@ -30,6 +31,9 @@ export class SessionStore {
   private readonly activeFile: string;
   private readonly messagesFile: string;
   private readonly topicTitlesFile: string;
+  private readonly cotFile: string;
+  private readonly lastChatsFile: string;
+  private readonly lastPromptsFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
@@ -38,6 +42,9 @@ export class SessionStore {
     this.activeFile = join(dataDir, "active.json");
     this.messagesFile = join(dataDir, "messages.json");
     this.topicTitlesFile = join(dataDir, "topicTitles.json");
+    this.cotFile = join(dataDir, "cot.json");
+    this.lastChatsFile = join(dataDir, "lastChats.json");
+    this.lastPromptsFile = join(dataDir, "lastPrompts.json");
     this.load();
   }
 
@@ -105,6 +112,24 @@ export class SessionStore {
     this.saveTopicTitles();
   };
 
+  rememberCot = (sessionId: string, buffer: string, count: number) => {
+    this.cotBySession.set(sessionId, { buffer, count });
+    this.saveCot();
+  };
+
+  getCotBuffer = (sessionId: string): string | undefined => this.cotBySession.get(sessionId)?.buffer;
+  getCotCount = (sessionId: string): number | undefined => this.cotBySession.get(sessionId)?.count;
+
+  rememberLastChat = (sessionId: string, chatId: number) => {
+    this.lastChatBySession.set(sessionId, chatId);
+    this.saveLastChats();
+  };
+
+  rememberLastPrompt = (sessionId: string, prompt: string) => {
+    this.lastPromptBySession.set(sessionId, prompt);
+    this.saveLastPrompts();
+  };
+
   forgetSession = (sessionId: string) => {
     this.sessionsById.delete(sessionId);
     for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);
@@ -116,11 +141,15 @@ export class SessionStore {
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
     this.topicTitleBySession.delete(sessionId);
+    this.cotBySession.delete(sessionId);
     this.saveThreads();
     this.saveChats();
     this.saveActiveSessions();
     this.saveMessages();
     this.saveTopicTitles();
+    this.saveCot();
+    this.saveLastChats();
+    this.saveLastPrompts();
   };
 
   saveThreads = () => {
@@ -161,6 +190,39 @@ export class SessionStore {
       writeFileSync(this.topicTitlesFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[topicTitles] save failed", err);
+    }
+  };
+
+  saveCot = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, { buffer: string; count: number }> = {};
+      for (const [sid, value] of this.cotBySession) obj[sid] = value;
+      writeFileSync(this.cotFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[cot] save failed", err);
+    }
+  };
+
+  saveLastChats = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, number> = {};
+      for (const [sid, chatId] of this.lastChatBySession) obj[sid] = chatId;
+      writeFileSync(this.lastChatsFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[lastChats] save failed", err);
+    }
+  };
+
+  saveLastPrompts = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, string> = {};
+      for (const [sid, prompt] of this.lastPromptBySession) obj[sid] = prompt;
+      writeFileSync(this.lastPromptsFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[lastPrompts] save failed", err);
     }
   };
 
@@ -212,6 +274,36 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[topicTitles] load failed", err);
+    }
+    try {
+      if (existsSync(this.cotFile)) {
+        const parsed = JSON.parse(readFileSync(this.cotFile, "utf8")) as Record<string, { buffer?: string; count?: number }>;
+        for (const [sid, value] of Object.entries(parsed)) {
+          if (sid && value) this.cotBySession.set(sid, { buffer: value.buffer ?? "", count: value.count ?? 0 });
+        }
+      }
+    } catch (err) {
+      console.error("[cot] load failed", err);
+    }
+    try {
+      if (existsSync(this.lastChatsFile)) {
+        const parsed = JSON.parse(readFileSync(this.lastChatsFile, "utf8")) as Record<string, number>;
+        for (const [sid, chatId] of Object.entries(parsed)) {
+          if (sid && Number.isFinite(chatId)) this.lastChatBySession.set(sid, chatId);
+        }
+      }
+    } catch (err) {
+      console.error("[lastChats] load failed", err);
+    }
+    try {
+      if (existsSync(this.lastPromptsFile)) {
+        const parsed = JSON.parse(readFileSync(this.lastPromptsFile, "utf8")) as Record<string, string>;
+        for (const [sid, prompt] of Object.entries(parsed)) {
+          if (sid && prompt) this.lastPromptBySession.set(sid, prompt);
+        }
+      }
+    } catch (err) {
+      console.error("[lastPrompts] load failed", err);
     }
 
     // Explicit tab bindings.

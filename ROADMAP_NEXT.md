@@ -17,6 +17,7 @@
 - Worktree management: list, create, remove and switch the active session.
 - VCS actions: branch switching, staging/unstaging and commits with confirmation.
 - MCP status: list, connect, disconnect, remove servers and browse resources.
+- Operations: health endpoint, metrics, audit log rotation and disk guard.
 - Automated Bun tests for routing/tab isolation, path guard, `/file`, file
   browser, transcription, rate-limit retry and command parsing (`bun test`).
 - `/vcs` status, `/worktrees` listing, `/forms` + `/formreply`.

@@ -33,6 +33,8 @@ export type EventsDeps = {
   syncTopicTitle: (chatId: number, s: ChatSession) => Promise<void>;
 };
 
+const lastGoalStatus = new Map<string, string>();
+
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
   const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, messageToSession, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
@@ -512,6 +514,29 @@ if (e.type === "session.execution.failed") {
       }
     }
   }
+}
+
+if (e.type === "rpc.opencode.goal.changed") {
+  const sessionId = e.data?.sessionID;
+  const goal = e.data?.goal;
+  const chatId = resolveChatId(sessionId);
+  if (chatId === undefined || !goal) return;
+  const threadId = resolveThreadId(sessionId);
+  const status = String(goal.status ?? "");
+  const objective = goal.objective ? String(goal.objective) : "";
+  const reason = goal.reason ? String(goal.reason) : "";
+  const signature = `${status}|${objective}|${reason}`;
+  const prev = lastGoalStatus.get(String(sessionId ?? ""));
+  if (prev === signature) return;
+  lastGoalStatus.set(String(sessionId ?? ""), signature);
+  let msg = "";
+  if (status === "active") msg = `🎯 <b>Goal active</b>${objective ? ": " + esc(objective) : ""}`;
+  else if (status === "complete") msg = `✅ <b>Goal complete</b>${reason ? ": " + esc(reason) : ""}`;
+  else if (status === "blocked") msg = `⛔ <b>Goal blocked</b>${reason ? ": " + esc(reason) : ""}`;
+  else if (status === "paused") msg = `⏸ <b>Goal paused</b>${reason ? ": " + esc(reason) : ""}`;
+  else msg = `🎯 <b>Goal ${esc(status)}</b>${reason ? ": " + esc(reason) : ""}`;
+  await tg.sendRichMessage(chatId, msg, threadOpts(threadId)).catch(() => {});
+  return;
 }
 
 if (e.type === "session.idle") {

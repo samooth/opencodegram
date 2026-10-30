@@ -17,6 +17,8 @@ export type ChatSettings = {
   shellExpanded: boolean;
   previewLines: number;
   diffStyle: DiffStyle;
+  showResourceUsage: boolean;
+  resourceHistory: number;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -32,6 +34,8 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   shellExpanded: false,
   previewLines: 40,
   diffStyle: "simple",
+  showResourceUsage: true,
+  resourceHistory: 12,
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -103,6 +107,8 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   shellExpanded: "🖥 Shell expanded",
   previewLines: "📏 Preview lines",
   diffStyle: "🧾 Diff style",
+  showResourceUsage: "📊 Resource usage",
+  resourceHistory: "📈 History size",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
@@ -139,12 +145,15 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     "compactFinal",
     "showShell",
     "shellExpanded",
+    "showResourceUsage",
   ];
   for (const key of booleanKeys) {
     keyboard.push([{ text: `${LABELS[key]}: ${settings[key] ? "on" : "off"}`, callback_data: `set:${key}:${settings[key] ? "false" : "true"}` }]);
   }
   const previewPresets = [20, 40, 80, 160];
   keyboard.push([{ text: `${LABELS.previewLines}: ${settings.previewLines}`, callback_data: `cycle:previewLines` }]);
+  const historyPresets = [6, 12, 24];
+  keyboard.push([{ text: `${LABELS.resourceHistory}: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` }]);
   keyboard.push([{ text: `${LABELS.diffStyle}: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
   keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
   return keyboard;

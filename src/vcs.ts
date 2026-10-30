@@ -73,9 +73,17 @@ export async function vcsCommit(directory: string, message: string): Promise<Vcs
   return { ok: true, output: output || "Committed" };
 }
 
-export async function vcsDiff(directory: string, cached = false): Promise<string> {
+export async function vcsDiff(directory: string, cached = false, path?: string): Promise<string> {
   const args = cached ? ["diff", "--cached"] : ["diff"];
+  if (path) {
+    const safePath = await safeRelativePath(directory, path);
+    args.push("--", safePath);
+  }
   return runGit(directory, args);
+}
+
+export async function vcsLog(directory: string, limit = 10): Promise<string> {
+  return runGit(directory, ["log", "--oneline", `-${limit}`]);
 }
 
 async function safeRelativePath(directory: string, path: string): Promise<string> {

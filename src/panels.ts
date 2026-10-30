@@ -4,6 +4,7 @@ import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
+import type { MetricsStore } from "./metrics.js";
 import { esc, threadOpts } from "./util.js";
 
 export type PanelsDeps = {
@@ -13,11 +14,12 @@ export type PanelsDeps = {
   getActiveSession: (chatId: number, threadId?: number) => ChatSession | undefined;
   modelListByChat: Map<string, Array<any>>;
   routeKey: (chatId: number, threadId?: number) => string;
+  metrics: MetricsStore;
 };
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, modelListByChat, routeKey }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, modelListByChat, routeKey, metrics }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
@@ -161,6 +163,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/context", "Show session context"],
       ["/sync", "Sync session history to Telegram"],
       ["/compact", "Compact session history"],
+      ["/goal <objective>", "Keep working toward a session goal (pause/resume/clear)"],
       ["/stop", "Stop the active turn"],
     ];
     const botRows = botCmds.map(([c, d]) => `<tr><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`).join("");
@@ -284,6 +287,10 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       // no gpu
     }
 
+    const botUptimeSeconds = Math.max(1, Math.round((Date.now() - metrics.startedAt) / 1000));
+    const botUptime = `${Math.floor(botUptimeSeconds / 3600)}h ${Math.floor((botUptimeSeconds % 3600) / 60)}m`;
+    const lastError = metrics.lastError;
+
     let title = s?.sessionId ? "(loading…)" : "none";
     let modelLine = "—";
     let directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? "—";
@@ -317,7 +324,9 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       s?.sessionId ? `<tr><td><b>Cost</b></td><td>${costLine}</td></tr>` : "",
       s?.sessionId ? `<tr><td><b>Updated</b></td><td>${updatedLine}</td></tr>` : "",
       s?.sessionId ? `<tr><td><b>Turn</b></td><td>${turnLine}</td></tr>` : "",
-      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
+      `<tr><td><b>Bot</b></td><td>uptime ${botUptime} · pid ${process.pid} · updates ${metrics.get("updates")}</td></tr>`,
+      metrics.lastError ? `<tr><td><b>Last error</b></td><td>${esc(metrics.lastError.message)} (${new Date(metrics.lastError.time).toISOString().slice(11, 19)})</td></tr>` : "",
+      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
       `<tr><td><b>Host</b></td><td>${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB</td></tr>`,
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
@@ -354,7 +363,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       s ? `<tr><td><b>Session</b></td><td><code>${esc(s.sessionId)}</code></td></tr>` : `<tr><td><b>Session</b></td><td>none</td></tr>`,
       s?.model ? `<tr><td><b>Model</b></td><td><code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}</td></tr>` : "",
       s?.directory ? `<tr><td><b>Directory</b></td><td><code>${esc(s.directory)}</code></td></tr>` : "",
-      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as any).version ?? "")} · pid ${(ocInfo as any).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
+      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
       `<tr><td><b>Host</b></td><td>${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB</td></tr>`,
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
