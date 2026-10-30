@@ -409,6 +409,17 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
 
+  if (cbData === "modelcancel") {
+    const scope = routeKey(chatId, threadId);
+    pendingModelByChat.delete(scope);
+    await tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
+    if (cq.message?.message_id) {
+      await tg.editRichMessage(chatId, cq.message.message_id, "Model selection cancelled.", {
+        reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] },
+      }).catch(() => {});
+    }
+    return;
+  }
   const modelMatch = cbData.match(/^model:(\d+)$/);
   if (modelMatch) {
     const idx = parseInt(modelMatch[1], 10);
@@ -435,6 +446,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       keyboard.push([{ text: v.id === model.variants?.[0]?.id ? `${v.id} (default)` : v.id, callback_data: `variant:${v.id}` }]);
     }
     keyboard.push([{ text: "Default", callback_data: "variant:default" }]);
+    keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }]);
     keyboard.push([
       { text: "🧠 Models", callback_data: "panel:models" },
       { text: "🏠 Panel", callback_data: "panel:home" },

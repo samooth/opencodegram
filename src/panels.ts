@@ -19,6 +19,8 @@ export type Panels = ReturnType<typeof createPanels>;
 
 export function createPanels({ tg, oc, config, getActiveSession, modelListByChat, routeKey }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
+  const providerListByChat = new Map<string, string[]>();
+  const selectedProviderByChat = new Map<string, string | undefined>();
 
   async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}): Promise<void> {
     if (messageId) {
@@ -32,6 +34,41 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     await tg.sendRichMessage(chatId, html, opts);
   }
 
+  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
+    const pageSize = 8;
+    const res = await oc.client.session.list({ limit: 100, order: "desc" });
+    const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    if (!list.length) {
+      await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
+      return;
+    }
+    const total = list.length;
+    const start = page * pageSize;
+    const slice = list.slice(start, start + pageSize);
+    const lines = slice.map((s: any, i: number) => {
+      const title = esc(s.title ?? "(untitled)");
+      const directory = esc((s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "");
+      const dirSuffix = directory ? ` · ${directory}` : "";
+      return `<tr><td>${start + i + 1}</td><td><b>${title}</b></td><td><code>${esc(s.id)}</code></td><td>${dirSuffix}</td></tr>`;
+    });
+    const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Dir</th></tr>${lines.join("")}</table>`;
+    const keyboard: any[][] = slice.map((s: any) => {
+      const title = (s.title ?? "(untitled)").slice(0, 40);
+      const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
+      const dirSuffix = directory ? ` · ${directory}` : "";
+      const label = `🗑 ${(title + dirSuffix).slice(0, 58)}`;
+      return [{ text: label, callback_data: `del:${s.id}` }];
+    });
+    const nav: any[] = [];
+    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `delsessions:page:${page - 1}` });
+    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `delsessions:page:${page + 1}` });
+    if (nav.length) keyboard.push(nav);
+    keyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    await sendOrEditRich(chatId, messageId, `<b>Delete sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  }
   async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
@@ -119,6 +156,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/archive", "Archive the active session"],
       ["/unarchive", "Unarchive the active session"],
       ["/delete", "Delete the active session"],
+      ["/deletesessions", "List and delete sessions"],
       ["/diff", "Show session diff"],
       ["/context", "Show session context"],
       ["/sync", "Sync session history to Telegram"],
@@ -133,7 +171,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     });
   }
 
-  async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
+  async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number, provider?: string): Promise<void> {
     const s = getActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     let raw: any[];
@@ -152,34 +190,72 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       return String(a.name ?? a.id).localeCompare(String(b.name ?? b.id));
     });
     const current = s?.model;
-    if (!list.length) {
-      await tg.sendRichMessage(chatId, "no models available.", threadOpts(threadId));
+    const scope = routeKey(chatId, threadId);
+    modelListByChat.set(scope, list);
+    const providers = [...new Set(list.map((m: any) => m.providerID ?? m.provider ?? "unknown"))].sort();
+
+    if (!provider) {
+      selectedProviderByChat.delete(scope);
+      providerListByChat.set(scope, providers);
+      if (!providers.length) {
+        await tg.sendRichMessage(chatId, "no models available.", threadOpts(threadId));
+        return;
+      }
+      const total = providers.length;
+      const pageSize = 8;
+      const start = page * pageSize;
+      const slice = providers.slice(start, start + pageSize);
+      const lines = slice.map((providerId: string, i: number) => {
+        const count = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
+        const isCurrent = current && current.providerID === providerId;
+        const mark = isCurrent ? " ✅" : "";
+        return `<tr><td>${start + i + 1}</td><td><b>${esc(providerId)}</b>${mark}</td><td>${count}</td></tr>`;
+      });
+      const table = `<table><tr><th>#</th><th>Provider</th><th>Models</th></tr>${lines.join("")}</table>`;
+      const keyboard: any[][] = slice.map((providerId: string, i: number) => {
+        const count = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
+        return [{ text: `${providerId} (${count})`.slice(0, 64), callback_data: `prov:${start + i}` }];
+      });
+      const nav: any[] = [];
+      if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
+      if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
+      if (nav.length) keyboard.push(nav);
+      keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+      const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
+      await sendOrEditRich(chatId, messageId, `<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: keyboard },
+      });
       return;
     }
+
+    selectedProviderByChat.set(scope, provider);
+    const providerModels = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === provider);
+    const total = providerModels.length;
     const pageSize = 8;
-    const total = list.length;
     const start = page * pageSize;
-    const slice = list.slice(start, start + pageSize);
-    modelListByChat.set(routeKey(chatId, threadId), list);
+    const slice = providerModels.slice(start, start + pageSize);
     const lines = slice.map((m: any, i: number) => {
       const name = esc(m.name ?? m.id);
       const variant = m.variants?.length ? esc(m.variants.map((v: any) => v.id).join(", ")) : "—";
-      const isCurrent = current && current.providerID === m.providerID && current.id === m.id;
+      const isCurrent = current && current.providerID === (m.providerID ?? m.provider) && current.id === m.id;
       const mark = isCurrent ? " ✅" : "";
-      return `<tr><td>${start + i + 1}</td><td><b>${name}</b>${mark}</td><td><code>${esc(m.providerID)}/${esc(m.id)}</code></td><td>${variant}</td></tr>`;
+      return `<tr><td>${start + i + 1}</td><td><b>${name}</b>${mark}</td><td><code>${esc(m.providerID ?? m.provider ?? "")}/${esc(m.id)}</code></td><td>${variant}</td></tr>`;
     });
     const table = `<table><tr><th>#</th><th>Model</th><th>ID</th><th>Variants</th></tr>${lines.join("")}</table>`;
-    const keyboard: any[][] = slice.map((m: any, i: number) => {
+    const keyboard: any[][] = slice.map((m: any) => {
+      const idx = list.indexOf(m);
       const label = `${m.name ?? m.id}`.slice(0, 48);
-      return [{ text: label, callback_data: `model:${start + i}` }];
+      return [{ text: label, callback_data: `model:${idx}` }];
     });
     const nav: any[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
+    keyboard.push([{ text: "◀ Providers", callback_data: "prov:back" }, { text: "❌ Cancel", callback_data: "modelcancel" }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
-    await sendOrEditRich(chatId, messageId, `<b>Models</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, {
+    await sendOrEditRich(chatId, messageId, `<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
@@ -291,5 +367,5 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
 
-  return { showSessions, showCommands, showModels, showStatus, sendPanel };
+  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, providerListByChat, selectedProviderByChat };
 }
