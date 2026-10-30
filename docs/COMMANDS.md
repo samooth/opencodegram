@@ -50,6 +50,13 @@ documents.
 - `/compact` — compact session history.
 - `/usage` — global usage and cost.
 - `/vcs` — branch and changed-file count.
+- `/vcs diff [--cached]` — show working tree or staged diff.
+- `/branches` — list branches.
+- `/branch <name>` or `/branch switch <name>` — switch branch.
+- `/stage <path>` — stage a file.
+- `/unstage <path>` — unstage a file.
+- `/commit <message>` — ask for confirmation.
+- `/commit confirm <message>` — commit staged changes.
 - `/worktrees` — list worktrees.
 - `/worktree list|create <name> [branch]|remove <directory>|switch <directory>` —
   manage and switch worktrees.

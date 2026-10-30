@@ -15,6 +15,7 @@
 - `/zip` archives and automatic delivery of files produced by a turn.
 - Local voice-note transcription with configurable Whisper-compatible CLI.
 - Worktree management: list, create, remove and switch the active session.
+- VCS actions: branch switching, staging/unstaging and commits with confirmation.
 - Automated Bun tests for routing/tab isolation, path guard, `/file`, file
   browser, transcription, rate-limit retry and command parsing (`bun test`).
 - `/vcs` status, `/worktrees` listing, `/forms` + `/formreply`.
@@ -26,12 +27,11 @@
 
 1. **MCP status** – list servers, connect/disconnect, show resources and read
    them from Telegram.
-2. **VCS actions** – switch branch, stage/unstage, commit with confirmation.
-3. **Webhook mode** – optional production mode with secret validation; keep
+2. **Webhook mode** – optional production mode with secret validation; keep
    long polling as the default.
-4. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
-5. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
-6. **Operations** – health endpoint, metrics, log rotation, disk guard.
+3. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
+4. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
+5. **Operations** – health endpoint, metrics, log rotation, disk guard.
 
 ## Suggested order
 

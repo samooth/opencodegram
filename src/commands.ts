@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
 import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument } from "./files.js";
 import { isSettingsKey, renderSettings, settingsKeyboard } from "./settings.js";
+import * as vcs from "./vcs.js";
 import { esc, threadOpts } from "./util.js";
 
 /**
@@ -37,6 +38,11 @@ export const KNOWN_COMMANDS = new Set([
   "context",
   "compact",
   "vcs",
+  "branches",
+  "branch",
+  "stage",
+  "unstage",
+  "commit",
   "worktrees",
   "worktree",
   "usage",
@@ -243,7 +249,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
 
   if (text === "/vcs") {
     const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
     try {
       const info = await oc.vcsGet(directory);
       const status = await oc.vcsStatus(directory);
@@ -251,10 +257,133 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       const st = (status as any)?.data ?? status;
       const branch = data?.branch?.current ?? "?";
       const files = Array.isArray(st) ? st.length : (st?.files?.length ?? 0);
-      await send(`<b>VCS</b>\nBranch: <code>${esc(branch)}</code>\nChanged files: ${files}`);
+      await send(`<b>VCS</b>\nBranch: <code>${esc(branch)}</code>\nChanged files: ${files}\n\nUse /branches, /stage, /unstage, /commit or /vcs diff.`);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
+    return true;
+  }
+
+  if (text === "/vcs diff" || text === "/vcs diff --cached") {
+    const s = await restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const cached = text.includes("--cached");
+    try {
+      const diff = await vcs.vcsDiff(directory, cached);
+      if (!diff) {
+        await send(cached ? "No staged changes." : "No changes.");
+        return true;
+      }
+      await send(`<b>${cached ? "Staged diff" : "Working tree diff"}</b>\n<pre><code class="language-diff">${esc(diff.slice(0, 3500))}</code></pre>`);
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/branches" || text === "/branch" || text.startsWith("/branch ")) {
+    const s = await restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const parts = text.split(/\s+/).filter(Boolean);
+    const subcommand = parts[1]?.toLowerCase();
+    if (!subcommand || subcommand === "list" || subcommand === "ls") {
+      try {
+        const branches = await vcs.vcsBranches(directory);
+        const status = await vcs.vcsStatus(directory);
+        const current = status.branch;
+        if (!branches.length) {
+          await send("no branches found.");
+          return true;
+        }
+        const lines = branches.map((branch) => (branch === current ? `• <b>${esc(branch)}</b> ✅` : `• <code>${esc(branch)}</code>`));
+        await send(`<b>Branches</b>\n${lines.join("\n")}`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+    if (subcommand === "switch" || subcommand === "checkout" || subcommand === "use") {
+      const branch = parts.slice(2).join(" ");
+      if (!branch) {
+        await send("usage: /branch switch <name>");
+        return true;
+      }
+      try {
+        const result = await vcs.vcsSwitch(directory, branch);
+        await send(`✅ ${esc(result.output)}`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+    // Allow `/branch <name>` as a shortcut for switching.
+    const branch = parts.slice(1).join(" ");
+    try {
+      const result = await vcs.vcsSwitch(directory, branch);
+      await send(`✅ ${esc(result.output)}`);
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/stage" || text.startsWith("/stage ")) {
+    const path = text.slice(6).trim();
+    if (!path) {
+      await send("usage: /stage <path>");
+      return true;
+    }
+    const s = await restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    try {
+      const result = await vcs.vcsStage(directory, path);
+      await send(`✅ ${esc(result.output)}`);
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/unstage" || text.startsWith("/unstage ")) {
+    const path = text.slice(8).trim();
+    if (!path) {
+      await send("usage: /unstage <path>");
+      return true;
+    }
+    const s = await restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    try {
+      const result = await vcs.vcsUnstage(directory, path);
+      await send(`✅ ${esc(result.output)}`);
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/commit" || text.startsWith("/commit ")) {
+    const rest = text.slice(7).trim();
+    if (!rest) {
+      await send("usage: /commit <message>");
+      return true;
+    }
+    if (rest.startsWith("confirm ")) {
+      const message = rest.slice(8).trim();
+      if (!message) {
+        await send("usage: /commit confirm <message>");
+        return true;
+      }
+      const s = await restoreActiveSession(chatId, threadId);
+      const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+      try {
+        const result = await vcs.vcsCommit(directory, message);
+        await send(`✅ ${esc(result.output)}`);
+      } catch (err) {
+        await send(`❌ ${esc(String(err))}`);
+      }
+      return true;
+    }
+    await send(`Commit message:\n<code>${esc(rest)}</code>\nReply /commit confirm ${esc(rest)} to proceed.`);
     return true;
   }
 
