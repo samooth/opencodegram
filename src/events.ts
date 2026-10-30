@@ -34,7 +34,7 @@ export type EventsDeps = {
 };
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
-  console.log("[handleEvent] called", event?.type);
+  console.log("@@@HANDLEEVENT", event?.type);
   const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, messageToSession, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
 
@@ -273,9 +273,9 @@ if (e.type === "session.step.ended") {
 
 if (e.type === "session.text.ended") {
   const sessionId = e.data?.sessionID;
-  console.log("[text.ended] BLOCK ENTRY", sessionId);
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
+  console.log("@@@TEXTENDED", sessionId, "s=", !!_s0, "chatId=", chatId);
   console.log("[text.ended]", sessionId, "s=", !!_s0, "chatId=", chatId, "inById=", store.sessionsById.has(sessionId), "chatBySession=", store.chatBySession.has(sessionId ?? ""));
 
   if (chatId === undefined) return;
