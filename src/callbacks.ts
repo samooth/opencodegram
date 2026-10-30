@@ -12,7 +12,7 @@ import { esc, threadOpts } from "./util.js";
 export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): Promise<void> {
   const { config, tg, oc, store, pendingPermissions, awaitingReason, panels, sessions, modelListByChat, pendingModelByChat } = deps;
   const { routeKey, getActiveSession, threadOptsFor } = store;
-  const { showSessions, showDeleteSessions, showModels, showCommands, showStatus, sendPanel } = panels;
+  const { showSessions, showDeleteSessions, showModels, showCommands, showStatus, sendPanel, providerListByChat, selectedProviderByChat } = panels;
   const { activateSession, ensureActiveSession, createNewSession } = sessions;
 
   console.log("[telegram] callback from", cq.from?.id, "data=", cq.data, "chat=", cq.message?.chat?.id);
@@ -206,6 +206,22 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       }
       return;
     }
+    if (key === "resourceHistory") {
+      const presets = [6, 12, 24];
+      const current = deps.settings.get(chatId).resourceHistory;
+      const next = presets[(presets.indexOf(current) + 1) % presets.length] ?? presets[0];
+      const settings = deps.settings.set(chatId, "resourceHistory", next);
+      await deps.tg.answerCallbackQuery(cq.id, `${LABELS.resourceHistory} → ${next}`).catch(() => {});
+      if (messageId !== undefined) {
+        await deps.tg
+          .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+            ...threadOpts(threadId),
+            reply_markup: { inline_keyboard: settingsKeyboard(settings) },
+          })
+          .catch(() => {});
+      }
+      return;
+    }
     await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch(() => {});
     return;
   }
@@ -365,8 +381,31 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   }
   const modelsPageMatch = cbData.match(/^models:page:(\d+)$/);
   if (modelsPageMatch) {
+    const scope = routeKey(chatId, threadId);
+    const provider = selectedProviderByChat?.get(scope);
     await tg.answerCallbackQuery(cq.id);
-    await showModels(chatId, parseInt(modelsPageMatch[1], 10), cq.message?.message_id, threadId);
+    await showModels(chatId, parseInt(modelsPageMatch[1], 10), cq.message?.message_id, threadId, provider);
+    return;
+  }
+
+  const provMatch = cbData.match(/^prov:(.+)$/);
+  if (provMatch) {
+    const scope = routeKey(chatId, threadId);
+    const providers = providerListByChat.get(scope) ?? [];
+    const raw = provMatch[1];
+    if (raw === "back") {
+      await tg.answerCallbackQuery(cq.id);
+      await showModels(chatId, 0, cq.message?.message_id, threadId);
+      return;
+    }
+    const index = parseInt(raw, 10);
+    const provider = providers[index];
+    if (!provider) {
+      await tg.answerCallbackQuery(cq.id, "Provider not found");
+      return;
+    }
+    await tg.answerCallbackQuery(cq.id);
+    await showModels(chatId, 0, cq.message?.message_id, threadId, provider);
     return;
   }
 
@@ -377,8 +416,16 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const models = modelListByChat.get(scope) ?? [];
     const model = models[idx];
     const s = getActiveSession(chatId, threadId);
-    if (!model || !s) {
-      await tg.answerCallbackQuery(cq.id, "No active session/model");
+    if (!model) {
+      await tg.answerCallbackQuery(cq.id, "Model not found");
+      return;
+    }
+    if (!s) {
+      await tg.answerCallbackQuery(cq.id, "No active session");
+      await tg.sendRichMessage(chatId, "No active session in this chat/topic. Activate or create one first.", {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
+      }).catch(() => {});
       return;
     }
     pendingModelByChat.set(scope, model);
@@ -410,8 +457,16 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const scope = routeKey(chatId, threadId);
     const model = pendingModelByChat.get(scope);
     const s = getActiveSession(chatId, threadId);
-    if (!model || !s) {
+    if (!model) {
       await tg.answerCallbackQuery(cq.id, "No pending model");
+      return;
+    }
+    if (!s) {
+      await tg.answerCallbackQuery(cq.id, "No active session");
+      await tg.sendRichMessage(chatId, "No active session in this chat/topic. Activate or create one first.", {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
+      }).catch(() => {});
       return;
     }
     const variant = variantId === "default" ? undefined : variantId;
