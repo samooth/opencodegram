@@ -66,6 +66,7 @@ export type StatusDeps = {
   threadOptsFor: (s: ChatSession | undefined) => Record<string, unknown>;
   getSettings: (chatId: number) => ChatSettings;
   pendingEdits: Map<number, ChatSession>;
+  rememberCot: (sessionId: string, buffer: string, count: number) => void;
 };
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -115,7 +116,7 @@ function sparkline(values: number[]): string {
   return values.map((value) => blocks[Math.min(7, Math.max(0, Math.round(value / 12.5)))]).join("");
 }
 
-export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot }: StatusDeps) {
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
     s.timer = undefined;
@@ -200,6 +201,20 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
     }
+    if (settings.showResourceUsage) {
+      if (!s.cpuHistory) s.cpuHistory = [];
+      if (!s.memHistory) s.memHistory = [];
+      const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
+      const memPercent = Math.round((1 - os.freemem() / os.totalmem()) * 100);
+      s.cpuHistory.push(cpuPercent);
+      s.memHistory.push(memPercent);
+      const limit = settings.resourceHistory;
+      while (s.cpuHistory.length > limit) s.cpuHistory.shift();
+      while (s.memHistory.length > limit) s.memHistory.shift();
+      const cpuSpark = sparkline(s.cpuHistory);
+      const memSpark = sparkline(s.memHistory);
+      lines.push(`📊 CPU ${cpuSpark} ${cpuPercent}% · RAM ${memSpark} ${memPercent}%`);
+    }
     if (s.compacting) {
       lines.push("📦 <b>Compacting context…</b>");
     } else if (s.compactionSummary?.trim()) {
@@ -247,7 +262,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           ...threadOptsFor(s),
           reply_markup: { inline_keyboard: [] },
         })
-        .then(() => console.log("[status] finish edit OK", messageId))
         .catch((err) => console.error("[status] finish edit FAILED", messageId, err));
       if (!s.stopped && s.reasoningBuffer.trim()) {
         const chunk = s.reasoningBuffer.trim();
@@ -257,6 +271,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         s.cotBuffer = next;
         s.cotCount = (s.cotCount ?? 0) + 1;
         s.reasoningBuffer = "";
+        rememberCot(s.sessionId, next, s.cotCount);
       }
       s.statusMessageId = undefined;
     }
@@ -300,6 +315,20 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push("📦 <b>Compacting context…</b>");
     } else if (target.compactionSummary?.trim()) {
       lines.push("📦 " + esc(target.compactionSummary.trim().slice(0, 300)));
+    }
+    if (settings.showResourceUsage) {
+      if (!target.cpuHistory) target.cpuHistory = [];
+      if (!target.memHistory) target.memHistory = [];
+      const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
+      const memPercent = Math.round((1 - os.freemem() / os.totalmem()) * 100);
+      target.cpuHistory.push(cpuPercent);
+      target.memHistory.push(memPercent);
+      const limit = settings.resourceHistory;
+      while (target.cpuHistory.length > limit) target.cpuHistory.shift();
+      while (target.memHistory.length > limit) target.memHistory.shift();
+      const cpuSpark = sparkline(target.cpuHistory);
+      const memSpark = sparkline(target.memHistory);
+      lines.push(`📊 CPU ${cpuSpark} ${cpuPercent}% · RAM ${memSpark} ${memPercent}%`);
     }
     return lines.join("\n");
   };
