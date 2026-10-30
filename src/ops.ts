@@ -4,6 +4,7 @@ import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { MetricsStore } from "./metrics.js";
+import type { TelegramClient } from "./telegram.js";
 import { formatBytes } from "./files.js";
 
 export type OpsServer = {
@@ -16,8 +17,10 @@ export function createOpsServer(deps: {
   oc: OpenCodeBridge;
   store: SessionStore;
   metrics: MetricsStore;
+  tg?: TelegramClient;
+  adminChatId?: number;
 }): OpsServer {
-  const { config, oc, store, metrics } = deps;
+  const { config, oc, store, metrics, tg, adminChatId } = deps;
   const host = config.OPS_HOST;
   const port = config.OPS_PORT;
   const guardPath = config.DISK_GUARD_PATH ?? process.cwd();

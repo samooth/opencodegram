@@ -2,6 +2,8 @@ import type { ChatSession } from "./types.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff } from "./editutil.js";
 import { clampText, esc } from "./util.js";
 
@@ -111,9 +113,34 @@ function renderShell(details: ChatSession["toolCallDetails"], limit: number): st
  * Owns the lifecycle of the single "status" card that accompanies a turn:
  * Working… (thinking, tools, partial text) → Done / Stopped, no Stop button.
  */
-function sparkline(values: number[]): string {
-  const blocks = "▁▂▃▄▅▆▇█";
-  return values.map((value) => blocks[Math.min(7, Math.max(0, Math.round(value / 12.5)))]).join("");
+function readMemoryPercent(): number {
+  try {
+    const meminfo = readFileSync("/proc/meminfo", "utf8");
+    const total = Number(meminfo.match(/MemTotal:\s+(\d+)/)?.[1]);
+    const available = Number(meminfo.match(/MemAvailable:\s+(\d+)/)?.[1]);
+    if (Number.isFinite(total) && total > 0 && Number.isFinite(available) && available >= 0) {
+      return Math.max(0, Math.min(100, Math.round((1 - available / total) * 100)));
+    }
+  } catch {
+    // Fall back to os.freemem() on non-Linux or permission errors.
+  }
+  return Math.max(0, Math.min(100, Math.round((1 - os.freemem() / os.totalmem()) * 100)));
+}
+
+function progressBar(percent: number, width = 10): string {
+  const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)));
+  return "▓".repeat(filled) + "░".repeat(width - filled);
+}
+
+function readGpuPercent(): number | null {
+  try {
+    const out = execFileSync("nvidia-smi", ["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
+    const value = Number(out);
+    if (Number.isFinite(value)) return Math.max(0, Math.min(100, value));
+  } catch {
+    // No GPU or nvidia-smi unavailable.
+  }
+  return null;
 }
 
 export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot }: StatusDeps) {
@@ -205,15 +232,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (!s.cpuHistory) s.cpuHistory = [];
       if (!s.memHistory) s.memHistory = [];
       const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
-      const memPercent = Math.round((1 - os.freemem() / os.totalmem()) * 100);
+      const memPercent = readMemoryPercent();
       s.cpuHistory.push(cpuPercent);
       s.memHistory.push(memPercent);
       const limit = settings.resourceHistory;
       while (s.cpuHistory.length > limit) s.cpuHistory.shift();
       while (s.memHistory.length > limit) s.memHistory.shift();
-      const cpuSpark = sparkline(s.cpuHistory);
-      const memSpark = sparkline(s.memHistory);
-      lines.push(`📊 CPU ${cpuSpark} ${cpuPercent}% · RAM ${memSpark} ${memPercent}%`);
+      const cpuBar = progressBar(cpuPercent);
+      const memBar = progressBar(memPercent);
+      let line = `📊 CPU ${cpuBar} ${cpuPercent}% · RAM ${memBar} ${memPercent}%`;
+      const gpuPercent = readGpuPercent();
+      if (gpuPercent !== null) line += ` · GPU ${progressBar(gpuPercent)} ${gpuPercent}%`;
+      lines.push(line);
     }
     if (s.compacting) {
       lines.push("📦 <b>Compacting context…</b>");
@@ -320,15 +350,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (!target.cpuHistory) target.cpuHistory = [];
       if (!target.memHistory) target.memHistory = [];
       const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
-      const memPercent = Math.round((1 - os.freemem() / os.totalmem()) * 100);
+      const memPercent = readMemoryPercent();
       target.cpuHistory.push(cpuPercent);
       target.memHistory.push(memPercent);
       const limit = settings.resourceHistory;
       while (target.cpuHistory.length > limit) target.cpuHistory.shift();
       while (target.memHistory.length > limit) target.memHistory.shift();
-      const cpuSpark = sparkline(target.cpuHistory);
-      const memSpark = sparkline(target.memHistory);
-      lines.push(`📊 CPU ${cpuSpark} ${cpuPercent}% · RAM ${memSpark} ${memPercent}%`);
+      const cpuBar = progressBar(cpuPercent);
+      const memBar = progressBar(memPercent);
+      let line = `📊 CPU ${cpuBar} ${cpuPercent}% · RAM ${memBar} ${memPercent}%`;
+      const gpuPercent = readGpuPercent();
+      if (gpuPercent !== null) line += ` · GPU ${progressBar(gpuPercent)} ${gpuPercent}%`;
+      lines.push(line);
     }
     return lines.join("\n");
   };
