@@ -35,6 +35,7 @@ export const KNOWN_COMMANDS = new Set([
   "archive",
   "unarchive",
   "delete",
+  "deletesessions",
   "diff",
   "context",
   "compact",
@@ -57,7 +58,7 @@ export const KNOWN_COMMANDS = new Set([
 export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
   const { config, tg, oc, panels, sessions, files } = deps;
   const { restoreActiveSession, activateSession } = sessions;
-  const { sendPanel, showCommands, showModels, showSessions, showStatus } = panels;
+  const { sendPanel, showCommands, showModels, showSessions, showDeleteSessions, showStatus } = panels;
 
   if (text === "/start" || text === "/help") {
     await sendPanel(chatId, threadId);
@@ -389,7 +390,6 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     await send("usage: /mcp [list|connect <name>|disconnect <name>|remove <name>|resources|read <uri>]");
     return true;
   }
-    const s = await restoreActiveSession(chatId, threadId);
   if (text === "/branches" || text === "/branch" || text.startsWith("/branch ")) {
     const s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
@@ -732,22 +732,17 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     return true;
   }
 
+  if (text === "/delete sessions" || text === "/delete list") {
+    await showDeleteSessions(chatId, 0, undefined, threadId);
+    return true;
+  }
   if (text === "/delete") {
     const s = await restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
-    await send(`Delete session <code>${esc(s.sessionId)}</code>?`, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "✅ Confirm delete", callback_data: `delete:confirm:${s.sessionId}` },
-            { text: "❌ Cancel", callback_data: "delete:cancel" },
-          ],
-        ],
-      },
-    });
+    await send(`Delete session <code>${esc(s.sessionId)}</code>? Reply /delete confirm to proceed.`);
     return true;
   }
 

@@ -12,7 +12,7 @@ import { esc, threadOpts } from "./util.js";
 export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): Promise<void> {
   const { config, tg, oc, store, pendingPermissions, awaitingReason, panels, sessions, modelListByChat, pendingModelByChat } = deps;
   const { routeKey, getActiveSession, threadOptsFor } = store;
-  const { showSessions, showModels, showCommands, showStatus, sendPanel } = panels;
+  const { showSessions, showDeleteSessions, showModels, showCommands, showStatus, sendPanel } = panels;
   const { activateSession, ensureActiveSession, createNewSession } = sessions;
 
   console.log("[telegram] callback from", cq.from?.id, "data=", cq.data, "chat=", cq.message?.chat?.id);
@@ -77,6 +77,50 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   // File browser callbacks are namespaced with `fs:`.
   if (await deps.files.handleCallback(cq)) return;
+
+  // Delete-sessions pagination.
+  const deletePageMatch = cbData.match(/^delsessions:page:(\d+)$/);
+  if (deletePageMatch) {
+    await tg.answerCallbackQuery(cq.id);
+    await showDeleteSessions(chatId, parseInt(deletePageMatch[1], 10), cq.message?.message_id, threadId);
+    return;
+  }
+
+  // Delete a session: ask for confirmation.
+  const deleteSessionMatch = cbData.match(/^del:(.+)$/);
+  if (deleteSessionMatch) {
+    const sessionId = deleteSessionMatch[1];
+    await tg.answerCallbackQuery(cq.id);
+    await tg.sendRichMessage(chatId, `Delete session <code>${esc(sessionId)}</code>?`, {
+      ...threadOpts(threadId),
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🗑 Delete", callback_data: `delconfirm:${sessionId}` }, { text: "Cancel", callback_data: "panel:home" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  // Confirm deletion.
+  const deleteConfirmMatch = cbData.match(/^delconfirm:(.+)$/);
+  if (deleteConfirmMatch) {
+    const sessionId = deleteConfirmMatch[1];
+    await tg.answerCallbackQuery(cq.id, "Deleting…");
+    try {
+      await oc.interrupt(sessionId).catch(() => {});
+      await oc.deleteSession(sessionId);
+      store.forgetSession(sessionId);
+      if (cq.message?.message_id !== undefined) {
+        await tg.editRichMessage(chatId, cq.message.message_id, `✅ Deleted <code>${esc(sessionId)}</code>`, {
+          reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]] },
+        }).catch(() => {});
+      }
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
 
   // MCP callbacks are namespaced with `mcp:`.
   const mcpData = cq.data ?? "";
