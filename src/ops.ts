@@ -6,6 +6,7 @@ import type { SessionStore } from "./store.js";
 import type { MetricsStore } from "./metrics.js";
 import type { TelegramClient } from "./telegram.js";
 import { formatBytes } from "./files.js";
+import { esc } from "./util.js";
 
 export type OpsServer = {
   url: string;
@@ -25,6 +26,7 @@ export function createOpsServer(deps: {
   const port = config.OPS_PORT;
   const guardPath = config.DISK_GUARD_PATH ?? process.cwd();
   const minFreeBytes = config.DISK_GUARD_MIN_FREE_MB * 1024 * 1024;
+  let lastDiskAlert = 0;
 
   function diskInfo() {
     try {
@@ -44,6 +46,11 @@ export function createOpsServer(deps: {
     if (info.freeBytes !== null && info.freeBytes < minFreeBytes) {
       metrics.inc("disk_low");
       console.warn(`[ops] low disk space: ${formatBytes(info.freeBytes)} free on ${guardPath}`);
+      const now = Date.now();
+      if (tg && adminChatId && now - lastDiskAlert > 60 * 60 * 1000) {
+        lastDiskAlert = now;
+        tg.sendRichMessage(adminChatId, `⚠️ <b>Low disk space</b>\n${formatBytes(info.freeBytes)} free on <code>${esc(guardPath)}</code>.`).catch(() => {});
+      }
     }
   }
 

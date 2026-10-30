@@ -53,6 +53,7 @@ const BOT_COMMANDS = [
   { command: "context", description: "Show session context" },
   { command: "sync", description: "Sync session history to Telegram" },
   { command: "compact", description: "Compact session history" },
+  { command: "goal", description: "Keep working toward a session goal" },
   { command: "stop", description: "Stop the active turn" },
 ];
 
@@ -93,6 +94,7 @@ async function main() {
     threadOptsFor: (s) => store.threadOptsFor(s),
     getSettings: (chatId) => settings.get(chatId),
     pendingEdits,
+    rememberCot: (sessionId, buffer, count) => store.rememberCot(sessionId, buffer, count),
   });
   const sessions = createSessionManager({
     config,
@@ -111,6 +113,7 @@ async function main() {
     getActiveSession: store.getActiveSession,
     modelListByChat,
     routeKey: store.routeKey,
+    metrics,
   });
   const files = createFileBrowser({
     tg,
@@ -118,7 +121,7 @@ async function main() {
     getActiveSession: store.getActiveSession,
     getSettings: (chatId, threadId) => settings.get(chatId),
   });
-  const ops = createOpsServer({ config, oc, store, metrics });
+  const ops = createOpsServer({ config, oc, store, metrics, tg, adminChatId: config.ADMIN_TELEGRAM_USER_ID });
   console.log(`[opencodegram] ops: ${ops.url}`);
 
   const audit = (action: string, detail: string) => {
