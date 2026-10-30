@@ -137,7 +137,24 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     const directory = s?.location?.directory ?? s?.directory;
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const title = (s.title || sessionId).slice(0, 120);
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0 };
+
+    // Reuse the existing in-memory object when possible so tool details and
+    // status state survive session restoration/switching.
+    const existing = sessionsById.get(sessionId);
+    const cs: ChatSession = existing ?? { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0, topicTitle: store.topicTitleBySession.get(sessionId) };
+    cs.sessionId = sessionId;
+    cs.directory = directory;
+    cs.model = model;
+    cs.stopped = false;
+    cs.targetChatId = chatId;
+    cs.buffer = "";
+    cs.reasoningBuffer = "";
+    cs.toolCalls = [];
+    cs.toolCallDetails = [];
+    cs.draftId = 0;
+    cs.topicTitle = cs.topicTitle ?? store.topicTitleBySession.get(sessionId);
+    if (!cs.cotBuffer) cs.cotBuffer = "";
+    if (!cs.cotCount) cs.cotCount = 0;
     cs.topicTitle = store.topicTitleBySession.get(sessionId);
 
     // If this session was already tracked, retire its old status message so it

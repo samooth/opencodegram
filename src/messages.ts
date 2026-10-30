@@ -217,19 +217,6 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       s = undefined;
     }
   }
-  if (!s && chatId < 0) {
-    const chatMapped = store.activeSessionByRoute.get(store.routeKey(chatId));
-    const candidates = [...store.chatBySession.entries()].filter(([, cid]) => cid === chatId).map(([sid]) => sid);
-    const fallbackId = chatMapped ?? candidates[candidates.length - 1];
-    if (fallbackId) {
-      try {
-        await activateSession(chatId, fallbackId, true, replyThread);
-        s = await restoreActiveSession(chatId, replyThread);
-      } catch {
-        s = undefined;
-      }
-    }
-  }
   if (!s && chatId >= 0) {
     await createNewSession(chatId, true, replyThread);
     s = (await restoreActiveSession(chatId, replyThread))!;
