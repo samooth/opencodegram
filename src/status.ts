@@ -1,6 +1,7 @@
 import type { ChatSession } from "./types.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
+import os from "node:os";
 import { isEditTool, extractEditFile, formatEditDiff } from "./editutil.js";
 import { clampText, esc } from "./util.js";
 
@@ -109,6 +110,11 @@ function renderShell(details: ChatSession["toolCallDetails"], limit: number): st
  * Owns the lifecycle of the single "status" card that accompanies a turn:
  * Working… (thinking, tools, partial text) → Done / Stopped, no Stop button.
  */
+function sparkline(values: number[]): string {
+  const blocks = "▁▂▃▄▅▆▇█";
+  return values.map((value) => blocks[Math.min(7, Math.max(0, Math.round(value / 12.5)))]).join("");
+}
+
 export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits }: StatusDeps) {
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
