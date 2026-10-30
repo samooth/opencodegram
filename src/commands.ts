@@ -732,7 +732,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     return true;
   }
 
-  if (text === "/delete sessions" || text === "/delete list") {
+  if (text === "/deletesessions" || text === "/delete sessions" || text === "/delete list") {
     await showDeleteSessions(chatId, 0, undefined, threadId);
     return true;
   }
@@ -987,13 +987,6 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
 
   if (text === "/use" || text.startsWith("/use ")) {
     const sessionId = text.slice(4).trim();
-    if (sessionId) {
-      const current = await restoreActiveSession(chatId, threadId);
-      if (current && current.statusMessageId) {
-        await send("A turn is still running. Use /stop first.");
-        return true;
-      }
-    }
     if (!sessionId) {
       await showSessions(chatId, 0, undefined, threadId);
       return true;
