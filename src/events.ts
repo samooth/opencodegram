@@ -291,7 +291,6 @@ if (e.type === "session.step.ended") {
 }
 
 if (e.type === "session.text.ended") {
-  console.log("ZZZ_TEXT_ENDED", e.data?.sessionID);
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -317,7 +316,6 @@ if (e.type === "session.text.ended") {
   }
   if (!s.stopped) {
     await flushDraft(chatId, s);
-    console.log("[text.ended] s=", !!s, "statusMsg=", s.statusMessageId, "finished=", s.statusFinished, "stopped=", s.stopped);
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
