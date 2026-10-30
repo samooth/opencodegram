@@ -34,6 +34,7 @@ export type EventsDeps = {
 };
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
+  console.log("[handleEvent] called", event?.type);
   const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, messageToSession, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
 
