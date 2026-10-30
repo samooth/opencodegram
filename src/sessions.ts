@@ -76,6 +76,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
     const title = (session as any)?.title ?? "Telegram session";
     const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0 };
+    cs.topicTitle = store.topicTitleBySession.get(sessionId);
 
     let targetThread = threadId;
     if (targetThread === undefined && topicsEnabled && chatId > 0) {
@@ -98,10 +99,13 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       sessionsByThread.set(targetThread, cs);
       threadBySession.set(sessionId, targetThread);
       saveThreads();
+      cs.topicTitle = store.topicTitleBySession.get(sessionId);
       if (cs.topicTitle !== title.slice(0, 120)) {
         try {
           await tg.editForumTopic(chatId, targetThread, title.slice(0, 120));
           cs.topicTitle = title.slice(0, 120);
+          store.rememberTopicTitle(sessionId, title.slice(0, 120));
+          store.rememberTopicTitle(sessionId, title.slice(0, 120));
         } catch {
           // Topic titles are cosmetic; never block session creation on them.
         }
@@ -134,6 +138,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const title = (s.title || sessionId).slice(0, 120);
     const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0 };
+    cs.topicTitle = store.topicTitleBySession.get(sessionId);
 
     // If this session was already tracked, retire its old status message so it
     // doesn't keep a stale Stop button when the session moves to another tab.
@@ -179,6 +184,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
         try {
           await tg.editForumTopic(chatId, targetThread, title);
           cs.topicTitle = title;
+          store.rememberTopicTitle(sessionId, title);
         } catch {
         // Topic may have been deleted. Only recreate when we weren't explicitly
         // asked to bind to this particular tab.
@@ -278,6 +284,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       if (!title || title === s.topicTitle) return;
       await tg.editForumTopic(chatId, threadId, title);
       s.topicTitle = title;
+      store.rememberTopicTitle(s.sessionId, title);
     } catch {
       // Cosmetic only: never fail a turn because a topic title could not be updated.
     }

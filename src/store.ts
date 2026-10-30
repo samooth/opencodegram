@@ -100,6 +100,11 @@ export class SessionStore {
     this.saveMessages();
   };
 
+  rememberTopicTitle = (sessionId: string, title: string) => {
+    this.topicTitleBySession.set(sessionId, title);
+    this.saveTopicTitles();
+  };
+
   forgetSession = (sessionId: string) => {
     this.sessionsById.delete(sessionId);
     for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);
@@ -110,10 +115,12 @@ export class SessionStore {
     this.lastChatBySession.delete(sessionId);
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
+    this.topicTitleBySession.delete(sessionId);
     this.saveThreads();
     this.saveChats();
     this.saveActiveSessions();
     this.saveMessages();
+    this.saveTopicTitles();
   };
 
   saveThreads = () => {
@@ -143,6 +150,17 @@ export class SessionStore {
       writeFileSync(this.messagesFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[messages] save failed", err);
+    }
+  };
+
+  saveTopicTitles = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, string> = {};
+      for (const [sid, title] of this.topicTitleBySession) obj[sid] = title;
+      writeFileSync(this.topicTitlesFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[topicTitles] save failed", err);
     }
   };
 
@@ -184,6 +202,16 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[messages] load failed", err);
+    }
+    try {
+      if (existsSync(this.topicTitlesFile)) {
+        const parsed = JSON.parse(readFileSync(this.topicTitlesFile, "utf8")) as Record<string, string>;
+        for (const [sid, title] of Object.entries(parsed)) {
+          if (sid && title) this.topicTitleBySession.set(sid, title);
+        }
+      }
+    } catch (err) {
+      console.error("[topicTitles] load failed", err);
     }
 
     // Explicit tab bindings.
