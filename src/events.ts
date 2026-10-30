@@ -316,6 +316,7 @@ if (e.type === "session.text.ended") {
   }
   if (!s.stopped) {
     await flushDraft(chatId, s);
+    console.log("[text.ended]", sessionId, "s=", !!s, "statusMsg=", s.statusMessageId, "finished=", s.statusFinished, "stopped=", s.stopped);
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
