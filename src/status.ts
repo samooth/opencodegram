@@ -5,6 +5,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff } from "./editutil.js";
+import { formatBytes } from "./files.js";
 import { clampText, esc } from "./util.js";
 
 function truncateText(text: string, max: number): string {
@@ -127,16 +128,36 @@ function readMemoryPercent(): number {
   return Math.max(0, Math.min(100, Math.round((1 - os.freemem() / os.totalmem()) * 100)));
 }
 
+function readGpuPercent(): number | null {
+  const info = readGpuInfo();
+  return info ? info.load : null;
+}
+
 function progressBar(percent: number, width = 10): string {
   const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)));
   return "▓".repeat(filled) + "░".repeat(width - filled);
 }
 
-function readGpuPercent(): number | null {
+type GpuInfo = { name: string; usedMB: number; totalMB: number; load: number; temperature: number | null };
+
+function readGpuInfo(): GpuInfo | null {
   try {
-    const out = execFileSync("nvidia-smi", ["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
-    const value = Number(out);
-    if (Number.isFinite(value)) return Math.max(0, Math.min(100, value));
+    const out = execFileSync(
+      "nvidia-smi",
+      ["--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
+      { timeout: 1500, encoding: "utf8" },
+    )
+      .trim()
+      .split("\n")[0];
+    const parts = out.split(",").map((part) => part.trim());
+    if (parts.length < 4) return null;
+    const name = parts[0] || "GPU";
+    const usedMB = Number(parts[1]);
+    const totalMB = Number(parts[2]);
+    const load = Number(parts[3]);
+    const temperature = parts[4] ? Number(parts[4]) : null;
+    if (!Number.isFinite(usedMB) || !Number.isFinite(totalMB) || totalMB <= 0 || !Number.isFinite(load)) return null;
+    return { name, usedMB, totalMB, load: Math.max(0, Math.min(100, load)), temperature: Number.isFinite(temperature as number) ? temperature : null };
   } catch {
     // No GPU or nvidia-smi unavailable.
   }
@@ -240,10 +261,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       while (s.memHistory.length > limit) s.memHistory.shift();
       const cpuBar = progressBar(cpuPercent);
       const memBar = progressBar(memPercent);
-      let line = `📊 CPU ${cpuBar} ${cpuPercent}% · RAM ${memBar} ${memPercent}%`;
-      const gpuPercent = readGpuPercent();
-      if (gpuPercent !== null) line += ` · GPU ${progressBar(gpuPercent)} ${gpuPercent}%`;
-      lines.push(line);
+      lines.push(`📊 CPU ${cpuBar} ${cpuPercent}% · RAM ${memBar} ${memPercent}%`);
+      const gpu = readGpuInfo();
+      if (gpu) {
+        const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
+        const vramBar = progressBar(vramPercent);
+        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
+        lines.push(`🎮 ${esc(gpu.name)} · VRAM ${vramBar} ${formatBytes(gpu.usedMB * 1024 * 1024)}/${formatBytes(gpu.totalMB * 1024 * 1024)} (${vramPercent}%) · load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
+      }
     }
     if (s.compacting) {
       lines.push("📦 <b>Compacting context…</b>");
@@ -358,10 +383,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       while (target.memHistory.length > limit) target.memHistory.shift();
       const cpuBar = progressBar(cpuPercent);
       const memBar = progressBar(memPercent);
-      let line = `📊 CPU ${cpuBar} ${cpuPercent}% · RAM ${memBar} ${memPercent}%`;
-      const gpuPercent = readGpuPercent();
-      if (gpuPercent !== null) line += ` · GPU ${progressBar(gpuPercent)} ${gpuPercent}%`;
-      lines.push(line);
+      lines.push(`📊 CPU ${cpuBar} ${cpuPercent}% · RAM ${memBar} ${memPercent}%`);
+      const gpu = readGpuInfo();
+      if (gpu) {
+        const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
+        const vramBar = progressBar(vramPercent);
+        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
+        lines.push(`🎮 ${esc(gpu.name)} · VRAM ${vramBar} ${formatBytes(gpu.usedMB * 1024 * 1024)}/${formatBytes(gpu.totalMB * 1024 * 1024)} (${vramPercent}%) · load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
+      }
     }
     return lines.join("\n");
   };
