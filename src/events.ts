@@ -290,6 +290,7 @@ if (e.type === "session.step.ended") {
   }
 }
 
+console.log("@@@BEFORE_TEXTENDED_BLOCK", e.type);
 if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) {
   const sessionId = e.data?.sessionID;
   console.log("@@@TEXTENDED_ENTRY", JSON.stringify(e.type), sessionId);
