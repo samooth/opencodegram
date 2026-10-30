@@ -1,5 +1,8 @@
 # Sessions & History — Feature Spec
 
+Status: **implemented** in the current codebase. This document remains as the
+original specification.
+
 Scope for the next OpenCodegram iteration: fork, rename, archive, delete, diff, context view, and compact.
 
 ## 1. Fork session

@@ -18,7 +18,11 @@
 | `events.ts` | OpenCode event stream → Telegram |
 | `panels.ts` | Panel, sessions, models and commands views |
 | `files.ts` | Safe path resolution, listing, search, text preview and documents |
+| `transcribe.ts` | Local voice-note transcription |
 | `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
+| `formui.ts` | Interactive form rendering and keyboards |
+| `editutil.ts` | Edit detection and diff formatting |
+| `settings.ts` | Persistent per-chat settings |
 | `callbacks.ts` | Inline buttons and permission decisions |
 | `commands.ts` | Slash commands |
 | `messages.ts` | Access control, media download, prompts |
