@@ -290,9 +290,9 @@ if (e.type === "session.step.ended") {
   }
 }
 
-if (e.type === "session.text.ended") {
+if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) {
   const sessionId = e.data?.sessionID;
-  console.log("@@@TEXTENDED_ENTRY", sessionId);
+  console.log("@@@TEXTENDED_ENTRY", JSON.stringify(e.type), sessionId);
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   console.log("@@@TEXTENDED", sessionId, "s=", !!_s0, "chatId=", chatId);
