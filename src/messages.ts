@@ -27,6 +27,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const chatId = msg.chat.id;
   const replyThread = msg.message_thread_id;
   const repliedSessionId = msg.reply_to_message?.message_id ? messageToSession.get(msg.reply_to_message.message_id) : undefined;
+  deps.metrics?.inc("messages");
   // Ignore commands explicitly addressed to another bot.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
   const commandTarget = rawText.match(/^\/[a-zA-Z0-9_-]+@([A-Za-z0-9_]+)/)?.[1];

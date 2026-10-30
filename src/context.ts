@@ -1,7 +1,9 @@
 import type { ChatSession } from "./types.js";
 import type { Config } from "./config.js";
 import type { FileBrowser } from "./filebrowser.js";
+import type { MetricsStore } from "./metrics.js";
 import type { OpenCodeBridge } from "./opencode.js";
+import type { OpsServer } from "./ops.js";
 import type { Panels } from "./panels.js";
 import type { SessionManager } from "./sessions.js";
 import type { SettingsStore } from "./settings.js";
@@ -54,6 +56,8 @@ export type BotDeps = {
   panels: Panels;
   files: FileBrowser;
   settings: SettingsStore;
+  metrics: MetricsStore;
+  ops?: OpsServer;
   pendingEdits: Map<number, ChatSession>;
   messageToSession: Map<number, string>;
   pendingPermissions: Map<string, PermissionInfo>;

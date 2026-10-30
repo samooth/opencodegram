@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, statSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
 import { TelegramClient } from "./telegram.js";
@@ -6,6 +6,8 @@ import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 import { SessionStore } from "./store.js";
 import { createStatusManager } from "./status.js";
 import { SettingsStore } from "./settings.js";
+import { MetricsStore } from "./metrics.js";
+import { createOpsServer } from "./ops.js";
 import { createPanels } from "./panels.js";
 import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
@@ -46,6 +48,7 @@ const BOT_COMMANDS = [
   { command: "archive", description: "Archive the active session" },
   { command: "unarchive", description: "Unarchive the active session" },
   { command: "delete", description: "Delete the active session" },
+  { command: "deletesessions", description: "List and delete sessions" },
   { command: "diff", description: "Show session diff" },
   { command: "context", description: "Show session context" },
   { command: "sync", description: "Sync session history to Telegram" },
@@ -84,6 +87,7 @@ async function main() {
   const settings = new SettingsStore();
   const pendingEdits = new Map();
   const messageToSession = store.messageToSession;
+  const metrics = new MetricsStore();
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),
@@ -114,12 +118,21 @@ async function main() {
     getActiveSession: store.getActiveSession,
     getSettings: (chatId, threadId) => settings.get(chatId),
   });
+  const ops = createOpsServer({ config, oc, store, metrics });
+  console.log(`[opencodegram] ops: ${ops.url}`);
 
   const audit = (action: string, detail: string) => {
     try {
       mkdirSync(join(process.cwd(), "data"), { recursive: true });
+      const auditFile = join(process.cwd(), "data", "audit.log");
+      try {
+        const stat = statSync(auditFile);
+        if (stat.size > 1_000_000) renameSync(auditFile, auditFile + ".1");
+      } catch {
+        // File does not exist yet.
+      }
       const line = `${new Date().toISOString()} ${action} ${detail}\n`;
-      writeFileSync(join(process.cwd(), "data", "audit.log"), line, { flag: "a" });
+      writeFileSync(auditFile, line, { flag: "a" });
     } catch {
       // Audit logging must never break the bot.
     }
@@ -137,6 +150,8 @@ async function main() {
     panels,
     files,
     settings,
+    metrics,
+    ops,
     pendingEdits,
     messageToSession,
     pendingPermissions: new Map(),

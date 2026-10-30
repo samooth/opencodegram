@@ -5,7 +5,7 @@ import { threadOpts } from "./util.js";
 
 /** Telegram long-polling loop. Dispatches callbacks, messages and draft stops. */
 export async function startPolling(deps: BotDeps): Promise<void> {
-  const { tg, oc, store } = deps;
+  const { tg, oc, store, metrics } = deps;
   let offset = 0;
 
   while (true) {
@@ -14,12 +14,14 @@ export async function startPolling(deps: BotDeps): Promise<void> {
       updates = await tg.getUpdates(offset, 25);
     } catch (err) {
       console.error("[poll]", err);
+      metrics?.inc("poll_errors");
       await new Promise((r) => setTimeout(r, 3000));
       continue;
     }
 
     for (const u of updates) {
       offset = u.update_id + 1;
+      metrics?.inc("updates");
 
       try {
         if (u.stopped_message_generation) {
@@ -64,6 +66,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
       } catch (err) {
         // One bad update must never stop the bot from polling.
         console.error("[update]", err);
+        metrics?.inc("update_errors");
       }
     }
   }
