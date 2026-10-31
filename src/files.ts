@@ -318,36 +318,34 @@ export function renderFileSummary(s: FileSummary): string {
 
   if (s.imports.length) {
     lines.push("");
-    lines.push(`<b>Imports (${s.imports.length}):</b>`);
-    lines.push(s.imports.slice(0, 15).map((x) => `  • ${esc(x)}`).join("\n"));
-    if (s.imports.length > 15) lines.push(`  … y ${s.imports.length - 15} más`);
+    const impRows = s.imports.slice(0, 15).map((x) => `• ${esc(x)}`).join("\n");
+    const impMore = s.imports.length > 15 ? `\n… y ${s.imports.length - 15} más` : "";
+    lines.push(`<blockquote><b>Imports (${s.imports.length})</b>\n${impRows}${impMore}</blockquote>`);
   }
   if (s.exports.length) {
     lines.push("");
-    lines.push(`<b>Exports (${s.exports.length}):</b> ${s.exports.slice(0, 20).map(esc).join(", ")}${s.exports.length > 20 ? "…" : ""}`);
+    lines.push(`<blockquote><b>Exports (${s.exports.length})</b>\n${s.exports.slice(0, 20).map(esc).join(", ")}${s.exports.length > 20 ? "…" : ""}</blockquote>`);
   }
   if (s.sections.length) {
     lines.push("");
-    lines.push(`<b>Secciones (${s.sections.length}):</b>`);
-    for (const sec of s.sections.slice(0, 30)) lines.push(`  • ${esc(sec)}`);
-    if (s.sections.length > 30) lines.push(`  … y ${s.sections.length - 30} más`);
+    const secRows = s.sections.slice(0, 30).map((sec) => `• ${esc(sec)}`).join("\n");
+    const secMore = s.sections.length > 30 ? `\n… y ${s.sections.length - 30} más` : "";
+    lines.push(`<blockquote><b>Secciones (${s.sections.length})</b>\n${secRows}${secMore}</blockquote>`);
   }
   if (s.symbols.length) {
     lines.push("");
-    lines.push(`<b>Símbolos (${s.symbols.length}):</b>`);
     const maxName = Math.max(...s.symbols.map((x) => x.name.length), 4);
     const rows = s.symbols.slice(0, 50).map((sym) => {
       const em = kindEmoji[sym.kind] ?? "·";
       const name = sym.name.padEnd(maxName, " ");
       return `${em} ${name}  L${String(sym.line).padStart(3, " ")}`;
     });
-    lines.push(`<pre>${rows.map(esc).join("\n")}</pre>`);
-    if (s.symbols.length > 50) lines.push(`  … y ${s.symbols.length - 50} más`);
+    const symMore = s.symbols.length > 50 ? `\n… y ${s.symbols.length - 50} más` : "";
+    lines.push(`<blockquote><b>Símbolos (${s.symbols.length})</b>\n<pre>${rows.map(esc).join("\n")}</pre>${symMore}</blockquote>`);
   }
   if (s.head.length && !s.symbols.length && !s.sections.length) {
     lines.push("");
-    lines.push("<b>Primeras líneas:</b>");
-    lines.push(`<pre>${s.head.map(esc).join("\n")}</pre>`);
+    lines.push(`<blockquote><b>Primeras líneas</b>\n<pre>${s.head.map(esc).join("\n")}</pre></blockquote>`);
   }
   return lines.join("\n");
 }
