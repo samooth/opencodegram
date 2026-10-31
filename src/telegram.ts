@@ -58,6 +58,8 @@ function sanitizeUtf8(input: string): string {
       // drop lone high surrogate
     } else if (c >= 0xdc00 && c <= 0xdfff) {
       // drop lone low surrogate
+    } else if (c === 0x00 || (c > 0x00 && c < 0x09) || c === 0x0b || c === 0x0c || (c > 0x0e && c < 0x20) || c === 0x7f) {
+      // drop control characters that Telegram rejects
     } else {
       out += input[i];
     }

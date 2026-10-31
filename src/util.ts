@@ -4,7 +4,12 @@ export function esc(s: string): string {
 
 /** Clamp a string for Telegram (max 4096 chars) without splitting mid-entity. */
 export function clampText(s: string, max = 3900): string {
-  return s.length > max ? s.slice(0, max) + "\n…" : s;
+  if (s.length <= max) return s;
+  let cut = max;
+  // Avoid splitting a UTF-16 surrogate pair.
+  const code = s.charCodeAt(cut - 1);
+  if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  return s.slice(0, cut) + "\n…";
 }
 
 export function truncate(s: string, max: number): string {

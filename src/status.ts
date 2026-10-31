@@ -13,9 +13,17 @@ function truncateText(text: string, max: number): string {
 }
 
 function parseShellCommand(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  // Plain command (not JSON).
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return trimmed;
+  }
   try {
-    const parsed = JSON.parse(input);
+    const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed.command === "string") return parsed.command;
+    if (parsed && typeof parsed.cmd === "string") return parsed.cmd;
+    if (Array.isArray(parsed) && parsed.length && typeof parsed[0] === "string") return parsed.join(" ");
   } catch {
     // Not JSON or not a shell command.
   }
@@ -292,6 +300,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuBar = progressBar(cpuPercent);
       const memBar = progressBar(memPercent);
       lines.push(`📊 CPU ${cpuBar} ${cpuPercent}%`);
+      lines.push("");
       lines.push(`   RAM ${memBar} ${memPercent}%`);
       if (lines.length && lines[lines.length - 1] !== "") lines.push("");
       const gpu = readGpuInfo();
@@ -425,6 +434,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuBar = progressBar(cpuPercent);
       const memBar = progressBar(memPercent);
       lines.push(`📊 CPU ${cpuBar} ${cpuPercent}%`);
+      lines.push("");
       lines.push(`   RAM ${memBar} ${memPercent}%`);
       if (lines.length && lines[lines.length - 1] !== "") lines.push("");
       const gpu = readGpuInfo();
