@@ -552,6 +552,8 @@ if (e.type === "rpc.opencode.goal.changed") {
   const status = String(goal.status ?? "");
   const objective = goal.objective ? String(goal.objective) : "";
   const reason = goal.reason ? String(goal.reason) : "";
+  const progress = goal.progress !== undefined ? String(goal.progress) : "";
+  const iteration = goal.iteration !== undefined ? String(goal.iteration) : (goal.step !== undefined ? String(goal.step) : "");
   const signature = `${status}|${objective}|${reason}`;
   const prev = lastGoalStatus.get(String(sessionId ?? ""));
   if (prev === signature) return;
@@ -560,6 +562,8 @@ if (e.type === "rpc.opencode.goal.changed") {
   const emoji = status === "active" ? "🎯" : status === "complete" ? "✅" : status === "blocked" ? "⛔" : status === "paused" ? "⏸" : "🎯";
   msg = `${emoji} <b>Goal ${esc(status)}</b>`;
   if (objective) msg += `\n\n<blockquote>${esc(objective)}</blockquote>`;
+  if (progress) msg += `\n<b>Progress:</b> ${esc(progress)}`;
+  if (iteration) msg += `\n<b>Iteration:</b> ${esc(iteration)}`;
   if (reason) msg += `\n\n<b>Reason:</b>\n${esc(reason)}`;
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
   if (status === "active") {
@@ -569,10 +573,24 @@ if (e.type === "rpc.opencode.goal.changed") {
   }
   const opts: Record<string, unknown> = { ...threadOpts(threadId) };
   if (keyboard.length) opts.reply_markup = { inline_keyboard: keyboard };
-  const sent = await tg.sendRichMessage(chatId, msg, opts).catch(() => null);
-  if (!sent && threadId) {
-    // Thread may have been deleted; retry in the main chat.
-    await tg.sendRichMessage(chatId, msg, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}).catch(() => {});
+  const existing = store.goalMessageBySession.get(String(sessionId ?? ""));
+  if (existing && existing.chatId === chatId) {
+    // Update the existing goal message instead of spamming a new one.
+    try {
+      await tg.editRichMessage(existing.chatId, existing.messageId, msg, {
+        ...(existing.threadId ? { message_thread_id: existing.threadId } : {}),
+        ...(keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+      });
+    } catch {
+      const sent = await tg.sendRichMessage(chatId, msg, opts).catch(() => null);
+      if (sent?.message_id) store.goalMessageBySession.set(String(sessionId ?? ""), { chatId, threadId, messageId: sent.message_id });
+    }
+  } else {
+    const sent = await tg.sendRichMessage(chatId, msg, opts).catch(() => null);
+    if (sent?.message_id) store.goalMessageBySession.set(String(sessionId ?? ""), { chatId, threadId, messageId: sent.message_id });
+    if (!sent && threadId) {
+      await tg.sendRichMessage(chatId, msg, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}).catch(() => {});
+    }
   }
   return;
 }

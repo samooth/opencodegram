@@ -24,6 +24,7 @@ export class SessionStore {
   readonly messageToSession = new Map<string, string>();
   readonly topicTitleBySession = new Map<string, string>();
   readonly cotBySession = new Map<string, { buffer: string; count: number }>();
+  readonly goalMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
   readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 
   readonly dataDir: string;
@@ -117,6 +118,7 @@ export class SessionStore {
 
   forgetStatusMessage = (sessionId: string) => {
     this.statusMessageBySession.delete(sessionId);
+    this.goalMessageBySession.delete(sessionId);
     this.saveStatusMessages();
   };
 
@@ -152,6 +154,7 @@ export class SessionStore {
         }).catch(() => {});
       }
       this.statusMessageBySession.delete(sessionId);
+    this.goalMessageBySession.delete(sessionId);
     }
     this.saveStatusMessages();
   };
@@ -190,6 +193,7 @@ export class SessionStore {
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
     this.statusMessageBySession.delete(sessionId);
+    this.goalMessageBySession.delete(sessionId);
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
     this.saveThreads();
