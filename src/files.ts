@@ -349,11 +349,6 @@ export function renderFileSummary(s: FileSummary): string {
     lines.push("<b>Primeras líneas:</b>");
     lines.push(`<pre>${s.head.map(esc).join("\n")}</pre>`);
   }
-  if (s.tail.length && s.lines > 8) {
-    lines.push("");
-    lines.push("<b>Últimas líneas:</b>");
-    lines.push(`<pre>${s.tail.map(esc).join("\n")}</pre>`);
-  }
   return lines.join("\n");
 }
 

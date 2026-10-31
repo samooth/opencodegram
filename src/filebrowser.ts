@@ -217,7 +217,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     chatId: number,
     threadId: number | undefined,
     path: string,
-    options: { startLine?: number; maxLines?: number; messageId?: number; back?: BrowseView; base?: string } = {},
+    options: { startLine?: number; maxLines?: number; messageId?: number; back?: BrowseView; base?: string; forcePreview?: boolean } = {},
   ): Promise<void> {
     const base = options.base ?? baseFor(chatId, threadId);
     const settings = getSettings?.(chatId, threadId);
@@ -235,7 +235,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     }
     // For large/truncated files, show an automatic structural summary instead
     // of a (truncated) preview, with a button to view the raw preview.
-    if (read.truncated) {
+    if (read.truncated && !options.forcePreview) {
       await showSummary(chatId, threadId, path, { messageId: options.messageId, back: options.back, base });
       return;
     }
@@ -278,10 +278,19 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       back: options.back,
     };
     const text = renderFileSummary(summary);
-    const keyboard = [
-      [{ text: "📄 Ver preview", callback_data: "fs:preview" }],
-      [{ text: "📎 Enviar documento", callback_data: "fs:send" }],
-    ];
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    // Per-symbol peek buttons (first 8) to jump to that line.
+    const syms = summary.symbols.slice(0, 8);
+    for (let i = 0; i < syms.length; i += 2) {
+      const row: Array<{ text: string; callback_data: string }> = [];
+      for (let j = i; j < Math.min(i + 2, syms.length); j++) {
+        const sym = syms[j];
+        row.push({ text: `${sym.name.slice(0, 16)} (L${sym.line})`, callback_data: `fs:peek:${sym.line}` });
+      }
+      keyboard.push(row);
+    }
+    keyboard.push([{ text: "📄 Ver preview", callback_data: "fs:preview" }]);
+    keyboard.push([{ text: "📎 Enviar documento", callback_data: "fs:send" }]);
     if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
     keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const sentId = await sendOrEdit(chatId, threadId, options.messageId, text, keyboard);
@@ -564,7 +573,19 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
           return true;
         }
         await tg.answerCallbackQuery(cq.id).catch(() => {});
-        await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, maxLines: 160 });
+        await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, maxLines: 160, forcePreview: true });
+        return true;
+      }
+
+      const peekMatch = data.match(/^fs:peek:(\d+)$/);
+      if (peekMatch) {
+        if (!view || view.kind !== "summary") {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        const line = parseInt(peekMatch[1], 10);
+        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, startLine: line, maxLines: 40, forcePreview: true });
         return true;
       }
 
