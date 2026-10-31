@@ -200,7 +200,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         }
       }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
-      const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n")), {
+      const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
         ...opts,
         reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
       });
@@ -222,14 +222,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.statusEditing = true;
     s.statusLastUpdate = now;
     const lines: string[] = [];
+    const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };
     if (settings.showThinking && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
       lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<details><summary>Ver COT</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
     }
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     lines.push("<h4>⏳ Working…" + (elapsed ? ` <i>(${elapsed}s)</i>` : "") + "</h4>");
-    lines.push("");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
+      sep();
       const r = s.reasoningBuffer.trim().slice(-800);
       lines.push(`🧠 <b>Thinking</b>\n<details${settings.thinkingExpanded ? " open" : ""}><summary>Ver thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`);
     }
@@ -256,14 +257,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // Highlight the latest thought and the latest tool call, right above
     // the resource indicators, so the user always sees what the agent is
     // doing now without scrolling.
-    lines.push("");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
+      sep();
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
       const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
       lines.push(`💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`);
     }
     const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
     if (lastTool) {
+      sep();
       const toolName = lastTool.name;
       const toolInput = lastTool.input ? clampText(lastTool.input, 200) : "";
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
@@ -273,8 +275,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(`<pre>${esc(wrapped)}</pre>`);
       }
     }
-    lines.push("");
     if (settings.showResourceUsage) {
+      sep();
       if (!s.cpuHistory) s.cpuHistory = [];
       if (!s.memHistory) s.memHistory = [];
       const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
@@ -298,14 +300,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(`   load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
     }
-    lines.push("");
+    sep();
     if (s.compacting) {
       lines.push("📦 <b>Compacting context…</b>");
     } else if (s.compactionSummary?.trim()) {
       lines.push("📦 " + esc(s.compactionSummary.trim().slice(0, 200)));
     }
     try {
-      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n")), {
+      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
         ...opts,
         reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
       });
