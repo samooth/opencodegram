@@ -184,6 +184,7 @@ async function main() {
   startEventLoop({
     tg,
     oc,
+    config,
     store,
     retryingSessions: new Set(),
     pendingPermissions: deps.pendingPermissions,

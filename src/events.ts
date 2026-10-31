@@ -1,3 +1,4 @@
+import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
@@ -20,6 +21,7 @@ export type PermissionInfo = {
 export type EventsDeps = {
   tg: TelegramClient;
   oc: OpenCodeBridge;
+  config?: Config;
   store: SessionStore;
   retryingSessions: Set<string>;
   pendingPermissions: Map<string, PermissionInfo>;
@@ -34,6 +36,8 @@ export type EventsDeps = {
 };
 
 const lastGoalStatus = new Map<string, string>();
+const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
+const retryAttemptBySession = new Map<string, number>();
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
   const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, messageToSession, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
@@ -512,30 +516,42 @@ if (e.type === "session.execution.failed") {
     const threadId = resolveThreadId(sessionId);
     const isRateLimit = /rate limit|quota/i.test(msg);
     const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
+    const autoRetry = deps.config?.AUTO_RETRY_ENABLED ?? true;
+    const promptForRetry = sessionId ? lastPromptBySession.get(sessionId) : undefined;
+    const willRetry = isRateLimit && !!sessionId && !retryingSessions.has(sessionId) && autoRetry && !!promptForRetry;
     const s2 = _s0;
     if (s2?.typingTimer) { clearInterval(s2.typingTimer); s2.typingTimer = undefined; }
     if (s2) await finishStatus(chatId, s2);
-    await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId));
-    if (isRateLimit && sessionId && !retryingSessions.has(sessionId)) {
-      const prompt = lastPromptBySession.get(sessionId);
+    if (!willRetry) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId));
+    }
+    if (isRateLimit && sessionId && !retryingSessions.has(sessionId) && autoRetry) {
+      const prompt = promptForRetry;
       if (prompt) {
         retryingSessions.add(sessionId);
-        const now = new Date();
-        const retry = new Date(now);
-        if (now.getMinutes() < 15) {
-          retry.setMinutes(15, 0, 0);
-        } else {
-          retry.setHours(retry.getHours() + 1, 15, 0, 0);
-        }
-        const delay = retry.getTime() - now.getTime();
-        const timeStr = retry.toISOString().slice(11, 16);
-        await tg.sendRichMessage(chatId, `⏳ Rate limited. Will retry at ${timeStr} UTC.`, threadOpts(threadId));
+        const base = deps.config?.RETRY_BACKOFF_BASE_MS ?? 60000;
+        const max = deps.config?.RETRY_BACKOFF_MAX_MS ?? 900000;
+        const factor = deps.config?.RETRY_BACKOFF_FACTOR ?? 2;
+        const attempt = retryAttemptBySession.get(sessionId) ?? 0;
+        const delay = Math.min(base * Math.pow(factor, attempt), max);
+        retryAttemptBySession.set(sessionId, attempt + 1);
+        const sent = await tg.sendRichMessage(chatId, `⏳ Rate limited. Retrying in ${Math.round(delay / 1000)}s…`, threadOpts(threadId)).catch(() => null);
+        if (sent?.message_id) retryMessageBySession.set(sessionId, { chatId, threadId, messageId: sent.message_id });
         setTimeout(async () => {
           retryingSessions.delete(sessionId);
           try {
             await oc.prompt(sessionId, prompt);
+            const existing = retryMessageBySession.get(sessionId);
+            if (existing) await tg.editRichMessage(existing.chatId, existing.messageId, "✅ Retry succeeded.").catch(() => {});
+            retryMessageBySession.delete(sessionId);
+            retryAttemptBySession.delete(sessionId);
           } catch (err) {
-            await tg.sendRichMessage(chatId, `❌ Retry failed: ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+            const existing = retryMessageBySession.get(sessionId);
+            if (existing) {
+              await tg.editRichMessage(existing.chatId, existing.messageId, `❌ Retry failed: ${esc(String(err))}`).catch(() => {});
+            } else {
+              await tg.sendRichMessage(chatId, `❌ Retry failed: ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+            }
           }
         }, delay);
       }
