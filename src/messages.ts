@@ -266,6 +266,50 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   if (slash && !KNOWN_COMMANDS.has(slash.name)) {
     const name = slash.name;
     const args = slash.args;
+
+    // Dangerous commands require confirmation.
+    const dangerous = new Set(["delete", "remove", "reset", "drop", "clear", "wipe", "destroy"]);
+    if (dangerous.has(name.toLowerCase())) {
+      const confirmKey = `runcmd:${s.sessionId}:${name}:${args}`;
+      deps.pendingConfirmations = deps.pendingConfirmations ?? new Map();
+      deps.pendingConfirmations.set(confirmKey, { sessionId: s.sessionId, name, args, expires: Date.now() + 30_000 });
+      await send(`⚠️ <b>Confirm</b>: run <code>/${esc(name)}</code>${args ? " " + esc(args) : ""}?`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Run", callback_data: `runcmd:yes:${confirmKey}` }, { text: "❌ Cancel", callback_data: "panel:home" }],
+          ],
+        },
+      });
+      return;
+    }
+
+    // Pre-filter using cached OpenCode command list.
+    try {
+      const cmds = await oc.listCommandsCached(s.directory);
+      const names = cmds.map((c: any) => String(c?.name ?? c?.command ?? c)).filter(Boolean);
+      if (names.length && !names.includes(name)) {
+        // fuzzy suggestions
+        const lower = name.toLowerCase();
+        const suggestions = names.filter((n) => n.toLowerCase().includes(lower) || lower.includes(n.toLowerCase().slice(0, 3))).slice(0, 5);
+        let msg = `❌ Unknown OpenCode command: <code>/${esc(name)}</code>.`;
+        if (suggestions.length) msg += `\nDid you mean: ${suggestions.map((x) => `<code>/${esc(x)}</code>`).join(", ")}?`;
+        msg += "\n\nUse /commands to see available commands.";
+        await send(msg, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "⚡ Commands", callback_data: "panel:commands" },
+                { text: "🏠 Panel", callback_data: "panel:home" },
+              ],
+            ],
+          },
+        });
+        return;
+      }
+    } catch {
+      // If listing fails, fall through to runCommand.
+    }
+
     try {
       await oc.runCommand(s.sessionId, name, args);
       await send(`ran /${name}`);

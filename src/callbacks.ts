@@ -105,6 +105,28 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
 
+  // Confirmed run of a dangerous OpenCode command.
+  const runcmdMatch = cbData.match(/^runcmd:yes:(.+)$/);
+  if (runcmdMatch) {
+    const key = runcmdMatch[1];
+    const pending = deps.pendingConfirmations.get(key);
+    if (!pending || pending.expires < Date.now()) {
+      deps.pendingConfirmations.delete(key);
+      await tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+      await tg.sendRichMessage(chatId, "Confirmation expired.", threadOpts(threadId));
+      return;
+    }
+    deps.pendingConfirmations.delete(key);
+    await tg.answerCallbackQuery(cq.id, "Running…").catch(() => {});
+    try {
+      await deps.oc.runCommand(pending.sessionId, pending.name, pending.args);
+      await tg.sendRichMessage(chatId, `ran /${esc(pending.name)}`, threadOpts(threadId));
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
+
   // Delete-sessions pagination.
   const deletePageMatch = cbData.match(/^delsessions:page:(\d+)$/);
   if (deletePageMatch) {

@@ -16,6 +16,7 @@ export function resolveServerPassword(): string | undefined {
 
 export class OpenCodeBridge {
   readonly client;
+  private commandCache = new Map<string, { data: unknown[]; expires: number }>();
 
   constructor(baseUrl: string, password?: string, username = "opencode") {
     const headers: Record<string, string> = {};
@@ -65,6 +66,21 @@ export class OpenCodeBridge {
     } catch {
       return [];
     }
+  }
+
+  async listCommandsCached(directory?: string, ttlMs = 60_000): Promise<unknown[]> {
+    const key = directory ?? "__default__";
+    const now = Date.now();
+    const cached = this.commandCache.get(key);
+    if (cached && cached.expires > now) return cached.data;
+    const data = await this.listCommands(directory);
+    this.commandCache.set(key, { data, expires: now + ttlMs });
+    return data;
+  }
+
+  invalidateCommandCache(directory?: string): void {
+    if (directory) this.commandCache.delete(directory);
+    else this.commandCache.clear();
   }
 
   async runCommand(sessionId: string, name: string, args: string) {

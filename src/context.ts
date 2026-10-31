@@ -63,6 +63,7 @@ export type BotDeps = {
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;
+  pendingConfirmations: Map<string, { sessionId: string; name: string; args: string; expires: number }>;
   awaitingReason: Map<string, string>;
   modelListByChat: Map<string, Array<any>>;
   pendingModelByChat: Map<string, any>;
