@@ -355,6 +355,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     ].filter(Boolean).join("");
     const text = `<h3>📊 Status</h3>\n\n<table compact striped bordered>${rows}</table>`;
     const keyboard: any[][] = [];
+    if (s?.sessionId) keyboard.push([{ text: "🔗 Conectar", callback_data: `connect:${s.sessionId}` }]);
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
     keyboard.push([{ text: "🔄 Refresh", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
