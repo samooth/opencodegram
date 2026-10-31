@@ -8,10 +8,12 @@ import {
   listDirectory,
   prepareDocument,
   readTextFile,
+  searchTextFile,
   summarizeFile,
   renderFileSummary,
   type FileEntry,
   type ReadResult,
+  type SearchResult,
   type FileSummary,
 } from "./files.js";
 import type { TelegramCallbackQuery, TelegramClient } from "./telegram.js";
@@ -72,8 +74,18 @@ type SummaryView = {
   back?: BrowseView;
 };
 
+type SearchView = {
+  kind: "search";
+  chatId: number;
+  threadId?: number;
+  base: string;
+  path: string;
+  result: SearchResult;
+  back?: BrowseView;
+};
+
 type BrowseView = ListingView | FindView;
-type View = BrowseView | FileView | SummaryView;
+type View = BrowseView | FileView | SummaryView | SearchView;
 
 const PAGE_SIZE = 12;
 const MAX_CACHED_VIEWS = 120;
@@ -125,8 +137,8 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
   }
 
   async function render(view: View, messageId?: number): Promise<number | undefined> {
-    const html = view.kind === "file" ? renderFile(view) : view.kind === "find" ? renderFind(view) : view.kind === "summary" ? renderSummary(view) : renderListing(view);
-    const keyboard = view.kind === "file" ? fileKeyboard(view) : view.kind === "find" ? findKeyboard(view) : view.kind === "summary" ? summaryKeyboard(view) : listingKeyboard(view);
+    const html = view.kind === "file" ? renderFile(view) : view.kind === "find" ? renderFind(view) : view.kind === "summary" ? renderSummary(view) : view.kind === "search" ? renderSearch(view) : renderListing(view);
+    const keyboard = view.kind === "file" ? fileKeyboard(view) : view.kind === "find" ? findKeyboard(view) : view.kind === "summary" ? summaryKeyboard(view) : view.kind === "search" ? searchKeyboard(view) : listingKeyboard(view);
     const id = await sendOrEdit(view.chatId, view.threadId, messageId, html, keyboard);
     if (id !== undefined) remember(id, view);
     return id;
@@ -280,11 +292,61 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     return renderFileSummary(view.summary);
   }
 
+  function renderSearch(view: SearchView): string {
+    const r = view.result;
+    const lines: string[] = [];
+    lines.push(`<b>🔎 ${esc(r.relative)}</b>`);
+    lines.push(`<i>${r.totalMatches} match(es) for <code>${esc(r.pattern)}</code>${r.truncated ? " (truncated)" : ""}</i>`);
+    lines.push("");
+    if (!r.matches.length) lines.push("<i>no matches</i>");
+    else for (const m of r.matches) lines.push(`<code>${String(m.line).padStart(4, " ")}</code> │ ${esc(m.text)}`);
+    return lines.join("\n");
+  }
+
   function summaryKeyboard(view: SummaryView): Array<Array<{ text: string; callback_data: string }>> {
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [
       [{ text: "📄 Ver preview", callback_data: "fs:preview" }],
       [{ text: "📎 Enviar documento", callback_data: "fs:send" }],
     ];
+    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    return keyboard;
+  }
+
+  async function showSearch(
+    chatId: number,
+    threadId: number | undefined,
+    path: string,
+    pattern: string,
+    options: { messageId?: number; back?: BrowseView; base?: string } = {},
+  ): Promise<void> {
+    const base = options.base ?? baseFor(chatId, threadId);
+    const result = await searchTextFile(base, path, pattern);
+    const view: SearchView = { kind: "search", chatId, threadId, base, path: result.relative, result, back: options.back };
+    const lines: string[] = [];
+    lines.push(`<b>🔎 ${esc(result.relative)}</b>`);
+    lines.push(`<i>${result.totalMatches} match(es) for <code>${esc(result.pattern)}</code>${result.truncated ? " (truncated)" : ""}</i>`);
+    lines.push("");
+    if (!result.matches.length) {
+      lines.push("<i>no matches</i>");
+    } else {
+      for (const m of result.matches) {
+        lines.push(`<code>${String(m.line).padStart(4, " ")}</code> │ ${esc(m.text)}`);
+      }
+      if (result.totalMatches > result.matches.length) {
+        lines.push(`… y ${result.totalMatches - result.matches.length} más`);
+      }
+    }
+    const text = lines.join("\n");
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    const sentId = await sendOrEdit(chatId, threadId, options.messageId, text, keyboard);
+    if (sentId !== undefined) views.set(sentId, view);
+  }
+
+  function searchKeyboard(view: SearchView): Array<Array<{ text: string; callback_data: string }>> {
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
     keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     return keyboard;
@@ -520,6 +582,15 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
           await render(view.back, messageId);
           return true;
         }
+        if (view.kind === "search") {
+          if (!view.back) {
+            await tg.answerCallbackQuery(cq.id, "No previous listing").catch(() => {});
+            return true;
+          }
+          await tg.answerCallbackQuery(cq.id).catch(() => {});
+          await render(view.back, messageId);
+          return true;
+        }
         if (view.kind === "find") {
           await tg.answerCallbackQuery(cq.id).catch(() => {});
           await showListing(chatId, threadId, "", { messageId, hidden: view.hidden, base: view.base });
@@ -537,7 +608,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
 
       const downloadMatch = data.match(/^fs:d:(\d+)$/);
       if (downloadMatch) {
-        if (!view || view.kind === "file" || view.kind === "summary") {
+        if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
@@ -561,7 +632,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
 
       const pageMatch = data.match(/^fs:p:(\d+)$/);
       if (pageMatch) {
-        if (!view || view.kind === "file" || view.kind === "summary") {
+        if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
@@ -573,7 +644,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
 
       const entryMatch = data.match(/^fs:e:(\d+)$/);
       if (entryMatch) {
-        if (!view || view.kind === "file" || view.kind === "summary") {
+        if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
@@ -595,7 +666,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     }
   }
 
-  return { showListing, showFind, showFile, showSummary, handleCallback };
+  return { showListing, showFind, showFile, showSummary, showSearch, handleCallback };
 }
 
 function entryIcon(entry: FileEntry): string {

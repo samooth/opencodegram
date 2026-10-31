@@ -209,6 +209,17 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       }
       return true;
     }
+    const grepMatch = raw.match(/^(.*?)\s+grep\s+(.+)$/is);
+    if (grepMatch && grepMatch[1].trim() && grepMatch[2].trim()) {
+      const path = grepMatch[1].trim();
+      const pattern = grepMatch[2].trim();
+      try {
+        await files.showSearch(chatId, threadId, path, pattern);
+      } catch (err) {
+        await send(`❌ ${esc(fileErrorMessage(err))}`);
+      }
+      return true;
+    }
     const { path, startLine } = parseReadArgs(raw);
     try {
       await files.showFile(chatId, threadId, path, { startLine, maxLines: deps.settings.get(chatId).previewLines });

@@ -59,3 +59,32 @@ describe("summarizeFile", () => {
     expect(out).toContain("Foo");
   });
 });
+
+import { searchTextFile } from "../src/files.js";
+
+describe("searchTextFile", () => {
+  test("finds literal matches", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join: j } = await import("node:path");
+    const root = (await import("node:fs")).mkdtempSync("/tmp/opencode/ocg-search-");
+    const base = j(root, "project");
+    mkdirSync(base, { recursive: true });
+    writeFileSync(j(base, "a.ts"), "foo\nbar foo\nbaz\nFOO\n");
+    const r = await searchTextFile(base, "a.ts", "foo");
+    expect(r.totalMatches).toBe(3); // foo, foo, FOO (case-insensitive)
+    expect(r.matches.length).toBe(3);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("regex mode", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join: j } = await import("node:path");
+    const root = (await import("node:fs")).mkdtempSync("/tmp/opencode/ocg-search-");
+    const base = j(root, "project");
+    mkdirSync(base, { recursive: true });
+    writeFileSync(j(base, "a.ts"), "abc123\ndef456\nghi\n");
+    const r = await searchTextFile(base, "a.ts", "/\\d{3}/");
+    expect(r.totalMatches).toBe(2);
+    rmSync(root, { recursive: true, force: true });
+  });
+});
