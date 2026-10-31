@@ -318,7 +318,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         resLines.push(`VRAM ${vramBar} ${vramPercent}%`);
         resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
-      lines.push(`<pre>${esc(resLines.join("\\n"))}</pre>`);
+      for (const rl of resLines) lines.push(rl);
     }
     sep();
     if (s.compacting) {
@@ -457,7 +457,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         resLines.push(`VRAM ${vramBar} ${vramPercent}%`);
         resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
-      lines.push(`<pre>${esc(resLines.join("\\n"))}</pre>`);
+      for (const rl of resLines) lines.push(rl);
     }
     return lines.join("\n");
   };
