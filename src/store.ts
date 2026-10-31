@@ -147,9 +147,11 @@ export class SessionStore {
         // ignore
       }
       // On restart, update the stale status message with the current session
-      // instead of offering a retry prompt.
+      // and its last activity instead of offering a retry prompt.
+      const lastPrompt = this.lastPromptBySession.get(sessionId);
+      const activity = lastPrompt ? `\n<b>Última actividad:</b> ${esc(lastPrompt.slice(0, 200))}` : "";
       try {
-        await tg.editRichMessage(info.chatId, info.messageId, `🔄 <b>Reiniciado</b>\nSesión en curso: <code>${esc(sessionId)}</code>\nContinúa con tu próximo mensaje.`, {
+        await tg.editRichMessage(info.chatId, info.messageId, `🔄 <b>Reiniciado</b>\nSesión en curso: <code>${esc(sessionId)}</code>${activity}\nContinúa con tu próximo mensaje.`, {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
         });
