@@ -5,7 +5,7 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { esc, rateLimitRetryAt, threadOpts } from "./util.js";
+import { esc, rateLimitRetryAt, threadOpts, markdownToHtml } from "./util.js";
 import { formatBytes, prepareDocument } from "./files.js";
 
 export type PermissionInfo = {
@@ -306,7 +306,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
     // No in-memory session (e.g. after restart). Still deliver the final text if available.
     const fallbackText = (e.data?.text ?? "").toString().trim();
     if (fallbackText) {
-      const sent = await tg.sendRichMessageMarkdown(chatId, fallbackText, threadOpts(resolveThreadId(sessionId))).catch((err) => { console.error("[send final]", err); return undefined; });
+      const sent = await tg.sendRichMessage(chatId, markdownToHtml(fallbackText), threadOpts(resolveThreadId(sessionId))).catch((err) => { console.error("[send final]", err); return undefined; });
       if (sent?.message_id) store.rememberMessageSession(sent.message_id, sessionId);
     }
     return;
@@ -370,7 +370,8 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     }
     console.log("[send] final to chat=", chatId, "thread=", s.targetThreadId ?? s.threadId, "len=", finalText.length);
-    const finalMessage = await tg.sendRichMessageMarkdown(chatId, finalText, { ...threadOpts, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
+    const finalHtml = markdownToHtml(finalText);
+    const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
       console.error("[send final]", err);
       return undefined;
     });
@@ -380,7 +381,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       const internalId = String(chatId).replace(/^-100/, "");
       const url = `https://t.me/c/${internalId}/${finalMessage.message_id}`;
       const kb: any[] = [...(quickKeyboard ?? []), [{ text: "🔗 Ver en chat", url }]];
-      await tg.editRichMessage(chatId, finalMessage.message_id, finalText, { ...threadOpts, reply_markup: { inline_keyboard: kb } }).catch(() => {});
+      await tg.editRichMessage(chatId, finalMessage.message_id, finalHtml, { ...threadOpts, reply_markup: { inline_keyboard: kb } }).catch(() => {});
     }
     await syncTopicTitle(chatId, s).catch(() => {});
   }

@@ -98,3 +98,105 @@ export function colorDiff(diff: string): string {
     })
     .join("\n");
 }
+
+export function markdownToHtml(md: string): string {
+  const lines = md.split(/\r?\n/);
+  const out: string[] = [];
+  let inCodeBlock = false;
+  let codeBuf: string[] = [];
+  let inTable = false;
+  let tableBuf: string[] = [];
+
+  const flushTable = () => {
+    if (!tableBuf.length) return;
+    // Render table as monospace pre (Telegram has no <table>).
+    const rows = tableBuf.filter((l) => /[A-Za-z0-9]/.test(l));
+    const text = rows.map((l) => l.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim()).join("  │  ")).join("\n");
+    out.push(`<pre>${esc(text)}</pre>`);
+    tableBuf = [];
+    inTable = false;
+  };
+
+  const flushCode = () => {
+    if (!codeBuf.length) return;
+    out.push(`<pre>${esc(codeBuf.join("\n"))}</pre>`);
+    codeBuf = [];
+    inCodeBlock = false;
+  };
+
+  const inline = (s: string): string => {
+    s = esc(s);
+    // code spans
+    s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
+    // bold
+    s = s.replace(/\*\*([^*]+)\*\*/g, (_, c) => `<b>${c}</b>`);
+    // italic
+    s = s.replace(/(^|[^*])\*([^*]+)\*/g, (_, pre, c) => `${pre}<i>${c}</i>`);
+    // links
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => `<a href="${u}">${t}</a>`);
+    return s;
+  };
+
+  // We'll escape plain text per-line instead of global to preserve tags.
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      if (inCodeBlock) flushCode();
+      else inCodeBlock = true;
+      continue;
+    }
+    if (inCodeBlock) {
+      codeBuf.push(line);
+      continue;
+    }
+    // table detection
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (!inTable) {
+        // flush previous blank? just push
+        inTable = true;
+      }
+      tableBuf.push(line);
+      continue;
+    } else if (inTable) {
+      flushTable();
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed) {
+      out.push("");
+      continue;
+    }
+    // headers
+    const h = trimmed.match(/^(#{1,6})\s+(.+)/);
+    if (h) {
+      out.push(`<b>${esc(h[2])}</b>`);
+      continue;
+    }
+    // horizontal rule
+    if (/^[-*_]{3,}\s*$/.test(trimmed)) {
+      out.push("────────────");
+      continue;
+    }
+    // bullet list
+    const bullet = trimmed.match(/^[-*+]\s+(.+)/);
+    if (bullet) {
+      out.push(`• ${inline(bullet[1])}`);
+      continue;
+    }
+    // numbered list
+    const num = trimmed.match(/^\d+\.\s+(.+)/);
+    if (num) {
+      out.push(`• ${inline(num[1])}`);
+      continue;
+    }
+    // blockquote
+    const bq = trimmed.match(/^>\s*(.*)/);
+    if (bq) {
+      out.push(`<blockquote>${inline(bq[1])}</blockquote>`);
+      continue;
+    }
+    out.push(inline(line));
+  }
+  if (inCodeBlock) flushCode();
+  if (inTable) flushTable();
+  return out.join("\n");
+}
