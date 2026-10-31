@@ -44,7 +44,7 @@ export function mcpStatusEmoji(status: string): string {
 
 export async function listMcpServers(oc: OpenCodeBridge, directory?: string): Promise<McpServerInfo[]> {
   const res = await oc.client.mcp.list(directory ? ({ location: { directory } } as any) : undefined);
-  const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+  const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
   return list.map((server: any) => ({
     name: server.name ?? server.id ?? "unnamed",
     status: serverStatus(server).status,
@@ -67,7 +67,7 @@ export async function removeMcpServer(oc: OpenCodeBridge, name: string, director
 
 export async function listMcpResources(oc: OpenCodeBridge, directory?: string): Promise<{ resources: McpResourceInfo[]; templates: McpResourceInfo[] }> {
   const res = await oc.client.mcp.resource.catalog(directory ? ({ location: { directory } } as any) : undefined);
-  const data = (res as any)?.data ?? res ?? {};
+  const data = ((res as { data?: unknown })?.data ?? res ?? {}) as { resources?: unknown[]; templates?: unknown[] };
   const resources = Array.isArray(data.resources) ? data.resources : [];
   const templates = Array.isArray(data.templates) ? data.templates : [];
   return {

@@ -13,6 +13,7 @@ import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
 import { startEventLoop } from "./events.js";
 import { startPolling } from "./updates.js";
+import { createWebhookServer } from "./webhook.js";
 import type { BotDeps } from "./context.js";
 
 const BOT_COMMANDS = [
@@ -183,7 +184,31 @@ async function main() {
     syncTopicTitle: sessions.syncTopicTitle,
   });
 
-  await startPolling(deps);
+  let webhookServer: ReturnType<typeof createWebhookServer> | undefined;
+  if (config.WEBHOOK_MODE) {
+    if (!config.WEBHOOK_URL) {
+      throw new Error("WEBHOOK_MODE is enabled but WEBHOOK_URL is not set");
+    }
+    const publicUrl = config.WEBHOOK_URL.replace(/\/$/, "") + config.WEBHOOK_PATH;
+    const ok = await tg.setWebhook(publicUrl, config.WEBHOOK_SECRET).catch((err) => {
+      console.error("[webhook] setWebhook failed", err);
+      return false;
+    });
+    if (!ok) throw new Error("Failed to register Telegram webhook");
+    console.log(`[opencodegram] webhook registered: ${publicUrl}`);
+    webhookServer = createWebhookServer(deps);
+  } else {
+    await tg.deleteWebhook().catch(() => {});
+    await startPolling(deps);
+  }
+
+  // Graceful shutdown handling for servers.
+  const stopAll = () => {
+    try { ops.stop(); } catch {}
+    try { webhookServer?.stop(); } catch {}
+  };
+  process.on("SIGINT", () => { stopAll(); shutdown("SIGINT"); });
+  process.on("SIGTERM", () => { stopAll(); shutdown("SIGTERM"); });
 }
 
 const shutdown = (signal: string) => {

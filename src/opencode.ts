@@ -27,7 +27,7 @@ export class OpenCodeBridge {
     return this.client.server.info();
   }
 
-  async listSessions() {
+  async listSessions(): Promise<unknown> {
     return this.client.session.list();
   }
 
@@ -43,14 +43,16 @@ export class OpenCodeBridge {
   async latestSessionDirectory(): Promise<string | undefined> {
     try {
       const res = await this.client.session.list();
-      const sessions = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      const sessions = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
       const sorted = [...sessions].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0));
       // Prefer a real project directory over the home directory.
-      for (const s of sorted) {
+      for (const _s of sorted) {
+        const s = _s as { location?: { directory?: string }; directory?: string };
         const dir = s?.location?.directory ?? s?.directory;
         if (dir && dir !== process.env.HOME) return dir;
       }
-      return sorted[0]?.location?.directory ?? sorted[0]?.directory;
+      const first = sorted[0] as { location?: { directory?: string }; directory?: string } | undefined;
+      return first?.location?.directory ?? first?.directory;
     } catch {
       return undefined;
     }
@@ -59,7 +61,7 @@ export class OpenCodeBridge {
   async listCommands(directory?: string) {
     try {
       const res = await this.client.command.list(directory ? { location: { directory } } as any : undefined);
-      return (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      return (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as unknown[];
     } catch {
       return [];
     }
@@ -72,7 +74,7 @@ export class OpenCodeBridge {
   async defaultModel(directory?: string) {
     try {
       const res = await this.client.model.default(directory ? { location: { directory } } : undefined);
-      const data = (res as any)?.data ?? res;
+      const data = (res as { data?: { id?: string; providerID?: string; variants?: Array<{ id?: string }> } })?.data ?? res as { id?: string; providerID?: string; variants?: Array<{ id?: string }> };
       if (data?.id && data?.providerID) {
         return { id: data.id, providerID: data.providerID, variant: data.variants?.find((v: any) => v.id === "max")?.id };
       }
@@ -96,7 +98,7 @@ export class OpenCodeBridge {
 
   async listAgents(directory?: string) {
     const res = await this.client.agent.list(directory ? { location: { directory } } as any : undefined);
-    return (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    return (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as unknown[];
   }
 
   async forkSession(sessionId: string) {
@@ -159,13 +161,13 @@ export class OpenCodeBridge {
     const projectID = await this.projectID(directory);
     if (!projectID) return [];
     const res = await this.client.worktree.list({ projectID });
-    return (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    return (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as unknown[];
   }
 
   async projectID(directory?: string) {
     const target = directory ?? process.cwd();
     const res = await this.client.project.list();
-    const projects = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    const projects = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as Array<{ id?: string; canonical?: string; directory?: string }>;
     const match = projects.find((project: any) => project.canonical === target || project.directory === target);
     return match?.id;
   }
@@ -174,7 +176,7 @@ export class OpenCodeBridge {
     const projectID = await this.projectID(directory);
     if (!projectID) throw new Error("Project not found for this directory");
     const res = await this.client.worktree.create({ projectID, name, branch });
-    return (res as any)?.data ?? res;
+    return (res as { data?: unknown })?.data ?? res;
   }
 
   async worktreeRemove(directory: string | undefined, worktreeDirectory: string, force = false) {

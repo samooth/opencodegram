@@ -32,6 +32,25 @@ OPENCODE_BASE_URL=http://127.0.0.1:49374
 bun run dev
 ```
 
+## Webhook mode (optional)
+
+Long polling is the default. To use webhook mode in production:
+
+1. Set in `.env`:
+   - `WEBHOOK_MODE=true`
+   - `WEBHOOK_URL=https://your-public-domain` (must be HTTPS)
+   - `WEBHOOK_SECRET=<random secret>` (recommended)
+   - `WEBHOOK_PORT=8443` (default)
+   - `WEBHOOK_PATH=/telegram/webhook` (default)
+2. Expose the port via a reverse proxy (Caddy/Nginx) with TLS, or a tunnel.
+3. Restart: `pm2 reload opencodegram`.
+
+The bot registers the webhook with Telegram on startup and validates the
+`X-Telegram-Bot-Api-Secret-Token` header. In polling mode it calls
+`deleteWebhook` to clear any previous registration.
+
+For local development, keep `WEBHOOK_MODE=false` (default) and use polling.
+
 ## PM2
 
 ```bash

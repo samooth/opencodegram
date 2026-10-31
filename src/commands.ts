@@ -556,7 +556,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       }
       const branch = args[2];
       try {
-        const info = await oc.worktreeCreate(directory, name, branch);
+        const info = await oc.worktreeCreate(directory, name, branch) as { directory?: string; path?: string };
         const created = info?.directory ?? info?.path ?? name;
         await send(`✅ Worktree created\n<code>${esc(created)}</code>\nUse /worktree switch ${esc(created)}`);
       } catch (err) {
@@ -684,7 +684,12 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     try {
       const forked = await oc.forkSession(s.sessionId);
-      const newId = (forked as any)?.id ?? (forked as any)?.sessionID ?? (forked as any)?.data?.id;
+      const _f = forked as { id?: string; sessionID?: string; data?: { id?: string } } | undefined;
+      const newId = _f?.id ?? _f?.sessionID ?? _f?.data?.id;
+      if (!newId) {
+        await send("❌ Could not determine forked session id.");
+        return true;
+      }
       await activateSession(chatId, newId, true, threadId);
       await send(`Forked session.\n<code>${esc(s.sessionId)}</code> → <code>${esc(newId)}</code>`);
     } catch (err) {
@@ -823,7 +828,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     try {
       const ctx = await oc.context(s.sessionId);
-      const items = Array.isArray(ctx) ? ctx : ((ctx as any)?.data ?? []);
+      const items = (Array.isArray(ctx) ? ctx : ((ctx as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
       const meaningful = items
         .filter((m: any) => {
           const role = m.role ?? m.type;
@@ -859,7 +864,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         }
         body = body.replace(/\s+/g, " ").trim().slice(0, 1000);
         const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : "📦";
-        await send(icon + " <b>" + esc(role) + "</b>:\n" + esc(body || "(no text)"));
+        await send(icon + " <b>" + esc(String(role)) + "</b>:\n" + esc(body || "(no text)"));
       }
       await send("✅ Sync complete.");
     } catch (err) {
@@ -879,20 +884,20 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       const modelInfo = await (async () => {
         try {
           const res = await oc.client.model.list();
-          const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+          const list = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as Array<Record<string, unknown>>;
           return list.find((m: any) => m.id === session.model?.id && m.providerID === session.model?.providerID);
         } catch {
           return null;
         }
       })();
-      const ctxLimit = modelInfo?.limit?.context ?? 0;
+      const ctxLimit = (modelInfo as { limit?: { context?: number } })?.limit?.context ?? 0;
       const tokens = session.tokens ?? {};
       const inTok = tokens.input ?? 0;
       const outTok = tokens.output ?? 0;
       const reasonTok = tokens.reasoning ?? 0;
       const cacheRead = tokens.cache?.read ?? 0;
       const ctx = await oc.context(s.sessionId);
-      const items = Array.isArray(ctx) ? ctx : ((ctx as any)?.data ?? []);
+      const items = (Array.isArray(ctx) ? ctx : ((ctx as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
       const meaningful = items.filter((m: any) => {
         const role = m.role ?? m.type;
         if (role === "idle") return false;
@@ -928,7 +933,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
           }
           body = body.replace(/\s+/g, " ").trim().slice(0, 160);
           const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : role === "compaction" ? "📦" : "•";
-          return icon + " <b>" + esc(role) + "</b>: " + esc(body || "(no text)");
+          return icon + " <b>" + esc(String(role)) + "</b>: " + esc(body || "(no text)");
         })
         .filter(Boolean);
       const lastUser = [...items].reverse().find((m: any) => (m.role ?? m.type) === "user");

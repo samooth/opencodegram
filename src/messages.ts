@@ -178,15 +178,15 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     if (msg.photo || msg.video) {
       try {
         const res = await oc.client.model.list();
-        const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
-        const current = list.find((m: any) => m.id === s.model?.id && m.providerID === s.model?.providerID);
+        const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+        const current = list.find((m: any) => m.id === s.model?.id && m.providerID === s.model?.providerID) as { id?: string; providerID?: string; capabilities?: { input?: string[] }; variants?: Array<{ id?: string }> } | undefined;
         const supportsImage = Array.isArray(current?.capabilities?.input) && current.capabilities.input.includes("image");
         if (!supportsImage) {
-          const visionModel = list.find((m: any) => Array.isArray(m.capabilities?.input) && m.capabilities.input.includes("image"));
+          const visionModel = list.find((m: any) => Array.isArray(m.capabilities?.input) && m.capabilities.input.includes("image")) as { id?: string; providerID?: string; capabilities?: { input?: string[] }; variants?: Array<{ id?: string }> } | undefined;
           if (visionModel) {
-            await oc.switchModel(s.sessionId, { id: visionModel.id, providerID: visionModel.providerID, variant: visionModel.variants?.[0]?.id });
-            s.model = { id: visionModel.id, providerID: visionModel.providerID, variant: visionModel.variants?.[0]?.id };
-            await send(`Switched to vision model: <code>${esc(visionModel.providerID)}/${esc(visionModel.id)}</code>`);
+            await oc.switchModel(s.sessionId, { id: visionModel.id!, providerID: visionModel.providerID!, variant: visionModel.variants?.[0]?.id });
+            s.model = { id: visionModel.id!, providerID: visionModel.providerID!, variant: visionModel.variants?.[0]?.id };
+            await send(`Switched to vision model: <code>${esc(visionModel.providerID!)}/${esc(visionModel.id!)}</code>`);
           }
         }
       } catch {

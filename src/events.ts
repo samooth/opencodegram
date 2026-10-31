@@ -334,7 +334,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       const msgId = e.data?.assistantMessageID;
       if (msgId) {
         const m = await oc.client.session.message.get({ sessionID: s.sessionId, messageID: msgId });
-        const t = (m as any)?.time;
+        const t = (m as { time?: { completed?: number; streamed?: number; created?: number } })?.time;
         if (t?.completed) {
           const start = t.streamed || t.created;
           if (start && t.completed > start) {

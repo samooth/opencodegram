@@ -65,16 +65,17 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     let model: { id: string; providerID: string; variant?: string } | undefined;
     try {
       const sessions = await oc.client.session.list();
-      const list = (sessions as any)?.data ?? (Array.isArray(sessions) ? sessions : []);
+      const list = (((sessions as { data?: unknown })?.data ?? (Array.isArray(sessions) ? sessions : [])) as unknown[]) as Array<{ model?: { id?: string; providerID?: string; variant?: string }; time?: { updated?: number } }>;
       const latest = [...list].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0))[0];
-      if (latest?.model?.id && latest?.model?.providerID) model = { id: latest.model.id, providerID: latest.model.providerID, variant: latest.model.variant };
+      if (latest?.model?.id && latest?.model?.providerID) model = { id: latest.model.id as string, providerID: latest.model.providerID as string, variant: latest.model.variant };
     } catch {
       // ignore
     }
     if (!model) model = await oc.defaultModel(directory);
     const session = await oc.createSession({ title: "Telegram session", directory, model, agent: "build" });
-    const sessionId = (session as any)?.id ?? (session as any)?.sessionID ?? (session as any)?.data?.id;
-    const title = (session as any)?.title ?? "Telegram session";
+    const _s = session as { id?: string; sessionID?: string; data?: { id?: string } } | undefined;
+    const sessionId = (_s?.id ?? _s?.sessionID ?? _s?.data?.id) as string;
+    const title = (session as { title?: string })?.title ?? "Telegram session";
     const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0 };
     cs.topicTitle = store.topicTitleBySession.get(sessionId);
 
@@ -133,7 +134,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
 
   async function activateSession(chatId: number, sessionId: string, silent = true, threadId?: number): Promise<ChatSession | undefined> {
     const session = await oc.client.session.get({ sessionID: sessionId });
-    const s = session as any;
+    const s = session as { location?: { directory?: string }; directory?: string; model?: { id: string; providerID: string; variant?: string }; title?: string };
     const directory = s?.location?.directory ?? s?.directory;
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
     const title = (s.title || sessionId).slice(0, 120);
@@ -297,7 +298,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     if (!threadId) return;
     try {
       const res = await oc.client.session.get({ sessionID: s.sessionId });
-      const title = String((res as any)?.title ?? "").trim().slice(0, 120);
+      const title = String((res as { title?: string })?.title ?? "").trim().slice(0, 120);
       if (!title || title === s.topicTitle) return;
       await tg.editForumTopic(chatId, threadId, title);
       s.topicTitle = title;

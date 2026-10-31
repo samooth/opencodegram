@@ -39,7 +39,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
   async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
-    const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
       return;
@@ -74,7 +74,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
   async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
-    const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found. Use /new to create one.", threadOpts(threadId));
       return;
@@ -184,7 +184,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       raw = modelCache.data;
     } else {
       const res = await oc.client.model.list(directory ? ({ location: { directory } } as any) : undefined);
-      raw = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      raw = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
       modelCache = { time: now, data: raw };
     }
     const list = [...raw].sort((a: any, b: any) => {
@@ -271,7 +271,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     let sessionCount = 0;
     try {
       const res = await oc.client.session.list();
-      const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
       sessionCount = list.length;
     } catch {
       // ignore
@@ -301,7 +301,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     let turnLine = s?.statusMessageId ? "⏳ active" : "✅ idle";
     if (s?.sessionId) {
       try {
-        const session = (await oc.client.session.get({ sessionID: s.sessionId })) as any;
+        const session = (await oc.client.session.get({ sessionID: s.sessionId })) as { title?: string; model?: { id?: string; providerID?: string; variant?: string }; location?: { directory?: string }; directory?: string; tokens?: Record<string, unknown>; cost?: number; time?: { updated?: number } };
         title = session?.title ?? s.sessionId;
         const model = session?.model ?? s.model;
         modelLine = model ? `${esc(model.providerID ?? "")}/${esc(model.id ?? "")}${model.variant ? " (" + esc(model.variant) + ")" : ""}` : "—";
@@ -344,7 +344,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     let sessionCount = 0;
     try {
       const res = await oc.client.session.list();
-      const list = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+      const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
       sessionCount = list.length;
     } catch {
       // ignore
