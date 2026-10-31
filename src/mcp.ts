@@ -43,7 +43,7 @@ export function mcpStatusEmoji(status: string): string {
 }
 
 export async function listMcpServers(oc: OpenCodeBridge, directory?: string): Promise<McpServerInfo[]> {
-  const res = await oc.client.mcp.list(directory ? ({ location: { directory } } as any) : undefined);
+  const res = await oc.client.mcp.list(directory ? ({ location: { directory } } as unknown as Parameters<typeof oc.client.mcp.list>[0]) : undefined);
   const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
   return list.map((server: any) => ({
     name: server.name ?? server.id ?? "unnamed",
@@ -54,19 +54,19 @@ export async function listMcpServers(oc: OpenCodeBridge, directory?: string): Pr
 }
 
 export async function connectMcpServer(oc: OpenCodeBridge, name: string, directory?: string): Promise<void> {
-  await oc.client.mcp.connect({ server: name, location: directory ? { directory } : undefined } as any);
+  await oc.client.mcp.connect({ server: name, location: directory ? { directory } : undefined } as unknown as Parameters<typeof oc.client.mcp.connect>[0]);
 }
 
 export async function disconnectMcpServer(oc: OpenCodeBridge, name: string, directory?: string): Promise<void> {
-  await oc.client.mcp.disconnect({ server: name, location: directory ? { directory } : undefined } as any);
+  await oc.client.mcp.disconnect({ server: name, location: directory ? { directory } : undefined } as unknown as Parameters<typeof oc.client.mcp.disconnect>[0]);
 }
 
 export async function removeMcpServer(oc: OpenCodeBridge, name: string, directory?: string): Promise<void> {
-  await oc.client.mcp.remove({ server: name, location: directory ? { directory } : undefined } as any);
+  await oc.client.mcp.remove({ server: name, location: directory ? { directory } : undefined } as unknown as Parameters<typeof oc.client.mcp.remove>[0]);
 }
 
 export async function listMcpResources(oc: OpenCodeBridge, directory?: string): Promise<{ resources: McpResourceInfo[]; templates: McpResourceInfo[] }> {
-  const res = await oc.client.mcp.resource.catalog(directory ? ({ location: { directory } } as any) : undefined);
+  const res = await oc.client.mcp.resource.catalog(directory ? ({ location: { directory } } as unknown as Parameters<typeof oc.client.mcp.resource.catalog>[0]) : undefined);
   const data = ((res as { data?: unknown })?.data ?? res ?? {}) as { resources?: unknown[]; templates?: unknown[] };
   const resources = Array.isArray(data.resources) ? data.resources : [];
   const templates = Array.isArray(data.templates) ? data.templates : [];

@@ -183,7 +183,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
     if (modelCache && now - modelCache.time < 60000) {
       raw = modelCache.data;
     } else {
-      const res = await oc.client.model.list(directory ? ({ location: { directory } } as any) : undefined);
+      const res = await oc.client.model.list(directory ? ({ location: { directory } } as unknown as Parameters<typeof oc.client.model.list>[0]) : undefined);
       raw = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
       modelCache = { time: now, data: raw };
     }

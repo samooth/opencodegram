@@ -135,13 +135,13 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const name = parts.slice(2).join(":");
     try {
       if (action === "connect" && name) {
-        await deps.oc.client.mcp.connect({ server: name, location: { directory } } as any);
+        await deps.oc.client.mcp.connect({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.connect>[0]);
         await deps.tg.answerCallbackQuery(cq.id, "Connected").catch(() => {});
       } else if (action === "disconnect" && name) {
-        await deps.oc.client.mcp.disconnect({ server: name, location: { directory } } as any);
+        await deps.oc.client.mcp.disconnect({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.disconnect>[0]);
         await deps.tg.answerCallbackQuery(cq.id, "Disconnected").catch(() => {});
       } else if (action === "remove" && name) {
-        await deps.oc.client.mcp.remove({ server: name, location: { directory } } as any);
+        await deps.oc.client.mcp.remove({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.remove>[0]);
         await deps.tg.answerCallbackQuery(cq.id, "Removed").catch(() => {});
       } else if (action === "resources") {
         await deps.tg.answerCallbackQuery(cq.id).catch(() => {});

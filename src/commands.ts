@@ -256,7 +256,12 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
   if (text === "/usage") {
     try {
       const stats = await oc.client.session.stats();
-      const data = (stats as any)?.data ?? stats;
+      const data = ((stats as { data?: unknown })?.data ?? stats) as {
+        sessions?: number; prompts?: number; steps?: number;
+        tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number } };
+        cost?: number;
+        tools?: { totals?: { calls?: number; succeeded?: number; failed?: number } };
+      };
       const msg = [
         `<b>Usage</b>`,
         `Sessions: ${data.sessions ?? 0} · Prompts: ${data.prompts ?? 0} · Steps: ${data.steps ?? 0}`,

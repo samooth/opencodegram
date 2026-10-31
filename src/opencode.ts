@@ -20,7 +20,7 @@ export class OpenCodeBridge {
   constructor(baseUrl: string, password?: string, username = "opencode") {
     const headers: Record<string, string> = {};
     if (password) headers.authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-    this.client = OpenCode.make({ baseUrl, headers } as any);
+    this.client = OpenCode.make({ baseUrl, headers });
   }
 
   async serverInfo() {
@@ -60,7 +60,7 @@ export class OpenCodeBridge {
 
   async listCommands(directory?: string) {
     try {
-      const res = await this.client.command.list(directory ? { location: { directory } } as any : undefined);
+      const res = await this.client.command.list(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.command.list>[0] : undefined);
       return (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as unknown[];
     } catch {
       return [];
@@ -97,7 +97,7 @@ export class OpenCodeBridge {
   }
 
   async listAgents(directory?: string) {
-    const res = await this.client.agent.list(directory ? { location: { directory } } as any : undefined);
+    const res = await this.client.agent.list(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.agent.list>[0] : undefined);
     return (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as unknown[];
   }
 
@@ -146,15 +146,15 @@ export class OpenCodeBridge {
   }
 
   async vcsStatus(directory?: string) {
-    return this.client.vcs.status(directory ? { location: { directory } } as any : undefined);
+    return this.client.vcs.status(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.vcs.status>[0] : undefined);
   }
 
   async vcsGet(directory?: string) {
-    return this.client.vcs.get(directory ? { location: { directory } } as any : undefined);
+    return this.client.vcs.get(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.vcs.get>[0] : undefined);
   }
 
   async vcsBranches(directory?: string) {
-    return this.client.vcs.branch.list(directory ? { location: { directory } } as any : undefined);
+    return this.client.vcs.branch.list(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.vcs.branch.list>[0] : undefined);
   }
 
   async worktreeList(directory?: string) {
