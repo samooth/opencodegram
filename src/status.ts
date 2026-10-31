@@ -70,6 +70,8 @@ export type StatusDeps = {
   getSettings: (chatId: number) => ChatSettings;
   pendingEdits: Map<number, ChatSession>;
   rememberCot: (sessionId: string, buffer: string, count: number) => void;
+  rememberStatusMessage: (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => void;
+  forgetStatusMessage: (sessionId: string) => void;
 };
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -164,7 +166,7 @@ function readGpuInfo(): GpuInfo | null {
   return null;
 }
 
-export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage }: StatusDeps) {
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
     s.timer = undefined;
@@ -204,6 +206,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       });
       s.statusMessageId = sent.message_id;
       s.statusLastUpdate = Date.now();
+      rememberStatusMessage(s.sessionId, chatId, s.targetThreadId ?? s.threadId, sent.message_id);
     } catch (err) {
       console.error("[status]", err);
     }
@@ -321,6 +324,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       s.statusTimer = undefined;
     }
     s.statusFinished = true;
+    forgetStatusMessage(s.sessionId);
     if (s.statusEditPromise) {
       await s.statusEditPromise.catch(() => {});
       s.statusEditPromise = undefined;

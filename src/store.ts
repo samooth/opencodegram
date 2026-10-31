@@ -24,6 +24,7 @@ export class SessionStore {
   readonly messageToSession = new Map<number, string>();
   readonly topicTitleBySession = new Map<string, string>();
   readonly cotBySession = new Map<string, { buffer: string; count: number }>();
+  readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 
   readonly dataDir: string;
   private readonly threadsFile: string;
@@ -34,6 +35,7 @@ export class SessionStore {
   private readonly cotFile: string;
   private readonly lastChatsFile: string;
   private readonly lastPromptsFile: string;
+  private readonly statusMessagesFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
@@ -45,6 +47,7 @@ export class SessionStore {
     this.cotFile = join(dataDir, "cot.json");
     this.lastChatsFile = join(dataDir, "lastChats.json");
     this.lastPromptsFile = join(dataDir, "lastPrompts.json");
+    this.statusMessagesFile = join(dataDir, "statusMessages.json");
     this.load();
   }
 
@@ -107,6 +110,43 @@ export class SessionStore {
     this.saveMessages();
   };
 
+  rememberStatusMessage = (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => {
+    this.statusMessageBySession.set(sessionId, { chatId, threadId, messageId });
+    this.saveStatusMessages();
+  };
+
+  forgetStatusMessage = (sessionId: string) => {
+    this.statusMessageBySession.delete(sessionId);
+    this.saveStatusMessages();
+  };
+
+  saveStatusMessages = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, { chatId: number; threadId?: number; messageId: number }> = {};
+      for (const [sid, info] of this.statusMessageBySession) obj[sid] = info;
+      writeFileSync(this.statusMessagesFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[statusMessages] save failed", err);
+    }
+  };
+
+  cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown> }) => {
+    const entries = [...this.statusMessageBySession.entries()];
+    for (const [sessionId, info] of entries) {
+      try {
+        await tg.editRichMessage(info.chatId, info.messageId, "⏹ <b>Interrupted by restart</b>", {
+          ...(info.threadId ? { message_thread_id: info.threadId } : {}),
+          reply_markup: { inline_keyboard: [] },
+        });
+      } catch {
+        // ignore
+      }
+      this.statusMessageBySession.delete(sessionId);
+    }
+    this.saveStatusMessages();
+  };
+
   rememberTopicTitle = (sessionId: string, title: string) => {
     this.topicTitleBySession.set(sessionId, title);
     this.saveTopicTitles();
@@ -140,12 +180,14 @@ export class SessionStore {
     this.lastChatBySession.delete(sessionId);
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
+    this.statusMessageBySession.delete(sessionId);
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
     this.saveThreads();
     this.saveChats();
     this.saveActiveSessions();
     this.saveMessages();
+    this.saveStatusMessages();
     this.saveTopicTitles();
     this.saveCot();
     this.saveLastChats();
@@ -253,6 +295,18 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[chats] load failed", err);
+    }
+    try {
+      if (existsSync(this.statusMessagesFile)) {
+        const parsed = JSON.parse(readFileSync(this.statusMessagesFile, "utf8")) as Record<string, { chatId?: number; threadId?: number; messageId?: number }>;
+        for (const [sid, info] of Object.entries(parsed)) {
+          if (sid && info && typeof info.chatId === "number" && typeof info.messageId === "number") {
+            this.statusMessageBySession.set(sid, { chatId: info.chatId, threadId: info.threadId, messageId: info.messageId });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[statusMessages] load failed", err);
     }
     try {
       if (existsSync(this.messagesFile)) {

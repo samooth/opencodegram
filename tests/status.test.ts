@@ -37,6 +37,8 @@ describe("status finishStatus", () => {
       getSettings: () => ({}) as any,
       pendingEdits: new Map(),
       rememberCot: () => {},
+      rememberStatusMessage: () => {},
+      forgetStatusMessage: () => {},
     });
     const s = makeSession({ statusMessageId: 42, targetChatId: 7 });
     await status.finishStatus(7, s);

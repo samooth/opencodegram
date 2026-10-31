@@ -98,6 +98,8 @@ async function main() {
     getSettings: (chatId) => settings.get(chatId),
     pendingEdits,
     rememberCot: (sessionId, buffer, count) => store.rememberCot(sessionId, buffer, count),
+    rememberStatusMessage: (sessionId, chatId, threadId, messageId) => store.rememberStatusMessage(sessionId, chatId, threadId, messageId),
+    forgetStatusMessage: (sessionId) => store.forgetStatusMessage(sessionId),
   });
   const sessions = createSessionManager({
     config,
@@ -128,6 +130,8 @@ async function main() {
   });
   const ops = createOpsServer({ config, oc, store, metrics, tg, adminChatId: config.ADMIN_TELEGRAM_USER_ID });
   console.log(`[opencodegram] ops: ${ops.url}`);
+  // Clean up status messages left stale by a previous (crashed/restarted) process.
+  store.cleanupStaleStatusMessages(tg).catch(() => {});
 
   const audit = (action: string, detail: string) => {
     try {
