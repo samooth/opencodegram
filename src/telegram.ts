@@ -45,6 +45,26 @@ export interface TelegramUpdate {
   };
 }
 
+function sanitizeUtf8(input: string): string {
+  let out = "";
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = input.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += input[i] + input[i + 1];
+        i++;
+      }
+      // drop lone high surrogate
+    } else if (c >= 0xdc00 && c <= 0xdfff) {
+      // drop lone low surrogate
+    } else {
+      out += input[i];
+    }
+  }
+  return out;
+}
+
 export class TelegramClient {
   constructor(private readonly token: string) {}
 
@@ -98,7 +118,7 @@ export class TelegramClient {
   }
 
   sendMessage(chatId: number, text: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const body = { chat_id: chatId, text, ...opts };
+    const body = { chat_id: chatId, text: sanitizeUtf8(text), ...opts };
     return this.call<TelegramMessage>("sendMessage", body).catch(async (err) => {
       if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
         const retryBody: Record<string, unknown> = { chat_id: chatId, text };
@@ -143,10 +163,10 @@ export class TelegramClient {
   }
 
   sendRichMessage(chatId: number, html: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const body = { chat_id: chatId, rich_message: { html }, ...opts };
+    const body = { chat_id: chatId, rich_message: { html: sanitizeUtf8(html) }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
       if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { html } };
+        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { html: sanitizeUtf8(html) } };
         for (const [key, value] of Object.entries(opts)) {
           if (key === "message_thread_id" || value === undefined || value === null) continue;
           retryBody[key] = value;
@@ -158,10 +178,10 @@ export class TelegramClient {
   }
 
   sendRichMessageMarkdown(chatId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const body = { chat_id: chatId, rich_message: { markdown }, ...opts };
+    const body = { chat_id: chatId, rich_message: { markdown: sanitizeUtf8(markdown) }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
       if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { markdown } };
+        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { markdown: sanitizeUtf8(markdown) } };
         for (const [key, value] of Object.entries(opts)) {
           if (key === "message_thread_id" || value === undefined || value === null) continue;
           retryBody[key] = value;
@@ -173,27 +193,27 @@ export class TelegramClient {
   }
 
   sendMessageDraft(chatId: number, draftId: number, text: string, opts: Record<string, unknown> = {}): Promise<boolean> {
-    return this.call<boolean>("sendMessageDraft", { chat_id: chatId, draft_id: draftId, text, ...opts });
+    return this.call<boolean>("sendMessageDraft", { chat_id: chatId, draft_id: draftId, text: sanitizeUtf8(text), ...opts });
   }
 
   sendRichMessageDraft(chatId: number, draftId: number, html: string, opts: Record<string, unknown> = {}): Promise<boolean> {
-    return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { html }, ...opts });
+    return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { html: sanitizeUtf8(html) }, ...opts });
   }
 
   sendRichMessageDraftMarkdown(chatId: number, draftId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<boolean> {
-    return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { markdown }, ...opts });
+    return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { markdown: sanitizeUtf8(markdown) }, ...opts });
   }
 
   editMessageText(chatId: number, messageId: number, text: string, opts: Record<string, unknown> = {}): Promise<unknown> {
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, text, ...opts });
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, text: sanitizeUtf8(text), ...opts });
   }
 
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html }, ...opts });
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: sanitizeUtf8(html) }, ...opts });
   }
 
   editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown }, ...opts });
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown: sanitizeUtf8(markdown) }, ...opts });
   }
 
   deleteMessage(chatId: number, messageId: number): Promise<boolean> {

@@ -214,7 +214,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 
   const updateStatus = async (chatId: number, s: ChatSession, force = false) => {
     if (!s.statusMessageId || s.statusFinished) return;
-    if (s.statusEditing) return;
+    if (s.statusEditing) { s.statusPendingUpdate = true; return; }
     const opts = threadOptsFor(s);
     const settings = getSettings(chatId);
     const now = Date.now();
@@ -325,6 +325,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     } finally {
       s.statusEditing = false;
       s.statusEditPromise = undefined;
+      if (s.statusPendingUpdate) {
+        s.statusPendingUpdate = false;
+        // Coalesce queued edits instead of dropping them.
+        void updateStatus(chatId, s, true).catch(() => {});
+      }
     }
   };
 

@@ -27,6 +27,7 @@ export type ChatSession = {
   statusMessageId?: number;
   statusLastUpdate?: number;
   statusEditing?: boolean;
+  statusPendingUpdate?: boolean;
   statusFinished?: boolean;
   statusEditPromise?: Promise<unknown>;
   promptStartTime?: number;
