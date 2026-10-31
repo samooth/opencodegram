@@ -197,7 +197,16 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
   if (text === "/read" || text.startsWith("/read ")) {
     const raw = text.slice(5).trim();
     if (!raw) {
-      await send("usage: /read <path> [start_line]");
+      await send("usage: /read <path> [start_line | summary]");
+      return true;
+    }
+    if (raw.toLowerCase().endsWith(" summary")) {
+      const path = raw.slice(0, -8).trim();
+      try {
+        await files.showSummary(chatId, threadId, path);
+      } catch (err) {
+        await send(`❌ ${esc(fileErrorMessage(err))}`);
+      }
       return true;
     }
     const { path, startLine } = parseReadArgs(raw);

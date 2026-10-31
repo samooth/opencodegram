@@ -117,7 +117,7 @@ describe("handleCommand routing", () => {
     expect(await handleCommand(h.deps, 100, 10, "/file", h.send)).toBe(true);
     expect(h.sends).toEqual([
       "usage: /find <text> [-a]",
-      "usage: /read <path> [start_line]",
+      "usage: /read <path> [start_line | summary]",
       "usage: /file <path> (relative to the session directory)",
     ]);
   });

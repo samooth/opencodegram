@@ -8,8 +8,11 @@ import {
   listDirectory,
   prepareDocument,
   readTextFile,
+  summarizeFile,
+  renderFileSummary,
   type FileEntry,
   type ReadResult,
+  type FileSummary,
 } from "./files.js";
 import type { TelegramCallbackQuery, TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
@@ -59,8 +62,18 @@ type FileView = {
   back?: BrowseView;
 };
 
+type SummaryView = {
+  kind: "summary";
+  chatId: number;
+  threadId?: number;
+  base: string;
+  path: string;
+  summary: FileSummary;
+  back?: BrowseView;
+};
+
 type BrowseView = ListingView | FindView;
-type View = BrowseView | FileView;
+type View = BrowseView | FileView | SummaryView;
 
 const PAGE_SIZE = 12;
 const MAX_CACHED_VIEWS = 120;
@@ -112,8 +125,8 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
   }
 
   async function render(view: View, messageId?: number): Promise<number | undefined> {
-    const html = view.kind === "file" ? renderFile(view) : view.kind === "find" ? renderFind(view) : renderListing(view);
-    const keyboard = view.kind === "file" ? fileKeyboard(view) : view.kind === "find" ? findKeyboard(view) : listingKeyboard(view);
+    const html = view.kind === "file" ? renderFile(view) : view.kind === "find" ? renderFind(view) : view.kind === "summary" ? renderSummary(view) : renderListing(view);
+    const keyboard = view.kind === "file" ? fileKeyboard(view) : view.kind === "find" ? findKeyboard(view) : view.kind === "summary" ? summaryKeyboard(view) : listingKeyboard(view);
     const id = await sendOrEdit(view.chatId, view.threadId, messageId, html, keyboard);
     if (id !== undefined) remember(id, view);
     return id;
@@ -208,6 +221,12 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       }
       throw err;
     }
+    // For large/truncated files, show an automatic structural summary instead
+    // of a (truncated) preview, with a button to view the raw preview.
+    if (read.truncated) {
+      await showSummary(chatId, threadId, path, { messageId: options.messageId, back: options.back, base });
+      return;
+    }
     const view: FileView = {
       kind: "file",
       chatId,
@@ -218,6 +237,57 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       back: options.back,
     };
     await render(view, options.messageId);
+  }
+
+  async function showSummary(
+    chatId: number,
+    threadId: number | undefined,
+    path: string,
+    options: { messageId?: number; back?: BrowseView; base?: string } = {},
+  ): Promise<void> {
+    const base = options.base ?? baseFor(chatId, threadId);
+    let summary: FileSummary;
+    try {
+      summary = await summarizeFile(base, path);
+    } catch (err) {
+      if (err instanceof FileAccessError && err.code === "binary") {
+        await sendAsDocument(chatId, threadId, base, path, "Binary file sent as a document.");
+        return;
+      }
+      throw err;
+    }
+    const view: SummaryView = {
+      kind: "summary",
+      chatId,
+      threadId,
+      base: summary.path.startsWith(base) ? base : base,
+      path: summary.relative,
+      summary,
+      back: options.back,
+    };
+    const text = renderFileSummary(summary);
+    const keyboard = [
+      [{ text: "📄 Ver preview", callback_data: "fs:preview" }],
+      [{ text: "📎 Enviar documento", callback_data: "fs:send" }],
+    ];
+    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    const sentId = await sendOrEdit(chatId, threadId, options.messageId, text, keyboard);
+    if (sentId !== undefined) views.set(sentId, view);
+  }
+
+  function renderSummary(view: SummaryView): string {
+    return renderFileSummary(view.summary);
+  }
+
+  function summaryKeyboard(view: SummaryView): Array<Array<{ text: string; callback_data: string }>> {
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [
+      [{ text: "📄 Ver preview", callback_data: "fs:preview" }],
+      [{ text: "📎 Enviar documento", callback_data: "fs:send" }],
+    ];
+    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    return keyboard;
   }
 
   function renderListing(view: ListingView): string {
@@ -417,7 +487,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       }
 
       if (data === "fs:send") {
-        if (!view || view.kind !== "file") {
+        if (!view || (view.kind !== "file" && view.kind !== "summary")) {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
@@ -426,12 +496,22 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         return true;
       }
 
+      if (data === "fs:preview") {
+        if (!view || view.kind !== "summary") {
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          return true;
+        }
+        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, maxLines: 160 });
+        return true;
+      }
+
       if (data === "fs:u") {
         if (!view) {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
-        if (view.kind === "file") {
+        if (view.kind === "file" || view.kind === "summary") {
           if (!view.back) {
             await tg.answerCallbackQuery(cq.id, "No previous listing").catch(() => {});
             return true;
@@ -457,7 +537,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
 
       const downloadMatch = data.match(/^fs:d:(\d+)$/);
       if (downloadMatch) {
-        if (!view || view.kind === "file") {
+        if (!view || view.kind === "file" || view.kind === "summary") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
@@ -481,7 +561,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
 
       const pageMatch = data.match(/^fs:p:(\d+)$/);
       if (pageMatch) {
-        if (!view || view.kind === "file") {
+        if (!view || view.kind === "file" || view.kind === "summary") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
@@ -493,7 +573,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
 
       const entryMatch = data.match(/^fs:e:(\d+)$/);
       if (entryMatch) {
-        if (!view || view.kind === "file") {
+        if (!view || view.kind === "file" || view.kind === "summary") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
         }
@@ -515,7 +595,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     }
   }
 
-  return { showListing, showFind, showFile, handleCallback };
+  return { showListing, showFind, showFile, showSummary, handleCallback };
 }
 
 function entryIcon(entry: FileEntry): string {
