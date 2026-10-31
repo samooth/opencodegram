@@ -190,9 +190,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.stopped = false;
     try {
       const lines: string[] = [];
-      if (settings.showThinking && s.cotBuffer?.trim()) {
-        const cot = s.cotBuffer.trim().slice(-1500);
-        lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
+      if (settings.showThinking) {
+        const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
+        if (cotSrc) {
+          const cot = cotSrc.slice(-1500);
+          lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
+        }
       }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
       const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n")), {
@@ -225,7 +228,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     lines.push("");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(-800);
-      lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
+      lines.push(`🧠 <b>Thinking</b>\n<blockquote expandable><pre>${esc(r)}</pre></blockquote>`);
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
     const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
@@ -259,9 +262,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
     if (lastTool) {
       const toolName = lastTool.name;
-      const toolInput = lastTool.input ? clampText(lastTool.input, 120) : "";
+      const toolInput = lastTool.input ? clampText(lastTool.input, 400) : "";
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
-      lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>${toolInput ? " — " + esc(toolInput) : ""}`);
+      lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>`);
+      if (toolInput) lines.push(`<pre>${esc(toolInput)}</pre>`);
     }
     lines.push("");
     if (settings.showResourceUsage) {
