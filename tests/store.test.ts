@@ -33,8 +33,8 @@ function makeSession(sessionId: string, threadId?: number): ChatSession {
 describe("SessionStore routing", () => {
   test("never falls back from a topic to another tab or the main chat", () => {
     const store = new SessionStore(dataDir);
-    store.sessionsByThread.set(10, makeSession("ses_topic_10", 10));
-    store.sessionsByThread.set(11, makeSession("ses_topic_11", 11));
+    store.sessionsByThread.set(store.routeKey(100, 10), makeSession("ses_topic_10", 10));
+    store.sessionsByThread.set(store.routeKey(100, 11), makeSession("ses_topic_11", 11));
     store.sessionsByChat.set(100, makeSession("ses_main"));
 
     expect(store.getActiveSession(100, 10)?.sessionId).toBe("ses_topic_10");
@@ -56,15 +56,15 @@ describe("SessionStore routing", () => {
 
   test("replacing a route retires the previous session", () => {
     const store = new SessionStore(dataDir);
-    store.sessionsByThread.set(10, makeSession("ses_a", 10));
-    store.sessionsById.set("ses_a", store.sessionsByThread.get(10)!);
+    store.sessionsByThread.set(store.routeKey(100, 10), makeSession("ses_a", 10));
+    store.sessionsById.set("ses_a", store.sessionsByThread.get(store.routeKey(100, 10))!);
     store.rememberSessionChat("ses_a", 100);
     store.rememberActiveRoute(100, 10, "ses_a");
 
     store.rememberActiveRoute(100, 10, "ses_b");
     expect(store.activeSessionByRoute.get("100:10")).toBe("ses_b");
     expect(store.sessionsById.has("ses_a")).toBe(false);
-    expect(store.sessionsByThread.has(10)).toBe(false);
+    expect(store.sessionsByThread.has(store.routeKey(100, 10))).toBe(false);
     expect(store.chatBySession.has("ses_a")).toBe(false);
   });
 
@@ -83,14 +83,14 @@ describe("SessionStore routing", () => {
 
   test("forgetSession clears every routing table", () => {
     const store = new SessionStore(dataDir);
-    store.sessionsByThread.set(10, makeSession("ses_a", 10));
-    store.sessionsById.set("ses_a", store.sessionsByThread.get(10)!);
+    store.sessionsByThread.set(store.routeKey(100, 10), makeSession("ses_a", 10));
+    store.sessionsById.set("ses_a", store.sessionsByThread.get(store.routeKey(100, 10))!);
     store.rememberSessionChat("ses_a", 100);
     store.rememberActiveRoute(100, 10, "ses_a");
 
     store.forgetSession("ses_a");
     expect(store.sessionsById.has("ses_a")).toBe(false);
-    expect(store.sessionsByThread.has(10)).toBe(false);
+    expect(store.sessionsByThread.has(store.routeKey(100, 10))).toBe(false);
     expect(store.activeSessionByRoute.has("100:10")).toBe(false);
     expect(store.chatBySession.has("ses_a")).toBe(false);
     expect(store.getActiveSession(100, 10)).toBeUndefined();

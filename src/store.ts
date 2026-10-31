@@ -14,7 +14,7 @@ export const routeKey = (chatId: number, threadId?: number): string => `${chatId
  */
 export class SessionStore {
   readonly sessionsByChat = new Map<number, ChatSession>();
-  readonly sessionsByThread = new Map<number, ChatSession>();
+  readonly sessionsByThread = new Map<string, ChatSession>();
   readonly sessionsById = new Map<string, ChatSession>();
   readonly lastChatBySession = new Map<string, number>();
   readonly lastPromptBySession = new Map<string, string>();
@@ -83,8 +83,9 @@ export class SessionStore {
   };
 
   getActiveSession = (chatId: number, threadId?: number): ChatSession | undefined => {
-    // A topic must never fall back to another tab's session.
-    if (threadId !== undefined) return this.sessionsByThread.get(threadId);
+    // A topic must never fall back to another tab's session, and topics from
+    // different chats must never collide even when their thread ids match.
+    if (threadId !== undefined) return this.sessionsByThread.get(this.routeKey(chatId, threadId));
     return this.sessionsByChat.get(chatId);
   };
 
@@ -185,7 +186,7 @@ export class SessionStore {
   forgetSession = (sessionId: string) => {
     this.sessionsById.delete(sessionId);
     for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);
-    for (const [tid, cs] of this.sessionsByThread) if (cs.sessionId === sessionId) this.sessionsByThread.delete(tid);
+    for (const [key, cs] of this.sessionsByThread) if (cs.sessionId === sessionId) this.sessionsByThread.delete(key);
     for (const [k, v] of this.activeSessionByRoute) if (v === sessionId) this.activeSessionByRoute.delete(k);
     this.threadBySession.delete(sessionId);
     this.chatBySession.delete(sessionId);

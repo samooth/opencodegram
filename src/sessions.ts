@@ -92,12 +92,13 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     if (targetThread !== undefined) {
       cs.threadId = targetThread;
       cs.targetThreadId = targetThread;
+      const route = store.routeKey(chatId, targetThread);
       // One topic = one session. Retire the session previously shown there.
-      const previous = sessionsByThread.get(targetThread);
+      const previous = sessionsByThread.get(route);
       if (previous && previous.sessionId !== sessionId) await retireSession(chatId, previous);
-      for (const [tid, existing] of sessionsByThread) if (tid !== targetThread && existing.sessionId === sessionId) sessionsByThread.delete(tid);
-      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== sessionId) threadBySession.delete(sid);
-      sessionsByThread.set(targetThread, cs);
+      for (const [key, existing] of sessionsByThread) if (key !== route && existing.sessionId === sessionId) sessionsByThread.delete(key);
+      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== sessionId && (store.chatBySession.get(sid) ?? chatId) === chatId) threadBySession.delete(sid);
+      sessionsByThread.set(route, cs);
       threadBySession.set(sessionId, targetThread);
       saveThreads();
       cs.topicTitle = store.topicTitleBySession.get(sessionId);
@@ -171,7 +172,10 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
 
     let targetThread = threadId;
     if (targetThread === undefined && chatId > 0) {
-      targetThread = threadBySession.get(sessionId);
+      const mappedThread = threadBySession.get(sessionId);
+      if (mappedThread !== undefined && (store.chatBySession.get(sessionId) ?? chatId) === chatId) {
+        targetThread = mappedThread;
+      }
     }
     if (targetThread === undefined && topicsEnabled && chatId > 0) {
       try {
@@ -185,15 +189,16 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     if (targetThread !== undefined) {
       cs.threadId = targetThread;
       cs.targetThreadId = targetThread;
+      const route = store.routeKey(chatId, targetThread);
       // A tab always shows exactly one session. Retire whatever was there before.
-      const previous = sessionsByThread.get(targetThread);
+      const previous = sessionsByThread.get(route);
       if (previous && previous.sessionId !== sessionId) await retireSession(chatId, previous);
       // Move the session to this tab and remove duplicates from other tabs.
-      for (const [tid, existing] of sessionsByThread) {
-        if (tid !== targetThread && existing.sessionId === sessionId) sessionsByThread.delete(tid);
+      for (const [key, existing] of sessionsByThread) {
+        if (key !== route && existing.sessionId === sessionId) sessionsByThread.delete(key);
       }
-      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== sessionId) threadBySession.delete(sid);
-      sessionsByThread.set(targetThread, cs);
+      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== sessionId && (store.chatBySession.get(sid) ?? chatId) === chatId) threadBySession.delete(sid);
+      sessionsByThread.set(route, cs);
       threadBySession.set(sessionId, targetThread);
       saveThreads();
 
@@ -210,13 +215,13 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
           try {
             const topic = await tg.createForumTopic(chatId, title);
             const oldTarget = targetThread;
-            sessionsByThread.delete(targetThread);
+            if (oldTarget !== undefined) sessionsByThread.delete(store.routeKey(chatId, oldTarget));
             threadBySession.delete(sessionId);
             targetThread = topic.message_thread_id;
             if (oldTarget !== undefined) activeSessionByRoute.delete(routeKey(chatId, oldTarget));
             cs.threadId = targetThread;
             cs.targetThreadId = targetThread;
-            sessionsByThread.set(targetThread, cs);
+            sessionsByThread.set(store.routeKey(chatId, targetThread), cs);
             threadBySession.set(sessionId, targetThread);
             saveThreads();
           } catch {
@@ -226,7 +231,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       }
       }
     } else {
-      for (const [tid, existing] of sessionsByThread) if (existing.sessionId === sessionId) sessionsByThread.delete(tid);
+      for (const [key, existing] of sessionsByThread) if (existing.sessionId === sessionId) sessionsByThread.delete(key);
       const prev = sessionsByChat.get(chatId);
       if (prev && prev.sessionId !== sessionId) await retireSession(chatId, prev);
       sessionsByChat.set(chatId, cs);
