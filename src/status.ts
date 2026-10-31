@@ -302,9 +302,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuBar = progressBar(cpuPercent);
       const memBar = progressBar(memPercent);
       const prevCpu = s.cpuHistory.length >= 2 ? s.cpuHistory[s.cpuHistory.length - 2] : cpuPercent;
-      const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : " →";
+      const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
       const prevMem = s.memHistory.length >= 2 ? s.memHistory[s.memHistory.length - 2] : memPercent;
-      const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : " →";
+      const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
       const resLines: string[] = [];
       resLines.push(`CPU  ${cpuBar} ${String(cpuPercent).padStart(3)}% ${cpuTrend.trim()}`);
       resLines.push(`RAM  ${memBar} ${String(memPercent).padStart(3)}% ${memTrend.trim()}`);
@@ -441,9 +441,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuBar = progressBar(cpuPercent);
       const memBar = progressBar(memPercent);
       const prevCpu = target.cpuHistory.length >= 2 ? target.cpuHistory[target.cpuHistory.length - 2] : cpuPercent;
-      const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : " →";
+      const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
       const prevMem = target.memHistory.length >= 2 ? target.memHistory[target.memHistory.length - 2] : memPercent;
-      const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : " →";
+      const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
       const resLines: string[] = [];
       resLines.push(`CPU  ${cpuBar} ${String(cpuPercent).padStart(3)}% ${cpuTrend.trim()}`);
       resLines.push(`RAM  ${memBar} ${String(memPercent).padStart(3)}% ${memTrend.trim()}`);
