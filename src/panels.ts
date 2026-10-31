@@ -291,7 +291,14 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     let gpu = "";
     try {
       const out = execFileSync("nvidia-smi", ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
-      if (out) gpu = esc(out);
+      if (out) {
+        const parts = out.split(",").map((x) => x.trim());
+        const name = esc(parts[0] || "GPU");
+        const used = esc(parts[1] || "?");
+        const total = esc(parts[2] || "?");
+        const util = esc(parts[3] || "?");
+        gpu = `${name}<br>VRAM: ${used}/${total}<br>Load: ${util}`;
+      }
     } catch {
       // no gpu
     }
@@ -336,7 +343,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       `<tr><td><b>Bot</b></td><td>uptime ${botUptime} · pid ${process.pid} · updates ${metrics.get("updates")}</td></tr>`,
       metrics.lastError ? `<tr><td><b>Last error</b></td><td>${esc(metrics.lastError.message)} (${new Date(metrics.lastError.time).toISOString().slice(11, 19)})</td></tr>` : "",
       ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
-      `<tr><td><b>Host</b></td><td>${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB</td></tr>`,
+      `<tr><td><b>Host</b></td><td>CPU: ${cpuCount} cores<br>Load: ${esc(load)}<br>Mem: ${freeMem}/${totalMem} GB</td></tr>`,
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
     const text = `<h3>📊 Status</h3>\n\n<table compact striped bordered>${rows}</table>`;
@@ -365,7 +372,14 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     let gpu = "";
     try {
       const out = execFileSync("nvidia-smi", ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
-      if (out) gpu = esc(out);
+      if (out) {
+        const parts = out.split(",").map((x) => x.trim());
+        const name = esc(parts[0] || "GPU");
+        const used = esc(parts[1] || "?");
+        const total = esc(parts[2] || "?");
+        const util = esc(parts[3] || "?");
+        gpu = `${name}<br>VRAM: ${used}/${total}<br>Load: ${util}`;
+      }
     } catch {
       // no gpu
     }
@@ -374,7 +388,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       s?.model ? `<tr><td><b>Model</b></td><td><code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}</td></tr>` : "",
       s?.directory ? `<tr><td><b>Directory</b></td><td><code>${esc(s.directory)}</code></td></tr>` : "",
       ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
-      `<tr><td><b>Host</b></td><td>${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB</td></tr>`,
+      `<tr><td><b>Host</b></td><td>CPU: ${cpuCount} cores<br>Load: ${esc(load)}<br>Mem: ${freeMem}/${totalMem} GB</td></tr>`,
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
     const text = `<b>OpenCodegram</b>\n\n<table>${rows}</table>`;
