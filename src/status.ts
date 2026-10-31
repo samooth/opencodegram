@@ -321,7 +321,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         resLines.push("");
         resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
-      lines.push(`<blockquote>${esc(resLines.join("\\n"))}</blockquote>`);
+      lines.push(`<blockquote>${esc(resLines.join("\n"))}</blockquote>`);
     }
     sep();
     if (s.compacting) {
@@ -463,7 +463,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         resLines.push("");
         resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
-      lines.push(`<blockquote>${esc(resLines.join("\\n"))}</blockquote>`);
+      lines.push(`<blockquote>${esc(resLines.join("\n"))}</blockquote>`);
     }
     return lines.join("\n");
   };
