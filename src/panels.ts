@@ -5,13 +5,15 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { MetricsStore } from "./metrics.js";
-import { esc, threadOpts } from "./util.js";
+import { esc, threadOpts, projectLabel, truncate } from "./util.js";
 
 export type PanelsDeps = {
   tg: TelegramClient;
   oc: OpenCodeBridge;
   config: Config;
   getActiveSession: (chatId: number, threadId?: number) => ChatSession | undefined;
+  getLastPrompt?: (sessionId: string) => string | undefined;
+  getLastCot?: (sessionId: string) => string | undefined;
   modelListByChat: Map<string, Array<any>>;
   routeKey: (chatId: number, threadId?: number) => string;
   metrics: MetricsStore;
@@ -19,7 +21,7 @@ export type PanelsDeps = {
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, modelListByChat, routeKey, metrics }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, metrics }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
@@ -87,9 +89,11 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       const title = esc(s.title ?? "(untitled)");
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
       const mark = activeId && activeId === s.id ? " ✅" : "";
-      const directory = esc((s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "");
-      const dirSuffix = directory ? ` · ${directory}` : "";
-      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}</td><td><code>${esc(s.id)}</code></td><td>${model}${dirSuffix}</td></tr>`;
+      const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
+      const dirSuffix = directory ? ` · ${projectLabel(s.location?.directory ?? s.directory)}` : "";
+      const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
+      const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 60))}</i>` : "";
+      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}${dirSuffix}</td></tr>`;
     });
     const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model / Dir</th></tr>${lines.join("")}</table>`;
     const keyboard: any[][] = slice.map((s: any, i: number) => {

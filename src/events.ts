@@ -354,8 +354,23 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       finalText += "\n\n⚡ " + speed + " tok/s";
     }
     const threadOpts = store.threadOptsFor(s);
+    // Build quick-switch keyboard (prev/next session in the project).
+    const quickKeyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    try {
+      const res = await oc.client.session.list();
+      const list = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as Array<{ id?: string }>;
+      const ids = list.map((x) => x.id).filter((x): x is string => !!x);
+      const idx = ids.indexOf(s.sessionId);
+      const nav: Array<{ text: string; callback_data: string }> = [];
+      if (idx > 0) nav.push({ text: "◀ Prev", callback_data: `qswitch:${ids[idx - 1]}` });
+      if (idx >= 0 && idx < ids.length - 1) nav.push({ text: "Next ▶", callback_data: `qswitch:${ids[idx + 1]}` });
+      if (nav.length) quickKeyboard.push(nav);
+      quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    } catch {
+      quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    }
     console.log("[send] final to chat=", chatId, "thread=", s.targetThreadId ?? s.threadId, "len=", finalText.length);
-    const finalMessage = await tg.sendRichMessageMarkdown(chatId, finalText, threadOpts).catch((err) => {
+    const finalMessage = await tg.sendRichMessageMarkdown(chatId, finalText, { ...threadOpts, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
       console.error("[send final]", err);
       return undefined;
     });

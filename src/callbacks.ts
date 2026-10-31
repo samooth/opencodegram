@@ -78,6 +78,19 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   // File browser callbacks are namespaced with `fs:`.
   if (await deps.files.handleCallback(cq)) return;
 
+  // Quick session switch from final message buttons.
+  const qswitchMatch = cbData.match(/^qswitch:(.+)$/);
+  if (qswitchMatch) {
+    const sessionId = qswitchMatch[1];
+    await tg.answerCallbackQuery(cq.id, "Switching…").catch(() => {});
+    try {
+      await deps.sessions.activateSession(chatId, sessionId, false, threadId);
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
+
   // Delete-sessions pagination.
   const deletePageMatch = cbData.match(/^delsessions:page:(\d+)$/);
   if (deletePageMatch) {

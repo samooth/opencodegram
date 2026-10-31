@@ -3,7 +3,7 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
-import { esc, threadOpts } from "./util.js";
+import { esc, threadOpts, projectLabel, projectEmoji, clampText } from "./util.js";
 
 export type SessionsDeps = {
   config: Config;
@@ -125,7 +125,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     if (!silent) {
       await tg.sendRichMessage(
         chatId,
-        `<b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`,
+        `${projectEmoji(directory)} <b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`,
         threadOpts(targetThread),
       );
     }
@@ -236,7 +236,11 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     rememberSessionChat(sessionId, chatId);
     rememberActiveRoute(chatId, targetThread, sessionId);
     if (!silent) {
-      const text = `<b>Active session</b>\n<code>${esc(sessionId)}</code>\n${esc(title)}\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`;
+      const lastPrompt = store.lastPromptBySession.get(sessionId);
+      const cot = store.getCotBuffer(sessionId);
+      let text = `${projectEmoji(directory)} <b>Active session</b>\n<code>${esc(sessionId)}</code>\n${esc(title)}\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`;
+      if (lastPrompt) text += `\n\n<b>Último prompt:</b> ${esc(clampText(lastPrompt, 200))}`;
+      if (cot) text += `\n<b>COT:</b> ${esc(clampText(cot, 200))}`;
       await tg.sendRichMessage(chatId, text, threadOpts(targetThread)).catch(() => {});
     }
     return cs;

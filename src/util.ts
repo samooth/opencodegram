@@ -58,3 +58,19 @@ export function rateLimitRetryAt(now: Date = new Date()): Date {
 export function detailsBlock(summary: string, body: string, open = false): string {
   return `<details${open ? " open" : ""}><summary>${summary}</summary>\n<pre>${esc(body)}</pre>\n</details>`;
 }
+
+const PROJECT_EMOJIS = ["🔵", "🟢", "🟡", "🟠", "🔴", "🟣", "🟤", "⚪", "⬛", "🔷", "🔶", "⏹️", "⏹", "⏹", "⏹"];
+
+export function projectEmoji(directory?: string): string {
+  if (!directory) return "📁";
+  let hash = 0;
+  for (let i = 0; i < directory.length; i++) hash = (hash * 31 + directory.charCodeAt(i)) | 0;
+  const idx = Math.abs(hash) % PROJECT_EMOJIS.length;
+  return PROJECT_EMOJIS[idx];
+}
+
+export function projectLabel(directory?: string): string {
+  if (!directory) return "";
+  const name = directory.split("/").filter(Boolean).pop() ?? directory;
+  return `${projectEmoji(directory)} ${name}`;
+}

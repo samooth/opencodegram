@@ -113,6 +113,8 @@ async function main() {
     oc,
     config,
     getActiveSession: store.getActiveSession,
+    getLastPrompt: (sid) => store.lastPromptBySession.get(sid),
+    getLastCot: (sid) => store.getCotBuffer(sid),
     modelListByChat,
     routeKey: store.routeKey,
     metrics,
