@@ -104,56 +104,65 @@ export function markdownToHtml(md: string): string {
   const out: string[] = [];
   let inCodeBlock = false;
   let codeBuf: string[] = [];
+  let codeLang = "";
   let inTable = false;
   let tableBuf: string[] = [];
+  let inList = false;
+  let listType = "ul";
 
+  const flushList = () => {
+    if (!inList) return;
+    out.push(listType === "ol" ? "</ol>" : "</ul>");
+    inList = false;
+  };
   const flushTable = () => {
     if (!tableBuf.length) return;
-    // Render table as monospace pre (Telegram has no <table>).
-    const rows = tableBuf.filter((l) => /[A-Za-z0-9]/.test(l));
-    const text = rows.map((l) => l.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim()).join("  │  ")).join("\n");
-    out.push(`<pre>${esc(text)}</pre>`);
+    const rows = tableBuf.filter((l) => !/^\s*[|\-: ]+\s*$/.test(l) || /[A-Za-z0-9]/.test(l));
+    // remove pure separator rows
+    const dataRows = rows.filter((l) => /[A-Za-z0-9]/.test(l));
+    if (!dataRows.length) { tableBuf = []; inTable = false; return; }
+    const parsed = dataRows.map((l) => l.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim()));
+    const header = parsed[0];
+    const body = parsed.slice(1);
+    const ths = header.map((c) => `<th>${inline(c)}</th>`).join("");
+    const trs = body.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("");
+    out.push(`<table><tr>${ths}</tr>${trs}</table>`);
     tableBuf = [];
     inTable = false;
   };
-
   const flushCode = () => {
     if (!codeBuf.length) return;
-    out.push(`<pre>${esc(codeBuf.join("\n"))}</pre>`);
+    const lang = codeLang ? ` language="${esc(codeLang)}"` : "";
+    out.push(`<pre><code${lang}>${esc(codeBuf.join("\n"))}</code></pre>`);
     codeBuf = [];
     inCodeBlock = false;
+    codeLang = "";
   };
 
   const inline = (s: string): string => {
     s = esc(s);
-    // code spans
     s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
-    // bold
     s = s.replace(/\*\*([^*]+)\*\*/g, (_, c) => `<b>${c}</b>`);
-    // italic
     s = s.replace(/(^|[^*])\*([^*]+)\*/g, (_, pre, c) => `${pre}<i>${c}</i>`);
-    // links
     s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => `<a href="${u}">${t}</a>`);
     return s;
   };
 
-  // We'll escape plain text per-line instead of global to preserve tags.
   for (const line of lines) {
     if (line.trim().startsWith("```")) {
       if (inCodeBlock) flushCode();
-      else inCodeBlock = true;
+      else {
+        inCodeBlock = true;
+        codeLang = line.trim().slice(3).trim();
+      }
       continue;
     }
     if (inCodeBlock) {
       codeBuf.push(line);
       continue;
     }
-    // table detection
     if (/^\s*\|.*\|\s*$/.test(line)) {
-      if (!inTable) {
-        // flush previous blank? just push
-        inTable = true;
-      }
+      if (!inTable) inTable = true;
       tableBuf.push(line);
       continue;
     } else if (inTable) {
@@ -162,41 +171,45 @@ export function markdownToHtml(md: string): string {
 
     const trimmed = line.trim();
     if (!trimmed) {
+      flushList();
       out.push("");
       continue;
     }
-    // headers
     const h = trimmed.match(/^(#{1,6})\s+(.+)/);
     if (h) {
-      out.push(`<b>${esc(h[2])}</b>`);
+      flushList();
+      const size = h[1].length;
+      out.push(`<h${size}>${inline(h[2])}</h${size}>`);
       continue;
     }
-    // horizontal rule
     if (/^[-*_]{3,}\s*$/.test(trimmed)) {
-      out.push("────────────");
+      flushList();
+      out.push("<hr/>");
       continue;
     }
-    // bullet list
     const bullet = trimmed.match(/^[-*+]\s+(.+)/);
     if (bullet) {
-      out.push(`• ${inline(bullet[1])}`);
+      if (!inList) { out.push("<ul>"); inList = true; listType = "ul"; }
+      out.push(`<li>${inline(bullet[1])}</li>`);
       continue;
     }
-    // numbered list
     const num = trimmed.match(/^\d+\.\s+(.+)/);
     if (num) {
-      out.push(`• ${inline(num[1])}`);
+      if (!inList) { out.push("<ol>"); inList = true; listType = "ol"; }
+      out.push(`<li>${inline(num[1])}</li>`);
       continue;
     }
-    // blockquote
     const bq = trimmed.match(/^>\s*(.*)/);
     if (bq) {
+      flushList();
       out.push(`<blockquote>${inline(bq[1])}</blockquote>`);
       continue;
     }
+    flushList();
     out.push(inline(line));
   }
   if (inCodeBlock) flushCode();
   if (inTable) flushTable();
+  flushList();
   return out.join("\n");
 }
