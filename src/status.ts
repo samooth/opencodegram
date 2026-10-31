@@ -196,7 +196,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
         if (cotSrc) {
           const cot = cotSrc.slice(-1500);
-          lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
+          lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<details><summary>Ver COT</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
         }
       }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
@@ -224,14 +224,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lines: string[] = [];
     if (settings.showThinking && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
-      lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
+      lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<details><summary>Ver COT</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
     }
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
-    lines.push("⏳ <b>Working…</b>" + (elapsed ? ` <i>(${elapsed}s)</i>` : ""));
+    lines.push("<h4>⏳ Working…" + (elapsed ? ` <i>(${elapsed}s)</i>` : "") + "</h4>");
     lines.push("");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(-800);
-      lines.push(`🧠 <b>Thinking</b>\n<blockquote expandable><pre>${esc(r)}</pre></blockquote>`);
+      lines.push(`🧠 <b>Thinking</b>\n<details${settings.thinkingExpanded ? " open" : ""}><summary>Ver thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`);
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
     const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
@@ -260,7 +260,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
       const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-      lines.push(`💭 <b>Latest thought:</b>\n<blockquote>${esc(clampText(lastThought, 240))}</blockquote>`);
+      lines.push(`💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`);
     }
     const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
     if (lastTool) {
@@ -361,7 +361,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lines: string[] = [];
     if (settings.showThinking && previousCot) {
       const cot = previousCot.slice(-3500);
-      lines.push(`🧾 <b>COT (${target.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
+      lines.push(`🧾 <b>COT (${target.cotCount ?? 0})</b>\n<details><summary>Ver COT</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
     }
     lines.push("✅ <b>Done</b>");
     if (!settings.compactFinal) {

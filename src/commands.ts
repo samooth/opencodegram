@@ -285,6 +285,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         `<b>Usage</b>`,
         `Sessions: ${data.sessions ?? 0} · Prompts: ${data.prompts ?? 0} · Steps: ${data.steps ?? 0}`,
         `Tokens: in ${(data.tokens?.input ?? 0).toLocaleString()} · out ${(data.tokens?.output ?? 0).toLocaleString()} · reasoning ${(data.tokens?.reasoning ?? 0).toLocaleString()}`,
+        `Rate: <tg-math>tokens \\times rate</tg-math>`,
         `Cost: ${(data.cost ?? 0).toFixed(4)}`,
         `Tools: ${data.tools?.totals?.calls ?? 0} calls (${data.tools?.totals?.succeeded ?? 0} ok, ${data.tools?.totals?.failed ?? 0} failed)`,
       ].join("\n");

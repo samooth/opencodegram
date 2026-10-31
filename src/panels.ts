@@ -317,7 +317,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
         const tokens = session?.tokens ?? {};
         tokensLine = `in ${(tokens.input ?? 0).toLocaleString()} · out ${(tokens.output ?? 0).toLocaleString()} · reasoning ${(tokens.reasoning ?? 0).toLocaleString()}`;
         costLine = (session?.cost ?? 0).toFixed(4);
-        if (session?.time?.updated) updatedLine = new Date(session.time.updated).toISOString().slice(0, 16).replace("T", " ");
+        if (session?.time?.updated) updatedLine = `<tg-time unix="${Math.floor(session.time.updated / 1000)}" format="wDT">${new Date(session.time.updated).toISOString().slice(0, 16).replace("T", " ")}</tg-time>`;
       } catch {
         title = s.sessionId;
         if (s.model) modelLine = `${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}`;
@@ -339,7 +339,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       `<tr><td><b>Host</b></td><td>${cpuCount} cores · load ${esc(load)} · mem ${freeMem}/${totalMem} GB</td></tr>`,
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
-    const text = `<b>📊 Status</b>\n\n<table>${rows}</table>`;
+    const text = `<h3>📊 Status</h3>\n\n<table compact striped bordered>${rows}</table>`;
     const keyboard: any[][] = [];
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
     keyboard.push([{ text: "🔄 Refresh", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
