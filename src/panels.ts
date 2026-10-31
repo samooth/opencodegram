@@ -17,12 +17,13 @@ export type PanelsDeps = {
   getLastCot?: (sessionId: string) => string | undefined;
   modelListByChat: Map<string, Array<any>>;
   routeKey: (chatId: number, threadId?: number) => string;
+  chatBySession?: Map<string, number>;
   metrics: MetricsStore;
 };
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, metrics }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, metrics }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
@@ -39,10 +40,13 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await tg.sendRichMessage(chatId, html, opts);
   }
 
-  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
+  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
-    const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+    let list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+    if (filterChatId !== undefined && chatBySession) {
+      list = list.filter((s: any) => chatBySession.get(s.id) === filterChatId);
+    }
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
       return;
@@ -74,7 +78,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       reply_markup: { inline_keyboard: keyboard },
     });
   }
-  async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number): Promise<void> {
+  async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
     const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];

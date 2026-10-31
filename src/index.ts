@@ -121,6 +121,7 @@ async function main() {
     getLastCot: (sid) => store.getCotBuffer(sid),
     modelListByChat,
     routeKey: store.routeKey,
+    chatBySession: store.chatBySession,
     metrics,
   });
   const files = createFileBrowser({
@@ -133,6 +134,9 @@ async function main() {
   console.log(`[opencodegram] ops: ${ops.url}`);
   // Clean up status messages left stale by a previous (crashed/restarted) process.
   store.cleanupStaleStatusMessages(tg).catch(() => {});
+  if (config.AUTO_CLEANUP_DAYS > 0) {
+    sessions.cleanupStaleSessions(config.AUTO_CLEANUP_DAYS).catch(() => {});
+  }
 
   const audit = (action: string, detail: string) => {
     try {

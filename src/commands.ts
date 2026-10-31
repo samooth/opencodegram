@@ -72,6 +72,17 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
   }
 
   if (text === "/new") {
+    const active = await restoreActiveSession(chatId, threadId);
+    if (active) {
+      await send(`⚠️ Ya hay una sesión activa: <code>${esc(active.sessionId)}</code>.\\n¿Crear una nueva y reemplazarla?`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Sí, crear nueva", callback_data: "new:confirm" }, { text: "❌ Cancelar", callback_data: "new:cancel" }],
+          ],
+        },
+      });
+      return true;
+    }
     await sessions.createNewSession(chatId, false, threadId);
     return true;
   }
@@ -797,6 +808,10 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     return true;
   }
 
+  if (text === "/deletesessions group" || text === "/delete sessions group" || text === "/deletesessions g") {
+    await showDeleteSessions(chatId, 0, undefined, threadId, chatId);
+    return true;
+  }
   if (text === "/deletesessions" || text === "/delete sessions" || text === "/delete list") {
     await showDeleteSessions(chatId, 0, undefined, threadId);
     return true;
@@ -1081,6 +1096,10 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
 
   if (text === "/sessions" || text.startsWith("/sessions ")) {
     const arg = text.slice("/sessions".length).trim();
+    if (arg === "group" || arg === "g") {
+      await showSessions(chatId, 0, undefined, threadId, chatId);
+      return true;
+    }
     const page = /^\d+$/.test(arg) ? Math.max(0, parseInt(arg, 10) - 1) : 0;
     await showSessions(chatId, page, undefined, threadId);
     return true;

@@ -317,5 +317,21 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     }
   };
 
-  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle };
+  const cleanupStaleSessions = async (maxAgeDays = 30): Promise<void> => {
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    try {
+      const res = await oc.client.session.list({ limit: 500, order: "desc" });
+      const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as Array<{ id?: string; time?: { updated?: number } }>;
+      for (const s of list) {
+        const id = s?.id;
+        const updated = s?.time?.updated ?? 0;
+        if (id && updated && updated < cutoff) {
+          try { await oc.archiveSession(id, true); } catch { /* ignore */ }
+        }
+      }
+    } catch (err) {
+      console.error("[cleanup] stale sessions failed", err);
+    }
+  };
+  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions };
 }

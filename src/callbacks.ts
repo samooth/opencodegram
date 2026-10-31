@@ -17,7 +17,15 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   console.log("[telegram] callback from", cq.from?.id, "data=", cq.data, "chat=", cq.message?.chat?.id);
   const userId = cq.from?.id;
-  if (config.ADMIN_TELEGRAM_USER_ID && userId !== config.ADMIN_TELEGRAM_USER_ID) {
+  const allowedUsers = new Set<number>();
+  if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);
+  if (config.ALLOWED_TELEGRAM_USER_IDS) {
+    for (const part of config.ALLOWED_TELEGRAM_USER_IDS.split(",")) {
+      const n = Number(part.trim());
+      if (Number.isFinite(n) && n > 0) allowedUsers.add(n);
+    }
+  }
+  if (allowedUsers.size > 0 && (userId === undefined || !allowedUsers.has(userId))) {
     await tg.answerCallbackQuery(cq.id, "Not authorized");
     return;
   }
@@ -343,6 +351,19 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   if (cbData === "panel:sessions") {
     await tg.answerCallbackQuery(cq.id);
     await showSessions(chatId, 0, cq.message?.message_id, threadId);
+    return;
+  }
+  if (cbData === "new:confirm") {
+    await tg.answerCallbackQuery(cq.id, "Creating…");
+    try {
+      await createNewSession(chatId, false, threadId);
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
+  if (cbData === "new:cancel") {
+    await tg.answerCallbackQuery(cq.id, "Canceled");
     return;
   }
   if (cbData === "panel:new") {

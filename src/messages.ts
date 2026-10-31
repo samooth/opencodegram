@@ -17,8 +17,17 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const { startStatus, updateStatus, finishStatus } = status;
 
   const userId = msg.from?.id;
-  if (config.ADMIN_TELEGRAM_USER_ID && userId !== config.ADMIN_TELEGRAM_USER_ID) {
-    // In groups, silently ignore non-admin messages.
+  const allowedUsers = new Set<number>();
+  if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);
+  if (config.ALLOWED_TELEGRAM_USER_IDS) {
+    for (const part of config.ALLOWED_TELEGRAM_USER_IDS.split(",")) {
+      const n = Number(part.trim());
+      if (Number.isFinite(n) && n > 0) allowedUsers.add(n);
+    }
+  }
+  const isAuthorized = allowedUsers.size === 0 || (userId !== undefined && allowedUsers.has(userId));
+  if (!isAuthorized) {
+    // In groups, silently ignore unauthorized messages.
     if (msg.chat.id < 0) return;
     await tg.sendRichMessage(msg.chat.id, "Not authorized.");
     return;
