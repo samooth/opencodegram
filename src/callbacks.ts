@@ -345,7 +345,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   }
   if (cbData === "panel:status") {
     await tg.answerCallbackQuery(cq.id);
-    await showStatus(chatId, threadId);
+    await showStatus(chatId, threadId, cq.message?.message_id);
     return;
   }
   if (cbData === "panel:sessions") {

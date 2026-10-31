@@ -276,7 +276,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     });
   }
 
-  async function showStatus(chatId: number, threadId?: number): Promise<void> {
+  async function showStatus(chatId: number, threadId?: number, messageId?: number): Promise<void> {
     let s = getActiveSession(chatId, threadId);
     if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const ocInfo = await oc.serverInfo().catch(() => null);
@@ -354,7 +354,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const keyboard: any[][] = [];
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
     keyboard.push([{ text: "🔄 Refresh", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
 
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {
