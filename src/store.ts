@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChatSession } from "./types.js";
+import { esc } from "./util.js";
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
 
@@ -145,14 +146,15 @@ export class SessionStore {
       } catch {
         // ignore
       }
-      // Offer a retry button if we have the last prompt.
-      const lastPrompt = this.lastPromptBySession.get(sessionId);
-      if (lastPrompt) {
-        const kb = [[{ text: "🔁 Retry last prompt", callback_data: `retry:${sessionId}` }]];
-        await tg.sendRichMessage(info.chatId, `Turn interrupted by restart.\n<b>Last prompt:</b> ${lastPrompt.slice(0, 200)}`, {
+      // On restart, update the stale status message with the current session
+      // instead of offering a retry prompt.
+      try {
+        await tg.editRichMessage(info.chatId, info.messageId, `🔄 <b>Reiniciado</b>\nSesión en curso: <code>${esc(sessionId)}</code>\nContinúa con tu próximo mensaje.`, {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
-          reply_markup: { inline_keyboard: kb },
-        }).catch(() => {});
+          reply_markup: { inline_keyboard: [] },
+        });
+      } catch {
+        // ignore
       }
       this.statusMessageBySession.delete(sessionId);
     this.goalMessageBySession.delete(sessionId);
