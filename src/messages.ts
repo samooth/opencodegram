@@ -151,20 +151,6 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
         s = undefined;
       }
     }
-    if (!s && chatId < 0 && msg.reply_to_message) {
-      const candidates = [...store.chatBySession.entries()]
-        .filter(([, cid]) => cid === chatId)
-        .map(([sid]) => sid);
-      const fallbackId = candidates[candidates.length - 1];
-      if (fallbackId) {
-        try {
-          await activateSession(chatId, fallbackId, true, replyThread);
-          s = await restoreActiveSession(chatId, replyThread);
-        } catch {
-          s = undefined;
-        }
-      }
-    }
     if (!s) {
       await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
       return;
@@ -230,21 +216,6 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       s = await restoreActiveSession(chatId, replyThread);
     } catch {
       s = undefined;
-    }
-  }
-  if (!s && chatId < 0 && msg.reply_to_message) {
-    // Last resort for replies: reuse a session already bound to this chat.
-    const candidates = [...store.chatBySession.entries()]
-      .filter(([, cid]) => cid === chatId)
-      .map(([sid]) => sid);
-    const fallbackId = candidates[candidates.length - 1];
-    if (fallbackId) {
-      try {
-        await activateSession(chatId, fallbackId, true, replyThread);
-        s = await restoreActiveSession(chatId, replyThread);
-      } catch {
-        s = undefined;
-      }
     }
   }
   if (!s && chatId >= 0) {
