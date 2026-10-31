@@ -90,11 +90,16 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const connectMatch = cbData.match(/^connect:(.+)$/);
   if (connectMatch) {
     const sessionId = connectMatch[1];
+    console.log("[connect] start", sessionId, "chat=", chatId, "thread=", threadId, "msg=", cq.message?.message_id);
     await tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
     try {
       await activateSession(chatId, sessionId, true, threadId);
+      console.log("[connect] activated", sessionId);
       await showStatus(chatId, threadId, cq.message?.message_id);
+      console.log("[connect] status shown", sessionId);
+      await tg.sendRichMessage(chatId, `✅ Conectado a <code>${esc(sessionId)}</code>`, threadOpts(threadId)).catch(() => {});
     } catch (err) {
+      console.error("[connect] failed", sessionId, err);
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
     }
     return;
@@ -462,24 +467,13 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const useMatch = cbData.match(/^use:(.+)$/);
   if (useMatch) {
     const sessionId = useMatch[1];
-    await tg.answerCallbackQuery(cq.id, "Switching…");
+    await tg.answerCallbackQuery(cq.id, "Connecting…");
     try {
       await activateSession(chatId, sessionId, true, threadId);
-      if (cq.message?.message_id) {
-        await tg.editRichMessage(chatId, cq.message.message_id, `✅ Switched to session\n<code>${esc(sessionId)}</code>`, {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "📂 Sessions", callback_data: "panel:sessions" },
-                { text: "🏠 Panel", callback_data: "panel:home" },
-              ],
-            ],
-          },
-        });
-      }
+      await showStatus(chatId, threadId, cq.message?.message_id);
     } catch (err) {
       await tg.answerCallbackQuery(cq.id, "Failed");
-      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`);
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
     }
     return;
   }
