@@ -25,7 +25,7 @@ export type EventsDeps = {
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;
-  messageToSession: Map<number, string>;
+  messageToSession: Map<string, string>;
   settings: SettingsStore;
   flushDraft: (chatId: number, s: ChatSession | undefined) => Promise<void>;
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
@@ -307,7 +307,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
     const fallbackText = (e.data?.text ?? "").toString().trim();
     if (fallbackText) {
       const sent = await tg.sendRichMessage(chatId, markdownToHtml(fallbackText), threadOpts(resolveThreadId(sessionId))).catch((err) => { console.error("[send final]", err); return undefined; });
-      if (sent?.message_id) store.rememberMessageSession(sent.message_id, sessionId);
+      if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
     }
     return;
   }
@@ -376,7 +376,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       console.error("[send final]", err);
       return undefined;
     });
-    if (finalMessage?.message_id) store.rememberMessageSession(finalMessage.message_id, s.sessionId);
+    if (finalMessage?.message_id) store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
     // Deep link button to jump to this message in the chat.
     if (finalMessage?.message_id && chatId < 0) {
       const internalId = String(chatId).replace(/^-100/, "");
@@ -414,7 +414,7 @@ if (e.type === "permission.asked") {
       ],
     },
   });
-  if (sent?.message_id) store.rememberMessageSession(sent.message_id, sessionId);
+  if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
   pendingPermissions.set(requestId, { chatId, sessionId, messageId: sent.message_id, decided: false, label, resource });
   // Auto-reject on timeout
   setTimeout(async () => {
@@ -483,7 +483,7 @@ if (e.type === "form.created") {
       reply_markup: { inline_keyboard: formKeyboard(state) },
     });
     state.messageId = sent.message_id;
-    if (sent?.message_id) store.rememberMessageSession(sent.message_id, sessionId);
+    if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
     pendingForms.set(sent.message_id, state);
     pendingFormsById.set(formId, sent.message_id);
   }

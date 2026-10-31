@@ -21,7 +21,7 @@ export class SessionStore {
   readonly activeSessionByRoute = new Map<string, string>();
   readonly threadBySession = new Map<string, number>();
   readonly chatBySession = new Map<string, number>();
-  readonly messageToSession = new Map<number, string>();
+  readonly messageToSession = new Map<string, string>();
   readonly topicTitleBySession = new Map<string, string>();
   readonly cotBySession = new Map<string, { buffer: string; count: number }>();
   readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
@@ -105,8 +105,8 @@ export class SessionStore {
     this.saveActiveSessions();
   };
 
-  rememberMessageSession = (messageId: number, sessionId: string) => {
-    this.messageToSession.set(messageId, sessionId);
+  rememberMessageSession = (chatId: number, messageId: number, sessionId: string) => {
+    this.messageToSession.set(`${chatId}:${messageId}`, sessionId);
     this.saveMessages();
   };
 
@@ -226,7 +226,7 @@ export class SessionStore {
     try {
       mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, string> = {};
-      for (const [mid, sid] of this.messageToSession) obj[String(mid)] = sid;
+      for (const [mid, sid] of this.messageToSession) obj[mid] = sid;
       writeFileSync(this.messagesFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[messages] save failed", err);
@@ -321,8 +321,7 @@ export class SessionStore {
       if (existsSync(this.messagesFile)) {
         const parsed = JSON.parse(readFileSync(this.messagesFile, "utf8")) as Record<string, string>;
         for (const [k, v] of Object.entries(parsed)) {
-          const messageId = Number(k);
-          if (Number.isFinite(messageId) && v) this.messageToSession.set(messageId, v);
+          if (k && v) this.messageToSession.set(k, v);
         }
       }
     } catch (err) {

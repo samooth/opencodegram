@@ -59,7 +59,7 @@ export type BotDeps = {
   metrics: MetricsStore;
   ops?: OpsServer;
   pendingEdits: Map<number, ChatSession>;
-  messageToSession: Map<number, string>;
+  messageToSession: Map<string, string>;
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;

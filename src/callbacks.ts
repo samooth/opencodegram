@@ -149,7 +149,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       deps.store.rememberLastChat(s.sessionId, chatId);
       deps.store.rememberLastPrompt(s.sessionId, prompt);
       await deps.status.startStatus(chatId, s);
-      if (s.statusMessageId) deps.store.rememberMessageSession(s.statusMessageId, s.sessionId);
+      if (s.statusMessageId) deps.store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {
         deps.status.updateStatus(chatId, s).catch(() => {});
       }, 3000);

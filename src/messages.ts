@@ -26,7 +26,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
 
   const chatId = msg.chat.id;
   const replyThread = msg.message_thread_id;
-  const repliedSessionId = msg.reply_to_message?.message_id ? messageToSession.get(msg.reply_to_message.message_id) : undefined;
+  const repliedSessionId = msg.reply_to_message?.message_id ? messageToSession.get(`${chatId}:${msg.reply_to_message.message_id}`) : undefined;
   deps.metrics?.inc("messages");
   // Ignore commands explicitly addressed to another bot.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
@@ -205,7 +205,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       store.rememberLastChat(s.sessionId, chatId);
       store.rememberLastPrompt(s.sessionId, text);
       await startStatus(chatId, s);
-      if (s.statusMessageId) store.rememberMessageSession(s.statusMessageId, s.sessionId);
+      if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {
         updateStatus(chatId, s).catch(() => {});
       }, 3000);
@@ -338,7 +338,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     store.rememberLastChat(s.sessionId, chatId);
     store.rememberLastPrompt(s.sessionId, text);
     await startStatus(chatId, s);
-    if (s.statusMessageId) store.rememberMessageSession(s.statusMessageId, s.sessionId);
+    if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {
       updateStatus(chatId, s).catch(() => {});
     }, 3000);

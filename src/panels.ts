@@ -91,7 +91,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
       const mark = activeId && activeId === s.id ? " ✅" : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
-      const dirSuffix = directory ? ` · ${projectLabel(s.location?.directory ?? s.directory)}` : "";
+      const dirSuffix = directory ? ` · ${esc(projectLabel(s.location?.directory ?? s.directory))}` : "";
       const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
       const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 60))}</i>` : "";
       return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}${dirSuffix}</td></tr>`;
