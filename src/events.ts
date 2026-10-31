@@ -375,6 +375,13 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       return undefined;
     });
     if (finalMessage?.message_id) store.rememberMessageSession(finalMessage.message_id, s.sessionId);
+    // Deep link button to jump to this message in the chat.
+    if (finalMessage?.message_id && chatId < 0) {
+      const internalId = String(chatId).replace(/^-100/, "");
+      const url = `https://t.me/c/${internalId}/${finalMessage.message_id}`;
+      const kb: any[] = [...(quickKeyboard ?? []), [{ text: "🔗 Ver en chat", url }]];
+      await tg.editRichMessage(chatId, finalMessage.message_id, finalText, { ...threadOpts, reply_markup: { inline_keyboard: kb } }).catch(() => {});
+    }
     await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";

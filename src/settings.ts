@@ -121,7 +121,6 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
   ];
   const lines = [`<b>⚙️ Settings</b>`, `Chat: <code>${chatId}</code>`, ""];
   for (const section of sections) {
-    lines.push(`${section.emoji} <b>${section.title}</b>`);
     const maxLabel = Math.max(...section.keys.map((k) => (LABELS[k].replace(/^[^ ]+ /, "").length)), 8);
     const rows = section.keys.map((key) => {
       const value = settings[key];
@@ -129,7 +128,14 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
       const label = LABELS[key].replace(/^[^ ]+ /, "");
       return `${label.padEnd(maxLabel, " ")}  ${display}`;
     });
-    lines.push(`<pre>${rows.map(esc).join("\n")}</pre>`);
+    const body = `<pre>${rows.map(esc).join("\n")}</pre>`;
+    const header = `${section.emoji} <b>${section.title}</b>`;
+    // Long sections are collapsible to reduce initial scroll.
+    if (section.keys.length >= 5) {
+      lines.push(`<blockquote expandable>${header}\n${body}</blockquote>`);
+    } else {
+      lines.push(`<blockquote>${header}\n${body}</blockquote>`);
+    }
     lines.push("");
   }
   lines.push("<i>Los cambios se aplican inmediatamente.</i>");

@@ -192,7 +192,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const lines: string[] = [];
       if (settings.showThinking && s.cotBuffer?.trim()) {
         const cot = s.cotBuffer.trim().slice(-1500);
-        lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+        lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
       }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
       const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n")), {
@@ -218,7 +218,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lines: string[] = [];
     if (settings.showThinking && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
-      lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+      lines.push(`🧾 <b>COT (${s.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
     }
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     lines.push("⏳ <b>Working…</b>" + (elapsed ? ` <i>(${elapsed}s)</i>` : ""));
@@ -254,7 +254,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
       const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-      lines.push(`💭 <b>Latest thought:</b> <i>${esc(clampText(lastThought, 240))}</i>`);
+      lines.push(`💭 <b>Latest thought:</b>\n<blockquote>${esc(clampText(lastThought, 240))}</blockquote>`);
     }
     const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
     if (lastTool) {
@@ -353,7 +353,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lines: string[] = [];
     if (settings.showThinking && previousCot) {
       const cot = previousCot.slice(-3500);
-      lines.push(`<details><summary>🧾 COT (${target.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+      lines.push(`🧾 <b>COT (${target.cotCount ?? 0})</b>\n<blockquote expandable><pre>${esc(cot)}</pre></blockquote>`);
     }
     lines.push("✅ <b>Done</b>");
     if (!settings.compactFinal) {
