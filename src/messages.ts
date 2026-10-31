@@ -32,12 +32,11 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const rawText = (msg.text ?? msg.caption ?? "").trim();
   const commandTarget = rawText.match(/^\/[a-zA-Z0-9_-]+@([A-Za-z0-9_]+)/)?.[1];
   if (commandTarget && commandTarget.toLowerCase() !== (me.username ?? "").toLowerCase()) return;
+  const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
+  const isReplyToBot = chatId < 0 && !!msg.reply_to_message && msg.reply_to_message.from?.id === me.id;
   // In groups, only respond to commands, mentions or replies to the bot.
   if (chatId < 0) {
-    const raw = rawText;
-    const isCommand = raw.startsWith("/");
-    const isMention = !!me.username && raw.toLowerCase().includes("@" + me.username.toLowerCase());
-    const isReplyToBot = !!msg.reply_to_message && msg.reply_to_message.from?.id === me.id;
+    const isCommand = rawText.startsWith("/");
     if (!isCommand && !isMention && !isReplyToBot) return;
   }
 
@@ -167,6 +166,10 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
         }
       }
     }
+    if (!s && isMention && chatId < 0) {
+      await createNewSession(chatId, true, replyThread);
+      s = (await restoreActiveSession(chatId, replyThread))!;
+    }
     if (!s) {
       await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
       return;
@@ -250,7 +253,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       }
     }
   }
-  if (!s && chatId >= 0) {
+  if (!s && (chatId >= 0 || isMention)) {
     await createNewSession(chatId, true, replyThread);
     s = (await restoreActiveSession(chatId, replyThread))!;
   }

@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
-import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument } from "./files.js";
+import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument, treeDirectory } from "./files.js";
 import * as mcp from "./mcp.js";
 import { isSettingsKey, renderSettings, settingsKeyboard } from "./settings.js";
 import * as vcs from "./vcs.js";
-import { clampText, esc, threadOpts } from "./util.js";
+import { clampText, colorDiff, esc, threadOpts } from "./util.js";
 
 /**
  * Slash commands that do not prompt the model. Returns true when the text was
@@ -229,6 +229,25 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     return true;
   }
 
+  if (text === "/tree" || text.startsWith("/tree ")) {
+    const raw = text.slice(5).trim();
+    const [pathPart, depthPart] = raw.split(/\s+/);
+    const path = pathPart || ".";
+    const depth = depthPart ? parseInt(depthPart, 10) : 3;
+    const base = (await (async () => {
+      const s = await restoreActiveSession(chatId, threadId);
+      return s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    })());
+    try {
+      const t = await treeDirectory(base, path, Number.isFinite(depth) ? depth : 3);
+      const body = t.lines.slice(0, 200).map((l) => esc(l)).join("\n");
+      await send(`<b>🌳 ${esc(t.relative || ".")}</b>\n<pre>${body}</pre>`);
+    } catch (err) {
+      await send(`❌ ${esc(fileErrorMessage(err))}`);
+    }
+    return true;
+  }
+
   if (text === "/models" || text === "/model") {
     await showModels(chatId, 0, undefined, threadId);
     return true;
@@ -303,7 +322,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
           await send(cached ? "No staged changes." : "No changes.");
           return true;
         }
-        await send(`<b>${cached ? "Staged diff" : "Working tree diff"}${path ? " · " + esc(path) : ""}</b>\n<pre><code class="language-diff">${esc(diff.slice(0, 3500))}</code></pre>`);
+        await send(`<b>${cached ? "Staged diff" : "Working tree diff"}${path ? " · " + esc(path) : ""}</b>\n<pre><code class="language-diff">${colorDiff(diff.slice(0, 3500))}</code></pre>`);
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
       }
@@ -836,7 +855,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       for (const d of diffs) {
         const patch = (d.patch ?? "").slice(0, 3500);
         await send(
-          `<details><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${esc(patch)}</code></pre>\n</details>`,
+          `<details><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${colorDiff(patch)}</code></pre>\n</details>`,
         );
       }
     } catch (err) {

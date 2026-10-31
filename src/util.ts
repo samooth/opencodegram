@@ -74,3 +74,27 @@ export function projectLabel(directory?: string): string {
   const name = directory.split("/").filter(Boolean).pop() ?? directory;
   return `${projectEmoji(directory)} ${name}`;
 }
+
+export function colorDiff(diff: string): string {
+  return diff
+    .split(/\r?\n/)
+    .map((line) => {
+      if (line.startsWith("+++") || line.startsWith("---")) {
+        return `<b>${esc(line)}</b>`;
+      }
+      if (line.startsWith("+")) {
+        return `<b>${esc(line)}</b>`;
+      }
+      if (line.startsWith("-")) {
+        return `<s>${esc(line)}</s>`;
+      }
+      if (line.startsWith("@@")) {
+        return `<i>${esc(line)}</i>`;
+      }
+      if (line.startsWith("diff ") || line.startsWith("index ")) {
+        return `<b>${esc(line)}</b>`;
+      }
+      return esc(line);
+    })
+    .join("\n");
+}

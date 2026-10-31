@@ -88,3 +88,22 @@ describe("searchTextFile", () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+import { treeDirectory } from "../src/files.js";
+
+describe("treeDirectory", () => {
+  test("renders a tree", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join: j } = await import("node:path");
+    const root = (await import("node:fs")).mkdtempSync("/tmp/opencode/ocg-tree-");
+    const base = j(root, "project");
+    mkdirSync(base, { recursive: true });
+    mkdirSync(j(base, "src"), { recursive: true });
+    writeFileSync(j(base, "src", "a.ts"), "x");
+    writeFileSync(j(base, "README.md"), "y");
+    const t = await treeDirectory(base, ".", 3);
+    expect(t.lines.some((l) => l.includes("src/"))).toBe(true);
+    expect(t.lines.some((l) => l.includes("README.md"))).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+  });
+});

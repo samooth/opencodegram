@@ -43,6 +43,7 @@ const BOT_COMMANDS = [
   { command: "ls", description: "Browse a directory with buttons" },
   { command: "find", description: "Search files in the session directory" },
   { command: "read", description: "Preview a text file" },
+  { command: "tree", description: "Show directory tree" },
   { command: "zip", description: "Archive a directory and send it" },
   { command: "fork", description: "Fork the active session" },
   { command: "rename", description: "Rename the active session" },
