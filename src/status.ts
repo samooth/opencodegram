@@ -305,20 +305,20 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : " →";
       const prevMem = s.memHistory.length >= 2 ? s.memHistory[s.memHistory.length - 2] : memPercent;
       const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : " →";
-      lines.push(`📊 CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
-      lines.push("");
-      lines.push(`   RAM ${memBar} ${memPercent}%${memTrend}`);
-      if (lines.length && lines[lines.length - 1] !== "") lines.push("");
+      const resLines: string[] = [];
+      resLines.push(`CPU  ${cpuBar} ${String(cpuPercent).padStart(3)}% ${cpuTrend.trim()}`);
+      resLines.push(`RAM  ${memBar} ${String(memPercent).padStart(3)}% ${memTrend.trim()}`);
       const gpu = readGpuInfo();
       if (gpu) {
         const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
         const vramBar = progressBar(vramPercent);
-        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-        lines.push(`🎮 ${esc(gpu.name)}`);
-        lines.push("");
-        lines.push(`   VRAM ${vramBar} ${formatBytes(gpu.usedMB * 1024 * 1024)}/${formatBytes(gpu.totalMB * 1024 * 1024)} (${vramPercent}%)`);
-        lines.push(`   load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
+        const temp = gpu.temperature === null ? "" : ` ${gpu.temperature}°C`;
+        resLines.push("");
+        resLines.push(`GPU  ${gpu.name.slice(0, 24)}`);
+        resLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+        resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
+      lines.push(`<pre>${esc(resLines.join("\\n"))}</pre>`);
     }
     sep();
     if (s.compacting) {
@@ -444,20 +444,20 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : " →";
       const prevMem = target.memHistory.length >= 2 ? target.memHistory[target.memHistory.length - 2] : memPercent;
       const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : " →";
-      lines.push(`📊 CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
-      lines.push("");
-      lines.push(`   RAM ${memBar} ${memPercent}%${memTrend}`);
-      if (lines.length && lines[lines.length - 1] !== "") lines.push("");
+      const resLines: string[] = [];
+      resLines.push(`CPU  ${cpuBar} ${String(cpuPercent).padStart(3)}% ${cpuTrend.trim()}`);
+      resLines.push(`RAM  ${memBar} ${String(memPercent).padStart(3)}% ${memTrend.trim()}`);
       const gpu = readGpuInfo();
       if (gpu) {
         const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
         const vramBar = progressBar(vramPercent);
-        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-        lines.push(`🎮 ${esc(gpu.name)}`);
-        lines.push("");
-        lines.push(`   VRAM ${vramBar} ${formatBytes(gpu.usedMB * 1024 * 1024)}/${formatBytes(gpu.totalMB * 1024 * 1024)} (${vramPercent}%)`);
-        lines.push(`   load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
+        const temp = gpu.temperature === null ? "" : ` ${gpu.temperature}°C`;
+        resLines.push("");
+        resLines.push(`GPU  ${gpu.name.slice(0, 24)}`);
+        resLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+        resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
+      lines.push(`<pre>${esc(resLines.join("\\n"))}</pre>`);
     }
     return lines.join("\n");
   };
