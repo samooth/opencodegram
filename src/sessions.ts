@@ -263,8 +263,10 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
         await activateSession(chatId, mapped, true, threadId);
         return getActiveSession(chatId, threadId);
       } catch (err) {
-        console.error("[session] restore failed", mapped, err);
-        forgetSession(mapped);
+        // Keep the persisted binding on transient failures so a restart
+        // does not silently unlink the session; the next interaction retries.
+        console.error("[session] restore failed (keeping binding)", mapped, err);
+        return getActiveSession(chatId, threadId);
       }
     }
 

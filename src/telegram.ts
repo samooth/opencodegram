@@ -78,6 +78,9 @@ export class TelegramClient {
     });
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
+      if (method === "editMessageText") {
+        console.error("[telegram] editMessageText error:", json.description, "body=", JSON.stringify(body).slice(0, 300));
+      }
       // Treat "message is not modified" as success for edit calls (no-op).
       if (json.error_code === 400 && /not modified/i.test(json.description ?? "") && method.toLowerCase().includes("edit")) {
         return (undefined as unknown) as T;
@@ -211,7 +214,11 @@ export class TelegramClient {
   }
 
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: sanitizeUtf8(html) }, ...opts });
+    const safe = sanitizeUtf8(html);
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: safe }, ...opts }).catch((err) => {
+      console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length, "snippet=", JSON.stringify(safe.slice(0, 120)));
+      throw err;
+    });
   }
 
   editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {
