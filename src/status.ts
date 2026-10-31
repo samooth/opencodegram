@@ -260,6 +260,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // the resource indicators, so the user always sees what the agent is
     // doing now without scrolling.
     if (settings.showThinking && s.reasoningBuffer.trim()) {
+      lines.push("");
       sep();
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
       const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
