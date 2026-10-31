@@ -122,11 +122,14 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
   const lines = [`<b>⚙️ Settings</b>`, `Chat: <code>${chatId}</code>`, ""];
   for (const section of sections) {
     lines.push(`${section.emoji} <b>${section.title}</b>`);
-    for (const key of section.keys) {
+    const maxLabel = Math.max(...section.keys.map((k) => (LABELS[k].replace(/^[^ ]+ /, "").length)), 8);
+    const rows = section.keys.map((key) => {
       const value = settings[key];
-      const display = typeof value === "boolean" ? (value ? "✅ on" : "❌ off") : String(value);
-      lines.push(`   ${LABELS[key]}  →  <b>${esc(display)}</b>`);
-    }
+      const display = typeof value === "boolean" ? (value ? "on" : "off") : String(value);
+      const label = LABELS[key].replace(/^[^ ]+ /, "");
+      return `${label.padEnd(maxLabel, " ")}  ${display}`;
+    });
+    lines.push(`<pre>${rows.map(esc).join("\n")}</pre>`);
     lines.push("");
   }
   lines.push("<i>Los cambios se aplican inmediatamente.</i>");
