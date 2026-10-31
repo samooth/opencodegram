@@ -223,7 +223,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     lines.push("⏳ <b>Working…</b>" + (elapsed ? ` <i>(${elapsed}s)</i>` : ""));
     if (settings.showThinking && s.reasoningBuffer.trim()) {
-      const r = s.reasoningBuffer.trim().slice(0, 300);
+      const r = s.reasoningBuffer.trim().slice(-800);
       lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
@@ -245,6 +245,21 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
+    }
+    // Highlight the latest thought and the latest tool call, right above
+    // the resource indicators, so the user always sees what the agent is
+    // doing now without scrolling.
+    if (settings.showThinking && s.reasoningBuffer.trim()) {
+      const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
+      const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
+      lines.push(`💭 <b>Latest thought:</b> <i>${esc(clampText(lastThought, 240))}</i>`);
+    }
+    const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
+    if (lastTool) {
+      const toolName = lastTool.name;
+      const toolInput = lastTool.input ? clampText(lastTool.input, 120) : "";
+      const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
+      lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>${toolInput ? " — " + esc(toolInput) : ""}`);
     }
     if (settings.showResourceUsage) {
       if (!s.cpuHistory) s.cpuHistory = [];
