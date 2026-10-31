@@ -127,6 +127,39 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
 
+  // Retry last prompt after a restart (or manual retry).
+  const retryMatch = cbData.match(/^retry:(.+)$/);
+  if (retryMatch) {
+    const sessionId = retryMatch[1];
+    await tg.answerCallbackQuery(cq.id, "Retrying…").catch(() => {});
+    const prompt = deps.store.lastPromptBySession.get(sessionId);
+    if (!prompt) {
+      await tg.sendRichMessage(chatId, "no previous prompt to retry.", threadOpts(threadId));
+      return;
+    }
+    try {
+      await deps.sessions.activateSession(chatId, sessionId, true, threadId);
+      const s = await deps.sessions.restoreActiveSession(chatId, threadId);
+      if (!s) throw new Error("session not found");
+      s.targetChatId = chatId;
+      s.targetThreadId = threadId;
+      deps.store.rememberSessionChat(s.sessionId, chatId);
+      deps.store.rememberActiveRoute(chatId, threadId, s.sessionId);
+      s.promptStartTime = Date.now();
+      deps.store.rememberLastChat(s.sessionId, chatId);
+      deps.store.rememberLastPrompt(s.sessionId, prompt);
+      await deps.status.startStatus(chatId, s);
+      if (s.statusMessageId) deps.store.rememberMessageSession(s.statusMessageId, s.sessionId);
+      s.statusTimer = setInterval(() => {
+        deps.status.updateStatus(chatId, s).catch(() => {});
+      }, 3000);
+      await deps.oc.prompt(s.sessionId, prompt);
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
+
   // Delete-sessions pagination.
   const deletePageMatch = cbData.match(/^delsessions:page:(\d+)$/);
   if (deletePageMatch) {

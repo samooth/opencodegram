@@ -131,7 +131,7 @@ export class SessionStore {
     }
   };
 
-  cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown> }) => {
+  cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown>; sendRichMessage: (chatId: number, html: string, opts?: Record<string, unknown>) => Promise<{ message_id?: number }> }) => {
     const entries = [...this.statusMessageBySession.entries()];
     for (const [sessionId, info] of entries) {
       try {
@@ -141,6 +141,15 @@ export class SessionStore {
         });
       } catch {
         // ignore
+      }
+      // Offer a retry button if we have the last prompt.
+      const lastPrompt = this.lastPromptBySession.get(sessionId);
+      if (lastPrompt) {
+        const kb = [[{ text: "🔁 Retry last prompt", callback_data: `retry:${sessionId}` }]];
+        await tg.sendRichMessage(info.chatId, `Turn interrupted by restart.\n<b>Last prompt:</b> ${lastPrompt.slice(0, 200)}`, {
+          ...(info.threadId ? { message_thread_id: info.threadId } : {}),
+          reply_markup: { inline_keyboard: kb },
+        }).catch(() => {});
       }
       this.statusMessageBySession.delete(sessionId);
     }
