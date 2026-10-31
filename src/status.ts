@@ -278,11 +278,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (lastTool) {
       sep();
       const toolName = lastTool.name;
+      const isShell = isShellTool(toolName);
       const toolInput = lastTool.input ? clampText(lastTool.input, 200) : "";
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
       lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>`);
       if (toolInput) {
-        const wrapped = toolInput.match(/.{1,70}/g)?.join("\n") ?? toolInput;
+        const display = isShell ? `$ ${parseShellCommand(lastTool.input ?? "") ?? toolInput}` : toolInput;
+        const wrapped = display.match(/.{1,70}/g)?.join("\n") ?? display;
         lines.push(`<pre>${esc(wrapped)}</pre>`);
       }
     }

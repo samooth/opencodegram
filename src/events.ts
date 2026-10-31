@@ -48,6 +48,9 @@ export async function handleEvent(event: { type: string; data?: any }, deps: Eve
 if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle" || e.type.endsWith("failed") || e.type === "session.step.started" || e.type === "session.step.ended" || e.type === "session.reasoning.started" || e.type === "session.reasoning.ended") {
   console.log("[event]", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
 }
+if (e.type.toLowerCase().includes("goal")) {
+  console.log("[GOAL-EVENT]", e.type, JSON.stringify(e.data ?? {}).slice(0, 2000));
+}
 
 if (e.type === "session.text.started") {
   const sessionId = e.data?.sessionID ?? e.data?.session?.id;
@@ -560,6 +563,7 @@ if (e.type === "session.execution.failed") {
 }
 
 if (e.type === "rpc.opencode.goal.changed") {
+  console.log("[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
   const sessionId = e.data?.sessionID;
   const goal = e.data?.goal;
   const chatId = resolveChatId(sessionId);
