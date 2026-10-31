@@ -548,12 +548,23 @@ if (e.type === "rpc.opencode.goal.changed") {
   if (prev === signature) return;
   lastGoalStatus.set(String(sessionId ?? ""), signature);
   let msg = "";
-  if (status === "active") msg = `🎯 <b>Goal active</b>${objective ? ": " + esc(objective) : ""}`;
-  else if (status === "complete") msg = `✅ <b>Goal complete</b>${reason ? ": " + esc(reason) : ""}`;
-  else if (status === "blocked") msg = `⛔ <b>Goal blocked</b>${reason ? ": " + esc(reason) : ""}`;
-  else if (status === "paused") msg = `⏸ <b>Goal paused</b>${reason ? ": " + esc(reason) : ""}`;
-  else msg = `🎯 <b>Goal ${esc(status)}</b>${reason ? ": " + esc(reason) : ""}`;
-  await tg.sendRichMessage(chatId, msg, threadOpts(threadId)).catch(() => {});
+  const emoji = status === "active" ? "🎯" : status === "complete" ? "✅" : status === "blocked" ? "⛔" : status === "paused" ? "⏸" : "🎯";
+  msg = `${emoji} <b>Goal ${esc(status)}</b>`;
+  if (objective) msg += `\n<b>Objective:</b> ${esc(objective)}`;
+  if (reason) msg += `\n<b>Reason:</b> ${esc(reason)}`;
+  const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+  if (status === "active") {
+    keyboard.push([{ text: "⏸ Pause", callback_data: `goal:pause:${sessionId}` }, { text: "🛑 Clear", callback_data: `goal:clear:${sessionId}` }]);
+  } else if (status === "paused") {
+    keyboard.push([{ text: "▶ Resume", callback_data: `goal:resume:${sessionId}` }, { text: "🛑 Clear", callback_data: `goal:clear:${sessionId}` }]);
+  }
+  const opts: Record<string, unknown> = { ...threadOpts(threadId) };
+  if (keyboard.length) opts.reply_markup = { inline_keyboard: keyboard };
+  const sent = await tg.sendRichMessage(chatId, msg, opts).catch(() => null);
+  if (!sent && threadId) {
+    // Thread may have been deleted; retry in the main chat.
+    await tg.sendRichMessage(chatId, msg, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}).catch(() => {});
+  }
   return;
 }
 

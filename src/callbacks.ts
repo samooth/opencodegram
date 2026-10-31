@@ -91,6 +91,20 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
 
+  // Goal controls.
+  const goalMatch = cbData.match(/^goal:(pause|resume|clear):(.+)$/);
+  if (goalMatch) {
+    const action = goalMatch[1];
+    const sessionId = goalMatch[2];
+    await tg.answerCallbackQuery(cq.id, action === "clear" ? "Clearing…" : "Working…").catch(() => {});
+    try {
+      await deps.oc.runCommand(sessionId, "goal", action);
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
+
   // Delete-sessions pagination.
   const deletePageMatch = cbData.match(/^delsessions:page:(\d+)$/);
   if (deletePageMatch) {
