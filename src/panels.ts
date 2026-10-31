@@ -106,8 +106,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
-      const label = `${start + i + 1}. ${title}${model}${dirSuffix}`.slice(0, 64);
-      return [{ text: label, callback_data: `use:${s.id}` }];
+      const label = `${start + i + 1}. ${title}${model}${dirSuffix}`.slice(0, 52);
+      return [
+        { text: label, callback_data: `use:${s.id}` },
+        { text: "📊", callback_data: `connect:${s.id}` },
+      ];
     });
     const nav: any[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });

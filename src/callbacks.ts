@@ -87,6 +87,19 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   if (await deps.files.handleCallback(cq)) return;
 
   // Quick session switch from final message buttons.
+  const connectMatch = cbData.match(/^connect:(.+)$/);
+  if (connectMatch) {
+    const sessionId = connectMatch[1];
+    await tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
+    try {
+      await activateSession(chatId, sessionId, true, threadId);
+      await showStatus(chatId, threadId, cq.message?.message_id);
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
+
   const qswitchMatch = cbData.match(/^qswitch:(.+)$/);
   if (qswitchMatch) {
     const sessionId = qswitchMatch[1];
