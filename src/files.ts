@@ -309,6 +309,13 @@ export function renderFileSummary(s: FileSummary): string {
     lines.push("Archivo binario. Usa /file para descargarlo.");
     return lines.join("\n");
   }
+
+  const kindEmoji: Record<string, string> = {
+    function: "ƒ", method: "ƒ", const: "κ", let: "λ", var: "ν",
+    class: "C", interface: "I", type: "T", struct: "S", enum: "E",
+    trait: "R", union: "U", mod: "M", define: "#",
+  };
+
   if (s.imports.length) {
     lines.push("");
     lines.push(`<b>Imports (${s.imports.length}):</b>`);
@@ -328,20 +335,24 @@ export function renderFileSummary(s: FileSummary): string {
   if (s.symbols.length) {
     lines.push("");
     lines.push(`<b>Símbolos (${s.symbols.length}):</b>`);
-    for (const sym of s.symbols.slice(0, 40)) {
-      lines.push(`  ${esc(sym.kind)} ${esc(sym.name)}  <i>L${sym.line}</i>`);
-    }
-    if (s.symbols.length > 40) lines.push(`  … y ${s.symbols.length - 40} más`);
+    const maxName = Math.max(...s.symbols.map((x) => x.name.length), 4);
+    const rows = s.symbols.slice(0, 50).map((sym) => {
+      const em = kindEmoji[sym.kind] ?? "·";
+      const name = sym.name.padEnd(maxName, " ");
+      return `${em} ${name}  L${String(sym.line).padStart(3, " ")}`;
+    });
+    lines.push(`<pre>${rows.map(esc).join("\n")}</pre>`);
+    if (s.symbols.length > 50) lines.push(`  … y ${s.symbols.length - 50} más`);
   }
   if (s.head.length && !s.symbols.length && !s.sections.length) {
     lines.push("");
     lines.push("<b>Primeras líneas:</b>");
-    lines.push(s.head.map((l) => esc(l)).join("\n"));
+    lines.push(`<pre>${s.head.map(esc).join("\n")}</pre>`);
   }
   if (s.tail.length && s.lines > 8) {
     lines.push("");
     lines.push("<b>Últimas líneas:</b>");
-    lines.push(s.tail.map((l) => esc(l)).join("\n"));
+    lines.push(`<pre>${s.tail.map(esc).join("\n")}</pre>`);
   }
   return lines.join("\n");
 }
