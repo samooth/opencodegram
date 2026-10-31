@@ -97,7 +97,6 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       console.log("[connect] activated", sessionId);
       await showStatus(chatId, threadId, cq.message?.message_id);
       console.log("[connect] status shown", sessionId);
-      await tg.sendRichMessage(chatId, `✅ Conectado a <code>${esc(sessionId)}</code>`, threadOpts(threadId)).catch(() => {});
     } catch (err) {
       console.error("[connect] failed", sessionId, err);
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
