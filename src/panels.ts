@@ -163,6 +163,7 @@ export function createPanels({ tg, oc, config, getActiveSession, modelListByChat
       ["/context", "Show session context"],
       ["/sync", "Sync session history to Telegram"],
       ["/compact", "Compact session history"],
+      ["/retry", "Retry the last prompt (useful after rate limits)"],
       ["/goal <objective>", "Keep working toward a session goal (pause/resume/clear)"],
       ["/stop", "Stop the active turn"],
     ];

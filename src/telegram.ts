@@ -228,6 +228,14 @@ export class TelegramClient {
     return this.call<boolean>("deleteMyCommands", scope ? { scope } : {});
   }
 
+  setWebhook(url: string, secretToken?: string): Promise<boolean> {
+    return this.call<boolean>("setWebhook", { url, secret_token: secretToken, allowed_updates: ["message", "callback_query", "stopped_message_generation"] });
+  }
+
+  deleteWebhook(): Promise<boolean> {
+    return this.call<boolean>("deleteWebhook", { drop_pending_updates: false });
+  }
+
   getFile(fileId: string): Promise<{ file_id: string; file_unique_id: string; file_size?: number; file_path?: string }> {
     return this.call("getFile", { file_id: fileId });
   }

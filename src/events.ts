@@ -306,7 +306,8 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
     // No in-memory session (e.g. after restart). Still deliver the final text if available.
     const fallbackText = (e.data?.text ?? "").toString().trim();
     if (fallbackText) {
-      await tg.sendRichMessageMarkdown(chatId, fallbackText, threadOpts(resolveThreadId(sessionId))).catch((err) => console.error("[send final]", err));
+      const sent = await tg.sendRichMessageMarkdown(chatId, fallbackText, threadOpts(resolveThreadId(sessionId))).catch((err) => { console.error("[send final]", err); return undefined; });
+      if (sent?.message_id) store.rememberMessageSession(sent.message_id, sessionId);
     }
     return;
   }
@@ -389,6 +390,7 @@ if (e.type === "permission.asked") {
       ],
     },
   });
+  if (sent?.message_id) store.rememberMessageSession(sent.message_id, sessionId);
   pendingPermissions.set(requestId, { chatId, sessionId, messageId: sent.message_id, decided: false, label, resource });
   // Auto-reject on timeout
   setTimeout(async () => {
@@ -457,6 +459,7 @@ if (e.type === "form.created") {
       reply_markup: { inline_keyboard: formKeyboard(state) },
     });
     state.messageId = sent.message_id;
+    if (sent?.message_id) store.rememberMessageSession(sent.message_id, sessionId);
     pendingForms.set(sent.message_id, state);
     pendingFormsById.set(formId, sent.message_id);
   }

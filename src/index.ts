@@ -53,6 +53,7 @@ const BOT_COMMANDS = [
   { command: "context", description: "Show session context" },
   { command: "sync", description: "Sync session history to Telegram" },
   { command: "compact", description: "Compact session history" },
+  { command: "retry", description: "Retry the last prompt (useful after rate limits)" },
   { command: "goal", description: "Keep working toward a session goal" },
   { command: "stop", description: "Stop the active turn" },
 ];

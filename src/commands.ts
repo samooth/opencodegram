@@ -39,6 +39,7 @@ export const KNOWN_COMMANDS = new Set([
   "diff",
   "context",
   "compact",
+  "retry",
   "vcs",
   "mcp",
   "branches",
@@ -995,6 +996,33 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     try {
       await oc.compactSession(s.sessionId);
       await send("Session compacted.");
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
+    return true;
+  }
+
+  if (text === "/retry" || text.startsWith("/retry ")) {
+    const s = await restoreActiveSession(chatId, threadId);
+    if (!s) {
+      await send("no active session.");
+      return true;
+    }
+    const prompt = deps.store.lastPromptBySession.get(s.sessionId);
+    if (!prompt) {
+      await send("no previous prompt to retry.");
+      return true;
+    }
+    try {
+      s.targetChatId = chatId;
+      s.targetThreadId = threadId;
+      deps.store.rememberSessionChat(s.sessionId, chatId);
+      deps.store.rememberActiveRoute(chatId, threadId, s.sessionId);
+      s.promptStartTime = Date.now();
+      deps.store.rememberLastChat(s.sessionId, chatId);
+      deps.store.rememberLastPrompt(s.sessionId, prompt);
+      await send("🔁 Retrying last prompt…");
+      await oc.prompt(s.sessionId, prompt);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }

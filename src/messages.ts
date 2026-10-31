@@ -147,8 +147,24 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       try {
         await activateSession(chatId, repliedSessionId, true, replyThread);
         s = await restoreActiveSession(chatId, replyThread);
-      } catch {
+      } catch (err) {
+        console.error("[reply] activate failed", repliedSessionId, err);
         s = undefined;
+      }
+    }
+    if (!s && !repliedSessionId && chatId < 0) {
+      const candidates = [...store.activeSessionByRoute.entries()]
+        .filter(([k]) => k.startsWith(`${chatId}:`))
+        .map(([, sid]) => sid);
+      const unique = [...new Set(candidates)];
+      if (unique.length === 1) {
+        try {
+          await activateSession(chatId, unique[0], true, replyThread);
+          s = await restoreActiveSession(chatId, replyThread);
+        } catch (err) {
+          console.error("[reply] single-candidate activate failed", unique[0], err);
+          s = undefined;
+        }
       }
     }
     if (!s) {
@@ -214,8 +230,24 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     try {
       await activateSession(chatId, repliedSessionId, true, replyThread);
       s = await restoreActiveSession(chatId, replyThread);
-    } catch {
+    } catch (err) {
+      console.error("[reply] activate failed", repliedSessionId, err);
       s = undefined;
+    }
+  }
+  if (!s && !repliedSessionId && chatId < 0) {
+    const candidates = [...store.activeSessionByRoute.entries()]
+      .filter(([k]) => k.startsWith(`${chatId}:`))
+      .map(([, sid]) => sid);
+    const unique = [...new Set(candidates)];
+    if (unique.length === 1) {
+      try {
+        await activateSession(chatId, unique[0], true, replyThread);
+        s = await restoreActiveSession(chatId, replyThread);
+      } catch (err) {
+        console.error("[reply] single-candidate activate failed", unique[0], err);
+        s = undefined;
+      }
     }
   }
   if (!s && chatId >= 0) {

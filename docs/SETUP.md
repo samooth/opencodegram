@@ -41,6 +41,17 @@ pm2 reload opencodegram
 pm2 save
 ```
 
+### Log rotation (recommended)
+
+```bash
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 7
+pm2 set pm2-logrotate:compress true
+```
+
+The app also rotates `data/audit.log` automatically when it exceeds 1 MB.
+
 ## Topics
 
 Enable “Topics in Private Chats” in @BotFather for per-session threads. In
