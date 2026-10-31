@@ -370,7 +370,8 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     }
     console.log("[send] final to chat=", chatId, "thread=", s.targetThreadId ?? s.threadId, "len=", finalText.length);
-    const finalHtml = markdownToHtml(finalText) + `\n\n<tg-button-row><tg-button type="copy_text" text="${esc(finalText.slice(0, 200))}">📋 Copy answer</tg-button></tg-button-row>`;
+    const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
+    const finalHtml = markdownToHtml(finalText) + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
     const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
       console.error("[send final]", err);
       return undefined;
