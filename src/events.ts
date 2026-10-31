@@ -554,7 +554,7 @@ if (e.type === "rpc.opencode.goal.changed") {
   const reason = goal.reason ? String(goal.reason) : "";
   const progress = goal.progress !== undefined ? String(goal.progress) : "";
   const iteration = goal.iteration !== undefined ? String(goal.iteration) : (goal.step !== undefined ? String(goal.step) : "");
-  const signature = `${status}|${objective}|${reason}`;
+  const signature = `${status}|${objective}|${progress}|${iteration}|${reason}`;
   const prev = lastGoalStatus.get(String(sessionId ?? ""));
   if (prev === signature) return;
   lastGoalStatus.set(String(sessionId ?? ""), signature);
