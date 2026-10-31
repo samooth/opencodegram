@@ -291,9 +291,10 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
         // fuzzy suggestions
         const lower = name.toLowerCase();
         const suggestions = names.filter((n) => n.toLowerCase().includes(lower) || lower.includes(n.toLowerCase().slice(0, 3))).slice(0, 5);
-        let msg = `❌ Unknown OpenCode command: <code>/${esc(name)}</code>.`;
-        if (suggestions.length) msg += `\nDid you mean: ${suggestions.map((x) => `<code>/${esc(x)}</code>`).join(", ")}?`;
-        msg += "\n\nUse /commands to see available commands.";
+        let msg = `❌ <code>/${esc(name)}</code> no es un comando de OpenCode.`;
+        if (suggestions.length) msg += `\n¿Quisiste decir: ${suggestions.map((x) => `<code>/${esc(x)}</code>`).join(", ")}?`;
+        msg += `\n\nComandos disponibles: ${names.map((x) => `<code>/${esc(x)}</code>`).join(", ")}.`;
+        msg += "\n\nSi querías enviarlo como texto, quita el / inicial.";
         await send(msg, {
           reply_markup: {
             inline_keyboard: [
