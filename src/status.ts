@@ -307,6 +307,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
       const resLines: string[] = [];
       resLines.push(`CPU  ${cpuBar} ${String(cpuPercent).padStart(3)}% ${cpuTrend.trim()}`);
+      resLines.push("");
       resLines.push(`RAM  ${memBar} ${String(memPercent).padStart(3)}% ${memTrend.trim()}`);
       const gpu = readGpuInfo();
       if (gpu) {
@@ -315,7 +316,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         const temp = gpu.temperature === null ? "" : ` ${gpu.temperature}°C`;
         resLines.push("");
         resLines.push(`GPU  ${gpu.name.slice(0, 24)}`);
+        resLines.push("");
         resLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+        resLines.push("");
         resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
       for (const rl of resLines) lines.push(rl);
@@ -446,6 +449,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
       const resLines: string[] = [];
       resLines.push(`CPU  ${cpuBar} ${String(cpuPercent).padStart(3)}% ${cpuTrend.trim()}`);
+      resLines.push("");
       resLines.push(`RAM  ${memBar} ${String(memPercent).padStart(3)}% ${memTrend.trim()}`);
       const gpu = readGpuInfo();
       if (gpu) {
@@ -454,7 +458,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         const temp = gpu.temperature === null ? "" : ` ${gpu.temperature}°C`;
         resLines.push("");
         resLines.push(`GPU  ${gpu.name.slice(0, 24)}`);
+        resLines.push("");
         resLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+        resLines.push("");
         resLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
       for (const rl of resLines) lines.push(rl);
