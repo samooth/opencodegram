@@ -195,7 +195,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
       }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
-      const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n")), {
+      const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n")), {
         ...opts,
         reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
       });
@@ -222,6 +222,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     lines.push("⏳ <b>Working…</b>" + (elapsed ? ` <i>(${elapsed}s)</i>` : ""));
+    lines.push("");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       const r = s.reasoningBuffer.trim().slice(-800);
       lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
@@ -249,6 +250,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // Highlight the latest thought and the latest tool call, right above
     // the resource indicators, so the user always sees what the agent is
     // doing now without scrolling.
+    lines.push("");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
       const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
@@ -261,6 +263,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
       lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>${toolInput ? " — " + esc(toolInput) : ""}`);
     }
+    lines.push("");
     if (settings.showResourceUsage) {
       if (!s.cpuHistory) s.cpuHistory = [];
       if (!s.memHistory) s.memHistory = [];
@@ -282,13 +285,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(`🎮 ${esc(gpu.name)} · VRAM ${vramBar} ${formatBytes(gpu.usedMB * 1024 * 1024)}/${formatBytes(gpu.totalMB * 1024 * 1024)} (${vramPercent}%) · load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
     }
+    lines.push("");
     if (s.compacting) {
       lines.push("📦 <b>Compacting context…</b>");
     } else if (s.compactionSummary?.trim()) {
       lines.push("📦 " + esc(s.compactionSummary.trim().slice(0, 200)));
     }
     try {
-      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n")), {
+      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n")), {
         ...opts,
         reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
       });
