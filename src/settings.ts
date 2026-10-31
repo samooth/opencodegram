@@ -112,23 +112,24 @@ export const LABELS: Record<keyof ChatSettings, string> = {
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
-  const sections: Array<{ title: string; keys: Array<keyof ChatSettings> }> = [
-    { title: "Visualización", keys: ["showThinking", "showTools", "thinkingExpanded", "toolsExpanded", "showPartialText", "compactFinal"] },
-    { title: "Shell", keys: ["showShell", "shellExpanded"] },
-    { title: "Archivos", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
-    { title: "Voz", keys: ["voiceTranscription"] },
+  const sections: Array<{ title: string; emoji: string; keys: Array<keyof ChatSettings> }> = [
+    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "thinkingExpanded", "toolsExpanded", "showPartialText", "compactFinal"] },
+    { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded"] },
+    { title: "Archivos", emoji: "📁", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
+    { title: "Voz", emoji: "🎤", keys: ["voiceTranscription"] },
+    { title: "Recursos", emoji: "📊", keys: ["showResourceUsage", "resourceHistory"] },
   ];
-  const lines = [`<b>Settings</b>`, `Chat: <code>${chatId}</code>`, ""];
+  const lines = [`<b>⚙️ Settings</b>`, `Chat: <code>${chatId}</code>`, ""];
   for (const section of sections) {
-    lines.push(`<b>${section.title}</b>`);
+    lines.push(`${section.emoji} <b>${section.title}</b>`);
     for (const key of section.keys) {
       const value = settings[key];
-      const display = typeof value === "boolean" ? (value ? "on" : "off") : String(value);
-      lines.push(`  ${LABELS[key]}: <b>${esc(display)}</b>`);
+      const display = typeof value === "boolean" ? (value ? "✅ on" : "❌ off") : String(value);
+      lines.push(`   ${LABELS[key]}  →  <b>${esc(display)}</b>`);
     }
     lines.push("");
   }
-  lines.push("<i>Changes apply immediately.</i>");
+  lines.push("<i>Los cambios se aplican inmediatamente.</i>");
   return lines.join("\n");
 }
 
@@ -147,14 +148,20 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     "shellExpanded",
     "showResourceUsage",
   ];
-  for (const key of booleanKeys) {
-    keyboard.push([{ text: `${LABELS[key]}: ${settings[key] ? "on" : "off"}`, callback_data: `set:${key}:${settings[key] ? "false" : "true"}` }]);
+  // Two buttons per row for compactness.
+  for (let i = 0; i < booleanKeys.length; i += 2) {
+    const row: Array<{ text: string; callback_data: string }> = [];
+    for (let j = i; j < Math.min(i + 2, booleanKeys.length); j++) {
+      const key = booleanKeys[j];
+      row.push({ text: `${settings[key] ? "✅" : "❌"} ${LABELS[key]}`, callback_data: `set:${key}:${settings[key] ? "false" : "true"}` });
+    }
+    keyboard.push(row);
   }
-  const previewPresets = [20, 40, 80, 160];
-  keyboard.push([{ text: `${LABELS.previewLines}: ${settings.previewLines}`, callback_data: `cycle:previewLines` }]);
-  const historyPresets = [6, 12, 24];
-  keyboard.push([{ text: `${LABELS.resourceHistory}: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` }]);
-  keyboard.push([{ text: `${LABELS.diffStyle}: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
+  keyboard.push([
+    { text: `📏 Preview: ${settings.previewLines}`, callback_data: `cycle:previewLines` },
+    { text: `📈 History: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` },
+  ]);
+  keyboard.push([{ text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
   keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
   return keyboard;
 }
