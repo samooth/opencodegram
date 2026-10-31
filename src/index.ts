@@ -116,6 +116,7 @@ async function main() {
     oc,
     config,
     getActiveSession: store.getActiveSession,
+    restoreActiveSession: sessions.restoreActiveSession,
     getLastPrompt: (sid) => store.lastPromptBySession.get(sid),
     getLastCot: (sid) => store.getCotBuffer(sid),
     modelListByChat,

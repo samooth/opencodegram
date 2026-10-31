@@ -12,6 +12,7 @@ export type PanelsDeps = {
   oc: OpenCodeBridge;
   config: Config;
   getActiveSession: (chatId: number, threadId?: number) => ChatSession | undefined;
+  restoreActiveSession?: (chatId: number, threadId?: number) => Promise<ChatSession | undefined>;
   getLastPrompt?: (sessionId: string) => string | undefined;
   getLastCot?: (sessionId: string) => string | undefined;
   modelListByChat: Map<string, Array<any>>;
@@ -21,7 +22,7 @@ export type PanelsDeps = {
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, metrics }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, metrics }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
@@ -116,7 +117,8 @@ export function createPanels({ tg, oc, config, getActiveSession, getLastPrompt, 
   }
 
   async function showCommands(chatId: number, threadId?: number): Promise<void> {
-    const s = getActiveSession(chatId, threadId);
+    let s = getActiveSession(chatId, threadId);
+    if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     const cmds = await oc.listCommands(directory);
     if (!cmds.length) {
@@ -180,7 +182,8 @@ export function createPanels({ tg, oc, config, getActiveSession, getLastPrompt, 
   }
 
   async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number, provider?: string): Promise<void> {
-    const s = getActiveSession(chatId, threadId);
+    let s = getActiveSession(chatId, threadId);
+    if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     let raw: any[];
     const now = Date.now();
@@ -270,7 +273,8 @@ export function createPanels({ tg, oc, config, getActiveSession, getLastPrompt, 
   }
 
   async function showStatus(chatId: number, threadId?: number): Promise<void> {
-    const s = getActiveSession(chatId, threadId);
+    let s = getActiveSession(chatId, threadId);
+    if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const ocInfo = await oc.serverInfo().catch(() => null);
     let sessionCount = 0;
     try {
@@ -343,7 +347,8 @@ export function createPanels({ tg, oc, config, getActiveSession, getLastPrompt, 
   }
 
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {
-    const s = getActiveSession(chatId, threadId);
+    let s = getActiveSession(chatId, threadId);
+    if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const ocInfo = await oc.serverInfo().catch(() => null);
     let sessionCount = 0;
     try {
