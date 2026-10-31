@@ -292,6 +292,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const memBar = progressBar(memPercent);
       lines.push(`📊 CPU ${cpuBar} ${cpuPercent}%`);
       lines.push(`   RAM ${memBar} ${memPercent}%`);
+      if (lines.length && lines[lines.length - 1] !== "") lines.push("");
       const gpu = readGpuInfo();
       if (gpu) {
         const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
@@ -419,6 +420,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const memBar = progressBar(memPercent);
       lines.push(`📊 CPU ${cpuBar} ${cpuPercent}%`);
       lines.push(`   RAM ${memBar} ${memPercent}%`);
+      if (lines.length && lines[lines.length - 1] !== "") lines.push("");
       const gpu = readGpuInfo();
       if (gpu) {
         const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
