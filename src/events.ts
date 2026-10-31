@@ -550,8 +550,8 @@ if (e.type === "rpc.opencode.goal.changed") {
   let msg = "";
   const emoji = status === "active" ? "🎯" : status === "complete" ? "✅" : status === "blocked" ? "⛔" : status === "paused" ? "⏸" : "🎯";
   msg = `${emoji} <b>Goal ${esc(status)}</b>`;
-  if (objective) msg += `\n<b>Objective:</b> ${esc(objective)}`;
-  if (reason) msg += `\n<b>Reason:</b> ${esc(reason)}`;
+  if (objective) msg += `\n\n<blockquote>${esc(objective)}</blockquote>`;
+  if (reason) msg += `\n\n<b>Reason:</b>\n${esc(reason)}`;
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
   if (status === "active") {
     keyboard.push([{ text: "⏸ Pause", callback_data: `goal:pause:${sessionId}` }, { text: "🛑 Clear", callback_data: `goal:clear:${sessionId}` }]);
