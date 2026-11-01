@@ -101,24 +101,23 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
       const mark = activeId && activeId === s.id ? " ✅" : "";
       const st = getSessionStatus ? getSessionStatus(s.id) : undefined;
-      const statusIcon = st === "busy" ? " 🔴" : st === "retry" ? " 🟡" : st === "idle" ? " 🟢" : "";
+      const statusIcon = st === "busy" ? " 🔴" : st === "retry" ? " 🟡" : st === "idle" ? " 🟢" : "⚪";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
-      const dirSuffix = directory ? ` · ${esc(projectLabel(s.location?.directory ?? s.directory))}` : "";
+      const dirLabel = directory ? projectLabel(s.location?.directory ?? s.directory) : "";
       const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
-      const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 60))}</i>` : "";
-      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}${statusIcon}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}${dirSuffix}</td></tr>`;
+      const preview = lastPrompt ? `\n  <i>${esc(truncate(lastPrompt, 40))}</i>` : "";
+      return `${statusIcon} <b>${title}</b>${mark}${dirLabel ? " · " + esc(dirLabel) : ""}\n  <code>${model}</code>${preview}`;
     });
-    const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model / Dir</th></tr>${lines.join("")}</table>`;
+    const body = lines.join("\n\n");
     const keyboard: any[][] = slice.map((s: any, i: number) => {
-      const title = (s.title ?? "(untitled)").slice(0, 40);
+      const title = (s.title ?? "(untitled)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
-      const label = `${start + i + 1}. ${title}${model}${dirSuffix}`.slice(0, 52);
-      return [
-        { text: label, callback_data: `use:${s.id}` },
-        { text: "📊", callback_data: `connect:${s.id}` },
-      ];
+      const st = getSessionStatus ? getSessionStatus(s.id) : undefined;
+      const statusIcon = st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
+      const label = `${statusIcon} ${title}${model}${dirSuffix}`.slice(0, 64);
+      return [{ text: label, callback_data: `use:${s.id}` }];
     });
     const nav: any[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });
@@ -130,7 +129,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       { text: "📁 Group", callback_data: "sessions:filter:group" },
     ]);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, {
+    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${body}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
