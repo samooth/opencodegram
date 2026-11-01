@@ -248,7 +248,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showTools && settings.showShell && shellDetails.length) {
       sep();
       const shellText = renderShell(shellDetails.slice(-5), 200);
-      lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
+      lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre language='bash'>" + esc(shellText) + "</pre>\n</details>");
     }
     if (settings.showTools && otherDetails.length) {
       sep();
@@ -282,9 +282,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const toolInput = lastTool.input ? clampText(lastTool.input, 200) : "";
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
       lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>`);
-      if (toolInput) {
-        const display = isShell ? `$ ${parseShellCommand(lastTool.input ?? "") ?? toolInput}` : toolInput;
-        const wrapped = display.match(/.{1,70}/g)?.join("\n") ?? display;
+      if (toolInput && !isShell) {
+        const wrapped = toolInput.match(/.{1,70}/g)?.join("\n") ?? toolInput;
         lines.push(`<pre>${esc(wrapped)}</pre>`);
       }
     }
@@ -406,7 +405,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (settings.showTools && settings.showShell && shellDetails.length) {
         const shellText = renderShell(shellDetails, 500);
-        lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre>" + esc(shellText) + "</pre>\n</details>");
+        lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre language='bash'>" + esc(shellText) + "</pre>\n</details>");
       }
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails, 500);
