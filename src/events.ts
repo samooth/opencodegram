@@ -7,6 +7,7 @@ import type { FormField, FormState } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import { esc, rateLimitRetryAt, threadOpts, markdownToHtml } from "./util.js";
+import { logger } from "./logger.js";
 import { formatBytes, prepareDocument } from "./files.js";
 
 export type PermissionInfo = {
@@ -44,10 +45,8 @@ export async function handleEvent(event: { type: string; data?: any }, deps: Eve
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
 
   const e = event as { type: string; data?: any };
-// Log a compact line for debugging.
-if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle" || e.type.endsWith("failed") || e.type === "session.step.started" || e.type === "session.step.ended" || e.type === "session.reasoning.started" || e.type === "session.reasoning.ended") {
-  console.log("[event]", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
-}
+// Debug-gated compact event log (use DEBUG=events).
+logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
 if (e.type === "session.text.started") {
   const sessionId = e.data?.sessionID ?? e.data?.session?.id;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
@@ -197,7 +196,7 @@ if (e.type === "session.compaction.ended") {
     ? `<details><summary>📦 Summary</summary>\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre>\n</details>`
     : "";
   await tg
-    .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\\n" + body : ""}`, threadOpts(threadId))
+    .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
     .catch(() => {});
 }
 
@@ -295,13 +294,11 @@ if (e.type === "session.step.ended") {
   }
 }
 
-console.log("@@@BEFORE_TEXTENDED_BLOCK", e.type);
 if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) {
   const sessionId = e.data?.sessionID;
-  console.log("@@@TEXTENDED_ENTRY", JSON.stringify(e.type), sessionId);
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  console.log("@@@TEXTENDED", sessionId, "s=", !!_s0, "chatId=", chatId);
+  logger.breadcrumb("events", "text.ended.entry", { sessionId, hasSession: !!_s0, chatId });
 
   if (chatId === undefined) return;
   let s = _s0;
@@ -314,7 +311,8 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
     }
     return;
   }
-  // debug removed
+  // permanent breadcrumb for future debug
+  logger.breadcrumb("events", "text.ended.process", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
   if (s.timer) {
     clearTimeout(s.timer);
     s.timer = undefined;
@@ -325,7 +323,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
   }
   if (!s.stopped) {
     await flushDraft(chatId, s);
-    console.log("[text.ended]", sessionId, "s=", !!s, "statusMsg=", s.statusMessageId, "finished=", s.statusFinished, "stopped=", s.stopped);
+    logger.breadcrumb("events", "text.ended.flush", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
@@ -372,7 +370,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
     } catch {
       quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     }
-    console.log("[send] final to chat=", chatId, "thread=", s.targetThreadId ?? s.threadId, "len=", finalText.length);
+    logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
     const finalHtml = markdownToHtml(finalText) + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
     const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
@@ -563,7 +561,7 @@ if (e.type === "session.step.started") {
   const sid = e.data?.sessionID;
   if (sid) {
     store.setSessionStatus(sid, "busy");
-    console.log("[step.started]", sid);
+    logger.debug("events", "[step.started]", sid);
   }
 }
 if (e.type === "session.step.ended" || e.type === "session.idle") {
@@ -576,7 +574,7 @@ if (e.type === "session.execution.failed") {
 }
 
 if (e.type === "rpc.opencode.goal.changed") {
-  console.log("[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
+  logger.debug("events", "[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
   const sessionId = e.data?.sessionID;
   const goal = e.data?.goal;
   const chatId = resolveChatId(sessionId);

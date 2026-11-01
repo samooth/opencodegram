@@ -4,6 +4,7 @@ import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import { esc, threadOpts, projectLabel, projectEmoji, clampText } from "./util.js";
+import { logger } from "./logger.js";
 
 export type SessionsDeps = {
   config: Config;
@@ -266,6 +267,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
         // Keep the persisted binding on transient failures so a restart
         // does not silently unlink the session; the next interaction retries.
         console.error("[session] restore failed (keeping binding)", mapped, err);
+        logger.breadcrumb("sessions", "restore.failed", { sessionId: mapped });
         return getActiveSession(chatId, threadId);
       }
     }
@@ -305,15 +307,19 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
   // OpenCode renames sessions automatically (e.g. after the first prompt).
   // Mirror that title into the Telegram tab so both always match.
   const syncTopicTitle = async (chatId: number, s: ChatSession) => {
-    const threadId = s.targetThreadId ?? s.threadId;
-    if (!threadId) return;
+    const threadId = s.targetThreadId ?? s.threadId ?? store.threadBySession.get(s.sessionId);
+    if (!threadId) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "no-thread" }); return; }
+    s.threadId = threadId;
+    s.targetThreadId = threadId;
     try {
       const res = await oc.client.session.get({ sessionID: s.sessionId });
       const title = String((res as { title?: string })?.title ?? "").trim().slice(0, 120);
-      if (!title || title === s.topicTitle) return;
-      await tg.editForumTopic(chatId, threadId, title);
+      if (!title || title === s.topicTitle) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "same-or-empty" }); return; }
+      const targetChat = s.targetChatId ?? chatId;
+      await tg.editForumTopic(targetChat, threadId, title);
       s.topicTitle = title;
       store.rememberTopicTitle(s.sessionId, title);
+      logger.breadcrumb("sessions", "syncTopicTitle.done", { sessionId: s.sessionId, threadId, title });
     } catch {
       // Cosmetic only: never fail a turn because a topic title could not be updated.
     }

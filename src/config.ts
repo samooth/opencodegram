@@ -8,6 +8,7 @@ const schema = z.object({
   ALLOWED_TELEGRAM_USER_IDS: z.string().optional(),
   PILOT_PROJECT: z.string().optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
+  DEBUG: z.string().optional(),
   OPS_PORT: z.coerce.number().int().positive().default(9090),
   OPS_HOST: z.string().default("127.0.0.1"),
   DISK_GUARD_MIN_FREE_MB: z.coerce.number().int().positive().default(2048),

@@ -62,6 +62,7 @@ const BOT_COMMANDS = [
 
 async function main() {
   const config = loadConfig();
+  if (config.DEBUG && !process.env.DEBUG) process.env.DEBUG = config.DEBUG;
   const tg = new TelegramClient(config.TELEGRAM_BOT_TOKEN);
   const oc = new OpenCodeBridge(config.OPENCODE_BASE_URL, resolveServerPassword());
 
