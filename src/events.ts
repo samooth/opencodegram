@@ -48,10 +48,6 @@ export async function handleEvent(event: { type: string; data?: any }, deps: Eve
 if (e.type.startsWith("session.text") || e.type === "permission.asked" || e.type === "session.idle" || e.type.endsWith("failed") || e.type === "session.step.started" || e.type === "session.step.ended" || e.type === "session.reasoning.started" || e.type === "session.reasoning.ended") {
   console.log("[event]", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
 }
-if (e.type.toLowerCase().includes("goal")) {
-  console.log("[GOAL-EVENT]", e.type, JSON.stringify(e.data ?? {}).slice(0, 2000));
-}
-
 if (e.type === "session.text.started") {
   const sessionId = e.data?.sessionID ?? e.data?.session?.id;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
@@ -562,12 +558,16 @@ if (e.type === "session.execution.failed") {
   }
 }
 
-if (e.type === "session.status") {
+// Track running state from step lifecycle (OpenCode does not emit session.status here).
+if (e.type === "session.step.started") {
   const sid = e.data?.sessionID;
-  const st = e.data?.status?.type;
-  if (sid && st) store.setSessionStatus(sid, st);
+  if (sid) store.setSessionStatus(sid, "busy");
 }
-if (e.type === "session.idle") {
+if (e.type === "session.step.ended" || e.type === "session.idle") {
+  const sid = e.data?.sessionID;
+  if (sid) store.setSessionStatus(sid, "idle");
+}
+if (e.type === "session.execution.failed") {
   const sid = e.data?.sessionID;
   if (sid) store.setSessionStatus(sid, "idle");
 }
