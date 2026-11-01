@@ -39,7 +39,10 @@ export function normalizeCommandText(text: string, botUsername?: string): string
 export function parseSlashCommand(text: string): ParsedSlashCommand | null {
   const match = text.trim().match(/^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/);
   if (!match) return null;
-  return { name: match[1].toLowerCase(), args: (match[2] ?? "").trim() };
+  const name = match[1].toLowerCase();
+  // `/btw` is not a bot command: let it pass through to OpenCode as a prompt.
+  if (name === "btw") return null;
+  return { name, args: (match[2] ?? "").trim() };
 }
 
 function escapeRegExp(value: string): string {

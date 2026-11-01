@@ -219,7 +219,14 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       s.statusTimer = setInterval(() => {
         updateStatus(chatId, s).catch(() => {});
       }, 3000);
-      await oc.prompt(s.sessionId, text, mediaToAttach);
+      void oc.prompt(s.sessionId, text, mediaToAttach).catch(async (err) => {
+        if (s.statusTimer) {
+          clearInterval(s.statusTimer);
+          s.statusTimer = undefined;
+        }
+        await finishStatus(chatId, s).catch(() => {});
+        await send(`❌ ${esc(String(err))}`, store.threadOptsFor(s));
+      });
     } catch (err) {
       if (s.statusTimer) {
         clearInterval(s.statusTimer);
@@ -273,7 +280,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
 
   const slash = parseSlashCommand(text);
-  if (slash && !KNOWN_COMMANDS.has(slash.name)) {
+  if (slash && slash.name !== "btw" && !KNOWN_COMMANDS.has(slash.name)) {
     const name = slash.name;
     const args = slash.args;
 
@@ -352,7 +359,14 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     s.statusTimer = setInterval(() => {
       updateStatus(chatId, s).catch(() => {});
     }, 3000);
-    await oc.prompt(s.sessionId, text);
+    void oc.prompt(s.sessionId, text).catch(async (err) => {
+      if (s.statusTimer) {
+        clearInterval(s.statusTimer);
+        s.statusTimer = undefined;
+      }
+      await finishStatus(chatId, s).catch(() => {});
+      await send(`❌ ${esc(String(err))}`);
+    });
   } catch (err) {
     if (s.statusTimer) {
       clearInterval(s.statusTimer);
