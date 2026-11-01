@@ -1,4 +1,4 @@
-import { lstat, mkdtemp, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -793,15 +793,17 @@ export async function createZipArchive(
     throw new FileAccessError("invalid", "That path cannot be archived.");
   }
 
+  await mkdir("/tmp/opencode", { recursive: true });
   const tmpDir = await mkdtemp(join("/tmp/opencode", "zip-"));
   const archiveName = `${basename(safe.absolute) || "archive"}.zip`;
   const archivePath = join(tmpDir, archiveName);
   const target = safe.relative || ".";
+  const zipTarget = target === "." ? "." : `./${target}`;
 
   try {
     await execFileAsync(
       "zip",
-      ["-r", "-y", "-q", archivePath, target, "-x", "*/node_modules/*", "*/.git/*", "*/dist/*", "*/.cache/*", "*/coverage/*"],
+      ["-r", "-y", "-q", archivePath, zipTarget, "-x", "*/node_modules/*", "*/.git/*", "*/dist/*", "*/.cache/*", "*/coverage/*"],
       { cwd: safe.base },
     );
   } catch (err) {

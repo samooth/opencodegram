@@ -62,7 +62,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const slice = list.slice(start, start + pageSize);
     const lines = slice.map((s: any, i: number) => {
       const title = esc(s.title ?? "(untitled)");
-      const directory = esc((s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "");
+      const directory = esc(projectLabel(s.location?.directory ?? s.directory));
       const dirSuffix = directory ? ` · ${directory}` : "";
       return `<tr><td>${start + i + 1}</td><td><b>${title}</b></td><td><code>${esc(s.id)}</code></td><td>${dirSuffix}</td></tr>`;
     });
@@ -96,19 +96,18 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
     const activeId = getActiveSession(chatId, threadId)?.sessionId;
-    const lines = slice.map((s: any, i: number) => {
-      const title = esc(s.title ?? "(untitled)");
+    const rows = slice.map((s: any, i: number) => {
+      const title = esc(truncate(s.title ?? "(untitled)", 26));
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
       const mark = activeId && activeId === s.id ? " ✅" : "";
       const st = getSessionStatus ? getSessionStatus(s.id) : undefined;
-      const statusIcon = st === "busy" ? " 🔴" : st === "retry" ? " 🟡" : st === "idle" ? " 🟢" : "⚪";
-      const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
-      const dirLabel = directory ? projectLabel(s.location?.directory ?? s.directory) : "";
+      const statusIcon = st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
+      const dirLabel = projectLabel(s.location?.directory ?? s.directory);
       const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
-      const preview = lastPrompt ? `\n  <i>${esc(truncate(lastPrompt, 40))}</i>` : "";
-      return `${statusIcon} <b>${title}</b>${mark}${dirLabel ? " · " + esc(dirLabel) : ""}\n  <code>${model}</code>${preview}`;
+      const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 45))}</i>` : "";
+      return `<tr><td>${start + i + 1}</td><td>${statusIcon} <b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}<br/><i>${esc(dirLabel)}</i></td></tr>`;
     });
-    const body = lines.join("\n\n");
+    const body = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model / Dir</th></tr>${rows.join("")}</table>`;
     const keyboard: any[][] = slice.map((s: any, i: number) => {
       const title = (s.title ?? "(untitled)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";

@@ -57,7 +57,7 @@ export const KNOWN_COMMANDS = new Set([
 ]);
 
 export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
-  const { config, tg, oc, panels, sessions, files } = deps;
+  const { config, tg, oc, panels, sessions, files, store } = deps;
   const { restoreActiveSession, activateSession } = sessions;
   const { sendPanel, showCommands, showModels, showSessions, showDeleteSessions, showStatus } = panels;
 
@@ -767,9 +767,24 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     try {
       await oc.renameSession(s.sessionId, title);
-      if (s.threadId) {
-        await tg.editForumTopic(chatId, s.threadId, title.slice(0, 120)).catch(() => {});
-        s.topicTitle = title.slice(0, 120);
+      const threadIdToEdit = s.targetThreadId ?? s.threadId ?? store.threadBySession.get(s.sessionId);
+      if (threadIdToEdit) {
+        try {
+          const targetChat = s.targetChatId ?? chatId;
+          const ok = await tg.editForumTopic(targetChat, threadIdToEdit, title.slice(0, 120));
+          if (ok) {
+            s.threadId = threadIdToEdit;
+            s.targetThreadId = threadIdToEdit;
+            s.topicTitle = title.slice(0, 120);
+            store.rememberTopicTitle(s.sessionId, s.topicTitle);
+          } else {
+            console.error("[rename] editForumTopic returned false for", chatId, threadIdToEdit);
+          }
+        } catch (err) {
+          console.error("[rename] editForumTopic failed", chatId, threadIdToEdit, err);
+        }
+      } else {
+        console.error("[rename] no thread id for session", s.sessionId);
       }
       await send(`Renamed session to <b>${esc(title)}</b>.`);
     } catch (err) {

@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { BotDeps } from "./context.js";
 import type { TelegramMessage } from "./telegram.js";
 import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
@@ -92,8 +92,9 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     const buf = Buffer.from(await res.arrayBuffer());
     const dir = join("/tmp/opencode/attachments", String(chatId));
     await mkdir(dir, { recursive: true });
-    const name = suggestedName || info.file_path.split("/").pop() || `${fileId}.bin`;
-    const path = join(dir, name);
+    const rawName = suggestedName || info.file_path.split("/").pop() || `${fileId}.bin`;
+    const name = basename(rawName).replace(/\0/g, "") || `${fileId}.bin`;
+    const path = join(dir, name === "." || name === ".." ? `${fileId}.bin` : name);
     await writeFile(path, buf);
     return { uri: `file://${path}`, name };
   };
@@ -177,7 +178,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     }
     if (!s && isMention && chatId < 0) {
       await createNewSession(chatId, true, replyThread);
-      s = (await restoreActiveSession(chatId, replyThread))!;
+      s = await restoreActiveSession(chatId, replyThread);
     }
     if (!s) {
       await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
@@ -264,7 +265,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
   if (!s && (chatId >= 0 || isMention)) {
     await createNewSession(chatId, true, replyThread);
-    s = (await restoreActiveSession(chatId, replyThread))!;
+    s = await restoreActiveSession(chatId, replyThread);
   }
   if (!s) {
     await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
