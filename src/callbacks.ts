@@ -477,6 +477,16 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
 
+  const filterMatch = cbData.match(/^sessions:filter:(all|running|group)$/);
+  if (filterMatch) {
+    const mode = filterMatch[1];
+    await tg.answerCallbackQuery(cq.id).catch(() => {});
+    if (mode === "running") await showSessions(chatId, 0, cq.message?.message_id, threadId, undefined, true);
+    else if (mode === "group") await showSessions(chatId, 0, cq.message?.message_id, threadId, chatId);
+    else await showSessions(chatId, 0, cq.message?.message_id, threadId);
+    return;
+  }
+
   const pageMatch = cbData.match(/^sessions:page:(\d+)$/);
   if (pageMatch) {
     await tg.answerCallbackQuery(cq.id);

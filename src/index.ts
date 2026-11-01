@@ -135,6 +135,22 @@ async function main() {
   console.log(`[opencodegram] ops: ${ops.url}`);
   // Clean up status messages left stale by a previous (crashed/restarted) process.
   store.cleanupStaleStatusMessages(tg).catch(() => {});
+  // Proactively restore persisted sessions so their status cards are refreshed
+  // instead of staying on "Reconnecting…".
+  (async () => {
+    for (const [key] of store.activeSessionByRoute) {
+      const [chatPart, threadPart] = key.split(":");
+      const chatId = Number(chatPart);
+      const threadId = Number(threadPart) || undefined;
+      if (!Number.isFinite(chatId) || chatId === 0) continue;
+      try {
+        const s = await sessions.restoreActiveSession(chatId, threadId);
+        if (s?.statusMessageId) await status.updateStatus(chatId, s, true).catch(() => {});
+      } catch {
+        // ignore
+      }
+    }
+  })().catch(() => {});
   if (config.AUTO_CLEANUP_DAYS > 0) {
     sessions.cleanupStaleSessions(config.AUTO_CLEANUP_DAYS).catch(() => {});
   }

@@ -41,15 +41,17 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await tg.sendRichMessage(chatId, html, opts);
   }
 
-  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean): Promise<void> {
+  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean, includeArchived?: boolean): Promise<void> {
     const pageSize = 8;
-    const res = await oc.client.session.list({ limit: 100, order: "desc" });
+    const res = await oc.client.session.list({ limit: 100, order: "desc", archived: false });
     let list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
     if (filterChatId !== undefined && chatBySession) {
       list = list.filter((s: any) => chatBySession.get(s.id) === filterChatId);
     }
     if (onlyRunning && getSessionStatus) {
+      const before = list.length;
       list = list.filter((s: any) => getSessionStatus(s.id) === "busy");
+      console.log("[sessions] running filter:", before, "->", list.length);
     }
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
@@ -84,7 +86,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
   }
   async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean): Promise<void> {
     const pageSize = 8;
-    const res = await oc.client.session.list({ limit: 100, order: "desc" });
+    const res = await oc.client.session.list({ limit: 100, order: "desc", archived: false });
     const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found. Use /new to create one.", threadOpts(threadId));
@@ -122,6 +124,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
+    keyboard.push([
+      { text: "📋 All", callback_data: "sessions:filter:all" },
+      { text: "🔴 Running", callback_data: "sessions:filter:running" },
+      { text: "📁 Group", callback_data: "sessions:filter:group" },
+    ]);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, {
       ...threadOpts(threadId),

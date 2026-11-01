@@ -561,7 +561,10 @@ if (e.type === "session.execution.failed") {
 // Track running state from step lifecycle (OpenCode does not emit session.status here).
 if (e.type === "session.step.started") {
   const sid = e.data?.sessionID;
-  if (sid) store.setSessionStatus(sid, "busy");
+  if (sid) {
+    store.setSessionStatus(sid, "busy");
+    console.log("[step.started]", sid);
+  }
 }
 if (e.type === "session.step.ended" || e.type === "session.idle") {
   const sid = e.data?.sessionID;
