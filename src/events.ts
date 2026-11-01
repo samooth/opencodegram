@@ -562,6 +562,16 @@ if (e.type === "session.execution.failed") {
   }
 }
 
+if (e.type === "session.status") {
+  const sid = e.data?.sessionID;
+  const st = e.data?.status?.type;
+  if (sid && st) store.setSessionStatus(sid, st);
+}
+if (e.type === "session.idle") {
+  const sid = e.data?.sessionID;
+  if (sid) store.setSessionStatus(sid, "idle");
+}
+
 if (e.type === "rpc.opencode.goal.changed") {
   console.log("[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
   const sessionId = e.data?.sessionID;

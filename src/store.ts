@@ -26,6 +26,7 @@ export class SessionStore {
   readonly topicTitleBySession = new Map<string, string>();
   readonly cotBySession = new Map<string, { buffer: string; count: number }>();
   readonly goalMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
+  readonly sessionStatusBySession = new Map<string, string>();
   readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 
   readonly dataDir: string;
@@ -94,6 +95,12 @@ export class SessionStore {
     this.chatBySession.set(sessionId, chatId);
     this.saveChats();
   };
+
+  setSessionStatus = (sessionId: string, status: string) => {
+    if (sessionId) this.sessionStatusBySession.set(sessionId, status);
+  };
+
+  getSessionStatus = (sessionId: string): string | undefined => this.sessionStatusBySession.get(sessionId);
 
   rememberActiveRoute = (chatId: number, threadId: number | undefined, sessionId: string) => {
     const key = this.routeKey(chatId, threadId);

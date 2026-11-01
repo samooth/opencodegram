@@ -122,6 +122,7 @@ async function main() {
     modelListByChat,
     routeKey: store.routeKey,
     chatBySession: store.chatBySession,
+    getSessionStatus: (sid: string) => store.getSessionStatus(sid),
     metrics,
   });
   const files = createFileBrowser({

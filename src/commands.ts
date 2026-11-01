@@ -1094,6 +1094,10 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     return true;
   }
 
+  if (text === "/running" || text === "/sessions running" || text === "/sessions busy") {
+    await showSessions(chatId, 0, undefined, threadId, undefined, true);
+    return true;
+  }
   if (text === "/sessions" || text.startsWith("/sessions ")) {
     const arg = text.slice("/sessions".length).trim();
     if (arg === "group" || arg === "g") {

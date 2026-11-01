@@ -18,12 +18,13 @@ export type PanelsDeps = {
   modelListByChat: Map<string, Array<any>>;
   routeKey: (chatId: number, threadId?: number) => string;
   chatBySession?: Map<string, number>;
+  getSessionStatus?: (sessionId: string) => string | undefined;
   metrics: MetricsStore;
 };
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, metrics }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, getSessionStatus, metrics }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
@@ -40,12 +41,15 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await tg.sendRichMessage(chatId, html, opts);
   }
 
-  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number): Promise<void> {
+  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
     let list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
     if (filterChatId !== undefined && chatBySession) {
       list = list.filter((s: any) => chatBySession.get(s.id) === filterChatId);
+    }
+    if (onlyRunning && getSessionStatus) {
+      list = list.filter((s: any) => getSessionStatus(s.id) === "busy");
     }
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
@@ -78,7 +82,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       reply_markup: { inline_keyboard: keyboard },
     });
   }
-  async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number): Promise<void> {
+  async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc" });
     const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
@@ -94,11 +98,13 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const title = esc(s.title ?? "(untitled)");
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
       const mark = activeId && activeId === s.id ? " ✅" : "";
+      const st = getSessionStatus ? getSessionStatus(s.id) : undefined;
+      const statusIcon = st === "busy" ? " 🔴" : st === "retry" ? " 🟡" : st === "idle" ? " 🟢" : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${esc(projectLabel(s.location?.directory ?? s.directory))}` : "";
       const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
       const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 60))}</i>` : "";
-      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}${dirSuffix}</td></tr>`;
+      return `<tr><td>${start + i + 1}</td><td><b>${title}</b>${mark}${statusIcon}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}${dirSuffix}</td></tr>`;
     });
     const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model / Dir</th></tr>${lines.join("")}</table>`;
     const keyboard: any[][] = slice.map((s: any, i: number) => {
