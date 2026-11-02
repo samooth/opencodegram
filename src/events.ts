@@ -40,14 +40,14 @@ const lastGoalStatus = new Map<string, string>();
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 const retryAttemptBySession = new Map<string, number>();
 
-export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
-  const { tg, oc, store, retryingSessions, pendingPermissions, pendingForms, pendingFormsById, messageToSession, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
-  const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
+type EventHandler = (event: { type: string; data?: any }, deps: EventsDeps) => Promise<void>;
 
-  const e = event as { type: string; data?: any };
-// Debug-gated compact event log (use DEBUG=events).
-logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
-if (e.type === "session.text.started") {
+// ---------- handlers ----------
+
+const handleSessionTextStarted: EventHandler = async (event, deps) => {
+  const { tg, store, flushDraft } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID ?? e.data?.session?.id;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -62,9 +62,12 @@ if (e.type === "session.text.started") {
     tg.sendChatAction(chatId, "typing", s.threadId).catch(() => {});
   }, 4000);
   tg.sendChatAction(chatId, "typing", s.threadId).catch(() => {});
-}
+};
 
-if (e.type === "session.reasoning.started") {
+const handleSessionReasoningStarted: EventHandler = async (event, deps) => {
+  const { store } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -72,9 +75,12 @@ if (e.type === "session.reasoning.started") {
   const s = _s0;
   if (!s) return;
   s.reasoningBuffer = "";
-}
+};
 
-if (e.type === "session.reasoning.delta") {
+const handleSessionReasoningDelta: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -83,9 +89,12 @@ if (e.type === "session.reasoning.delta") {
   if (!s) return;
   s.reasoningBuffer += e.data?.delta ?? "";
   updateStatus(chatId, s).catch(() => {});
-}
+};
 
-if (e.type === "session.tool.input.started") {
+const handleSessionToolInputStarted: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -96,9 +105,12 @@ if (e.type === "session.tool.input.started") {
   const id = e.data?.id ?? String(s.toolCallDetails.length);
   s.toolCallDetails.push({ id, name: e.data?.name ?? "tool", status: "running" });
   updateStatus(chatId, s, true).catch(() => {});
-}
+};
 
-if (e.type === "session.tool.called") {
+const handleSessionToolCalled: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -112,9 +124,12 @@ if (e.type === "session.tool.called") {
     detail.input = typeof input === "string" ? input : JSON.stringify(input ?? "");
   }
   updateStatus(chatId, s, true).catch(() => {});
-}
+};
 
-if (e.type === "session.tool.success") {
+const handleSessionToolSuccess: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -129,9 +144,12 @@ if (e.type === "session.tool.success") {
     detail.output = typeof out === "string" ? out.slice(0, 2000) : JSON.stringify(out ?? "").slice(0, 2000);
   }
   updateStatus(chatId, s, true).catch(() => {});
-}
+};
 
-if (e.type === "session.tool.failed") {
+const handleSessionToolFailed: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -145,9 +163,12 @@ if (e.type === "session.tool.failed") {
     detail.output = e.data?.error?.message ?? "failed";
   }
   updateStatus(chatId, s, true).catch(() => {});
-}
+};
 
-if (e.type === "session.compaction.started") {
+const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
+  const { tg, store, updateStatus } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -161,9 +182,12 @@ if (e.type === "session.compaction.started") {
     const threadId = resolveThreadId(sessionId);
     await tg.sendRichMessage(chatId, "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
   }
-}
+};
 
-if (e.type === "session.compaction.delta") {
+const handleSessionCompactionDelta: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -173,9 +197,12 @@ if (e.type === "session.compaction.delta") {
     s.compactionSummary = (s.compactionSummary ?? "") + (e.data?.text ?? "");
     updateStatus(chatId, s).catch(() => {});
   }
-}
+};
 
-if (e.type === "session.compaction.ended") {
+const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
+  const { tg, store, updateStatus } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -198,9 +225,12 @@ if (e.type === "session.compaction.ended") {
   await tg
     .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
     .catch(() => {});
-}
+};
 
-if (e.type === "session.compaction.failed") {
+const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
+  const { tg, store, updateStatus } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -213,9 +243,12 @@ if (e.type === "session.compaction.failed") {
     updateStatus(chatId, s, true).catch(() => {});
   }
   await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
-}
+};
 
-if (e.type === "mcp.status.changed") {
+const handleMcpStatusChanged: EventHandler = async (event, deps) => {
+  const { tg, store } = deps;
+  const { resolveChatId, resolveThreadId } = store;
+  const e = event;
   const server = e.data?.server;
   const chatId = resolveChatId(e.data?.sessionID);
   if (chatId !== undefined && server) {
@@ -223,9 +256,12 @@ if (e.type === "mcp.status.changed") {
     await tg.sendRichMessage(chatId, `🔌 MCP status changed: <b>${esc(server)}</b>\nUse /mcp to inspect.`, threadOpts(threadId)).catch(() => {});
   }
   return;
-}
+};
 
-if (e.type === "mcp.resources.changed") {
+const handleMcpResourcesChanged: EventHandler = async (event, deps) => {
+  const { tg, store } = deps;
+  const { resolveChatId, resolveThreadId } = store;
+  const e = event;
   const server = e.data?.server;
   const chatId = resolveChatId(e.data?.sessionID);
   if (chatId !== undefined && server) {
@@ -233,9 +269,12 @@ if (e.type === "mcp.resources.changed") {
     await tg.sendRichMessage(chatId, `📚 MCP resources changed: <b>${esc(server)}</b>\nUse /mcp resources.`, threadOpts(threadId)).catch(() => {});
   }
   return;
-}
+};
 
-if (e.type === "session.text.delta") {
+const handleSessionTextDelta: EventHandler = async (event, deps) => {
+  const { store, flushDraft } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -247,9 +286,12 @@ if (e.type === "session.text.delta") {
   if (!s.timer) {
     s.timer = setTimeout(() => void flushDraft(chatId, s), 250);
   }
-}
+};
 
-if (e.type === "session.step.ended") {
+const handleSessionStepEnded: EventHandler = async (event, deps) => {
+  const { tg, oc, store, settings, finishStatus, flushDraft } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -270,9 +312,9 @@ if (e.type === "session.step.ended") {
     }
     // Deliver files produced by the turn as Telegram documents.
     if (!s.stopped) {
-      const settings = deps.settings.get(chatId);
+      const settings2 = settings.get(chatId);
       const artifacts = Array.isArray(e.data?.files) ? e.data.files : [];
-      if (settings.autoArtifacts && artifacts.length) {
+      if (settings2.autoArtifacts && artifacts.length) {
         const artifactThread = s.targetThreadId ?? s.threadId ?? resolveThreadId(sessionId);
         const base = s.directory ?? process.cwd();
         const maxArtifacts = 5;
@@ -292,9 +334,15 @@ if (e.type === "session.step.ended") {
       }
     }
   }
-}
+  // status tracking
+  const sid = e.data?.sessionID;
+  if (sid) store.setSessionStatus(sid, "idle");
+};
 
-if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) {
+const handleSessionTextEnded: EventHandler = async (event, deps) => {
+  const { tg, oc, store, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -354,7 +402,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       const speed = (tokens / elapsed).toFixed(1);
       finalText += "\n\n⚡ " + speed + " tok/s";
     }
-    const threadOpts = store.threadOptsFor(s);
+    const threadOpts2 = store.threadOptsFor(s);
     // Build quick-switch keyboard (prev/next session in the project).
     const quickKeyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     try {
@@ -373,7 +421,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
     logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
     const finalHtml = markdownToHtml(finalText) + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
-    const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
+    const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
       console.error("[send final]", err);
       return undefined;
     });
@@ -388,9 +436,12 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
     await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";
-}
+};
 
-if (e.type === "permission.asked") {
+const handlePermissionAsked: EventHandler = async (event, deps) => {
+  const { tg, oc, store, pendingPermissions } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId } = store;
+  const e = event;
   const p = e.data ?? {};
   const requestId = p.id;
   const sessionId = p.sessionID;
@@ -433,9 +484,12 @@ if (e.type === "permission.asked") {
       pendingPermissions.delete(requestId);
     }
   }, 5 * 60 * 1000);
-}
+};
 
-if (e.type === "form.created") {
+const handleFormCreated: EventHandler = async (event, deps) => {
+  const { tg, store, pendingForms, pendingFormsById } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId } = store;
+  const e = event;
   const p = e.data ?? {};
   const form = p.form ?? p;
   const sessionId = p.sessionID ?? form.sessionID;
@@ -488,9 +542,11 @@ if (e.type === "form.created") {
     pendingForms.set(sent.message_id, state);
     pendingFormsById.set(formId, sent.message_id);
   }
-}
+};
 
-if (e.type === "permission.replied") {
+const handlePermissionReplied: EventHandler = async (event, deps) => {
+  const { tg, store, pendingPermissions } = deps;
+  const e = event;
   const p = e.data ?? {};
   const requestId = p.requestID;
   const info = requestId ? pendingPermissions.get(requestId) : undefined;
@@ -502,9 +558,12 @@ if (e.type === "permission.replied") {
     }
     pendingPermissions.delete(requestId);
   }
-}
+};
 
-if (e.type === "session.execution.failed") {
+const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
+  const { tg, oc, store, settings, finishStatus, retryingSessions, config } = deps as any;
+  const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
+  const e = event;
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
@@ -513,7 +572,7 @@ if (e.type === "session.execution.failed") {
     const threadId = resolveThreadId(sessionId);
     const isRateLimit = /rate limit|quota/i.test(msg);
     const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
-    const autoRetry = deps.config?.AUTO_RETRY_ENABLED ?? true;
+    const autoRetry = config?.AUTO_RETRY_ENABLED ?? true;
     const promptForRetry = sessionId ? lastPromptBySession.get(sessionId) : undefined;
     const willRetry = isRateLimit && !!sessionId && !retryingSessions.has(sessionId) && autoRetry && !!promptForRetry;
     const s2 = _s0;
@@ -526,9 +585,9 @@ if (e.type === "session.execution.failed") {
       const prompt = promptForRetry;
       if (prompt) {
         retryingSessions.add(sessionId);
-        const base = deps.config?.RETRY_BACKOFF_BASE_MS ?? 60000;
-        const max = deps.config?.RETRY_BACKOFF_MAX_MS ?? 900000;
-        const factor = deps.config?.RETRY_BACKOFF_FACTOR ?? 2;
+        const base = config?.RETRY_BACKOFF_BASE_MS ?? 60000;
+        const max = config?.RETRY_BACKOFF_MAX_MS ?? 900000;
+        const factor = config?.RETRY_BACKOFF_FACTOR ?? 2;
         const attempt = retryAttemptBySession.get(sessionId) ?? 0;
         const delay = Math.min(base * Math.pow(factor, attempt), max);
         retryAttemptBySession.set(sessionId, attempt + 1);
@@ -554,26 +613,45 @@ if (e.type === "session.execution.failed") {
       }
     }
   }
-}
+  // status tracking
+  const sid = e.data?.sessionID;
+  if (sid) store.setSessionStatus(sid, "idle");
+};
 
-// Track running state from step lifecycle (OpenCode does not emit session.status here).
-if (e.type === "session.step.started") {
+const handleSessionStepStarted: EventHandler = async (event, deps) => {
+  const { store } = deps;
+  const e = event;
   const sid = e.data?.sessionID;
   if (sid) {
     store.setSessionStatus(sid, "busy");
     logger.debug("events", "[step.started]", sid);
   }
-}
-if (e.type === "session.step.ended" || e.type === "session.idle") {
-  const sid = e.data?.sessionID;
-  if (sid) store.setSessionStatus(sid, "idle");
-}
-if (e.type === "session.execution.failed") {
-  const sid = e.data?.sessionID;
-  if (sid) store.setSessionStatus(sid, "idle");
-}
+};
 
-if (e.type === "rpc.opencode.goal.changed") {
+const handleSessionIdle: EventHandler = async (event, deps) => {
+  const { store, finishStatus } = deps;
+  const { findSessionById, resolveChatId } = store;
+  const e = event;
+  const sessionId = e.data?.sessionID;
+  const s = sessionId ? findSessionById(sessionId) : undefined;
+  // status tracking (set idle) first, preserving original ordering
+  const sid = e.data?.sessionID;
+  if (sid) store.setSessionStatus(sid, "idle");
+  if (s?.typingTimer) {
+    clearInterval(s.typingTimer);
+    s.typingTimer = undefined;
+  }
+  // Fallback turn-end signal for servers that emit session.idle.
+  const chatId = resolveChatId(sessionId);
+  if (s && chatId !== undefined && s.statusMessageId && !s.stopped) {
+    await finishStatus(chatId, s).catch(() => {});
+  }
+};
+
+const handleRpcGoalChanged: EventHandler = async (event, deps) => {
+  const { tg, store } = deps;
+  const { resolveChatId, resolveThreadId } = store;
+  const e = event;
   logger.debug("events", "[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
   const sessionId = e.data?.sessionID;
   const goal = e.data?.goal;
@@ -624,21 +702,47 @@ if (e.type === "rpc.opencode.goal.changed") {
     }
   }
   return;
-}
+};
 
-if (e.type === "session.idle") {
-  const sessionId = e.data?.sessionID;
-  const s = sessionId ? findSessionById(sessionId) : undefined;
-  if (s?.typingTimer) {
-    clearInterval(s.typingTimer);
-    s.typingTimer = undefined;
+export const defaultHandler: EventHandler = async () => {};
+
+export const eventHandlers = new Map<string, EventHandler>([
+  ["session.text.started", handleSessionTextStarted],
+  ["session.reasoning.started", handleSessionReasoningStarted],
+  ["session.reasoning.delta", handleSessionReasoningDelta],
+  ["session.tool.input.started", handleSessionToolInputStarted],
+  ["session.tool.called", handleSessionToolCalled],
+  ["session.tool.success", handleSessionToolSuccess],
+  ["session.tool.failed", handleSessionToolFailed],
+  ["session.compaction.started", handleSessionCompactionStarted],
+  ["session.compaction.delta", handleSessionCompactionDelta],
+  ["session.compaction.ended", handleSessionCompactionEnded],
+  ["session.compaction.failed", handleSessionCompactionFailed],
+  ["mcp.status.changed", handleMcpStatusChanged],
+  ["mcp.resources.changed", handleMcpResourcesChanged],
+  ["session.text.delta", handleSessionTextDelta],
+  ["session.step.ended", handleSessionStepEnded],
+  ["session.text.ended", handleSessionTextEnded],
+  ["permission.asked", handlePermissionAsked],
+  ["form.created", handleFormCreated],
+  ["permission.replied", handlePermissionReplied],
+  ["session.execution.failed", handleSessionExecutionFailed],
+  ["session.step.started", handleSessionStepStarted],
+  ["session.idle", handleSessionIdle],
+  ["rpc.opencode.goal.changed", handleRpcGoalChanged],
+]);
+
+export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
+  const e = event as { type: string; data?: any };
+  // Debug-gated compact event log (use DEBUG=events).
+  logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
+
+  let handler = eventHandlers.get(e.type);
+  if (!handler && e.type.startsWith("session.text.ended")) {
+    handler = eventHandlers.get("session.text.ended");
   }
-  // Fallback turn-end signal for servers that emit session.idle.
-  const chatId = resolveChatId(sessionId);
-  if (s && chatId !== undefined && s.statusMessageId && !s.stopped) {
-    await finishStatus(chatId, s).catch(() => {});
-  }
-}
+  if (!handler) handler = defaultHandler;
+  await handler(e, deps);
 }
 
 export function startEventLoop(deps: EventsDeps): void {

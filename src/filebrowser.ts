@@ -543,21 +543,37 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     const messageId = cq.message?.message_id;
     const view = messageId !== undefined ? views.get(`${chatId}:${messageId}`) : undefined;
 
-    try {
-      if (data.startsWith("fs:cd:")) {
+    const resolveKey = (value: string): string | undefined => {
+      const prefixes = ["fs:cd:", "fs:d:", "fs:p:", "fs:e:", "fs:peek:"];
+      for (const prefix of prefixes) {
+        if (value.startsWith(prefix)) return prefix;
+      }
+      if (value === "fs:r" || value === "fs:send" || value === "fs:u" || value === "fs:preview" || value === "fs:summary") return value;
+      return undefined;
+    };
+
+    type FsHandler = (
+      view: View | undefined,
+      chatId: number,
+      threadId: number | undefined,
+      messageId: number | undefined,
+      cq: TelegramCallbackQuery,
+      data: string,
+    ) => Promise<boolean>;
+
+    const handlers: Record<string, FsHandler> = {
+      "fs:cd:": async (view, chatId, threadId, messageId, cq, data) => {
         const target = data.slice(6);
         await tg.answerCallbackQuery(cq.id).catch(() => {});
         await showListing(chatId, threadId, target, { messageId, base: view?.base });
         return true;
-      }
-
-      if (data === "fs:r") {
+      },
+      "fs:r": async (view, chatId, threadId, messageId, cq) => {
         await tg.answerCallbackQuery(cq.id).catch(() => {});
         await showListing(chatId, threadId, "", { messageId, base: view?.base });
         return true;
-      }
-
-      if (data === "fs:send") {
+      },
+      "fs:send": async (view, chatId, threadId, _messageId, cq) => {
         if (!view || (view.kind !== "file" && view.kind !== "summary")) {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
@@ -565,9 +581,8 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await tg.answerCallbackQuery(cq.id, "Sending…").catch(() => {});
         await sendAsDocument(chatId, threadId, view.base, view.path);
         return true;
-      }
-
-      if (data === "fs:preview") {
+      },
+      "fs:preview": async (view, chatId, threadId, messageId, cq) => {
         if (!view || view.kind !== "summary") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
@@ -575,10 +590,13 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await tg.answerCallbackQuery(cq.id).catch(() => {});
         await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, maxLines: 160, forcePreview: true });
         return true;
-      }
-
-      const peekMatch = data.match(/^fs:peek:(\d+)$/);
-      if (peekMatch) {
+      },
+      "fs:peek:": async (view, chatId, threadId, messageId, cq, data) => {
+        const peekMatch = data.match(/^fs:peek:(\d+)$/);
+        if (!peekMatch) {
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          return true;
+        }
         if (!view || view.kind !== "summary") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
@@ -587,9 +605,8 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await tg.answerCallbackQuery(cq.id).catch(() => {});
         await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, startLine: line, maxLines: 40, forcePreview: true });
         return true;
-      }
-
-      if (data === "fs:u") {
+      },
+      "fs:u": async (view, chatId, threadId, messageId, cq) => {
         if (!view) {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
@@ -625,10 +642,13 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await tg.answerCallbackQuery(cq.id).catch(() => {});
         await showListing(chatId, threadId, parent, { messageId, hidden: view.hidden, base: view.base });
         return true;
-      }
-
-      const downloadMatch = data.match(/^fs:d:(\d+)$/);
-      if (downloadMatch) {
+      },
+      "fs:d:": async (view, chatId, threadId, _messageId, cq, data) => {
+        const downloadMatch = data.match(/^fs:d:(\d+)$/);
+        if (!downloadMatch) {
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          return true;
+        }
         if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
@@ -649,10 +669,13 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await tg.answerCallbackQuery(cq.id, "Sending…").catch(() => {});
         await sendAsDocument(chatId, threadId, view.base, entry.path);
         return true;
-      }
-
-      const pageMatch = data.match(/^fs:p:(\d+)$/);
-      if (pageMatch) {
+      },
+      "fs:p:": async (view, chatId, threadId, messageId, cq, data) => {
+        const pageMatch = data.match(/^fs:p:(\d+)$/);
+        if (!pageMatch) {
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          return true;
+        }
         if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
@@ -661,10 +684,13 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await tg.answerCallbackQuery(cq.id).catch(() => {});
         await render({ ...view, page }, messageId);
         return true;
-      }
-
-      const entryMatch = data.match(/^fs:e:(\d+)$/);
-      if (entryMatch) {
+      },
+      "fs:e:": async (view, chatId, threadId, messageId, cq, data) => {
+        const entryMatch = data.match(/^fs:e:(\d+)$/);
+        if (!entryMatch) {
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          return true;
+        }
         if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
           await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
           return true;
@@ -675,8 +701,19 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         }
         await openEntry(view, parseInt(entryMatch[1], 10), messageId, cq.id);
         return true;
-      }
+      },
+      "fs:summary": async (_view, _chatId, _threadId, _messageId, cq) => {
+        await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+        return true;
+      },
+    };
 
+    try {
+      const key = resolveKey(data);
+      const handler = key ? handlers[key] : undefined;
+      if (handler) {
+        return await handler(view, chatId, threadId, messageId, cq, data);
+      }
       await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
       return true;
     } catch (err) {
@@ -687,7 +724,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     }
   }
 
-  return { showListing, showFind, showFile, showSummary, showSearch, handleCallback };
+    return { showListing, showFind, showFile, showSummary, showSearch, handleCallback };
 }
 
 function entryIcon(entry: FileEntry): string {

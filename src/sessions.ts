@@ -134,6 +134,88 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     return cs;
   }
 
+  async function resolveThread(chatId: number, sessionId: string, threadId?: number, topicsEnabled?: boolean, title?: string): Promise<number | undefined> {
+    let targetThread = threadId;
+    if (targetThread === undefined && chatId > 0) {
+      const mappedThread = threadBySession.get(sessionId);
+      if (mappedThread !== undefined && (store.chatBySession.get(sessionId) ?? chatId) === chatId) {
+        targetThread = mappedThread;
+      }
+    }
+    if (targetThread === undefined && topicsEnabled && chatId > 0) {
+      let topicTitle = title;
+      if (topicTitle === undefined) {
+        try {
+          const session = await oc.client.session.get({ sessionID: sessionId });
+          const s = session as { title?: string };
+          topicTitle = (s?.title || sessionId).slice(0, 120);
+        } catch {
+          topicTitle = sessionId.slice(0, 120);
+        }
+      }
+      try {
+        const topic = await tg.createForumTopic(chatId, topicTitle);
+        targetThread = topic.message_thread_id;
+      } catch {
+        // Topic creation may fail in non-forum chats; fall back to general chat.
+      }
+    }
+    return targetThread;
+  }
+
+  async function bindTab(chatId: number, cs: ChatSession, targetThread?: number): Promise<void> {
+    if (targetThread !== undefined) {
+      cs.threadId = targetThread;
+      cs.targetThreadId = targetThread;
+      const route = store.routeKey(chatId, targetThread);
+      const previous = sessionsByThread.get(route);
+      if (previous && previous.sessionId !== cs.sessionId) await retireSession(chatId, previous);
+      for (const [key, existing] of sessionsByThread) {
+        if (key !== route && existing.sessionId === cs.sessionId) sessionsByThread.delete(key);
+      }
+      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== cs.sessionId && (store.chatBySession.get(sid) ?? chatId) === chatId) threadBySession.delete(sid);
+      sessionsByThread.set(route, cs);
+      threadBySession.set(cs.sessionId, targetThread);
+      saveThreads();
+    } else {
+      for (const [key, existing] of sessionsByThread) if (existing.sessionId === cs.sessionId) sessionsByThread.delete(key);
+      const prev = sessionsByChat.get(chatId);
+      if (prev && prev.sessionId !== cs.sessionId) await retireSession(chatId, prev);
+      sessionsByChat.set(chatId, cs);
+    }
+  }
+
+  async function syncTitle(chatId: number, cs: ChatSession, title: string, threadId?: number): Promise<number | undefined> {
+    let targetThread = cs.targetThreadId ?? cs.threadId;
+    if (targetThread === undefined) return targetThread;
+    if (cs.topicTitle === title) return targetThread;
+    try {
+      await tg.editForumTopic(chatId, targetThread, title);
+      cs.topicTitle = title;
+      store.rememberTopicTitle(cs.sessionId, title);
+    } catch {
+      if (threadId === undefined) {
+        try {
+          const topic = await tg.createForumTopic(chatId, title);
+          const oldTarget = targetThread;
+          if (oldTarget !== undefined) sessionsByThread.delete(store.routeKey(chatId, oldTarget));
+          threadBySession.delete(cs.sessionId);
+          const newTarget = topic.message_thread_id;
+          if (oldTarget !== undefined) activeSessionByRoute.delete(routeKey(chatId, oldTarget));
+          cs.threadId = newTarget;
+          cs.targetThreadId = newTarget;
+          sessionsByThread.set(store.routeKey(chatId, newTarget), cs);
+          threadBySession.set(cs.sessionId, newTarget);
+          saveThreads();
+          targetThread = newTarget;
+        } catch {
+          // keep the previous binding
+        }
+      }
+    }
+    return targetThread;
+  }
+
   async function activateSession(chatId: number, sessionId: string, silent = true, threadId?: number): Promise<ChatSession | undefined> {
     const session = await oc.client.session.get({ sessionID: sessionId });
     const s = session as { location?: { directory?: string }; directory?: string; model?: { id: string; providerID: string; variant?: string }; title?: string };
@@ -173,71 +255,13 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       await finishStatus(chatId, stale).catch(() => {});
     }
 
-    let targetThread = threadId;
-    if (targetThread === undefined && chatId > 0) {
-      const mappedThread = threadBySession.get(sessionId);
-      if (mappedThread !== undefined && (store.chatBySession.get(sessionId) ?? chatId) === chatId) {
-        targetThread = mappedThread;
-      }
-    }
-    if (targetThread === undefined && topicsEnabled && chatId > 0) {
-      try {
-        const topic = await tg.createForumTopic(chatId, title);
-        targetThread = topic.message_thread_id;
-      } catch {
-        // Topic creation may fail in non-forum chats; fall back to general chat.
-      }
-    }
+    let targetThread = await resolveThread(chatId, sessionId, threadId, topicsEnabled, title);
+
+    await bindTab(chatId, cs, targetThread);
 
     if (targetThread !== undefined) {
-      cs.threadId = targetThread;
-      cs.targetThreadId = targetThread;
-      const route = store.routeKey(chatId, targetThread);
-      // A tab always shows exactly one session. Retire whatever was there before.
-      const previous = sessionsByThread.get(route);
-      if (previous && previous.sessionId !== sessionId) await retireSession(chatId, previous);
-      // Move the session to this tab and remove duplicates from other tabs.
-      for (const [key, existing] of sessionsByThread) {
-        if (key !== route && existing.sessionId === sessionId) sessionsByThread.delete(key);
-      }
-      for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== sessionId && (store.chatBySession.get(sid) ?? chatId) === chatId) threadBySession.delete(sid);
-      sessionsByThread.set(route, cs);
-      threadBySession.set(sessionId, targetThread);
-      saveThreads();
-
-      // Keep the tab title in sync with the OpenCode session title.
-      if (cs.topicTitle !== title) {
-        try {
-          await tg.editForumTopic(chatId, targetThread, title);
-          cs.topicTitle = title;
-          store.rememberTopicTitle(sessionId, title);
-        } catch {
-        // Topic may have been deleted. Only recreate when we weren't explicitly
-        // asked to bind to this particular tab.
-        if (threadId === undefined) {
-          try {
-            const topic = await tg.createForumTopic(chatId, title);
-            const oldTarget = targetThread;
-            if (oldTarget !== undefined) sessionsByThread.delete(store.routeKey(chatId, oldTarget));
-            threadBySession.delete(sessionId);
-            targetThread = topic.message_thread_id;
-            if (oldTarget !== undefined) activeSessionByRoute.delete(routeKey(chatId, oldTarget));
-            cs.threadId = targetThread;
-            cs.targetThreadId = targetThread;
-            sessionsByThread.set(store.routeKey(chatId, targetThread), cs);
-            threadBySession.set(sessionId, targetThread);
-            saveThreads();
-          } catch {
-            // keep the previous binding
-          }
-        }
-      }
-      }
-    } else {
-      for (const [key, existing] of sessionsByThread) if (existing.sessionId === sessionId) sessionsByThread.delete(key);
-      const prev = sessionsByChat.get(chatId);
-      if (prev && prev.sessionId !== sessionId) await retireSession(chatId, prev);
-      sessionsByChat.set(chatId, cs);
+      const newThread = await syncTitle(chatId, cs, title, threadId);
+      if (newThread !== undefined) targetThread = newThread;
     }
 
     sessionsById.set(sessionId, cs);
@@ -343,5 +367,5 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       console.error("[cleanup] stale sessions failed", err);
     }
   };
-  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions };
+  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions, resolveThread, bindTab, syncTitle };
 }

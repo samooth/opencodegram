@@ -58,24 +58,39 @@ export const KNOWN_COMMANDS = new Set([
   "use",
 ]);
 
-export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
+export const COMMANDS = new Map<string, (deps: BotDeps, chatId: number, threadId: number | undefined, args: string, send: SendFn) => Promise<void>>();
+
+function ctx(deps: BotDeps) {
   const { config, tg, oc, panels, sessions, files, store } = deps;
+  const settings = deps.settings;
   const updateStatus = deps.status?.updateStatus ?? (async () => {});
   const { restoreActiveSession, activateSession } = sessions;
   const { sendPanel, showCommands, showModels, showSessions, showDeleteSessions, showStatus } = panels;
+  return { config, tg, oc, panels, sessions, files, store, settings, updateStatus, restoreActiveSession, activateSession, sendPanel, showCommands, showModels, showSessions, showDeleteSessions, showStatus };
+}
 
+async function cmd_start(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/start" || text === "/help") {
-    await sendPanel(chatId, threadId);
+    await C.sendPanel(chatId, threadId);
     return true;
   }
+  return false;
+}
 
+async function cmd_status(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/status" || text === "/session") {
-    await showStatus(chatId, threadId);
+    await C.showStatus(chatId, threadId);
     return true;
   }
+  return false;
+}
 
+async function cmd_new(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/new") {
-    const active = await restoreActiveSession(chatId, threadId);
+    const active = await C.restoreActiveSession(chatId, threadId);
     if (active) {
       await send(`⚠️ Ya hay una sesión activa: <code>${esc(active.sessionId)}</code>.\\n¿Crear una nueva y reemplazarla?`, {
         reply_markup: {
@@ -86,12 +101,16 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       });
       return true;
     }
-    await sessions.createNewSession(chatId, false, threadId);
+    await deps.sessions.createNewSession(chatId, false, threadId);
     return true;
   }
+  return false;
+}
 
+async function cmd_stop(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/stop" || text === "/abort") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session");
       return true;
@@ -102,42 +121,52 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         clearInterval(s.statusTimer);
         s.statusTimer = undefined;
       }
-      await oc.interrupt(s.sessionId);
-      // Re-render the status card keeping its content, only marking it as stopped.
+      await C.oc.interrupt(s.sessionId);
       if (s.statusMessageId) {
-        await updateStatus(chatId, s, true).catch(() => {});
+        await C.updateStatus(chatId, s, true).catch(() => {});
       }
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_commands(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/commands") {
-    await showCommands(chatId, threadId);
+    await C.showCommands(chatId, threadId);
     return true;
   }
+  return false;
+}
 
+async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/settings") {
-    const settings = deps.settings.get(chatId);
+    const settings = C.settings.get(chatId);
     await send(renderSettings(chatId, settings), { reply_markup: { inline_keyboard: settingsKeyboard(settings) } });
     return true;
   }
+  return false;
+}
 
+async function cmd_file(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/file" || text.startsWith("/file ")) {
     const rawPath = text.slice("/file".length).trim();
     if (!rawPath) {
       await send("usage: /file <path> (relative to the session directory)");
       return true;
     }
-    const s = await restoreActiveSession(chatId, threadId);
-    const base = resolve(s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd());
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const base = resolve(s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd());
     try {
-      // prepareDocument resolves symlinks and confines the real path to base.
       const doc = await prepareDocument(base, rawPath);
-      const progress = await tg.sendRichMessage(chatId, `📎 Sending <b>${esc(doc.name)}</b> (${formatBytes(doc.size)})…`, threadOpts(threadId));
+      const progress = await C.tg.sendRichMessage(chatId, `📎 Sending <b>${esc(doc.name)}</b> (${formatBytes(doc.size)})…`, threadOpts(threadId));
       try {
-        await tg.sendDocument(
+        await C.tg.sendDocument(
           chatId,
           doc.absolute,
           doc.name,
@@ -145,24 +174,32 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
           { ...threadOpts(threadId), parse_mode: "HTML" },
         );
       } finally {
-        await tg.deleteMessage(chatId, progress.message_id).catch(() => {});
+        await C.tg.deleteMessage(chatId, progress.message_id).catch(() => {});
       }
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_ls(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/ls" || text.startsWith("/ls ")) {
     const { path, hidden } = parseListArgs(text.slice(3).trim());
     try {
-      await files.showListing(chatId, threadId, path, { hidden });
+      await C.files.showListing(chatId, threadId, path, { hidden });
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_find(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/find" || text.startsWith("/find ")) {
     const { query, hidden } = parseFindArgs(text.slice(5).trim());
     if (!query) {
@@ -170,23 +207,27 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       return true;
     }
     try {
-      await files.showFind(chatId, threadId, query, { hidden });
+      await C.files.showFind(chatId, threadId, query, { hidden });
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_zip(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/zip" || text.startsWith("/zip ")) {
     const rawPath = text.slice("/zip".length).trim() || ".";
-    const s = await restoreActiveSession(chatId, threadId);
-    const base = resolve(s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd());
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const base = resolve(s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd());
     let archive: Awaited<ReturnType<typeof createZipArchive>> | undefined;
-    const progress = await tg.sendRichMessage(chatId, "🗜 Creating archive…", threadOpts(threadId));
+    const progress = await C.tg.sendRichMessage(chatId, "🗜 Creating archive…", threadOpts(threadId));
     try {
       archive = await createZipArchive(base, rawPath);
-      await tg.editRichMessage(chatId, progress.message_id, `📎 Sending <b>${esc(archive.name)}</b> (${formatBytes(archive.size)})…`, threadOpts(threadId)).catch(() => {});
-      await tg.sendDocument(
+      await C.tg.editRichMessage(chatId, progress.message_id, `📎 Sending <b>${esc(archive.name)}</b> (${formatBytes(archive.size)})…`, threadOpts(threadId)).catch(() => {});
+      await C.tg.sendDocument(
         chatId,
         archive.absolute,
         archive.name,
@@ -197,11 +238,15 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     } finally {
       await archive?.cleanup();
-      await tg.deleteMessage(chatId, progress.message_id).catch(() => {});
+      await C.tg.deleteMessage(chatId, progress.message_id).catch(() => {});
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_read(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/read" || text.startsWith("/read ")) {
     const raw = text.slice(5).trim();
     if (!raw) {
@@ -211,7 +256,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     if (raw.toLowerCase().endsWith(" summary")) {
       const path = raw.slice(0, -8).trim();
       try {
-        await files.showSummary(chatId, threadId, path);
+        await C.files.showSummary(chatId, threadId, path);
       } catch (err) {
         await send(`❌ ${esc(fileErrorMessage(err))}`);
       }
@@ -222,7 +267,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       const path = grepMatch[1].trim();
       const pattern = grepMatch[2].trim();
       try {
-        await files.showSearch(chatId, threadId, path, pattern);
+        await C.files.showSearch(chatId, threadId, path, pattern);
       } catch (err) {
         await send(`❌ ${esc(fileErrorMessage(err))}`);
       }
@@ -230,21 +275,25 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     const { path, startLine } = parseReadArgs(raw);
     try {
-      await files.showFile(chatId, threadId, path, { startLine, maxLines: deps.settings.get(chatId).previewLines });
+      await C.files.showFile(chatId, threadId, path, { startLine, maxLines: C.settings.get(chatId).previewLines });
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_tree(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/tree" || text.startsWith("/tree ")) {
     const raw = text.slice(5).trim();
     const [pathPart, depthPart] = raw.split(/\s+/);
     const path = pathPart || ".";
     const depth = depthPart ? parseInt(depthPart, 10) : 3;
     const base = (await (async () => {
-      const s = await restoreActiveSession(chatId, threadId);
-      return s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+      const s = await C.restoreActiveSession(chatId, threadId);
+      return s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
     })());
     try {
       const t = await treeDirectory(base, path, Number.isFinite(depth) ? depth : 3);
@@ -255,20 +304,28 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_models(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/models" || text === "/model") {
-    await showModels(chatId, 0, undefined, threadId);
+    await C.showModels(chatId, 0, undefined, threadId);
     return true;
   }
+  return false;
+}
 
+async function cmd_agents(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/agents" || text === "/agent") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
-    const directory = s.directory ?? config.OPENCODE_DIRECTORY;
-    const agents = await oc.listAgents(directory);
+    const directory = s.directory ?? C.config.OPENCODE_DIRECTORY;
+    const agents = await C.oc.listAgents(directory);
     if (!agents.length) {
       await send("no agents available. Configure agents in OpenCode.");
       return true;
@@ -280,11 +337,15 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     await send(`<b>Agents</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
     return true;
   }
+  return false;
+}
 
+async function cmd_skills(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/skills" || text === "/skill") {
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
-    const skills = await oc.listSkills(directory);
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
+    const skills = await C.oc.listSkills(directory);
     if (!skills.length) {
       await send("no skills available.");
       return true;
@@ -296,9 +357,8 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     await send(`<b>Skills</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
     return true;
   }
-
   if (text.startsWith("/skill ")) {
-    let s = await restoreActiveSession(chatId, threadId);
+    let s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session. Usa /sessions para activar una o envía un mensaje para crearla.", { reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] } });
       return true;
@@ -309,17 +369,21 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       return true;
     }
     try {
-      await oc.loadSkill(s.sessionId, id);
+      await C.oc.loadSkill(s.sessionId, id);
       await send(`Loaded skill <b>${esc(id)}</b>.`);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_usage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/usage") {
     try {
-      const stats = await oc.client.session.stats();
+      const stats = await C.oc.client.session.stats();
       const data = ((stats as { data?: unknown })?.data ?? stats) as {
         sessions?: number; prompts?: number; steps?: number;
         tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number } };
@@ -340,12 +404,16 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_vcs(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/vcs" || text.startsWith("/vcs ")) {
     const args = text.slice(4).trim().split(/\s+/).filter(Boolean);
     const subcommand = args[0]?.toLowerCase();
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
 
     if (!subcommand || subcommand === "status") {
       try {
@@ -388,16 +456,20 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     await send("usage: /vcs [status|diff [--cached] [path]|log]");
     return true;
   }
+  return false;
+}
 
+async function cmd_mcp(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/mcp" || text.startsWith("/mcp ")) {
     const args = text.slice(4).trim().split(/\s+/).filter(Boolean);
     const subcommand = (args[0] ?? "list").toLowerCase();
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
 
     if (subcommand === "list" || subcommand === "ls" || subcommand === "status") {
       try {
-        const { text: listText, keyboard } = await mcp.renderMcpList(oc, directory);
+        const { text: listText, keyboard } = await mcp.renderMcpList(C.oc, directory);
         await send(listText, { reply_markup: { inline_keyboard: keyboard } });
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
@@ -412,8 +484,8 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         return true;
       }
       try {
-        await mcp.connectMcpServer(oc, name, directory);
-        const { text: listText, keyboard } = await mcp.renderMcpList(oc, directory);
+        await mcp.connectMcpServer(C.oc, name, directory);
+        const { text: listText, keyboard } = await mcp.renderMcpList(C.oc, directory);
         await send(`✅ Connected ${esc(name)}\n\n${listText}`, { reply_markup: { inline_keyboard: keyboard } });
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
@@ -428,8 +500,8 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         return true;
       }
       try {
-        await mcp.disconnectMcpServer(oc, name, directory);
-        const { text: listText, keyboard } = await mcp.renderMcpList(oc, directory);
+        await mcp.disconnectMcpServer(C.oc, name, directory);
+        const { text: listText, keyboard } = await mcp.renderMcpList(C.oc, directory);
         await send(`✅ Disconnected ${esc(name)}\n\n${listText}`, { reply_markup: { inline_keyboard: keyboard } });
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
@@ -444,8 +516,8 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         return true;
       }
       try {
-        await mcp.removeMcpServer(oc, name, directory);
-        const { text: listText, keyboard } = await mcp.renderMcpList(oc, directory);
+        await mcp.removeMcpServer(C.oc, name, directory);
+        const { text: listText, keyboard } = await mcp.renderMcpList(C.oc, directory);
         await send(`✅ Removed ${esc(name)}\n\n${listText}`, { reply_markup: { inline_keyboard: keyboard } });
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
@@ -455,7 +527,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
 
     if (subcommand === "resources" || subcommand === "catalog") {
       try {
-        const { resources, templates } = await mcp.listMcpResources(oc, directory);
+        const { resources, templates } = await mcp.listMcpResources(C.oc, directory);
         const all = [...resources, ...templates];
         if (!all.length) {
           await send("No MCP resources available.");
@@ -495,9 +567,14 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     await send("usage: /mcp [list|connect <name>|disconnect <name>|remove <name>|resources|read <uri>]");
     return true;
   }
+  return false;
+}
+
+async function cmd_branches(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/branches" || text === "/branch" || text.startsWith("/branch ")) {
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
     const parts = text.split(/\s+/).filter(Boolean);
     const subcommand = parts[1]?.toLowerCase();
     if (!subcommand || subcommand === "list" || subcommand === "ls") {
@@ -539,15 +616,19 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_stage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/stage" || text.startsWith("/stage ")) {
     const path = text.slice(6).trim();
     if (!path) {
       await send("usage: /stage <path>");
       return true;
     }
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
     try {
       const result = await vcs.vcsStage(directory, path);
       await send(`✅ ${esc(result.output)}`);
@@ -556,15 +637,19 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_unstage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/unstage" || text.startsWith("/unstage ")) {
     const path = text.slice(8).trim();
     if (!path) {
       await send("usage: /unstage <path>");
       return true;
     }
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
     try {
       const result = await vcs.vcsUnstage(directory, path);
       await send(`✅ ${esc(result.output)}`);
@@ -573,7 +658,11 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_commit(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/commit" || text.startsWith("/commit ")) {
     const rest = text.slice(7).trim();
     if (!rest) {
@@ -586,8 +675,8 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         await send("usage: /commit confirm <message>");
         return true;
       }
-      const s = await restoreActiveSession(chatId, threadId);
-      const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+      const s = await C.restoreActiveSession(chatId, threadId);
+      const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
       try {
         const result = await vcs.vcsCommit(directory, message);
         await send(`✅ ${esc(result.output)}`);
@@ -599,12 +688,16 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     await send(`Commit message:\n<code>${esc(rest)}</code>\nReply /commit confirm ${esc(rest)} to proceed.`);
     return true;
   }
+  return false;
+}
 
+async function cmd_worktree(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/worktrees") {
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY;
     try {
-      const list = await oc.worktreeList(directory);
+      const list = await C.oc.worktreeList(directory);
       if (!list.length) {
         await send("no worktrees.");
         return true;
@@ -616,16 +709,15 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
-
   if (text === "/worktree" || text.startsWith("/worktree ")) {
     const args = text.slice("/worktree".length).trim().split(/\s+/).filter(Boolean);
     const subcommand = (args[0] ?? "list").toLowerCase();
-    const s = await restoreActiveSession(chatId, threadId);
-    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const s = await C.restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? C.config.OPENCODE_DIRECTORY ?? process.cwd();
 
     if (subcommand === "list" || subcommand === "ls") {
       try {
-        const list = await oc.worktreeList(directory);
+        const list = await C.oc.worktreeList(directory);
         if (!list.length) {
           await send("no worktrees.");
           return true;
@@ -646,7 +738,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       }
       const branch = args[2];
       try {
-        const info = await oc.worktreeCreate(directory, name, branch) as { directory?: string; path?: string };
+        const info = await C.oc.worktreeCreate(directory, name, branch) as { directory?: string; path?: string };
         const created = info?.directory ?? info?.path ?? name;
         await send(`✅ Worktree created\n<code>${esc(created)}</code>\nUse /worktree switch ${esc(created)}`);
       } catch (err) {
@@ -663,7 +755,7 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
           return true;
         }
         try {
-          await oc.worktreeRemove(directory, target, true);
+          await C.oc.worktreeRemove(directory, target, true);
           await send(`✅ Worktree removed\n<code>${esc(target)}</code>`);
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
@@ -690,13 +782,13 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         return true;
       }
       try {
-        const list = await oc.worktreeList(directory);
+        const list = await C.oc.worktreeList(directory);
         const directories = list.map((w: any) => w.directory ?? w.path).filter(Boolean);
         if (!directories.includes(target)) {
           await send(`❌ Not a known worktree:\n<code>${esc(target)}</code>`);
           return true;
         }
-        await oc.sessionMove(s.sessionId, target);
+        await C.oc.sessionMove(s.sessionId, target);
         s.directory = target;
         await send(`✅ Switched session to\n<code>${esc(target)}</code>`);
       } catch (err) {
@@ -708,15 +800,19 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     await send("usage: /worktree [list|create <name> [branch]|remove <directory>|switch <directory>]");
     return true;
   }
+  return false;
+}
 
+async function cmd_forms(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/forms") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      const forms = await oc.listForms(s.sessionId);
+      const forms = await C.oc.listForms(s.sessionId);
       if (!forms.length) {
         await send("no pending forms.");
         return true;
@@ -735,9 +831,13 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_formreply(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text.startsWith("/formreply ")) {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
@@ -758,38 +858,46 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       return true;
     }
     try {
-      await oc.replyForm(s.sessionId, formId, answer as Record<string, string | number | boolean | string[]>);
+      await C.oc.replyForm(s.sessionId, formId, answer as Record<string, string | number | boolean | string[]>);
       await send(`Form ${esc(formId)} answered.`);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_fork(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/fork") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      const forked = await oc.forkSession(s.sessionId);
+      const forked = await C.oc.forkSession(s.sessionId);
       const _f = forked as { id?: string; sessionID?: string; data?: { id?: string } } | undefined;
       const newId = _f?.id ?? _f?.sessionID ?? _f?.data?.id;
       if (!newId) {
         await send("❌ Could not determine forked session id.");
         return true;
       }
-      await activateSession(chatId, newId, true, threadId);
+      await C.activateSession(chatId, newId, true, threadId);
       await send(`Forked session.\n<code>${esc(s.sessionId)}</code> → <code>${esc(newId)}</code>`);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_rename(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text.startsWith("/rename ")) {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
@@ -800,17 +908,17 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       return true;
     }
     try {
-      await oc.renameSession(s.sessionId, title);
-      const threadIdToEdit = s.targetThreadId ?? s.threadId ?? store.threadBySession.get(s.sessionId);
+      await C.oc.renameSession(s.sessionId, title);
+      const threadIdToEdit = s.targetThreadId ?? s.threadId ?? C.store.threadBySession.get(s.sessionId);
       if (threadIdToEdit) {
         try {
           const targetChat = s.targetChatId ?? chatId;
-          const ok = await tg.editForumTopic(targetChat, threadIdToEdit, title.slice(0, 120));
+          const ok = await C.tg.editForumTopic(targetChat, threadIdToEdit, title.slice(0, 120));
           if (ok) {
             s.threadId = threadIdToEdit;
             s.targetThreadId = threadIdToEdit;
             s.topicTitle = title.slice(0, 120);
-            store.rememberTopicTitle(s.sessionId, s.topicTitle);
+            C.store.rememberTopicTitle(s.sessionId, s.topicTitle);
           } else {
             console.error("[rename] editForumTopic returned false for", chatId, threadIdToEdit);
           }
@@ -826,47 +934,59 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_archive(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/archive") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      await oc.archiveSession(s.sessionId, true);
+      await C.oc.archiveSession(s.sessionId, true);
       await send("Session archived.");
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/unarchive") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      await oc.archiveSession(s.sessionId, false);
+      await C.oc.archiveSession(s.sessionId, false);
       await send("Session unarchived.");
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_delete(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/deletesessions group" || text === "/delete sessions group" || text === "/deletesessions g") {
-    await showDeleteSessions(chatId, 0, undefined, threadId, chatId);
+    await C.showDeleteSessions(chatId, 0, undefined, threadId, chatId);
     return true;
   }
   if (text === "/deletesessions" || text === "/delete sessions" || text === "/delete list") {
-    await showDeleteSessions(chatId, 0, undefined, threadId);
+    await C.showDeleteSessions(chatId, 0, undefined, threadId);
     return true;
   }
   if (text === "/delete") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
@@ -883,32 +1003,35 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     });
     return true;
   }
-
   if (text === "/delete confirm") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      await oc.deleteSession(s.sessionId);
-      deps.store.forgetSession(s.sessionId);
+      await C.oc.deleteSession(s.sessionId);
+      C.store.forgetSession(s.sessionId);
       await send("Session deleted.");
-      await sendPanel(chatId, threadId);
+      await C.sendPanel(chatId, threadId);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_diff(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/diff") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      const diffs = await oc.diff(s.sessionId);
+      const diffs = await C.oc.diff(s.sessionId);
       if (!diffs.length) {
         await send("No changes.");
         return true;
@@ -928,16 +1051,20 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_sync(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/sync") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      const ctx = await oc.context(s.sessionId);
-      const items = (Array.isArray(ctx) ? ctx : ((ctx as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
+      const ctxData = await C.oc.context(s.sessionId);
+      const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
       const meaningful = items
         .filter((m: any) => {
           const role = m.role ?? m.type;
@@ -981,18 +1108,22 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_context(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/context") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      const session = await oc.client.session.get({ sessionID: s.sessionId });
+      const session = await C.oc.client.session.get({ sessionID: s.sessionId });
       const modelInfo = await (async () => {
         try {
-          const res = await oc.client.model.list();
+          const res = await C.oc.client.model.list();
           const list = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as Array<Record<string, unknown>>;
           return list.find((m: any) => m.id === session.model?.id && m.providerID === session.model?.providerID);
         } catch {
@@ -1005,8 +1136,8 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       const outTok = tokens.output ?? 0;
       const reasonTok = tokens.reasoning ?? 0;
       const cacheRead = tokens.cache?.read ?? 0;
-      const ctx = await oc.context(s.sessionId);
-      const items = (Array.isArray(ctx) ? ctx : ((ctx as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
+      const ctxData = await C.oc.context(s.sessionId);
+      const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
       const meaningful = items.filter((m: any) => {
         const role = m.role ?? m.type;
         if (role === "idle") return false;
@@ -1100,29 +1231,37 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_compact(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/compact") {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
     try {
-      await oc.compactSession(s.sessionId);
+      await C.oc.compactSession(s.sessionId);
       await send("Session compacted.");
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_retry(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/retry" || text.startsWith("/retry ")) {
-    const s = await restoreActiveSession(chatId, threadId);
+    const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
     }
-    const prompt = deps.store.lastPromptBySession.get(s.sessionId);
+    const prompt = C.store.lastPromptBySession.get(s.sessionId);
     if (!prompt) {
       await send("no previous prompt to retry.");
       return true;
@@ -1130,51 +1269,116 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
     try {
       s.targetChatId = chatId;
       s.targetThreadId = threadId;
-      deps.store.rememberSessionChat(s.sessionId, chatId);
-      deps.store.rememberActiveRoute(chatId, threadId, s.sessionId);
+      C.store.rememberSessionChat(s.sessionId, chatId);
+      C.store.rememberActiveRoute(chatId, threadId, s.sessionId);
       s.promptStartTime = Date.now();
-      deps.store.rememberLastChat(s.sessionId, chatId);
-      deps.store.rememberLastPrompt(s.sessionId, prompt);
+      C.store.rememberLastChat(s.sessionId, chatId);
+      C.store.rememberLastPrompt(s.sessionId, prompt);
       await send("🔁 Retrying last prompt…");
-      await oc.prompt(s.sessionId, prompt);
+      await C.oc.prompt(s.sessionId, prompt);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
   }
+  return false;
+}
 
+async function cmd_running_sessions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/running" || text === "/sessions running" || text === "/sessions busy") {
-    await showSessions(chatId, 0, undefined, threadId, undefined, true);
+    await C.showSessions(chatId, 0, undefined, threadId, undefined, true);
     return true;
   }
   if (text === "/sessions" || text.startsWith("/sessions ")) {
     const arg = text.slice("/sessions".length).trim();
     if (arg === "group" || arg === "g") {
-      await showSessions(chatId, 0, undefined, threadId, chatId);
+      await C.showSessions(chatId, 0, undefined, threadId, chatId);
       return true;
     }
     const page = /^\d+$/.test(arg) ? Math.max(0, parseInt(arg, 10) - 1) : 0;
-    await showSessions(chatId, page, undefined, threadId);
+    await C.showSessions(chatId, page, undefined, threadId);
     return true;
   }
+  return false;
+}
 
+async function cmd_use(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/use" || text.startsWith("/use ")) {
     const sessionId = text.slice(4).trim();
     if (!sessionId) {
-      await showSessions(chatId, 0, undefined, threadId);
+      await C.showSessions(chatId, 0, undefined, threadId);
       return true;
     }
     try {
-      await activateSession(chatId, sessionId, true, threadId);
+      await C.activateSession(chatId, sessionId, true, threadId);
       await send(`✅ Switched to session\n<code>${esc(sessionId)}</code>`);
     } catch (err) {
       await send(`failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
     }
     return true;
   }
-
   return false;
 }
+
+export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
+  const name = text.startsWith("/") ? (text.slice(1).split(/\s/, 1)[0] ?? "") : "";
+  // normalize command name: strip trailing? keep as-is
+  const handler = COMMANDS.get(name);
+  if (!handler) return false;
+  const result = await (handler as any)(deps, chatId, threadId, text, send);
+  return result !== false;
+}
+
+// Register handlers
+COMMANDS.set("start", cmd_start as any);
+COMMANDS.set("help", cmd_start as any);
+COMMANDS.set("status", cmd_status as any);
+COMMANDS.set("session", cmd_status as any);
+COMMANDS.set("new", cmd_new as any);
+COMMANDS.set("stop", cmd_stop as any);
+COMMANDS.set("abort", cmd_stop as any);
+COMMANDS.set("commands", cmd_commands as any);
+COMMANDS.set("settings", cmd_settings as any);
+COMMANDS.set("file", cmd_file as any);
+COMMANDS.set("ls", cmd_ls as any);
+COMMANDS.set("find", cmd_find as any);
+COMMANDS.set("zip", cmd_zip as any);
+COMMANDS.set("read", cmd_read as any);
+COMMANDS.set("tree", cmd_tree as any);
+COMMANDS.set("model", cmd_models as any);
+COMMANDS.set("models", cmd_models as any);
+COMMANDS.set("agent", cmd_agents as any);
+COMMANDS.set("agents", cmd_agents as any);
+COMMANDS.set("skill", cmd_skills as any);
+COMMANDS.set("skills", cmd_skills as any);
+COMMANDS.set("usage", cmd_usage as any);
+COMMANDS.set("vcs", cmd_vcs as any);
+COMMANDS.set("mcp", cmd_mcp as any);
+COMMANDS.set("branches", cmd_branches as any);
+COMMANDS.set("branch", cmd_branches as any);
+COMMANDS.set("stage", cmd_stage as any);
+COMMANDS.set("unstage", cmd_unstage as any);
+COMMANDS.set("commit", cmd_commit as any);
+COMMANDS.set("worktrees", cmd_worktree as any);
+COMMANDS.set("worktree", cmd_worktree as any);
+COMMANDS.set("forms", cmd_forms as any);
+COMMANDS.set("formreply", cmd_formreply as any);
+COMMANDS.set("fork", cmd_fork as any);
+COMMANDS.set("rename", cmd_rename as any);
+COMMANDS.set("archive", cmd_archive as any);
+COMMANDS.set("unarchive", cmd_unarchive as any);
+COMMANDS.set("delete", cmd_delete as any);
+COMMANDS.set("deletesessions", cmd_delete as any);
+COMMANDS.set("diff", cmd_diff as any);
+COMMANDS.set("sync", cmd_sync as any);
+COMMANDS.set("context", cmd_context as any);
+COMMANDS.set("compact", cmd_compact as any);
+COMMANDS.set("retry", cmd_retry as any);
+COMMANDS.set("running", cmd_running_sessions as any);
+COMMANDS.set("sessions", cmd_running_sessions as any);
+COMMANDS.set("use", cmd_use as any);
 
 function stripHiddenFlag(raw: string): { rest: string; hidden: boolean } {
   let hidden = false;
