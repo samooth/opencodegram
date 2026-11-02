@@ -1,5 +1,5 @@
 import type { BotDeps } from "./context.js";
-import { fileErrorMessage } from "./files.js";
+import { fileErrorMessage } from "./files/index.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import * as mcp from "./mcp.js";
 import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./settings.js";

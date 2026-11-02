@@ -5,7 +5,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff } from "./editutil.js";
-import { formatBytes } from "./files.js";
+import { formatBytes } from "./files/index.js";
 import { clampText, esc } from "./util.js";
 
 function truncateText(text: string, max: number): string {

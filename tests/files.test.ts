@@ -10,7 +10,7 @@ import {
   prepareDocument,
   readTextFile,
   resolveSafePath,
-} from "../src/files.js";
+} from "../src/files/index.js";
 
 const TEST_ROOT = "/tmp/opencode";
 

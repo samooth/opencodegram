@@ -8,7 +8,7 @@ import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import { esc, rateLimitRetryAt, threadOpts, markdownToHtml } from "./util.js";
 import { logger } from "./logger.js";
-import { formatBytes, prepareDocument } from "./files.js";
+import { formatBytes, prepareDocument } from "./files/index.js";
 
 export type PermissionInfo = {
   chatId: number;

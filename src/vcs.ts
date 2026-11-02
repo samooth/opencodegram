@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { isAbsolute, relative, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
-import { FileAccessError } from "./files.js";
+import { FileAccessError } from "./files/index.js";
 
 const execFileAsync = promisify(execFile);
 

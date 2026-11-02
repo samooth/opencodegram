@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { OpenCodeBridge } from "./opencode.js";
-import { fileErrorMessage, formatBytes, prepareDocument, resolveSafePath } from "./files.js";
+import { fileErrorMessage, formatBytes, prepareDocument, resolveSafePath } from "./files/index.js";
 import { esc } from "./util.js";
 
 export type McpServerInfo = {

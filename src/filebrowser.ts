@@ -15,7 +15,7 @@ import {
   type ReadResult,
   type SearchResult,
   type FileSummary,
-} from "./files.js";
+} from "./files/index.js";
 import type { TelegramCallbackQuery, TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { ChatSettings } from "./settings.js";

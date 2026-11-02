@@ -5,7 +5,7 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { MetricsStore } from "./metrics.js";
 import type { TelegramClient } from "./telegram.js";
-import { formatBytes } from "./files.js";
+import { formatBytes } from "./files/index.js";
 import { esc } from "./util.js";
 
 export type OpsServer = {

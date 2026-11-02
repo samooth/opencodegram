@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { summarizeFile, renderFileSummary } from "../src/files.js";
+import { summarizeFile, renderFileSummary } from "../src/files/index.js";
 
 const TEST_ROOT = "/tmp/opencode";
 
@@ -60,7 +60,7 @@ describe("summarizeFile", () => {
   });
 });
 
-import { searchTextFile } from "../src/files.js";
+import { searchTextFile } from "../src/files/index.js";
 
 describe("searchTextFile", () => {
   test("finds literal matches", async () => {
@@ -89,7 +89,7 @@ describe("searchTextFile", () => {
   });
 });
 
-import { treeDirectory } from "../src/files.js";
+import { treeDirectory } from "../src/files/index.js";
 
 describe("treeDirectory", () => {
   test("renders a tree", async () => {
