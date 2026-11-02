@@ -16,6 +16,7 @@ export function resolveServerPassword(): string | undefined {
 
 export class OpenCodeBridge {
   readonly client;
+  private sessionListCache: { data: unknown[]; expires: number } | null = null;
   private commandCache = new Map<string, { data: unknown[]; expires: number }>();
 
   constructor(baseUrl: string, password?: string, username = "opencode") {
@@ -30,6 +31,19 @@ export class OpenCodeBridge {
 
   async listSessions(): Promise<unknown> {
     return this.client.session.list();
+  }
+
+  async listSessionsCached(ttlMs = 10_000): Promise<unknown[]> {
+    const now = Date.now();
+    if (this.sessionListCache && this.sessionListCache.expires > now) return this.sessionListCache.data;
+    const res = await this.client.session.list();
+    const data = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]);
+    this.sessionListCache = { data, expires: now + ttlMs };
+    return data;
+  }
+
+  invalidateSessionListCache(): void {
+    this.sessionListCache = null;
   }
 
   async createSession(opts: { title?: string; directory?: string; model?: { id: string; providerID: string; variant?: string }; agent?: string } = {}) {

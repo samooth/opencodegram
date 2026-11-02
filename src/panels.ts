@@ -6,6 +6,7 @@ import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { MetricsStore } from "./metrics.js";
 import { esc, threadOpts, projectLabel, truncate } from "./util.js";
+import { BOT_COMMANDS } from "./botcommands.js";
 
 export type PanelsDeps = {
   tg: TelegramClient;
@@ -86,8 +87,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
   }
   async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean): Promise<void> {
     const pageSize = 8;
-    const res = await oc.client.session.list({ limit: 100, order: "desc", archived: false });
-    const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+    const list = await oc.listSessionsCached();
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found. Use /new to create one.", threadOpts(threadId));
       return;
@@ -148,51 +148,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const keyboard = cmds.map((c: any) => [{ text: `/${c.name}`, callback_data: `cmd:${c.name}` }]);
     keyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }]);
     keyboard.push([{ text: "📊 Status", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    const botCmds = [
-      ["/start", "Welcome and control panel"],
-      ["/help", "Show help and panel"],
-      ["/status", "Show active session"],
-      ["/sessions", "List and switch sessions"],
-      ["/use <id>", "Switch to a session by ID"],
-      ["/new", "Create a new session"],
-      ["/models", "List and switch models"],
-      ["/agents", "List and switch agents"],
-      ["/skills", "List available skills"],
-      ["/skill <id>", "Load a skill into the active session"],
-      ["/commands", "List OpenCode commands"],
-      ["/settings", "Bot settings and toggles"],
-      ["/file <path>", "Send a local file as a document"],
-      ["/ls [path] [-a]", "Browse a directory with buttons"],
-      ["/find <text> [-a]", "Search files"],
-      ["/read <path> [line]", "Preview a text file"],
-      ["/zip [path]", "Archive a file or directory and send it"],
-      ["/usage", "Show usage and cost stats"],
-      ["/vcs", "Show VCS status"],
-      ["/vcs diff [--cached]", "Show git diff"],
-      ["/mcp", "MCP servers and resources"],
-      ["/branches", "List branches"],
-      ["/branch switch <name>", "Switch branch"],
-      ["/stage <path>", "Stage a file"],
-      ["/unstage <path>", "Unstage a file"],
-      ["/commit <message>", "Commit staged changes"],
-      ["/worktrees", "List worktrees"],
-      ["/worktree create|remove|switch", "Manage worktrees"],
-      ["/forms", "List pending forms"],
-      ["/formreply", "Reply to a form"],
-      ["/fork", "Fork the active session"],
-      ["/rename <title>", "Rename the active session"],
-      ["/archive", "Archive the active session"],
-      ["/unarchive", "Unarchive the active session"],
-      ["/delete", "Delete the active session"],
-      ["/deletesessions", "List and delete sessions"],
-      ["/diff", "Show session diff"],
-      ["/context", "Show session context"],
-      ["/sync", "Sync session history to Telegram"],
-      ["/compact", "Compact session history"],
-      ["/retry", "Retry the last prompt (useful after rate limits)"],
-      ["/goal <objective>", "Keep working toward a session goal (pause/resume/clear)"],
-      ["/stop", "Stop the active turn"],
-    ];
+    const botCmds: Array<[string, string]> = BOT_COMMANDS.map((c) => [`/${c.command}`, c.description]);
+
     const botRows = botCmds.map(([c, d]) => `<tr><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`).join("");
     const botTable = `<table><tr><th>Bot command</th><th>Description</th></tr>${botRows}</table>`;
     await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${table}\n\n<b>Bot commands</b>\n\n${botTable}`, {
@@ -298,8 +255,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const ocInfo = await oc.serverInfo().catch(() => null);
     let sessionCount = 0;
     try {
-      const res = await oc.client.session.list();
-      const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+      const list = await oc.listSessionsCached();
       sessionCount = list.length;
     } catch {
       // ignore
@@ -380,8 +336,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const ocInfo = await oc.serverInfo().catch(() => null);
     let sessionCount = 0;
     try {
-      const res = await oc.client.session.list();
-      const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+      const list = await oc.listSessionsCached();
       sessionCount = list.length;
     } catch {
       // ignore

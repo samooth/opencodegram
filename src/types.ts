@@ -26,6 +26,7 @@ export type ChatSession = {
   lastTyping?: number;
   statusMessageId?: number;
   statusLastUpdate?: number;
+  statusLastText?: string;
   statusEditing?: boolean;
   statusPendingUpdate?: boolean;
   statusFinished?: boolean;
