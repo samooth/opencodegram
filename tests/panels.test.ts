@@ -20,6 +20,7 @@ function makeDeps() {
   } as any;
   const oc = {
     listCommands: async () => [],
+    listSessionsCached: async () => [],
     client: {
       session: { list: async () => ({ data: [] }) },
       model: { list: async () => ({ data: [] }) },
