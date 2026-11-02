@@ -239,10 +239,10 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     cs.toolCalls = [];
     cs.toolCallDetails = [];
     cs.draftId = 0;
-    cs.topicTitle = cs.topicTitle ?? store.topicTitleBySession.get(sessionId);
+    cs.topicTitle = cs.topicTitle ?? store.topicTitleBySession.get(sessionId) ?? title;
     if (!cs.cotBuffer) cs.cotBuffer = "";
     if (!cs.cotCount) cs.cotCount = 0;
-    cs.topicTitle = store.topicTitleBySession.get(sessionId);
+    cs.topicTitle = store.topicTitleBySession.get(sessionId) ?? title;
 
     // If this session was already tracked, retire its old status message so it
     // doesn't keep a stale Stop button when the session moves to another tab.

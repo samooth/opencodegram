@@ -17,18 +17,29 @@
 | `status.ts` | Status card lifecycle, drafts, thinking, tools, Stop |
 | `events.ts` | OpenCode event stream → Telegram |
 | `panels.ts` | Panel, sessions, models and commands views |
-| `files.ts` | Safe path resolution, listing, search, text preview and documents |
-| `transcribe.ts` | Local voice-note transcription |
-| `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
-| `formui.ts` | Interactive form rendering and keyboards |
-| `editutil.ts` | Edit detection and diff formatting |
-| `settings.ts` | Persistent per-chat settings |
+| `files.ts` | Barrel re-export of `files/*` |
+| `files/*` | Safe path resolution, listing, search, text preview, documents, zip, summary, tree |
+| `autoretry.ts` | Bounded auto-retry state after rate limits |
+| `botcommands.ts` | Single source of `BOT_COMMANDS` |
 | `callbacks.ts` | Inline buttons and permission decisions |
 | `commands.ts` | Slash commands |
 | `messages.ts` | Access control, media download, prompts |
-| `updates.ts` | Polling loop and update dispatch |
+| `updates.ts` | Polling loop, update dispatch, offset persistence |
 | `telegram.ts` | Telegram client (text, rich messages, documents) |
 | `util.ts` | Escaping, clamping, thread options, retry time |
+| `editutil.ts` | Edit detection and diff formatting |
+| `formui.ts` | Interactive form rendering and keyboards |
+| `settings.ts` | Persistent per-chat settings |
+| `logger.ts` | Structured logging |
+| `mcp.ts` | MCP server/resource bridge |
+| `metrics.ts` | Counters and error recording |
+| `ops.ts` | Health endpoint, metrics, disk guard |
+| `transcribe.ts` | Local voice-note transcription |
+| `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
+| `types.ts` | Shared types (`ChatSession`, etc.) |
+| `vcs.ts` | VCS and worktree helpers |
+| `webhook.ts` | Optional webhook server |
+| `constants.ts` | Named intervals and limits |
 
 ## Routing invariants
 
@@ -60,6 +71,9 @@
 - `filebrowser.test.ts` — listing, navigation, preview, search and expiry.
 - `commands.test.ts` — command dispatch, usage and safe `/file`.
 - `util.test.ts` — `:15` retry timing, mention normalization and parsing.
+- `autoretry.test.ts` — bounded auto-retry and stale-prompt guard.
+- `callbacks.test.ts`, `events.test.ts`, `panels.test.ts`, `sessions.test.ts`,
+  `status.test.ts`, `updates.test.ts` — handlers, rendering and routing.
 
 `bun run typecheck` checks `src/` with `tsc --noEmit`.
 

@@ -7,6 +7,7 @@
 - `/use [session_id]` — switch by ID; without ID shows the list.
 - `/new` — create a session in a new topic (or the current topic).
 - `/stop`, `/abort` — stop the active turn.
+- `/retry` — re-run the last prompt (useful after rate limits).
 - `/fork`, `/rename <title>`, `/archive`, `/unarchive`, `/delete`,
   `/delete confirm`.
 
@@ -42,6 +43,7 @@
   previewed or sent as documents.
 - `/read <path> [start_line]` — preview a UTF-8 text file with line numbers;
   binary files are sent as documents automatically.
+- `/tree [path]` — show a directory tree.
 - `/zip [path]` — archive a file or directory and send it as a document (≤ 45 MB;
   excludes `node_modules`, `.git`, `dist` and caches).
 - `/diff` — diff summary and per-file patches.

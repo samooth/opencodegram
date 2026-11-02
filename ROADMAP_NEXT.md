@@ -24,14 +24,16 @@
 - `/sync` history replay, `/context`, `/usage`, `/diff`, `/compact`.
 - Rate-limit retry at `:15` of the next hour.
 - Audit log (`data/audit.log`) and per-update error isolation.
+- Webhook mode (optional) with secret validation; long polling remains default.
+- Update offset persistence and update dedup to avoid replayed prompts.
+- Bounded auto-retry (max attempts, stale-prompt guard).
 
 ## Next
 
-1. **Webhook mode** – optional production mode with secret validation; keep
-   long polling as the default.
-2. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
-3. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
-4. **Operations** – health endpoint, metrics, log rotation, disk guard.
+1. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
+2. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
+3. **Operations** – health endpoint, metrics, log rotation, disk guard (shipped;
+   further hardening optional).
 
 ## Suggested order
 

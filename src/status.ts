@@ -1,4 +1,5 @@
 import type { ChatSession } from "./types.js";
+import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import os from "node:os";
@@ -80,6 +81,7 @@ export type StatusDeps = {
   rememberCot: (sessionId: string, buffer: string, count: number) => void;
   rememberStatusMessage: (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => void;
   forgetStatusMessage: (sessionId: string) => void;
+  store?: SessionStore;
 };
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -181,7 +183,18 @@ function capDiff(diff: string, max: number): string {
   return lines.slice(0, max).join("\n") + `\n… (+${lines.length - max} more lines)`;
 }
 
-export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store }: StatusDeps) {
+  const resolveSessionName = (s: ChatSession): string => {
+    let name = (s.topicTitle || "").trim();
+    if (!name && store) name = (store.topicTitleBySession.get(s.sessionId) || "").trim();
+    if (!name && store) {
+      const prompt = store.lastPromptBySession.get(s.sessionId);
+      if (prompt) name = prompt.trim().slice(0, 40);
+    }
+    if (!name && s.directory) name = s.directory.split("/").filter(Boolean).pop() || "";
+    if (!name) name = s.sessionId.slice(0, 12);
+    return name;
+  };
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
     s.timer = undefined;
@@ -207,7 +220,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.stopped = false;
     try {
       const lines: string[] = [];
-      const sessionName = (s.topicTitle || s.sessionId || "").trim();
+      const sessionName = resolveSessionName(s);
       if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
       if (settings.showThinking) {
         const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
@@ -415,7 +428,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings): string => {
     const previousCot = target.cotBuffer?.trim() ?? "";
     const lines: string[] = [];
-    const sessionName = (target.topicTitle || target.sessionId || "").trim();
+    const sessionName = resolveSessionName(target);
     if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
     if (settings.showThinking && previousCot) {
       const cot = previousCot.slice(-3500);

@@ -58,6 +58,7 @@ async function main() {
     rememberCot: (sessionId, buffer, count) => store.rememberCot(sessionId, buffer, count),
     rememberStatusMessage: (sessionId, chatId, threadId, messageId) => store.rememberStatusMessage(sessionId, chatId, threadId, messageId),
     forgetStatusMessage: (sessionId) => store.forgetStatusMessage(sessionId),
+    store,
   });
   const sessions = createSessionManager({
     config,

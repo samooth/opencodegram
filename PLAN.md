@@ -1,5 +1,12 @@
 # OpenCode × Telegram — Control Plane Plan
 
+> **Note:** This is the original proposal (v1.1). The shipped implementation is
+> a Bun + TypeScript daemon (see `README.md`, `docs/ARCHITECTURE.md` and
+> `AGENTS.md`); it uses JSON persistence under `data/`, not SQLite, and does
+> not ship the OpenCode plugin/TUI/embedded host described below. Treat this
+> document as historical design context. Environment-specific values in examples
+> are placeholders only.
+
 > **Status:** proposal v1.1 · decisions confirmed 2026-10-28  
 > **Targets:** OpenCode 2.2.x, `@opencode/plugin` 2.2.x, Telegram Bot API 10.3  
 > **Name:** `opencodegram`

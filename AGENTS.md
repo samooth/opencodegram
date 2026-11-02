@@ -7,8 +7,8 @@ This file gives coding agents the context needed to work safely in
 
 `opencodegram` is a Telegram control plane for OpenCode. A Bun + TypeScript
 daemon runs under PM2, polls Telegram, and talks to the local OpenCode HTTP
-server plus its event stream. The admin user is `REDACTED_USER_ID`; the bot is
-`@your_bot`.
+server plus its event stream. The admin user and bot username are configured
+via `ADMIN_TELEGRAM_USER_ID` and `TELEGRAM_BOT_TOKEN` (see `.env`).
 
 ## Quick commands
 
@@ -37,20 +37,19 @@ pm2 logs opencodegram
 4. Commit with a concise message.
 5. Report to the user in Spanish.
 
-Do not delete `zigcache9` (13 GB) or other large directories without explicit
-permission. `/ai` is usually above 90% full, so keep commits and temporary files
-small and clean them up.
+Do not delete large directories without explicit permission. Keep commits and
+temporary files small and clean them up.
 
 ## Environment
 
 `.env` (not committed):
 
 - `TELEGRAM_BOT_TOKEN`
-- `ADMIN_TELEGRAM_USER_ID` (default admin: `REDACTED_USER_ID`)
+- `ADMIN_TELEGRAM_USER_ID` (the admin user; defaults to none if unset)
 - `OPENCODE_BASE_URL` (default `http://127.0.0.1:49374`)
 - `OPENCODE_DIRECTORY` (optional session directory)
 
-OpenCode 2.2.0 runs locally. The daemon reads `.env` automatically under Bun.
+OpenCode 2.2.x runs locally. The daemon reads `.env` automatically under Bun.
 
 ## Architecture
 
@@ -68,12 +67,26 @@ Main modules:
 | `callbacks.ts` | Inline buttons and permission decisions |
 | `commands.ts` | Slash commands and `KNOWN_COMMANDS` |
 | `messages.ts` | Access control, media download, prompts, command dispatch |
-| `updates.ts` | Polling loop and update dispatch |
+| `updates.ts` | Polling loop, update dispatch, offset persistence |
 | `telegram.ts` | Telegram client |
 | `util.ts` | Escaping, clamping, thread options, retry time, command parsing |
-| `files.ts` | Safe path resolution, listing, search, text preview, documents, zip |
+| `files.ts` | Barrel re-export of `files/*` |
+| `files/*` | Safe path resolution, listing, search, text preview, documents, zip, summary, tree |
+| `autoretry.ts` | Bounded auto-retry state after rate limits |
+| `botcommands.ts` | Single source of `BOT_COMMANDS` |
+| `constants.ts` | Named intervals and limits |
+| `editutil.ts` | Edit detection and diff formatting |
+| `formui.ts` | Interactive form rendering and keyboards |
+| `logger.ts` | Structured logging |
+| `mcp.ts` | MCP server/resource bridge |
+| `metrics.ts` | Counters and error recording |
+| `ops.ts` | Health endpoint, metrics, disk guard |
+| `settings.ts` | Persistent per-chat settings |
 | `transcribe.ts` | Local voice-note transcription |
 | `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
+| `types.ts` | Shared types (`ChatSession`, etc.) |
+| `vcs.ts` | VCS and worktree helpers |
+| `webhook.ts` | Optional webhook server |
 
 ## Routing invariants
 
@@ -107,6 +120,10 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
   document sends.
 - `tests/commands.test.ts` — command dispatch, usage, safe `/file`.
 - `tests/util.test.ts` — `:15` retry timing, mention normalization, parsing.
+- `tests/autoretry.test.ts` — bounded auto-retry, stale-prompt guard.
+- `tests/callbacks.test.ts`, `tests/events.test.ts`, `tests/panels.test.ts`,
+  `tests/sessions.test.ts`, `tests/status.test.ts`, `tests/updates.test.ts` —
+  handlers, rendering and routing.
 
 ## Conventions
 
@@ -114,7 +131,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - Preserve HTML escaping with `esc`.
 - Use `threadOpts(threadId)` for topic replies.
 - Handle errors per update so one bad update does not stop the bot.
-- In groups, respond only to commands, mentions to `@your_bot`, or replies to
+- In groups, respond only to commands, mentions to the configured bot username, or replies to
   the bot.
 - Free models first; show provider/model and variant where relevant.
 - User-facing responses should be in Spanish.

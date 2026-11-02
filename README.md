@@ -21,7 +21,7 @@ with per-topic isolation, rich status cards and inline keyboards.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — toggles for thinking, tools, shell, previews, artifacts, voice,
   compact final.
-- **Tests** — 50+ Bun tests + TypeScript typecheck.
+- **Tests** — 86 Bun tests + TypeScript typecheck.
 
 ## Quick start
 
@@ -83,7 +83,6 @@ bun run typecheck
 
 ## Notes
 
-- Admin-only bot; in groups it responds to commands, mentions to
-  `@your_bot`, or replies to the bot.
+- Admin-only bot; in groups it responds to commands, mentions to the configured
+  bot username, or replies to the bot.
 - Runtime state lives in `data/` (ignored by git).
-- `/ai` is often near full: keep commits and temporary files small.
