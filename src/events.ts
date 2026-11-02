@@ -313,13 +313,22 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
     if (!s.stopped) {
       const settings2 = settings.get(chatId);
       const artifacts = Array.isArray(e.data?.files) ? e.data.files : [];
-      if (settings2.autoArtifacts && artifacts.length) {
+      console.log("[artifacts] count=", artifacts.length, "sample=", artifacts.slice(0, 5));
+      // OpenCode sometimes reports the whole working-tree snapshot here; sending
+      // hundreds of files floods Telegram. Only treat small, de-duplicated sets
+      // as real turn artifacts.
+      const seen = (s.sentArtifacts ??= new Set<string>());
+      const unique = artifacts
+        .map((p: unknown) => String(p))
+        .filter((p: string) => !seen.has(p));
+      if (settings2.autoArtifacts && unique.length && unique.length <= 20) {
         const artifactThread = s.targetThreadId ?? s.threadId ?? resolveThreadId(sessionId);
         const base = s.directory ?? process.cwd();
         const maxArtifacts = 5;
-        for (const relativePath of artifacts.slice(0, maxArtifacts)) {
+        for (const relativePath of unique.slice(0, maxArtifacts)) {
+          seen.add(relativePath);
           try {
-            const doc = await prepareDocument(base, String(relativePath));
+            const doc = await prepareDocument(base, relativePath);
             if (doc.size <= 45 * 1024 * 1024) {
               await tg.sendDocument(chatId, doc.absolute, doc.name, `<b>Artifact</b>\n<code>${esc(doc.relative || doc.name)}</code>\n${formatBytes(doc.size)}`, { ...threadOpts(artifactThread), parse_mode: "HTML" });
             }
@@ -327,9 +336,11 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
             console.error("[artifact]", err);
           }
         }
-        if (artifacts.length > maxArtifacts) {
-          await tg.sendRichMessage(chatId, `📎 ${artifacts.length - maxArtifacts} more artifact(s) not sent (limit ${maxArtifacts}).`, threadOpts(artifactThread)).catch(() => {});
+        if (unique.length > maxArtifacts) {
+          await tg.sendRichMessage(chatId, `📎 ${unique.length - maxArtifacts} more artifact(s) not sent (limit ${maxArtifacts}).`, threadOpts(artifactThread)).catch(() => {});
         }
+      } else if (unique.length > 20) {
+        console.log("[artifacts] skipping large artifact set:", unique.length);
       }
     }
   }

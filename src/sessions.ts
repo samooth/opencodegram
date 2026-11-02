@@ -239,6 +239,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     cs.toolCalls = [];
     cs.toolCallDetails = [];
     cs.draftId = 0;
+    cs.sentArtifacts = new Set();
     cs.topicTitle = cs.topicTitle ?? store.topicTitleBySession.get(sessionId) ?? title;
     if (!cs.cotBuffer) cs.cotBuffer = "";
     if (!cs.cotCount) cs.cotCount = 0;

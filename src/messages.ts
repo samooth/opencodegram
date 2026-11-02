@@ -179,6 +179,7 @@ async function startPrompt(
     s.targetThreadId = replyThread;
     s.lastFinalMessageId = undefined;
     s.lastFinalSentAt = undefined;
+    s.sentArtifacts = new Set();
     store.rememberSessionChat(s.sessionId, chatId);
     store.rememberActiveRoute(chatId, replyThread, s.sessionId);
     s.promptStartTime = Date.now();
