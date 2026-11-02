@@ -357,6 +357,17 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
 
   if (chatId === undefined) return;
   let s = _s0;
+  const msgId = e.data?.assistantMessageID;
+  if (s) {
+    if (msgId && s.lastFinalMessageId === msgId) {
+      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, msgId });
+      return;
+    }
+    if (!msgId && s.lastFinalSentAt && Date.now() - s.lastFinalSentAt < 3000) {
+      logger.breadcrumb("events", "text.ended.duplicate", { sessionId });
+      return;
+    }
+  }
   if (!s) {
     // No in-memory session (e.g. after restart). Still deliver the final text if available.
     const fallbackText = (e.data?.text ?? "").toString().trim();
@@ -428,7 +439,11 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     } catch {
       quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     }
-    logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
+    if (s) {
+    s.lastFinalMessageId = msgId ?? s.lastFinalMessageId;
+    s.lastFinalSentAt = Date.now();
+  }
+  logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
     const finalHtml = markdownToHtml(finalText) + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
     const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {

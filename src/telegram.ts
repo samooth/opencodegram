@@ -71,12 +71,13 @@ export class TelegramClient {
   constructor(private readonly token: string) {}
 
   private async call<T>(method: string, body?: unknown, attempt = 0): Promise<T> {
+    const isEdit = method.toLowerCase().includes("edit");
     const res = await fetch(`${API}/bot${this.token}/${method}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (res.status >= 500 && attempt < 2) {
+    if (res.status >= 500 && attempt < 2 && !isEdit) {
       await new Promise((r) => setTimeout(r, 1000));
       return this.call<T>(method, body, attempt + 1);
     }
@@ -89,7 +90,7 @@ export class TelegramClient {
       if (json.error_code === 400 && /not modified/i.test(json.description ?? "") && method.toLowerCase().includes("edit")) {
         return (undefined as unknown) as T;
       }
-      if (json.error_code === 429 && attempt < 3) {
+      if (json.error_code === 429 && attempt < 3 && !isEdit) {
         const wait = (json.parameters?.retry_after ?? 1) * 1000;
         await new Promise((r) => setTimeout(r, wait));
         return this.call<T>(method, body, attempt + 1);
