@@ -390,7 +390,22 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     return;
   }
   if (data === "panel:stop") {
-    const s = store.getActiveSession(chatId, threadId);
+    let s = store.getActiveSession(chatId, threadId);
+    // Fall back to the session bound to this status message (survives
+    // in-memory resets and thread mismatches).
+    if (!s && messageId !== undefined) {
+      const sid = store.messageToSession.get(`${chatId}:${messageId}`);
+      if (sid) s = store.sessionsById.get(sid);
+    }
+    // Last resort: restore the persisted binding for this tab.
+    if (!s) {
+      try {
+        await sessions.restoreActiveSession(chatId, threadId);
+        s = store.getActiveSession(chatId, threadId);
+      } catch {
+        s = undefined;
+      }
+    }
     if (!s) {
       await tg.answerCallbackQuery(cq.id, "No active session");
       return;
