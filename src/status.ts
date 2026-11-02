@@ -226,17 +226,19 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const opts = threadOptsFor(s);
     const settings = getSettings(chatId);
     const now = Date.now();
-    if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 4000) return;
+    if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 5000) return;
     s.statusEditing = true;
     s.statusLastUpdate = now;
     const lines: string[] = [];
+    try {
     const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };
     if (settings.showThinking && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
       lines.push(`<details open><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
     }
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
-    lines.push("<h4>⏳ Working…" + (elapsed ? ` <i>(${elapsed}s)</i>` : "") + "</h4>");
+    if (s.stopped) lines.push("<h4>⏹ Stopped</h4>");
+    else lines.push("<h4>⏳ Working…" + (elapsed ? ` <i>(${elapsed}s)</i>` : "") + "</h4>");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       sep();
       const r = s.reasoningBuffer.trim().slice(-800);
@@ -287,6 +289,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(`<pre>${esc(wrapped)}</pre>`);
       }
     }
+    let resourceBlock = "";
     if (settings.showResourceUsage) {
       sep();
       if (!s.cpuHistory) s.cpuHistory = [];
@@ -304,19 +307,20 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
       const prevMem = s.memHistory.length >= 2 ? s.memHistory[s.memHistory.length - 2] : memPercent;
       const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
-      const rows: string[] = [];
-      rows.push(`<tr><td>CPU</td><td>${cpuBar} ${cpuPercent}%${cpuTrend}</td></tr>`);
-      rows.push(`<tr><td>RAM</td><td>${memBar} ${memPercent}%${memTrend}</td></tr>`);
+      const resourceLines: string[] = [];
+      resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
+      resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
       const gpu = readGpuInfo();
       if (gpu) {
         const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
         const vramBar = progressBar(vramPercent);
-        const temp = gpu.temperature === null ? "" : ` ${gpu.temperature}°C`;
-        rows.push(`<tr><td>GPU</td><td>${esc(gpu.name)}</td></tr>`);
-        rows.push(`<tr><td>VRAM</td><td>${vramBar} ${vramPercent}%</td></tr>`);
-        rows.push(`<tr><td>Load</td><td>${progressBar(gpu.load)} ${gpu.load}%${temp}</td></tr>`);
+        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
+        resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}`);
+        resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+        resourceLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
-      lines.push(`<table>${rows.join("")}</table>`);
+      resourceBlock = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
+      lines.push(resourceBlock);
     }
     sep();
     if (s.compacting) {
@@ -324,8 +328,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     } else if (s.compactionSummary?.trim()) {
       lines.push("📦 " + esc(s.compactionSummary.trim().slice(0, 200)));
     }
-    try {
-      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
+      const fullText = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+      let finalText = fullText;
+      if (fullText.length > 3900 && resourceBlock) {
+        const without = fullText.replace(resourceBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd();
+        const headMax = 3900 - resourceBlock.length - 5;
+        finalText = without.slice(0, Math.max(0, headMax)) + "\n…\n" + resourceBlock;
+      }
+      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(finalText, 3900), {
         ...opts,
         reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
       });
@@ -414,9 +424,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (settings.showTools && editDetails.length) {
         const editLines = [`✏️ Edits: ${editDetails.length}`];
         for (const detail of editDetails) {
-          const file = relativeEditPath(target, extractEditFile(detail.input));
+          const file = relativeEditPath(target, extractEditFile(detail.input) ?? "edit");
           const diff = formatEditDiff(detail.input, settings.diffStyle, target.directory);
-          editLines.push(`<details><summary>✏️ ${esc(file)}</summary>\n<pre><code class="language-diff">${esc(diff)}</code></pre>\n</details>`);
+          editLines.push(`✏️ <b>${esc(file)}</b>`);
+          if (diff.trim()) {
+            editLines.push(`<blockquote expandable><pre><code class="language-diff">${esc(diff)}</code></pre></blockquote>`);
+          }
         }
         lines.push(editLines.join("\n"));
       }
@@ -426,6 +439,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     } else if (target.compactionSummary?.trim()) {
       lines.push("📦 " + esc(target.compactionSummary.trim().slice(0, 300)));
     }
+    let resourceBlock = "";
     if (settings.showResourceUsage) {
       if (!target.cpuHistory) target.cpuHistory = [];
       if (!target.memHistory) target.memHistory = [];
@@ -442,19 +456,27 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
       const prevMem = target.memHistory.length >= 2 ? target.memHistory[target.memHistory.length - 2] : memPercent;
       const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
-      const rows: string[] = [];
-      rows.push(`<tr><td>CPU</td><td>${cpuBar} ${cpuPercent}%${cpuTrend}</td></tr>`);
-      rows.push(`<tr><td>RAM</td><td>${memBar} ${memPercent}%${memTrend}</td></tr>`);
+      const resourceLines: string[] = [];
+      resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
+      resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
       const gpu = readGpuInfo();
       if (gpu) {
         const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
         const vramBar = progressBar(vramPercent);
-        const temp = gpu.temperature === null ? "" : ` ${gpu.temperature}°C`;
-        rows.push(`<tr><td>GPU</td><td>${esc(gpu.name)}</td></tr>`);
-        rows.push(`<tr><td>VRAM</td><td>${vramBar} ${vramPercent}%</td></tr>`);
-        rows.push(`<tr><td>Load</td><td>${progressBar(gpu.load)} ${gpu.load}%${temp}</td></tr>`);
+        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
+        resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}`);
+        resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+        resourceLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
       }
-      lines.push(`<table>${rows.join("")}</table>`);
+      resourceBlock = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
+      lines.push(resourceBlock);
+      const full = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+      if (full.length > 3900 && resourceBlock) {
+        const without = full.replace(resourceBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd();
+        const headMax = 3900 - resourceBlock.length - 5;
+        return without.slice(0, Math.max(0, headMax)) + "\n…\n" + resourceBlock;
+      }
+      return full;
     }
     return lines.join("\n");
   };

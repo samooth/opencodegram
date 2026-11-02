@@ -4,7 +4,7 @@ import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument, treeD
 import * as mcp from "./mcp.js";
 import { isSettingsKey, renderSettings, settingsKeyboard } from "./settings.js";
 import * as vcs from "./vcs.js";
-import { clampText, colorDiff, esc, threadOpts } from "./util.js";
+import { clampText, colorDiff, esc, threadOpts, truncate } from "./util.js";
 
 /**
  * Slash commands that do not prompt the model. Returns true when the text was
@@ -30,6 +30,8 @@ export const KNOWN_COMMANDS = new Set([
   "models",
   "agent",
   "agents",
+  "skill",
+  "skills",
   "fork",
   "rename",
   "archive",
@@ -58,6 +60,7 @@ export const KNOWN_COMMANDS = new Set([
 
 export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
   const { config, tg, oc, panels, sessions, files, store } = deps;
+  const updateStatus = deps.status?.updateStatus ?? (async () => {});
   const { restoreActiveSession, activateSession } = sessions;
   const { sendPanel, showCommands, showModels, showSessions, showDeleteSessions, showStatus } = panels;
 
@@ -100,16 +103,10 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
         s.statusTimer = undefined;
       }
       await oc.interrupt(s.sessionId);
+      // Re-render the status card keeping its content, only marking it as stopped.
       if (s.statusMessageId) {
-        await tg
-          .editRichMessage(chatId, s.statusMessageId, "⏹ <b>Stopped</b>", {
-            ...deps.store.threadOptsFor(s),
-            reply_markup: { inline_keyboard: [] },
-          })
-          .catch(() => {});
-        s.statusMessageId = undefined;
+        await updateStatus(chatId, s, true).catch(() => {});
       }
-      await send("⏹ stopped", deps.store.threadOptsFor(s));
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
@@ -276,10 +273,47 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
       await send("no agents available. Configure agents in OpenCode.");
       return true;
     }
-    const lines = agents.map((a: any) => `• <b>${esc(a.name ?? a.id)}</b>${a.description ? " — " + esc(a.description) : ""}`);
+    const rows = agents.map((a: any) => `<tr><td><b>${esc(a.name ?? a.id)}</b></td><td>${esc(truncate(a.description ?? "", 90))}</td></tr>`).join("");
+    const table = `<table><tr><th>Agent</th><th>Description</th></tr>${rows}</table>`;
     const keyboard = agents.map((a: any) => [{ text: a.name ?? a.id, callback_data: `agent:${a.id}` }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    await send(`<b>Agents</b>\n\n${lines.join("\n")}`, { reply_markup: { inline_keyboard: keyboard } });
+    await send(`<b>Agents</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
+    return true;
+  }
+
+  if (text === "/skills" || text === "/skill") {
+    const s = await restoreActiveSession(chatId, threadId);
+    const directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
+    const skills = await oc.listSkills(directory);
+    if (!skills.length) {
+      await send("no skills available.");
+      return true;
+    }
+    const rows = skills.map((k: any) => `<tr><td><b>${esc(k.name ?? k.id)}</b></td><td>${esc(truncate(k.description ?? "", 90))}</td></tr>`).join("");
+    const table = `<table><tr><th>Skill</th><th>Description</th></tr>${rows}</table>`;
+    const keyboard = skills.map((k: any) => [{ text: k.name ?? k.id, callback_data: `skill:${k.id}` }]);
+    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    await send(`<b>Skills</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
+    return true;
+  }
+
+  if (text.startsWith("/skill ")) {
+    let s = await restoreActiveSession(chatId, threadId);
+    if (!s) {
+      await send("no active session. Usa /sessions para activar una o envía un mensaje para crearla.", { reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] } });
+      return true;
+    }
+    const id = text.slice(7).trim();
+    if (!id) {
+      await send("usage: /skill <id>");
+      return true;
+    }
+    try {
+      await oc.loadSkill(s.sessionId, id);
+      await send(`Loaded skill <b>${esc(id)}</b>.`);
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
     return true;
   }
 

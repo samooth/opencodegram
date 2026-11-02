@@ -157,6 +157,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       ["/new", "Create a new session"],
       ["/models", "List and switch models"],
       ["/agents", "List and switch agents"],
+      ["/skills", "List available skills"],
+      ["/skill <id>", "Load a skill into the active session"],
       ["/commands", "List OpenCode commands"],
       ["/settings", "Bot settings and toggles"],
       ["/file <path>", "Send a local file as a document"],

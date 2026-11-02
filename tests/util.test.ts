@@ -57,6 +57,6 @@ describe("parseSlashCommand", () => {
 
 describe("esc", () => {
   test("escapes Telegram HTML", () => {
-    expect(esc('<b>&"x"</b>')).toBe("&lt;b&gt;&amp;\"x\"&lt;/b&gt;");
+    expect(esc('<b>&"x"</b>')).toBe("&lt;b&gt;&amp;&quot;x&quot;&lt;/b&gt;");
   });
 });

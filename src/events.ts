@@ -383,7 +383,7 @@ if (e.type === "session.text.ended" || e.type.startsWith("session.text.ended")) 
       const internalId = String(chatId).replace(/^-100/, "");
       const url = `https://t.me/c/${internalId}/${finalMessage.message_id}`;
       const kb: any[] = [...(quickKeyboard ?? []), [{ text: "🔗 Ver en chat", url }]];
-      await tg.editRichMessage(chatId, finalMessage.message_id, finalHtml, { ...threadOpts, reply_markup: { inline_keyboard: kb } }).catch(() => {});
+      await tg.editMessageReplyMarkup(chatId, finalMessage.message_id, { inline_keyboard: kb }).catch(() => {});
     }
     await syncTopicTitle(chatId, s).catch(() => {});
   }

@@ -22,14 +22,31 @@ export function createWebhookServer(deps: BotDeps): WebhookServer {
     }
     if (request.method === "POST" && url.pathname === path) {
       const providedSecret = request.headers["x-telegram-bot-api-secret-token"];
-      if (secret && providedSecret !== secret) {
+      // Fail closed: a webhook without a configured secret is not allowed.
+      if (!secret || providedSecret !== secret) {
         response.statusCode = 403;
         response.end("Forbidden");
         return;
       }
       const chunks: Buffer[] = [];
-      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      let total = 0;
+      let finished = false;
+      const MAX_BODY = 1_000_000;
+      request.on("data", (chunk: Buffer) => {
+        if (finished) return;
+        total += chunk.length;
+        if (total > MAX_BODY) {
+          finished = true;
+          response.statusCode = 413;
+          response.end("Payload Too Large");
+          request.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
       request.on("end", async () => {
+        if (finished) return;
+        finished = true;
         try {
           const raw = Buffer.concat(chunks).toString("utf8");
           const update = (raw ? JSON.parse(raw) : {}) as TelegramUpdate;

@@ -119,6 +119,21 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - Free models first; show provider/model and variant where relevant.
 - User-facing responses should be in Spanish.
 
+## Offloading (zig-ai) — casos y plan
+
+Casos de residencia VRAM/RAM/NVMe y plan de flexibilidad total:
+`/ai/repos/2026/zig-ai/CASOS.md` y `/ai/repos/2026/zig-ai/PLAN_CASOS.md`.
+
+Esquema rápido:
+- A capas densas parciales (VRAM+RAM) — layer streaming.
+- B pesos VRAM, KV RAM — `--kv-offload`.
+- C MoE hot VRAM / cold RAM-NVMe — `offload_cache`.
+- D pipeline híbrido por capa.
+- E todo en NVMe.
+- F KV en NVMe (contextos gigantes).
+- G multi-GPU.
+- H presupuesto adaptativo por prioridad.
+
 ## Runtime state
 
 `data/` is ignored by git and contains:

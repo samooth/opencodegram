@@ -23,15 +23,8 @@ export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Prom
         const chatId = s.targetChatId ?? d.chat.id;
         await oc.interrupt(s.sessionId).catch(() => {});
         if (s.statusMessageId) {
-          await tg
-            .editRichMessage(chatId, s.statusMessageId, "⏹ <b>Stopped</b>", {
-              ...store.threadOptsFor(s),
-              reply_markup: { inline_keyboard: [] },
-            })
-            .catch(() => {});
-          s.statusMessageId = undefined;
+          await deps.status.updateStatus(chatId, s, true).catch(() => {});
         }
-        await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(s.targetThreadId ?? s.threadId)).catch(() => {});
         break;
       }
       return;

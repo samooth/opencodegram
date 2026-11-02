@@ -25,7 +25,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       if (Number.isFinite(n) && n > 0) allowedUsers.add(n);
     }
   }
-  if (allowedUsers.size > 0 && (userId === undefined || !allowedUsers.has(userId))) {
+  if (allowedUsers.size === 0 || userId === undefined || !allowedUsers.has(userId)) {
     await tg.answerCallbackQuery(cq.id, "Not authorized");
     return;
   }
@@ -60,7 +60,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     let decision: "once" | "always" | "reject" = "reject";
     if (action === "allow") decision = "once";
     else if (action === "always") {
-      if (config.ADMIN_TELEGRAM_USER_ID && cq.from?.id !== config.ADMIN_TELEGRAM_USER_ID) {
+      if (!config.ADMIN_TELEGRAM_USER_ID || cq.from?.id !== config.ADMIN_TELEGRAM_USER_ID) {
         await tg.answerCallbackQuery(cq.id, "Admin only");
         return;
       }
@@ -177,7 +177,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       if (s.statusMessageId) deps.store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {
         deps.status.updateStatus(chatId, s).catch(() => {});
-      }, 3000);
+      }, 5000);
       await deps.oc.prompt(s.sessionId, prompt);
     } catch (err) {
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
@@ -648,12 +648,41 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
 
-  const cmdMatch = cbData.match(/^cmd:(.+)$/);
-  if (cmdMatch) {
-    const name = cmdMatch[1];
+  const skillMatch = cbData.match(/^skill:(.+)$/);
+  if (skillMatch) {
+    const id = skillMatch[1];
     const s = getActiveSession(chatId, threadId);
     if (!s) {
       await tg.answerCallbackQuery(cq.id, "No active session");
+      return;
+    }
+    await tg.answerCallbackQuery(cq.id, `Loading ${id}…`);
+    try {
+      await oc.loadSkill(s.sessionId, id);
+      await tg.sendRichMessage(chatId, `Loaded skill <b>${esc(id)}</b>`, threadOpts(threadId));
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
+    return;
+  }
+
+  const cmdMatch = cbData.match(/^cmd:(.+)$/);
+  if (cmdMatch) {
+    const name = cmdMatch[1];
+    const dangerous = new Set(["delete", "remove", "reset", "drop", "clear", "wipe", "destroy"]);
+    if (dangerous.has(name.toLowerCase())) {
+      await tg.answerCallbackQuery(cq.id, "Type the command manually");
+      await tg.sendRichMessage(chatId, "⚠️ For safety, run this command by typing it.", threadOpts(threadId));
+      return;
+    }
+    const s = getActiveSession(chatId, threadId);
+    if (!s) {
+      await tg.answerCallbackQuery(cq.id, "No active session");
+      return;
+    }
+    const cmds = await oc.listCommandsCached(s.directory);
+    if (!cmds.some((c: any) => c?.name === name)) {
+      await tg.answerCallbackQuery(cq.id, "Unknown command");
       return;
     }
     await tg.answerCallbackQuery(cq.id, `Running /${name}…`);

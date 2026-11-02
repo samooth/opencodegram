@@ -95,15 +95,15 @@ export type FileBrowser = ReturnType<typeof createFileBrowser>;
 export function createFileBrowser({ tg, config, getActiveSession, getSettings }: FileBrowserDeps) {
   // Buttons reference indexes into the listing attached to their own message.
   // Keying by message_id keeps old messages functional when a new /ls arrives.
-  const views = new Map<number, View>();
+  const views = new Map<string, View>();
 
   function baseFor(chatId: number, threadId?: number): string {
     const session = getActiveSession(chatId, threadId);
     return session?.directory ?? config.OPENCODE_DIRECTORY ?? process.cwd();
   }
 
-  function remember(messageId: number, view: View): void {
-    views.set(messageId, view);
+  function remember(chatId: number, messageId: number, view: View): void {
+    views.set(`${chatId}:${messageId}`, view);
     while (views.size > MAX_CACHED_VIEWS) {
       const oldest = views.keys().next().value;
       if (oldest === undefined) break;
@@ -140,7 +140,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     const html = view.kind === "file" ? renderFile(view) : view.kind === "find" ? renderFind(view) : view.kind === "summary" ? renderSummary(view) : view.kind === "search" ? renderSearch(view) : renderListing(view);
     const keyboard = view.kind === "file" ? fileKeyboard(view) : view.kind === "find" ? findKeyboard(view) : view.kind === "summary" ? summaryKeyboard(view) : view.kind === "search" ? searchKeyboard(view) : listingKeyboard(view);
     const id = await sendOrEdit(view.chatId, view.threadId, messageId, html, keyboard);
-    if (id !== undefined) remember(id, view);
+    if (id !== undefined) remember(view.chatId, id, view);
     return id;
   }
 
@@ -294,7 +294,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
     keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const sentId = await sendOrEdit(chatId, threadId, options.messageId, text, keyboard);
-    if (sentId !== undefined) views.set(sentId, view);
+    if (sentId !== undefined) views.set(`${chatId}:${sentId}`, view);
   }
 
   function renderSummary(view: SummaryView): string {
@@ -351,7 +351,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
     keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const sentId = await sendOrEdit(chatId, threadId, options.messageId, text, keyboard);
-    if (sentId !== undefined) views.set(sentId, view);
+    if (sentId !== undefined) views.set(`${chatId}:${sentId}`, view);
   }
 
   function searchKeyboard(view: SearchView): Array<Array<{ text: string; callback_data: string }>> {
@@ -541,7 +541,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     }
     const threadId = cq.message?.message_thread_id;
     const messageId = cq.message?.message_id;
-    const view = messageId !== undefined ? views.get(messageId) : undefined;
+    const view = messageId !== undefined ? views.get(`${chatId}:${messageId}`) : undefined;
 
     try {
       if (data.startsWith("fs:cd:")) {

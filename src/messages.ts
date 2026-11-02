@@ -25,7 +25,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       if (Number.isFinite(n) && n > 0) allowedUsers.add(n);
     }
   }
-  const isAuthorized = allowedUsers.size === 0 || (userId !== undefined && allowedUsers.has(userId));
+  const isAuthorized = allowedUsers.size > 0 && userId !== undefined && allowedUsers.has(userId);
   if (!isAuthorized) {
     // In groups, silently ignore unauthorized messages.
     if (msg.chat.id < 0) return;
@@ -50,7 +50,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
 
   const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
-  console.log("[telegram] message from", userId, chatId, JSON.stringify((msg.text ?? msg.caption ?? "").slice(0, 80)));
+  console.log("[telegram] message from", userId, chatId, "len=", (msg.text ?? msg.caption ?? "").length);
   tg.setMessageReaction(chatId, msg.message_id, "👀").catch(() => {});
   tg.sendChatAction(chatId, "typing", replyThread).catch(() => {});
   deps.audit("message", `${userId} ${chatId}: ${(msg.text ?? msg.caption ?? "").slice(0, 120)}`);
@@ -83,13 +83,20 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // Multimedia handling
   let mediaToAttach: Array<{ uri: string; name: string }> = [];
   const voiceAttachments: Array<{ uri: string; name: string }> = [];
+  const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
   const downloadOne = async (fileId: string, suggestedName: string) => {
     const info = await tg.getFile(fileId);
     if (!info.file_path) throw new Error("Telegram did not return a file path");
+    if (typeof info.file_size === "number" && info.file_size > MAX_DOWNLOAD_BYTES) {
+      throw new Error(`File too large (${info.file_size} bytes; limit ${MAX_DOWNLOAD_BYTES})`);
+    }
     const url = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${info.file_path}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`download failed: ${res.status}`);
+    const cl = res.headers.get("content-length");
+    if (cl && Number(cl) > MAX_DOWNLOAD_BYTES) throw new Error("File too large");
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > MAX_DOWNLOAD_BYTES) throw new Error("File too large");
     const dir = join("/tmp/opencode/attachments", String(chatId));
     await mkdir(dir, { recursive: true });
     const rawName = suggestedName || info.file_path.split("/").pop() || `${fileId}.bin`;
@@ -218,7 +225,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {
         updateStatus(chatId, s).catch(() => {});
-      }, 3000);
+      }, 5000);
       void oc.prompt(s.sessionId, text, mediaToAttach).catch(async (err) => {
         if (s.statusTimer) {
           clearInterval(s.statusTimer);
@@ -358,7 +365,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {
       updateStatus(chatId, s).catch(() => {});
-    }, 3000);
+    }, 5000);
     void oc.prompt(s.sessionId, text).catch(async (err) => {
       if (s.statusTimer) {
         clearInterval(s.statusTimer);

@@ -166,7 +166,10 @@ async function main() {
       } catch {
         // File does not exist yet.
       }
-      const line = `${new Date().toISOString()} ${action} ${detail}\n`;
+      const redacted = detail
+        .replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_TOKEN]")
+        .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[REDACTED]");
+      const line = `${new Date().toISOString()} ${action} ${redacted}\n`;
       writeFileSync(auditFile, line, { flag: "a" });
     } catch {
       // Audit logging must never break the bot.

@@ -1,0 +1,8 @@
+.env
+.env.*
+node_modules
+data
+.git
+*.log
+tmp
+zigcache9

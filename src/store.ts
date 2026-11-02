@@ -66,9 +66,12 @@ export class SessionStore {
 
   resolveChatId = (sessionId: string | undefined): number | undefined => {
     if (!sessionId) return undefined;
+    // Prefer the persisted chat binding over the in-memory targetChatId, which
+    // can be stale when a session object is reused across chats.
+    const persisted = this.chatBySession.get(sessionId) ?? this.lastChatBySession.get(sessionId);
+    if (persisted !== undefined) return persisted;
     const s = this.findSessionById(sessionId);
-    if (s?.targetChatId !== undefined) return s.targetChatId;
-    return this.chatBySession.get(sessionId) ?? this.lastChatBySession.get(sessionId);
+    return s?.targetChatId;
   };
 
   resolveThreadId = (sessionId: string | undefined): number | undefined => {

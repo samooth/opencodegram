@@ -91,10 +91,38 @@ export async function listMcpResources(oc: OpenCodeBridge, directory?: string): 
 export async function readMcpResource(uri: string, directory?: string): Promise<{ text?: string; buffer?: Buffer; mimeType?: string; error?: string }> {
   if (/^https?:\/\//i.test(uri)) {
     try {
-      const response = await fetch(uri);
+      const parsed = new URL(uri);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { error: "Unsupported URI scheme." };
+      const { lookup } = await import("node:dns/promises");
+      const host = parsed.hostname;
+      const blocked = (ip: string) => {
+        const lower = ip.toLowerCase();
+        if (lower === "127.0.0.1" || lower === "::1" || lower === "0.0.0.0" || lower === "::") return true;
+        if (lower.startsWith("10.") || lower.startsWith("192.168.") || lower.startsWith("169.254.") || lower.startsWith("172.16.") || lower.startsWith("172.17.") || lower.startsWith("172.18.") || lower.startsWith("172.19.") || lower.startsWith("172.2") || lower.startsWith("172.30.") || lower.startsWith("172.31.")) return true;
+        if (lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe80:") || lower.startsWith("ff")) return true; // IPv6 ULA/link-local/multicast
+        if (lower === "169.254.169.254") return true;
+        return false;
+      };
+      if (host === "localhost" || host.endsWith(".localhost")) return { error: "Blocked host." };
+      const resolved = await lookup(host);
+      if (blocked(resolved.address)) return { error: "Blocked host (private/loopback)." };
+      const response = await fetch(uri, { redirect: "error" });
       if (!response.ok) return { error: `HTTP ${response.status}` };
       const contentType = response.headers.get("content-type") ?? "";
-      const text = await response.text();
+      const reader = response.body?.getReader();
+      if (!reader) return { error: "No body." };
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      const MAX = 2_000_000;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > MAX) { reader.cancel(); return { error: "Resource too large." }; }
+        chunks.push(value);
+      }
+      const bufs = chunks.map((c) => Buffer.from(c));
+      const text = Buffer.concat(bufs).toString("utf8");
       return { text, mimeType: contentType };
     } catch (err) {
       return { error: String(err) };

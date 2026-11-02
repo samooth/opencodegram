@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  opencode:
+    image: node:22-slim
+    container_name: opencode-server
+    working_dir: /workspace
+    volumes:
+      - opencode-config:/root/.config/opencode
+      - opencode-data:/root/.local/share/opencode
+      - ${OPENCODE_DIRECTORY:-/tmp}:/workspace
+    environment:
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD}
+    command: >
+      sh -c "npm install -g @opencode/cli@2.2.5 >/dev/null 2>&1;
+             opencode serve --hostname 0.0.0.0 --port 49374"
+    ports:
+      - "127.0.0.1:49374:49374"
+    restart: unless-stopped
+
+  bot:
+    build: .
+    container_name: opencodegram
+    depends_on:
+      - opencode
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_TELEGRAM_USER_ID=${ADMIN_TELEGRAM_USER_ID:-REDACTED_USER_ID}
+      - OPENCODE_BASE_URL=http://opencode:49374
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD}
+      - OPENCODE_DIRECTORY=/workspace
+      - WEBHOOK_MODE=${WEBHOOK_MODE:-false}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - OPS_PORT=9090
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+volumes:
+  opencode-config:
+  opencode-data:

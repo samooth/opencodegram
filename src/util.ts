@@ -1,5 +1,5 @@
 export function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 /** Clamp a string for Telegram (max 4096 chars) without splitting mid-entity. */
@@ -152,7 +152,11 @@ export function markdownToHtml(md: string): string {
     s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
     s = s.replace(/\*\*([^*]+)\*\*/g, (_, c) => `<b>${c}</b>`);
     s = s.replace(/(^|[^*])\*([^*]+)\*/g, (_, pre, c) => `${pre}<i>${c}</i>`);
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => `<a href="${u}">${t}</a>`);
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => {
+      const url = String(u).trim();
+      if (!/^(https?:|mailto:)/i.test(url)) return `${t}`;
+      return `<a href="${url.replace(/"/g, "&quot;")}">${t}</a>`;
+    });
     return s;
   };
 

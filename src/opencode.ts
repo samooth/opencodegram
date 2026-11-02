@@ -117,6 +117,15 @@ export class OpenCodeBridge {
     return (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as unknown[];
   }
 
+  async listSkills(directory?: string) {
+    const res = await this.client.skill.list(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.skill.list>[0] : undefined);
+    return (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as unknown[];
+  }
+
+  async loadSkill(sessionId: string, id: string) {
+    await this.client.session.skill({ sessionID: sessionId, id });
+  }
+
   async forkSession(sessionId: string) {
     return this.client.session.fork({ sessionID: sessionId });
   }

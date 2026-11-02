@@ -76,10 +76,14 @@ export class TelegramClient {
       headers: { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    if (res.status >= 500 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return this.call<T>(method, body, attempt + 1);
+    }
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
       if (method === "editMessageText") {
-        console.error("[telegram] editMessageText error:", json.description, "body=", JSON.stringify(body).slice(0, 300));
+        console.error("[telegram] editMessageText error:", json.description, "method=", method);
       }
       // Treat "message is not modified" as success for edit calls (no-op).
       if (json.error_code === 400 && /not modified/i.test(json.description ?? "") && method.toLowerCase().includes("edit")) {
@@ -98,6 +102,10 @@ export class TelegramClient {
   /** Multipart upload endpoint (documents/photos), with the same retry policy. */
   private async callForm<T>(method: string, form: FormData, attempt = 0): Promise<T> {
     const res = await fetch(`${API}/bot${this.token}/${method}`, { method: "POST", body: form });
+    if (res.status >= 500 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return this.callForm<T>(method, form, attempt + 1);
+    }
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
       if (json.error_code === 429 && attempt < 3) {
@@ -216,9 +224,12 @@ export class TelegramClient {
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
     const safe = sanitizeUtf8(html);
     return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: safe }, ...opts }).catch((err) => {
-      console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length, "snippet=", JSON.stringify(safe.slice(0, 120)));
+      console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length);
       throw err;
     });
+  }
+  editMessageReplyMarkup(chatId: number, messageId: number, markup: Record<string, unknown>): Promise<unknown> {
+    return this.call("editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: markup }).catch(() => undefined);
   }
 
   editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {

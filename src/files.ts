@@ -708,14 +708,14 @@ export async function searchTextFile(
   const maxMatches = Math.max(1, options.maxMatches ?? 60);
   const lines = buffer.toString("utf8").split(/\r?\n/);
 
+  const trimmed = pattern.trim().slice(0, 500);
   let re: RegExp;
-  const trimmed = pattern.trim();
   const slashMatch = trimmed.match(/^\/(.+)\/(i)?$/);
-  if (slashMatch) {
+  // Only honor an explicit regex when it is short enough to avoid ReDoS.
+  if (slashMatch && slashMatch[1].length <= 30) {
     try {
       re = new RegExp(slashMatch[1], slashMatch[2] ? "i" : (caseSensitive ? "" : "i"));
     } catch {
-      // Fall back to literal if regex is invalid.
       re = new RegExp(escapeRegExp(trimmed), caseSensitive ? "" : "i");
     }
   } else {

@@ -150,6 +150,8 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     cs.model = model;
     cs.stopped = false;
     cs.targetChatId = chatId;
+    store.rememberSessionChat(sessionId, chatId);
+    store.rememberLastChat(sessionId, chatId);
     cs.buffer = "";
     cs.reasoningBuffer = "";
     cs.toolCalls = [];

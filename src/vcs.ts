@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { isAbsolute, relative, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
 import { FileAccessError } from "./files.js";
 
 const execFileAsync = promisify(execFile);
@@ -87,10 +88,15 @@ export async function vcsLog(directory: string, limit = 10): Promise<string> {
 }
 
 async function safeRelativePath(directory: string, path: string): Promise<string> {
-  const base = resolve(directory);
-  const target = resolve(base, path);
-  const relativePath = relative(base, target);
+  const baseReal = await realpath(directory);
+  const candidate = isAbsolute(path) ? resolve(path) : resolve(baseReal, path);
+  const targetReal = await realpath(candidate);
+  const relativePath = relative(baseReal, targetReal);
   if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new FileAccessError("outside", "Path is outside the session directory.");
+  }
+  // Ensure the resolved target stays inside the base even through symlinks.
+  if (!targetReal.startsWith(baseReal + "/") && targetReal !== baseReal) {
     throw new FileAccessError("outside", "Path is outside the session directory.");
   }
   return relativePath;

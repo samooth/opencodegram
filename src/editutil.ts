@@ -14,7 +14,7 @@ export function isEditTool(name: string, input?: string): boolean {
   ) {
     return true;
   }
-  if (input && (/"old[Ss]tring"/.test(input) || /"new[Ss]tring"/.test(input) || /"old_string"/.test(input) || /"new_string"/.test(input))) {
+  if (input && (/"old[Ss]tring"/.test(input) || /"new[Ss]tring"/.test(input) || /"old_string"/.test(input) || /"new_string"/.test(input) || /"oldText"/.test(input) || /"newText"/.test(input))) {
     return true;
   }
   return false;
@@ -23,9 +23,11 @@ export function isEditTool(name: string, input?: string): boolean {
 export function extractEditFile(input: string | undefined): string | null {
   if (!input) return null;
   try {
-    const parsed = JSON.parse(input) as { filePath?: unknown; file?: unknown; path?: unknown; filename?: unknown };
-    const value = parsed.filePath ?? parsed.file ?? parsed.path ?? parsed.filename;
-    return typeof value === "string" && value.trim() ? value.trim() : null;
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    for (const key of ["filePath", "file", "path", "filename", "target"]) {
+      if (typeof parsed[key] === "string" && (parsed[key] as string).trim()) return (parsed[key] as string).trim();
+    }
+    return null;
   } catch {
     return null;
   }
@@ -34,11 +36,38 @@ export function extractEditFile(input: string | undefined): string | null {
 export function formatEditDiff(input: string | undefined, style: DiffStyle = "simple", baseDirectory?: string): string {
   if (!input) return "";
   try {
-    const parsed = JSON.parse(input) as { filePath?: unknown; file?: unknown; path?: unknown; oldString?: unknown; old_string?: unknown; newString?: unknown; new_string?: unknown };
-    let filePath = typeof parsed.filePath === "string" ? parsed.filePath : typeof parsed.file === "string" ? parsed.file : typeof parsed.path === "string" ? parsed.path : "file";
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    let filePath = "file";
+    for (const key of ["filePath", "file", "path", "filename", "target"]) {
+      if (typeof parsed[key] === "string" && (parsed[key] as string).trim()) { filePath = (parsed[key] as string).trim(); break; }
+    }
     if (baseDirectory && filePath.startsWith(baseDirectory + "/")) filePath = filePath.slice(baseDirectory.length + 1);
-    const oldString = typeof parsed.oldString === "string" ? parsed.oldString : typeof parsed.old_string === "string" ? parsed.old_string : "";
-    const newString = typeof parsed.newString === "string" ? parsed.newString : typeof parsed.new_string === "string" ? parsed.new_string : "";
+
+    const oldKeys = ["oldString", "old_string", "oldText", "old_text", "old", "original", "before"];
+    const newKeys = ["newString", "new_string", "newText", "new_text", "new", "updated", "after"];
+    let oldString = "";
+    let newString = "";
+    for (const k of oldKeys) if (typeof parsed[k] === "string") { oldString = parsed[k] as string; break; }
+    for (const k of newKeys) if (typeof parsed[k] === "string") { newString = parsed[k] as string; break; }
+
+    if (!oldString && !newString && Array.isArray(parsed.changes)) {
+      const parts: string[] = [];
+      for (const c of parsed.changes as Array<Record<string, unknown>>) {
+        const f = typeof c.path === "string" ? c.path : typeof c.file === "string" ? c.file : filePath;
+        const o = typeof c.old === "string" ? c.old : typeof c.oldString === "string" ? c.oldString : typeof c.old_string === "string" ? c.old_string : typeof c.oldText === "string" ? c.oldText : "";
+        const n = typeof c.new === "string" ? c.new : typeof c.newString === "string" ? c.newString : typeof c.new_string === "string" ? c.new_string : typeof c.newText === "string" ? c.newText : "";
+        parts.push(`--- ${f}`);
+        parts.push(`+++ ${f}`);
+        for (const line of o.split("\n")) parts.push(`- ${line}`);
+        for (const line of n.split("\n")) parts.push(`+ ${line}`);
+      }
+      if (parts.length) return parts.join("\n");
+    }
+
+    if (!oldString && !newString) {
+      // Never return an empty diff: show the raw input so the user sees something.
+      return input ?? "";
+    }
     if (style === "unified") return formatUnifiedDiff(filePath, oldString, newString);
     const lines = [`--- ${filePath}`, `+++ ${filePath}`];
     for (const line of oldString.split("\n")) lines.push(`- ${line}`);
