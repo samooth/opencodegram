@@ -619,6 +619,8 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
       ? decideRetry(sessionId, promptForRetry, config)
       : ({ action: "none" } as const);
 
+    console.log("[autoretry] session=", sessionId, "isRateLimit=", isRateLimit, "autoRetry=", autoRetry, "hasPrompt=", !!promptForRetry, "decision=", decision.action, "attempts=", (decision.action === "retry" || decision.action === "exhausted") ? (decision as { attempt?: number; attempts?: number }).attempt ?? (decision as { attempts?: number }).attempts : 0);
+
     if (decision.action === "retry") {
       const sid = sessionId as string;
       const prompt = promptForRetry as string;
