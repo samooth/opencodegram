@@ -384,6 +384,8 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     }
     const endedText = (e.data?.text ?? "").toString().trim();
     let finalText = endedText || s.buffer || "(empty response)";
+    const sessionName = (s.topicTitle || s.sessionId || "").trim();
+    if (sessionName) finalText = `${sessionName}\n\n${finalText}`;
     let elapsed = 0;
     let tokens = s.lastOutputTokens ?? 0;
     try {
@@ -407,7 +409,8 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (elapsed > 0 && elapsed < 0.5) elapsed = 0.5;
     if (tokens && elapsed > 0) {
       const speed = (tokens / elapsed).toFixed(1);
-      finalText += "\n\n⚡ " + speed + " tok/s";
+      const modelName = s.model ? `${s.model.providerID}/${s.model.id}${s.model.variant ? " (" + s.model.variant + ")" : ""}` : "";
+      finalText += modelName ? `\n\n⚡ ${modelName} · ${speed} tok/s` : `\n\n⚡ ${speed} tok/s`;
     }
     const threadOpts2 = store.threadOptsFor(s);
     // Build quick-switch keyboard (prev/next session in the project).
