@@ -204,7 +204,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
         if (cotSrc) {
           const cot = cotSrc.slice(-1500);
-          lines.push(`<details open><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+          lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
         }
       }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
@@ -234,7 +234,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };
     if (settings.showThinking && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
-      lines.push(`<details open><summary>🧾 COT (${s.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+      lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
     }
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     if (s.stopped) lines.push("<h4>⏹ Stopped</h4>");
@@ -242,7 +242,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       sep();
       const r = s.reasoningBuffer.trim().slice(-800);
-      lines.push(`<details open><summary>🧠 Thinking</summary>\n<pre>${esc(r)}</pre>\n</details>`);
+      lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(r)}</blockquote>`);
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
     const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
@@ -250,12 +250,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showTools && settings.showShell && shellDetails.length) {
       sep();
       const shellText = renderShell(shellDetails.slice(-5), 200);
-      lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre language='bash'>" + esc(shellText) + "</pre>\n</details>");
+      lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (` + shellDetails.length + ")\n" + esc(shellText) + "</blockquote>");
     }
     if (settings.showTools && otherDetails.length) {
       sep();
       const details = renderTools(otherDetails.slice(-5), 200);
-      lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+      lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n" + esc(details) + "</blockquote>");
     } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
@@ -402,24 +402,24 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lines: string[] = [];
     if (settings.showThinking && previousCot) {
       const cot = previousCot.slice(-3500);
-      lines.push(`<details open><summary>🧾 COT (${target.cotCount ?? 0})</summary>\n<pre>${esc(cot)}</pre>\n</details>`);
+      lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
     }
     lines.push("✅ <b>Done</b>");
     if (!settings.compactFinal) {
       if (settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
         const r = target.reasoningBuffer.trim().slice(0, 3500);
-        lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary>\n<pre>` + esc(r) + "</pre>\n</details>");
+        lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n` + esc(r) + "</blockquote>");
       }
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
       const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (settings.showTools && settings.showShell && shellDetails.length) {
         const shellText = renderShell(shellDetails, 500);
-        lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre language='bash'>" + esc(shellText) + "</pre>\n</details>");
+        lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (` + shellDetails.length + ")\n" + esc(shellText) + "</blockquote>");
       }
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails, 500);
-        lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n" + esc(details) + "</blockquote>");
       }
       if (settings.showTools && editDetails.length) {
         const editLines = [`✏️ Edits: ${editDetails.length}`];
