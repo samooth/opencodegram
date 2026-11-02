@@ -6,6 +6,7 @@ import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./setti
 import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { esc, threadOpts } from "./util.js";
+import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 
 type CallbackHandler = (
   deps: BotDeps,
@@ -174,7 +175,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   const idx = parseInt(m[1], 10);
   const scope = deps.store.routeKey(chatId, threadId);
   const models = deps.modelListByChat.get(scope) ?? [];
-  const model = models[idx];
+  const model = models[idx] as any;
   const s = deps.store.getActiveSession(chatId, threadId);
   if (!model) {
     await deps.tg.answerCallbackQuery(cq.id, "Model not found");
@@ -188,7 +189,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     }).catch(() => {});
     return;
   }
-  deps.pendingModelByChat.set(scope, model);
+  deps.pendingModelByChat.set(scope, model as { id: string; providerID: string; variant?: string });
   const variants = Array.isArray(model.variants) ? model.variants : [];
   const keyboard: any[][] = [];
   for (const v of variants) {
@@ -396,6 +397,7 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
       clearInterval(s.statusTimer);
       s.statusTimer = undefined;
     }
+    cancelAutoRetry(s.sessionId);
     await oc.interrupt(s.sessionId).catch(() => {});
     await tg.answerCallbackQuery(cq.id, "Stopped");
     if (s.statusMessageId) {
@@ -560,6 +562,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       s.promptStartTime = Date.now();
       deps.store.rememberLastChat(s.sessionId, chatId);
       deps.store.rememberLastPrompt(s.sessionId, prompt);
+      notePromptSent(s.sessionId, prompt);
       await deps.status.startStatus(chatId, s);
       if (s.statusMessageId) deps.store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {

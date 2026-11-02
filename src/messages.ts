@@ -7,6 +7,8 @@ import type { TelegramClient, TelegramMessage } from "./telegram.js";
 import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
 import { clampText, esc, normalizeCommandText, parseSlashCommand } from "./util.js";
 import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
+import type { ChatSession } from "./types.js";
+import { notePromptSent } from "./autoretry.js";
 
 /**
  * Result of downloading a Telegram message's attachments.
@@ -111,6 +113,100 @@ export async function downloadAttachments(
 }
 
 /**
+ * Find, restore or create the session that should receive a message.
+ * Returns undefined when the tab has no session and none can be created.
+ */
+async function resolveSessionForMessage(
+  deps: BotDeps,
+  chatId: number,
+  replyThread: number | undefined,
+  repliedSessionId: string | undefined,
+  rawText: string,
+): Promise<ChatSession | undefined> {
+  const { store, sessions, me } = deps;
+  const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
+
+  let s = await ensureActiveSession(chatId, replyThread);
+  if (!s && repliedSessionId) {
+    try {
+      await activateSession(chatId, repliedSessionId, true, replyThread);
+      s = await restoreActiveSession(chatId, replyThread);
+    } catch (err) {
+      console.error("[reply] activate failed", repliedSessionId, err);
+      s = undefined;
+    }
+  }
+  if (!s && !repliedSessionId && chatId < 0) {
+    const candidates = [...store.activeSessionByRoute.entries()]
+      .filter(([k]) => k.startsWith(`${chatId}:`))
+      .map(([, sid]) => sid);
+    const unique = [...new Set(candidates)];
+    if (unique.length === 1) {
+      try {
+        await activateSession(chatId, unique[0], true, replyThread);
+        s = await restoreActiveSession(chatId, replyThread);
+      } catch (err) {
+        console.error("[reply] single-candidate activate failed", unique[0], err);
+        s = undefined;
+      }
+    }
+  }
+  const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
+  if (!s && (chatId >= 0 || isMention)) {
+    await createNewSession(chatId, true, replyThread);
+    s = await restoreActiveSession(chatId, replyThread);
+  }
+  return s;
+}
+
+/**
+ * Mark the session busy, start the status card and dispatch the prompt.
+ * Errors are reported in the same tab without rejecting the caller.
+ */
+async function startPrompt(
+  deps: BotDeps,
+  chatId: number,
+  replyThread: number | undefined,
+  s: ChatSession,
+  text: string,
+  send: SendFn,
+  files?: Array<{ uri: string; name: string }>,
+): Promise<void> {
+  const { oc, store, status } = deps;
+  const { startStatus, updateStatus, finishStatus } = status;
+  try {
+    s.targetChatId = chatId;
+    s.targetThreadId = replyThread;
+    store.rememberSessionChat(s.sessionId, chatId);
+    store.rememberActiveRoute(chatId, replyThread, s.sessionId);
+    s.promptStartTime = Date.now();
+    store.rememberLastChat(s.sessionId, chatId);
+    store.rememberLastPrompt(s.sessionId, text);
+    notePromptSent(s.sessionId, text);
+    await startStatus(chatId, s);
+    if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
+    s.statusTimer = setInterval(() => {
+      updateStatus(chatId, s).catch(() => {});
+    }, 5000);
+    void oc.prompt(s.sessionId, text, files).catch(async (err) => {
+      if (s.statusTimer) {
+        clearInterval(s.statusTimer);
+        s.statusTimer = undefined;
+      }
+      await finishStatus(chatId, s).catch(() => {});
+      await send(`❌ ${esc(String(err))}`, store.threadOptsFor(s));
+    });
+  } catch (err) {
+    if (s.statusTimer) {
+      clearInterval(s.statusTimer);
+      s.statusTimer = undefined;
+    }
+    await finishStatus(chatId, s).catch(() => {});
+    await send(`❌ ${esc(String(err))}`, store.threadOptsFor(s));
+  }
+}
+
+/**
  * A text/media message from Telegram: gate it, download attachments, handle
  * commands, or forward it to the session bound to this tab as a prompt.
  */
@@ -210,13 +306,7 @@ export async function handleMediaMessage(
   send: SendFn,
   attachments?: { mediaToAttach: Array<{ uri: string; name: string }>; voiceTranscript: string | null },
 ): Promise<void> {
-  const { config, tg, oc, store, me, sessions, status } = deps;
-  const { rememberSessionChat, rememberActiveRoute } = store;
-  const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
-  const { startStatus, updateStatus, finishStatus } = status;
-
-  const rawText = (msg.text ?? msg.caption ?? "").trim();
-  const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
+  const { config, tg, oc } = deps;
 
   // Resolve attachments (download if not provided).
   let mediaToAttach: Array<{ uri: string; name: string }>;
@@ -236,35 +326,7 @@ export async function handleMediaMessage(
   }
   if (!mediaToAttach.length) return;
 
-  let s = await ensureActiveSession(chatId, replyThread);
-  if (!s && repliedSessionId) {
-    try {
-      await activateSession(chatId, repliedSessionId, true, replyThread);
-      s = await restoreActiveSession(chatId, replyThread);
-    } catch (err) {
-      console.error("[reply] activate failed", repliedSessionId, err);
-      s = undefined;
-    }
-  }
-  if (!s && !repliedSessionId && chatId < 0) {
-    const candidates = [...store.activeSessionByRoute.entries()]
-      .filter(([k]) => k.startsWith(`${chatId}:`))
-      .map(([, sid]) => sid);
-    const unique = [...new Set(candidates)];
-    if (unique.length === 1) {
-      try {
-        await activateSession(chatId, unique[0], true, replyThread);
-        s = await restoreActiveSession(chatId, replyThread);
-      } catch (err) {
-        console.error("[reply] single-candidate activate failed", unique[0], err);
-        s = undefined;
-      }
-    }
-  }
-  if (!s && isMention && chatId < 0) {
-    await createNewSession(chatId, true, replyThread);
-    s = await restoreActiveSession(chatId, replyThread);
-  }
+  const s = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, (msg.text ?? msg.caption ?? "").trim());
   if (!s) {
     await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
     return;
@@ -291,35 +353,7 @@ export async function handleMediaMessage(
       // ignore
     }
   }
-  try {
-    s.targetChatId = chatId;
-    s.targetThreadId = replyThread;
-    rememberSessionChat(s.sessionId, chatId);
-    rememberActiveRoute(chatId, replyThread, s.sessionId);
-    s.promptStartTime = Date.now();
-    store.rememberLastChat(s.sessionId, chatId);
-    store.rememberLastPrompt(s.sessionId, text);
-    await startStatus(chatId, s);
-    if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
-    s.statusTimer = setInterval(() => {
-      updateStatus(chatId, s).catch(() => {});
-    }, 5000);
-    void oc.prompt(s.sessionId, text, mediaToAttach).catch(async (err) => {
-      if (s.statusTimer) {
-        clearInterval(s.statusTimer);
-        s.statusTimer = undefined;
-      }
-      await finishStatus(chatId, s).catch(() => {});
-      await send(`❌ ${esc(String(err))}`, store.threadOptsFor(s));
-    });
-  } catch (err) {
-    if (s.statusTimer) {
-      clearInterval(s.statusTimer);
-      s.statusTimer = undefined;
-    }
-    await finishStatus(chatId, s).catch(() => {});
-    await send(`❌ ${esc(String(err))}`, store.threadOptsFor(s));
-  }
+  await startPrompt(deps, chatId, replyThread, s, text, send, mediaToAttach);
 }
 
 export async function handleTextMessage(
@@ -330,10 +364,7 @@ export async function handleTextMessage(
   repliedSessionId: string | undefined,
   send: SendFn,
 ): Promise<void> {
-  const { config, tg, oc, store, me, sessions, status } = deps;
-  const { rememberSessionChat, rememberActiveRoute } = store;
-  const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
-  const { startStatus, updateStatus, finishStatus } = status;
+  const { oc, me } = deps;
 
   if (!msg.text) return;
   let text = (msg.text ?? msg.caption ?? "").trim();
@@ -342,37 +373,8 @@ export async function handleTextMessage(
   if (await handleCommand(deps, chatId, replyThread, text, send)) return;
 
   // Create or restore the session bound to this tab.
-  let s = await ensureActiveSession(chatId, replyThread);
-  if (!s && repliedSessionId) {
-    try {
-      await activateSession(chatId, repliedSessionId, true, replyThread);
-      s = await restoreActiveSession(chatId, replyThread);
-    } catch (err) {
-      console.error("[reply] activate failed", repliedSessionId, err);
-      s = undefined;
-    }
-  }
   const rawText = (msg.text ?? msg.caption ?? "").trim();
-  const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
-  if (!s && !repliedSessionId && chatId < 0) {
-    const candidates = [...store.activeSessionByRoute.entries()]
-      .filter(([k]) => k.startsWith(`${chatId}:`))
-      .map(([, sid]) => sid);
-    const unique = [...new Set(candidates)];
-    if (unique.length === 1) {
-      try {
-        await activateSession(chatId, unique[0], true, replyThread);
-        s = await restoreActiveSession(chatId, replyThread);
-      } catch (err) {
-        console.error("[reply] single-candidate activate failed", unique[0], err);
-        s = undefined;
-      }
-    }
-  }
-  if (!s && (chatId >= 0 || isMention)) {
-    await createNewSession(chatId, true, replyThread);
-    s = await restoreActiveSession(chatId, replyThread);
-  }
+  const s = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, rawText);
   if (!s) {
     await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
     return;
@@ -445,33 +447,5 @@ export async function handleTextMessage(
     return;
   }
 
-  try {
-    s.targetChatId = chatId;
-    s.targetThreadId = replyThread;
-    rememberSessionChat(s.sessionId, chatId);
-    rememberActiveRoute(chatId, replyThread, s.sessionId);
-    s.promptStartTime = Date.now();
-    store.rememberLastChat(s.sessionId, chatId);
-    store.rememberLastPrompt(s.sessionId, text);
-    await startStatus(chatId, s);
-    if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
-    s.statusTimer = setInterval(() => {
-      updateStatus(chatId, s).catch(() => {});
-    }, 5000);
-    void oc.prompt(s.sessionId, text).catch(async (err) => {
-      if (s.statusTimer) {
-        clearInterval(s.statusTimer);
-        s.statusTimer = undefined;
-      }
-      await finishStatus(chatId, s).catch(() => {});
-      await send(`❌ ${esc(String(err))}`);
-    });
-  } catch (err) {
-    if (s.statusTimer) {
-      clearInterval(s.statusTimer);
-      s.statusTimer = undefined;
-    }
-    await finishStatus(chatId, s).catch(() => {});
-    await send(`❌ ${esc(String(err))}`);
-  }
+  await startPrompt(deps, chatId, replyThread, s, text, send);
 }

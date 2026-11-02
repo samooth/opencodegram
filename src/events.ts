@@ -9,6 +9,7 @@ import { renderForm, formKeyboard } from "./formui.js";
 import { esc, rateLimitRetryAt, threadOpts, markdownToHtml } from "./util.js";
 import { logger } from "./logger.js";
 import { formatBytes, prepareDocument } from "./files/index.js";
+import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
 
 export type PermissionInfo = {
   chatId: number;
@@ -24,7 +25,6 @@ export type EventsDeps = {
   oc: OpenCodeBridge;
   config?: Config;
   store: SessionStore;
-  retryingSessions: Set<string>;
   pendingPermissions: Map<string, PermissionInfo>;
   pendingForms: Map<number, FormState>;
   pendingFormsById: Map<string, number>;
@@ -38,7 +38,6 @@ export type EventsDeps = {
 
 const lastGoalStatus = new Map<string, string>();
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
-const retryAttemptBySession = new Map<string, number>();
 
 type EventHandler = (event: { type: string; data?: any }, deps: EventsDeps) => Promise<void>;
 
@@ -344,6 +343,14 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
   const e = event;
   const sessionId = e.data?.sessionID;
+  if (sessionId) {
+    noteTurnCompleted(sessionId);
+    const retryNotice = retryMessageBySession.get(sessionId);
+    if (retryNotice) {
+      retryMessageBySession.delete(sessionId);
+      await tg.editRichMessage(retryNotice.chatId, retryNotice.messageId, "✅ Retry succeeded.").catch(() => {});
+    }
+  }
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   logger.breadcrumb("events", "text.ended.entry", { sessionId, hasSession: !!_s0, chatId });
@@ -561,11 +568,11 @@ const handlePermissionReplied: EventHandler = async (event, deps) => {
 };
 
 const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
-  const { tg, oc, store, settings, finishStatus, retryingSessions, config } = deps as any;
+  const { tg, oc, store, finishStatus, config } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
   const e = event;
   const sessionId = e.data?.sessionID;
-  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+  const s = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId !== undefined) {
     const msg = e.data?.error?.message ?? "execution failed";
@@ -574,44 +581,45 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
     const autoRetry = config?.AUTO_RETRY_ENABLED ?? true;
     const promptForRetry = sessionId ? lastPromptBySession.get(sessionId) : undefined;
-    const willRetry = isRateLimit && !!sessionId && !retryingSessions.has(sessionId) && autoRetry && !!promptForRetry;
-    const s2 = _s0;
-    if (s2?.typingTimer) { clearInterval(s2.typingTimer); s2.typingTimer = undefined; }
-    if (s2) await finishStatus(chatId, s2);
-    if (!willRetry) {
+    if (s?.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
+    if (s) await finishStatus(chatId, s);
+
+    // Retry only prompts sent by this process and only up to
+    // AUTO_RETRY_MAX_ATTEMPTS. Stale prompts restored from disk are ignored.
+    const decision = autoRetry && isRateLimit && sessionId && promptForRetry
+      ? decideRetry(sessionId, promptForRetry, config)
+      : ({ action: "none" } as const);
+
+    if (decision.action === "retry") {
+      const sid = sessionId as string;
+      const prompt = promptForRetry as string;
+      dispatchRetry(sid, decision.delay, async () => {
+        await oc.prompt(sid, prompt);
+        const existing = retryMessageBySession.get(sid);
+        if (existing) {
+          await tg
+            .editRichMessage(existing.chatId, existing.messageId, `⏳ Retry ${decision.attempt}/${decision.maxAttempts} sent; waiting for the model…`)
+            .catch(() => {});
+        }
+      });
+      const sent = await tg
+        .sendRichMessage(chatId, `⏳ Rate limited. Retrying in ${Math.round(decision.delay / 1000)}s (attempt ${decision.attempt}/${decision.maxAttempts})…`, threadOpts(threadId))
+        .catch(() => null);
+      if (sent?.message_id) retryMessageBySession.set(sid, { chatId, threadId, messageId: sent.message_id });
+    } else if (decision.action === "exhausted") {
+      const sid = sessionId as string;
+      await tg.sendRichMessage(
+        chatId,
+        `❌ ${esc(msg)}${esc(hint)}\n\n⛔ Auto-retry limit reached (${decision.attempts}/${decision.maxAttempts}). Use /retry to try again manually.`,
+        threadOpts(threadId),
+      );
+      retryMessageBySession.delete(sid);
+      cancelAutoRetry(sid);
+    } else if (decision.action === "none") {
       await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId));
+      if (sessionId) retryMessageBySession.delete(sessionId);
     }
-    if (isRateLimit && sessionId && !retryingSessions.has(sessionId) && autoRetry) {
-      const prompt = promptForRetry;
-      if (prompt) {
-        retryingSessions.add(sessionId);
-        const base = config?.RETRY_BACKOFF_BASE_MS ?? 60000;
-        const max = config?.RETRY_BACKOFF_MAX_MS ?? 900000;
-        const factor = config?.RETRY_BACKOFF_FACTOR ?? 2;
-        const attempt = retryAttemptBySession.get(sessionId) ?? 0;
-        const delay = Math.min(base * Math.pow(factor, attempt), max);
-        retryAttemptBySession.set(sessionId, attempt + 1);
-        const sent = await tg.sendRichMessage(chatId, `⏳ Rate limited. Retrying in ${Math.round(delay / 1000)}s…`, threadOpts(threadId)).catch(() => null);
-        if (sent?.message_id) retryMessageBySession.set(sessionId, { chatId, threadId, messageId: sent.message_id });
-        setTimeout(async () => {
-          retryingSessions.delete(sessionId);
-          try {
-            await oc.prompt(sessionId, prompt);
-            const existing = retryMessageBySession.get(sessionId);
-            if (existing) await tg.editRichMessage(existing.chatId, existing.messageId, "✅ Retry succeeded.").catch(() => {});
-            retryMessageBySession.delete(sessionId);
-            retryAttemptBySession.delete(sessionId);
-          } catch (err) {
-            const existing = retryMessageBySession.get(sessionId);
-            if (existing) {
-              await tg.editRichMessage(existing.chatId, existing.messageId, `❌ Retry failed: ${esc(String(err))}`).catch(() => {});
-            } else {
-              await tg.sendRichMessage(chatId, `❌ Retry failed: ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
-            }
-          }
-        }, delay);
-      }
-    }
+    // "wait": a retry is already pending for this prompt; avoid duplicate events.
   }
   // status tracking
   const sid = e.data?.sessionID;

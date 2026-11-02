@@ -13,6 +13,8 @@ const schema = z.object({
   OPS_HOST: z.string().default("127.0.0.1"),
   DISK_GUARD_MIN_FREE_MB: z.coerce.number().int().positive().default(2048),
   AUTO_RETRY_ENABLED: z.string().optional().default("true").transform((v) => v === "true" || v === "1"),
+  AUTO_RETRY_MAX_ATTEMPTS: z.coerce.number().int().min(0).default(3),
+  AUTO_RETRY_MAX_AGE_MS: z.coerce.number().int().positive().default(1800000),
   RETRY_BACKOFF_BASE_MS: z.coerce.number().int().positive().default(60000),
   RETRY_BACKOFF_MAX_MS: z.coerce.number().int().positive().default(900000),
   RETRY_BACKOFF_FACTOR: z.coerce.number().positive().default(2),

@@ -16,7 +16,7 @@ export type PanelsDeps = {
   restoreActiveSession?: (chatId: number, threadId?: number) => Promise<ChatSession | undefined>;
   getLastPrompt?: (sessionId: string) => string | undefined;
   getLastCot?: (sessionId: string) => string | undefined;
-  modelListByChat: Map<string, Array<any>>;
+  modelListByChat: Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string }>>;
   routeKey: (chatId: number, threadId?: number) => string;
   chatBySession?: Map<string, number>;
   getSessionStatus?: (sessionId: string) => string | undefined;
@@ -179,7 +179,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     });
     const current = s?.model;
     const scope = routeKey(chatId, threadId);
-    modelListByChat.set(scope, list);
+    modelListByChat.set(scope, list as Array<{ id: string; providerID: string; variant?: string; name?: string }>);
     const providers = [...new Set(list.map((m: any) => m.providerID ?? m.provider ?? "unknown"))].sort();
 
     if (!provider) {

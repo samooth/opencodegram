@@ -65,7 +65,7 @@ export type BotDeps = {
   pendingFormsById: Map<string, number>;
   pendingConfirmations: Map<string, { sessionId: string; name: string; args: string; expires: number }>;
   awaitingReason: Map<string, string>;
-  modelListByChat: Map<string, Array<any>>;
-  pendingModelByChat: Map<string, any>;
+  modelListByChat: Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string }>>;
+  pendingModelByChat: Map<string, { id: string; providerID: string; variant?: string } | null>;
   audit: (action: string, detail: string) => void;
 };

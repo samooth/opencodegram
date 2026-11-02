@@ -5,6 +5,7 @@ import * as mcp from "./mcp.js";
 import { isSettingsKey, renderSettings, settingsKeyboard } from "./settings.js";
 import * as vcs from "./vcs.js";
 import { clampText, colorDiff, esc, threadOpts, truncate } from "./util.js";
+import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 
 /**
  * Slash commands that do not prompt the model. Returns true when the text was
@@ -121,6 +122,7 @@ async function cmd_stop(deps: BotDeps, chatId: number, threadId: number | undefi
         clearInterval(s.statusTimer);
         s.statusTimer = undefined;
       }
+      cancelAutoRetry(s.sessionId);
       await C.oc.interrupt(s.sessionId);
       if (s.statusMessageId) {
         await C.updateStatus(chatId, s, true).catch(() => {});
@@ -1274,6 +1276,7 @@ async function cmd_retry(deps: BotDeps, chatId: number, threadId: number | undef
       s.promptStartTime = Date.now();
       C.store.rememberLastChat(s.sessionId, chatId);
       C.store.rememberLastPrompt(s.sessionId, prompt);
+      notePromptSent(s.sessionId, prompt);
       await send("🔁 Retrying last prompt…");
       await C.oc.prompt(s.sessionId, prompt);
     } catch (err) {

@@ -67,8 +67,8 @@ async function main() {
     topicsEnabled,
     finishStatus: status.finishStatus,
   });
-  const modelListByChat = new Map<string, Array<any>>();
-  const pendingModelByChat = new Map<string, any>();
+  const modelListByChat = new Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string }>>();
+  const pendingModelByChat = new Map<string, { id: string; providerID: string; variant?: string } | null>();
   const panels = createPanels({
     tg,
     oc,
@@ -164,7 +164,6 @@ async function main() {
     oc,
     config,
     store,
-    retryingSessions: new Set(),
     pendingPermissions: deps.pendingPermissions,
     pendingForms: deps.pendingForms,
     pendingFormsById: deps.pendingFormsById,

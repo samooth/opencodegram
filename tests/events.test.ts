@@ -13,13 +13,16 @@ afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
 function makeDeps() {
   const store = new SessionStore(join(root, "data"));
+  const sent: string[] = [];
   const tg = {
-    sendRichMessage: async () => ({ message_id: 1 }),
+    sent,
+    sendRichMessage: async (_chatId: number, text: string) => { sent.push(text); return { message_id: 1 }; },
     sendRichMessageMarkdown: async () => ({ message_id: 2 }),
     editRichMessage: async () => ({ message_id: 3 }),
     setMessageReaction: async () => {},
   } as any;
   const oc = {
+    prompt: async () => {},
     client: { session: { message: { get: async () => ({}) }, get: async () => ({}) } },
     interrupt: async () => {},
   } as any;
@@ -28,7 +31,6 @@ function makeDeps() {
     tg,
     oc,
     store,
-    retryingSessions: new Set(),
     pendingPermissions: new Map(),
     pendingForms: new Map(),
     pendingFormsById: new Map(),
@@ -65,5 +67,19 @@ describe("handleEvent", () => {
     const { deps } = makeDeps();
     await handleEvent({ type: "foo.bar", data: {} }, deps);
     expect(true).toBe(true);
+  });
+
+  test("does not auto-retry a prompt restored from disk", async () => {
+    const { deps, store } = makeDeps();
+    store.rememberLastChat("ses_old", 123);
+    store.rememberLastPrompt("ses_old", "prompt viejo");
+    let prompts = 0;
+    deps.oc.prompt = async () => { prompts++; };
+    await handleEvent(
+      { type: "session.execution.failed", data: { sessionID: "ses_old", error: { message: "rate limit exceeded" } } },
+      deps,
+    );
+    expect(prompts).toBe(0);
+    expect(deps.tg.sent.some((text: string) => text.includes("rate limit exceeded"))).toBe(true);
   });
 });
