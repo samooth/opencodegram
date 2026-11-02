@@ -4,9 +4,9 @@ import type { ChatSettings } from "./settings.js";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { isEditTool, extractEditFile, formatEditDiff } from "./editutil.js";
+import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { formatBytes } from "./files/index.js";
-import { clampText, esc } from "./util.js";
+import { clampText, esc, threadOpts } from "./util.js";
 
 function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -174,6 +174,13 @@ function readGpuInfo(): GpuInfo | null {
   return null;
 }
 
+/** Clamp a diff to at most `max` lines, appending a "... +N more" hint. */
+function capDiff(diff: string, max: number): string {
+  const lines = diff.split("\n");
+  if (lines.length <= max) return diff;
+  return lines.slice(0, max).join("\n") + `\n… (+${lines.length - max} more lines)`;
+}
+
 export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage }: StatusDeps) {
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
@@ -260,8 +267,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
     if (settings.showTools && editDetails.length) {
-      const names = editDetails.map((detail) => extractEditFile(detail.input) ?? "edit").map((file) => file.split("/").pop() ?? file).join(", ");
-      lines.push(`✏️ Edits (${editDetails.length}): ${esc(names)}`);
+      const stats = editDetails.map((detail) => {
+        const { file, added, removed } = editStats(detail.input);
+        return `${file.split("/").pop() ?? file} (+${added}/-${removed})`;
+      });
+      lines.push(`✏️ Edits (${editDetails.length}): ${esc(stats.join(", "))}`);
     }
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
@@ -377,10 +387,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (editDetails.length) pendingEdits.set(messageId, s);
       const text = clampText(renderFinished(s, undefined, settings));
+      const keyboard = editDetails.length ? finishedKeyboard(editDetails, undefined, s, messageId) : [];
       await tg
         .editRichMessage(chatId, messageId, text, {
           ...threadOptsFor(s),
-          reply_markup: { inline_keyboard: [] },
+          reply_markup: { inline_keyboard: keyboard },
         })
         .catch((err) => console.error("[status] finish edit FAILED", messageId, err));
       if (!s.stopped && s.reasoningBuffer.trim()) {
@@ -426,9 +437,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         for (const detail of editDetails) {
           const file = relativeEditPath(target, extractEditFile(detail.input) ?? "edit");
           const diff = formatEditDiff(detail.input, settings.diffStyle, target.directory);
+          const capped = capDiff(diff, 15);
           editLines.push(`✏️ <b>${esc(file)}</b>`);
           if (diff.trim()) {
-            editLines.push(`<blockquote expandable><pre><code class="language-diff">${esc(diff)}</code></pre></blockquote>`);
+            editLines.push(`<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>`);
           }
         }
         lines.push(editLines.join("\n"));
@@ -481,13 +493,16 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     return lines.join("\n");
   };
 
-  const finishedKeyboard = (editDetails: ChatSession["toolCallDetails"], expandedEditIndex: number | undefined, target: ChatSession): Array<Array<{ text: string; callback_data: string }>> => {
+  const finishedKeyboard = (editDetails: ChatSession["toolCallDetails"], expandedEditIndex: number | undefined, target: ChatSession, messageId?: number): Array<Array<{ text: string; callback_data: string }>> => {
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     editDetails.forEach((detail, index) => {
       const file = relativeEditPath(target, extractEditFile(detail.input) ?? `edit ${index + 1}`);
       const label = expandedEditIndex === index ? `✏️ ${file} ▾` : `✏️ ${file}`;
       keyboard.push([{ text: label.slice(0, 64), callback_data: `edit:${index}` }]);
     });
+    if (editDetails.length && messageId !== undefined) {
+      keyboard.push([{ text: "📄 Full diffs", callback_data: `edits:full:${messageId}` }]);
+    }
     return keyboard;
   };
 
@@ -508,7 +523,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     else s.expandedEditIndex = index;
     const settings = getSettings(chatId);
     const text = clampText(renderFinished(s, s.expandedEditIndex, settings));
-    const keyboard = finishedKeyboard(editDetails, s.expandedEditIndex, s);
+    const keyboard = finishedKeyboard(editDetails, s.expandedEditIndex, s, messageId);
     await tg.editRichMessage(chatId, messageId, text, {
       ...threadOptsFor(s),
       reply_markup: { inline_keyboard: keyboard },
@@ -516,5 +531,34 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     return true;
   };
 
-  return { flushDraft, startStatus, updateStatus, finishStatus, showEditDiff };
+  const sendFullDiffs = async (chatId: number, messageId: number, threadId?: number): Promise<boolean> => {
+    const s = pendingEdits.get(messageId);
+    if (!s) return false;
+    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
+    if (!editDetails.length) return false;
+    const settings = getSettings(chatId);
+    const parts: string[] = [];
+    for (const detail of editDetails) {
+      const file = relativeEditPath(s, extractEditFile(detail.input) ?? "edit");
+      const diff = formatEditDiff(detail.input, settings.diffStyle, s.directory);
+      parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote><pre><code class="language-diff">${esc(diff)}</code></pre></blockquote>`);
+    }
+    const full = parts.join("\n\n");
+    const opts = threadOpts(threadId ?? s.targetThreadId ?? s.threadId);
+    if (full.length <= 3800) {
+      await tg.sendRichMessage(chatId, full, opts).catch(() => {});
+    } else {
+      let remaining = full;
+      while (remaining.length > 3800) {
+        let cut = remaining.lastIndexOf("\n", 3800);
+        if (cut < 1900) cut = 3800;
+        await tg.sendRichMessage(chatId, remaining.slice(0, cut), opts).catch(() => {});
+        remaining = remaining.slice(cut).trimStart();
+      }
+      if (remaining) await tg.sendRichMessage(chatId, remaining, opts).catch(() => {});
+    }
+    return true;
+  };
+
+  return { flushDraft, startStatus, updateStatus, finishStatus, showEditDiff, sendFullDiffs };
 }

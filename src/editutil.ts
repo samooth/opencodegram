@@ -33,6 +33,18 @@ export function extractEditFile(input: string | undefined): string | null {
   }
 }
 
+export function editStats(input: string | undefined): { file: string; added: number; removed: number } {
+  const file = extractEditFile(input) ?? "edit";
+  const diff = formatEditDiff(input, "simple");
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) added++;
+    else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+  }
+  return { file, added, removed };
+}
+
 export function formatEditDiff(input: string | undefined, style: DiffStyle = "simple", baseDirectory?: string): string {
   if (!input) return "";
   try {

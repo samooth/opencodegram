@@ -653,6 +653,13 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const formCallbackHandled = await handleFormCallback(deps, cq);
   if (formCallbackHandled) return;
 
+  const fullEditsMatch = (cq.data ?? "").match(/^edits:full:(\d+)$/);
+  if (fullEditsMatch && cq.message?.message_id !== undefined) {
+    const handled = await deps.status.sendFullDiffs(chatId, Number(fullEditsMatch[1]), threadId);
+    await deps.tg.answerCallbackQuery(cq.id, handled ? "Sending diffs…" : "Edit expired").catch(() => {});
+    return;
+  }
+
   const editMatch = (cq.data ?? "").match(/^edit:(\d+)$/);
   if (editMatch && cq.message?.message_id !== undefined) {
     const handled = await deps.status.showEditDiff(chatId, cq.message.message_id, Number(editMatch[1]));
