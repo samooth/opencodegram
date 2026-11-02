@@ -430,8 +430,18 @@ export async function handleTextMessage(
     }
 
     try {
-      await oc.runCommand(s.sessionId, name, args);
-      await send(`ran /${name}`);
+      void oc.runCommand(s.sessionId, name, args)
+        .then(() => send(`ran /${esc(name)}`))
+        .catch((err) => send(`❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "⚡ Commands", callback_data: "panel:commands" },
+                { text: "🏠 Panel", callback_data: "panel:home" },
+              ],
+            ],
+          },
+        }));
     } catch (err) {
       await send(`❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, {
         reply_markup: {

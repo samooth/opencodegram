@@ -740,9 +740,13 @@ async function cmd_worktree(deps: BotDeps, chatId: number, threadId: number | un
       }
       const branch = args[2];
       try {
-        const info = await C.oc.worktreeCreate(directory, name, branch) as { directory?: string; path?: string };
-        const created = info?.directory ?? info?.path ?? name;
-        await send(`✅ Worktree created\n<code>${esc(created)}</code>\nUse /worktree switch ${esc(created)}`);
+        await send("Creating worktree…");
+        void C.oc.worktreeCreate(directory, name, branch)
+          .then((info) => {
+            const created = (info as { directory?: string; path?: string })?.directory ?? (info as { directory?: string; path?: string })?.path ?? name;
+            return send(`✅ Worktree created\n<code>${esc(created)}</code>\nUse /worktree switch ${esc(created)}`);
+          })
+          .catch((err) => send(`❌ ${esc(String(err))}`));
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
       }
@@ -757,8 +761,10 @@ async function cmd_worktree(deps: BotDeps, chatId: number, threadId: number | un
           return true;
         }
         try {
-          await C.oc.worktreeRemove(directory, target, true);
-          await send(`✅ Worktree removed\n<code>${esc(target)}</code>`);
+          await send("Removing worktree…");
+          void C.oc.worktreeRemove(directory, target, true)
+            .then(() => send(`✅ Worktree removed\n<code>${esc(target)}</code>`))
+            .catch((err) => send(`❌ ${esc(String(err))}`));
         } catch (err) {
           await send(`❌ ${esc(String(err))}`);
         }
@@ -790,9 +796,13 @@ async function cmd_worktree(deps: BotDeps, chatId: number, threadId: number | un
           await send(`❌ Not a known worktree:\n<code>${esc(target)}</code>`);
           return true;
         }
-        await C.oc.sessionMove(s.sessionId, target);
-        s.directory = target;
-        await send(`✅ Switched session to\n<code>${esc(target)}</code>`);
+        await send("Switching worktree…");
+        void C.oc.sessionMove(s.sessionId, target)
+          .then(() => {
+            s.directory = target;
+            return send(`✅ Switched session to\n<code>${esc(target)}</code>`);
+          })
+          .catch((err) => send(`❌ ${esc(String(err))}`));
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
       }
@@ -879,15 +889,19 @@ async function cmd_fork(deps: BotDeps, chatId: number, threadId: number | undefi
       return true;
     }
     try {
-      const forked = await C.oc.forkSession(s.sessionId);
-      const _f = forked as { id?: string; sessionID?: string; data?: { id?: string } } | undefined;
-      const newId = _f?.id ?? _f?.sessionID ?? _f?.data?.id;
-      if (!newId) {
-        await send("❌ Could not determine forked session id.");
-        return true;
-      }
-      await C.activateSession(chatId, newId, true, threadId);
-      await send(`Forked session.\n<code>${esc(s.sessionId)}</code> → <code>${esc(newId)}</code>`);
+      await send("Forking session…");
+      void C.oc.forkSession(s.sessionId)
+        .then(async (forked) => {
+          const _f = forked as { id?: string; sessionID?: string; data?: { id?: string } } | undefined;
+          const newId = _f?.id ?? _f?.sessionID ?? _f?.data?.id;
+          if (!newId) {
+            await send("❌ Could not determine forked session id.");
+            return;
+          }
+          await C.activateSession(chatId, newId, true, threadId);
+          await send(`Forked session.\n<code>${esc(s.sessionId)}</code> → <code>${esc(newId)}</code>`);
+        })
+        .catch((err) => send(`❌ ${esc(String(err))}`));
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
@@ -948,8 +962,10 @@ async function cmd_archive(deps: BotDeps, chatId: number, threadId: number | und
       return true;
     }
     try {
-      await C.oc.archiveSession(s.sessionId, true);
-      await send("Session archived.");
+      await send("Archiving session…");
+      void C.oc.archiveSession(s.sessionId, true)
+        .then(() => send("Session archived."))
+        .catch((err) => send(`❌ ${esc(String(err))}`));
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
@@ -967,8 +983,10 @@ async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: number | u
       return true;
     }
     try {
-      await C.oc.archiveSession(s.sessionId, false);
-      await send("Session unarchived.");
+      await send("Unarchiving session…");
+      void C.oc.archiveSession(s.sessionId, false)
+        .then(() => send("Session unarchived."))
+        .catch((err) => send(`❌ ${esc(String(err))}`));
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
@@ -1012,10 +1030,14 @@ async function cmd_delete(deps: BotDeps, chatId: number, threadId: number | unde
       return true;
     }
     try {
-      await C.oc.deleteSession(s.sessionId);
-      C.store.forgetSession(s.sessionId);
-      await send("Session deleted.");
-      await C.sendPanel(chatId, threadId);
+      await send("Deleting session…");
+      void C.oc.deleteSession(s.sessionId)
+        .then(() => {
+          C.store.forgetSession(s.sessionId);
+          return send("Session deleted.");
+        })
+        .then(() => C.sendPanel(chatId, threadId))
+        .catch((err) => send(`❌ ${esc(String(err))}`));
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
@@ -1245,8 +1267,10 @@ async function cmd_compact(deps: BotDeps, chatId: number, threadId: number | und
       return true;
     }
     try {
-      await C.oc.compactSession(s.sessionId);
-      await send("Session compacted.");
+      await send("Compacting session…");
+      void C.oc.compactSession(s.sessionId)
+        .then(() => send("Session compacted."))
+        .catch((err) => send(`❌ ${esc(String(err))}`));
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }

@@ -120,7 +120,9 @@ async function handleGoal(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   const sessionId = m[2];
   await deps.tg.answerCallbackQuery(cq.id, action === "clear" ? "Clearing…" : "Working…").catch(() => {});
   try {
-    await deps.oc.runCommand(sessionId, "goal", action);
+    void deps.oc.runCommand(sessionId, "goal", action).catch((err) => {
+      deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+    });
   } catch (err) {
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
   }
@@ -140,8 +142,9 @@ async function handleRuncmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   deps.pendingConfirmations.delete(key);
   await deps.tg.answerCallbackQuery(cq.id, "Running…").catch(() => {});
   try {
-    await deps.oc.runCommand(pending.sessionId, pending.name, pending.args);
-    await deps.tg.sendRichMessage(chatId, `ran /${esc(pending.name)}`, threadOpts(threadId));
+    void deps.oc.runCommand(pending.sessionId, pending.name, pending.args)
+      .then(() => deps.tg.sendRichMessage(chatId, `ran /${esc(pending.name)}`, threadOpts(threadId)))
+      .catch((err) => deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)));
   } catch (err) {
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
   }
@@ -462,8 +465,9 @@ async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   }
   await deps.tg.answerCallbackQuery(cq.id, `Running /${name}…`);
   try {
-    await deps.oc.runCommand(s.sessionId, name, "");
-    await deps.tg.sendRichMessage(chatId, `ran /${esc(name)}`, threadOpts(threadId));
+    void deps.oc.runCommand(s.sessionId, name, "")
+      .then(() => deps.tg.sendRichMessage(chatId, `ran /${esc(name)}`, threadOpts(threadId)))
+      .catch((err) => deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)));
   } catch (err) {
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
   }
