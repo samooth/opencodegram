@@ -207,6 +207,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.stopped = false;
     try {
       const lines: string[] = [];
+      const sessionName = (s.topicTitle || s.sessionId || "").trim();
+      if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
       if (settings.showThinking) {
         const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
         if (cotSrc) {
@@ -239,6 +241,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lines: string[] = [];
     try {
     const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };
+    const sessionName = (s.topicTitle || s.sessionId || "").trim();
+    if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
     if (settings.showThinking && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
@@ -411,6 +415,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings): string => {
     const previousCot = target.cotBuffer?.trim() ?? "";
     const lines: string[] = [];
+    const sessionName = (target.topicTitle || target.sessionId || "").trim();
+    if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
     if (settings.showThinking && previousCot) {
       const cot = previousCot.slice(-3500);
       lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
