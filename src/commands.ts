@@ -1278,9 +1278,26 @@ async function cmd_retry(deps: BotDeps, chatId: number, threadId: number | undef
       C.store.rememberLastPrompt(s.sessionId, prompt);
       notePromptSent(s.sessionId, prompt);
       await send("🔁 Retrying last prompt…");
-      await C.oc.prompt(s.sessionId, prompt);
+      await deps.status.startStatus(chatId, s);
+      if (s.statusMessageId) C.store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
+      s.statusTimer = setInterval(() => {
+        deps.status.updateStatus(chatId, s).catch(() => {});
+      }, 5000);
+      void C.oc.prompt(s.sessionId, prompt).catch(async (err) => {
+        if (s.statusTimer) {
+          clearInterval(s.statusTimer);
+          s.statusTimer = undefined;
+        }
+        await deps.status.finishStatus(chatId, s).catch(() => {});
+        await send(`❌ ${esc(String(err))}`, C.store.threadOptsFor(s));
+      });
     } catch (err) {
-      await send(`❌ ${esc(String(err))}`);
+      if (s.statusTimer) {
+        clearInterval(s.statusTimer);
+        s.statusTimer = undefined;
+      }
+      await deps.status.finishStatus(chatId, s).catch(() => {});
+      await send(`❌ ${esc(String(err))}`, C.store.threadOptsFor(s));
     }
     return true;
   }

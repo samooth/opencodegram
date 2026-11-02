@@ -568,7 +568,14 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       s.statusTimer = setInterval(() => {
         deps.status.updateStatus(chatId, s).catch(() => {});
       }, 5000);
-      await deps.oc.prompt(s.sessionId, prompt);
+      await deps.oc.prompt(s.sessionId, prompt).catch(async (err) => {
+        if (s.statusTimer) {
+          clearInterval(s.statusTimer);
+          s.statusTimer = undefined;
+        }
+        await deps.status.finishStatus(chatId, s).catch(() => {});
+        await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+      });
     } catch (err) {
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
     }
