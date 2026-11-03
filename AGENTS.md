@@ -48,6 +48,7 @@ temporary files small and clean them up.
 - `ADMIN_TELEGRAM_USER_ID` (the admin user; defaults to none if unset)
 - `OPENCODE_BASE_URL` (default `http://127.0.0.1:49374`)
 - `OPENCODE_DIRECTORY` (optional session directory)
+- `REPOS_DIRECTORY` (optional folder containing repositories; enables choosing a repo when creating a session)
 
 OpenCode 2.2.x runs locally. The daemon reads `.env` automatically under Bun.
 

@@ -1,4 +1,7 @@
+import { readdirSync, statSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import type { Config } from "./config.js";
+import { getReposDirectory } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
@@ -16,6 +19,32 @@ export type SessionsDeps = {
 };
 
 export type SessionManager = ReturnType<typeof createSessionManager>;
+
+export function listRepoDirectories(config: Config | Record<string, unknown>): string[] {
+  const root = getReposDirectory(config as any);
+  if (!root) return [];
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+export function resolveRepoDirectory(config: Config | Record<string, unknown>, name: string): string | undefined {
+  const root = getReposDirectory(config as any);
+  if (!root || !name || name.includes("/") || name.includes("\\\\") || name === "." || name === "..") return undefined;
+  const full = resolve(root, name);
+  if (!full.startsWith(resolve(root) + sep)) return undefined;
+  try {
+    if (!statSync(full).isDirectory()) return undefined;
+  } catch {
+    return undefined;
+  }
+  return full;
+}
 
 export function createSessionManager({ config, tg, oc, store, topicsEnabled, finishStatus }: SessionsDeps) {
   const {
@@ -61,8 +90,37 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     forgetSession(previous.sessionId);
   };
 
-  async function createNewSession(chatId: number, silent = false, threadId?: number): Promise<ChatSession | undefined> {
-    const directory = config.OPENCODE_DIRECTORY ?? process.cwd();
+  async function createNewSession(chatId: number, silentOrDirectory?: boolean | string | { silent?: boolean; threadId?: number; directory?: string; dir?: string; path?: string; repo?: string }, threadIdArg?: number, directoryArg?: string | { directory?: string; dir?: string; path?: string; repo?: string }): Promise<ChatSession | undefined> {
+    let silent = false;
+    let threadId = threadIdArg;
+    let directoryInput: string | { directory?: string; dir?: string; path?: string; repo?: string } | undefined = directoryArg;
+    if (typeof silentOrDirectory === "boolean") {
+      silent = silentOrDirectory;
+    } else if (typeof silentOrDirectory === "string") {
+      directoryInput = silentOrDirectory;
+    } else if (silentOrDirectory && typeof silentOrDirectory === "object") {
+      if (typeof (silentOrDirectory as { silent?: unknown }).silent === "boolean") silent = (silentOrDirectory as { silent?: boolean }).silent as boolean;
+      if ((silentOrDirectory as { threadId?: unknown }).threadId !== undefined) threadId = (silentOrDirectory as { threadId?: number }).threadId;
+      directoryInput = (silentOrDirectory as { directory?: string; dir?: string; path?: string; repo?: string }) ?? directoryInput;
+    }
+    let directory: string;
+    const normalizedDir =
+      typeof directoryInput === "string"
+        ? directoryInput
+        : directoryInput
+          ? directoryInput.directory ?? directoryInput.dir ?? directoryInput.path ?? directoryInput.repo
+          : undefined;
+    if (normalizedDir) {
+      const reposRoot = getReposDirectory(config);
+      if (reposRoot && !normalizedDir.includes(sep) && !normalizedDir.startsWith("/") && !normalizedDir.startsWith("~")) {
+        // Treat a bare repo name as a folder under the configured repos directory.
+        directory = resolve(reposRoot, normalizedDir);
+      } else {
+        directory = resolve(normalizedDir.replace(/^~(?=\/|$)/, process.env.HOME ?? process.env.USERPROFILE ?? ""));
+      }
+    } else {
+      directory = config.OPENCODE_DIRECTORY ?? process.cwd();
+    }
     let model: { id: string; providerID: string; variant?: string } | undefined;
     try {
       const sessions = await oc.client.session.list();
@@ -368,5 +426,18 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       console.error("[cleanup] stale sessions failed", err);
     }
   };
-  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions, resolveThread, bindTab, syncTitle };
+  const listRepoDirectoriesForConfig = (): string[] => {
+    const root = getReposDirectory(config);
+    if (!root) return [];
+    try {
+      return readdirSync(root, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+        .map((e) => e.name)
+        .sort();
+    } catch {
+      return [];
+    }
+  };
+
+  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions, resolveThread, bindTab, syncTitle, getReposDirectory: () => getReposDirectory(config), listRepoDirectories: listRepoDirectoriesForConfig };
 }

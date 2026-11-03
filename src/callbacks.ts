@@ -5,6 +5,7 @@ import * as mcp from "./mcp.js";
 import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./settings.js";
 import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
+import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { esc, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 
@@ -365,6 +366,14 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     return;
   }
   if (data === "panel:new") {
+    const repos = listRepoDirectories(deps.config);
+    if (repos.length) {
+      await tg.answerCallbackQuery(cq.id);
+      const keyboard: any[][] = repos.map((name) => [{ text: name, callback_data: `repo:${name}` }]);
+      keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+      await tg.sendRichMessage(chatId, "Elige el repositorio para la nueva sesión:", { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+      return;
+    }
     await tg.answerCallbackQuery(cq.id, "Creating…");
     await sessions.createNewSession(chatId, false, threadId);
     await panels.sendPanel(chatId, threadId);
@@ -697,6 +706,20 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   }
   if (cbData === "new:cancel") {
     await tg.answerCallbackQuery(cq.id, "Canceled");
+    return;
+  }
+
+  const repoMatch = cbData.match(/^(?:repo|newrepo|repos|new:repo|repo:new):(.+)$/);
+  if (repoMatch) {
+    const repoName = repoMatch[1].trim();
+    await tg.answerCallbackQuery(cq.id, "Creating…");
+    const directory = resolveRepoDirectory(deps.config, repoName) ?? repoName;
+    try {
+      await sessions.createNewSession(chatId, false, threadId, directory);
+      await panels.sendPanel(chatId, threadId).catch(() => {});
+    } catch (err) {
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
+    }
     return;
   }
 

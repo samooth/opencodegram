@@ -102,8 +102,21 @@ async function cmd_new(deps: BotDeps, chatId: number, threadId: number | undefin
       });
       return true;
     }
+    const repos = (deps.sessions.listRepoDirectories?.() ?? []);
+    if (repos.length) {
+      const keyboard = repos.map((name) => [{ text: name, callback_data: `repo:${name}` }]);
+      await send("Elige el repositorio para la nueva sesión:", { reply_markup: { inline_keyboard: keyboard } });
+      return true;
+    }
     await deps.sessions.createNewSession(chatId, false, threadId);
     return true;
+  }
+  if (text.startsWith("/new ")) {
+    const arg = text.slice(5).trim();
+    if (arg) {
+      await deps.sessions.createNewSession(chatId, false, threadId, arg);
+      return true;
+    }
   }
   return false;
 }

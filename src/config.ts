@@ -4,6 +4,14 @@ const schema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(10, "TELEGRAM_BOT_TOKEN is required"),
   OPENCODE_BASE_URL: z.string().url().default("http://127.0.0.1:49374"),
   OPENCODE_DIRECTORY: z.string().optional(),
+  REPOS_DIRECTORY: z.string().optional(),
+  REPOS_DIR: z.string().optional(),
+  REPOSITORIES_DIRECTORY: z.string().optional(),
+  REPOSITORIES_DIR: z.string().optional(),
+  PROJECTS_DIRECTORY: z.string().optional(),
+  PROJECTS_DIR: z.string().optional(),
+  OPENCODE_REPOS_DIRECTORY: z.string().optional(),
+  OPENCODE_REPOS_DIR: z.string().optional(),
   ADMIN_TELEGRAM_USER_ID: z.coerce.number().int().positive().optional(),
   ALLOWED_TELEGRAM_USER_IDS: z.string().optional(),
   PILOT_PROJECT: z.string().optional(),
@@ -42,5 +50,31 @@ export function loadConfig(): Config {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Invalid configuration:\n${issues}`);
   }
-  return parsed.data;
+  const data = parsed.data as Config;
+  if (!data.REPOS_DIRECTORY) {
+    data.REPOS_DIRECTORY =
+      data.REPOS_DIR ??
+      data.REPOSITORIES_DIRECTORY ??
+      data.REPOSITORIES_DIR ??
+      data.PROJECTS_DIRECTORY ??
+      data.PROJECTS_DIR ??
+      data.OPENCODE_REPOS_DIRECTORY ??
+      data.OPENCODE_REPOS_DIR;
+  }
+  return data;
+}
+
+export function getReposDirectory(config: Partial<Config> | Record<string, unknown> | undefined): string | undefined {
+  if (!config) return undefined;
+  const c = config as Record<string, unknown>;
+  return (
+    (c.REPOS_DIRECTORY as string | undefined) ??
+    (c.REPOS_DIR as string | undefined) ??
+    (c.REPOSITORIES_DIRECTORY as string | undefined) ??
+    (c.REPOSITORIES_DIR as string | undefined) ??
+    (c.PROJECTS_DIRECTORY as string | undefined) ??
+    (c.PROJECTS_DIR as string | undefined) ??
+    (c.OPENCODE_REPOS_DIRECTORY as string | undefined) ??
+    (c.OPENCODE_REPOS_DIR as string | undefined)
+  );
 }
