@@ -692,6 +692,7 @@ const handleRpcGoalChanged: EventHandler = async (event, deps) => {
   const { resolveChatId, resolveThreadId } = store;
   const e = event;
   logger.debug("events", "[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
+  console.log("[goal] raw:", JSON.stringify(e.data ?? {}).slice(0, 2000));
   const sessionId = e.data?.sessionID;
   const goal = e.data?.goal;
   const chatId = resolveChatId(sessionId);
