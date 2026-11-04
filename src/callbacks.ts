@@ -144,7 +144,7 @@ async function handleRuncmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   await deps.tg.answerCallbackQuery(cq.id, "Running…").catch(() => {});
   try {
     void deps.oc.runCommand(pending.sessionId, pending.name, pending.args)
-      .then(() => deps.tg.sendRichMessage(chatId, `ran /${esc(pending.name)}`, threadOpts(threadId)))
+      .then(() => { if (pending.name !== "goal") deps.tg.sendRichMessage(chatId, `ran /${esc(pending.name)}`, threadOpts(threadId)); })
       .catch((err) => deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)));
   } catch (err) {
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
@@ -490,7 +490,7 @@ async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   await deps.tg.answerCallbackQuery(cq.id, `Running /${name}…`);
   try {
     void deps.oc.runCommand(s.sessionId, name, "")
-      .then(() => deps.tg.sendRichMessage(chatId, `ran /${esc(name)}`, threadOpts(threadId)))
+      .then(() => { if (name !== "goal") deps.tg.sendRichMessage(chatId, `ran /${esc(name)}`, threadOpts(threadId)); })
       .catch((err) => deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)));
   } catch (err) {
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));

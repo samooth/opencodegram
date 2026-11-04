@@ -434,7 +434,7 @@ export async function handleTextMessage(
 
     try {
       void oc.runCommand(s.sessionId, name, args)
-        .then(() => send(`ran /${esc(name)}`))
+        .then(() => { if (name !== "goal") send(`ran /${esc(name)}`); })
         .catch((err) => send(`❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, {
           reply_markup: {
             inline_keyboard: [

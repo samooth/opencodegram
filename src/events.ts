@@ -619,8 +619,6 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
       ? decideRetry(sessionId, promptForRetry, config)
       : ({ action: "none" } as const);
 
-    console.log("[autoretry] session=", sessionId, "isRateLimit=", isRateLimit, "autoRetry=", autoRetry, "hasPrompt=", !!promptForRetry, "decision=", decision.action, "attempts=", (decision.action === "retry" || decision.action === "exhausted") ? (decision as { attempt?: number; attempts?: number }).attempt ?? (decision as { attempts?: number }).attempts : 0);
-
     if (decision.action === "retry") {
       const sid = sessionId as string;
       const prompt = promptForRetry as string;
@@ -692,7 +690,6 @@ const handleRpcGoalChanged: EventHandler = async (event, deps) => {
   const { resolveChatId, resolveThreadId } = store;
   const e = event;
   logger.debug("events", "[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
-  console.log("[goal] raw:", JSON.stringify(e.data ?? {}).slice(0, 2000));
   const sessionId = e.data?.sessionID;
   const goal = e.data?.goal;
   const chatId = resolveChatId(sessionId);
@@ -702,9 +699,18 @@ const handleRpcGoalChanged: EventHandler = async (event, deps) => {
   const status = String(goal.status ?? "");
   const objective = goal.objective ? String(goal.objective) : "";
   const reason = goal.reason ? String(goal.reason) : "";
-  const progress = goal.progress !== undefined ? String(goal.progress) : "";
-  const iteration = goal.iteration !== undefined ? String(goal.iteration) : (goal.step !== undefined ? String(goal.step) : "");
-  const signature = `${status}|${objective}|${progress}|${iteration}|${reason}`;
+  let progress = "";
+  if (goal.progress !== undefined) progress = String(goal.progress);
+  else if (goal.completed !== undefined) progress = String(goal.completed) + (goal.total !== undefined ? `/${goal.total}` : "");
+  else if (goal.current !== undefined) progress = String(goal.current);
+  let iteration = "";
+  if (goal.iteration !== undefined) iteration = String(goal.iteration);
+  else if (goal.step !== undefined) iteration = String(goal.step);
+  else if (goal.turn !== undefined) iteration = String(goal.turn);
+  const lastToolName = s?.toolCallDetails?.length ? s.toolCallDetails[s.toolCallDetails.length - 1].name : "";
+  const reasoningLines = (s?.reasoningBuffer || "").trim().split(/\n+/).filter(Boolean);
+  const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1].slice(0, 80) : "";
+  const signature = `${status}|${objective}|${progress}|${iteration}|${reason}|${lastToolName}|${lastThought}`;
   const prev = lastGoalStatus.get(String(sessionId ?? ""));
   if (prev === signature) return;
   lastGoalStatus.set(String(sessionId ?? ""), signature);
