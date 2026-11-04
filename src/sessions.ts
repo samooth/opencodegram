@@ -349,6 +349,19 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
         await activateSession(chatId, mapped, true, threadId);
         return getActiveSession(chatId, threadId);
       } catch (err) {
+        const msg = String((err as { message?: string })?.message ?? err);
+        const notFound = /session not found/i.test(msg) || (err as { _tag?: string })?._tag === "SessionNotFoundError" || (err as { name?: string })?.name === "SessionNotFoundError";
+        if (notFound) {
+          // The session no longer exists on the server; drop the stale binding
+          // so we stop retrying and the user can create a new one.
+          console.warn("[session] session gone, forgetting binding", mapped);
+          store.forgetSession(mapped);
+          activeSessionByRoute.delete(routeKey(chatId, threadId));
+          sessionsByThread.delete(routeKey(chatId, threadId));
+          sessionsByChat.delete(chatId);
+          saveThreads();
+          return undefined;
+        }
         // Keep the persisted binding on transient failures so a restart
         // does not silently unlink the session; the next interaction retries.
         console.error("[session] restore failed (keeping binding)", mapped, err);
