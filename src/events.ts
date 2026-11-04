@@ -6,7 +6,7 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { esc, rateLimitRetryAt, threadOpts, markdownToHtml } from "./util.js";
+import { esc, rateLimitRetryAt, threadOpts, markdownToHtml, clampText } from "./util.js";
 import { logger } from "./logger.js";
 import { formatBytes, prepareDocument } from "./files/index.js";
 import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
@@ -697,6 +697,7 @@ const handleRpcGoalChanged: EventHandler = async (event, deps) => {
   const chatId = resolveChatId(sessionId);
   if (chatId === undefined || !goal) return;
   const threadId = resolveThreadId(sessionId);
+  const s = sessionId ? store.findSessionById(sessionId) : undefined;
   const status = String(goal.status ?? "");
   const objective = goal.objective ? String(goal.objective) : "";
   const reason = goal.reason ? String(goal.reason) : "";
@@ -713,6 +714,18 @@ const handleRpcGoalChanged: EventHandler = async (event, deps) => {
   if (progress) msg += `\n<b>Progress:</b> ${esc(progress)}`;
   if (iteration) msg += `\n<b>Iteration:</b> ${esc(iteration)}`;
   if (reason) msg += `\n\n<b>Reason:</b>\n${esc(reason)}`;
+  if (s) {
+    const reasoningLines = (s.reasoningBuffer || "").trim().split(/\n+/).filter(Boolean);
+    const cotLines = (s.cotBuffer || "").trim().split(/\n+/).filter(Boolean);
+    const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : (cotLines.length ? cotLines[cotLines.length - 1] : "");
+    if (lastThought) msg += `\n\n💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
+    const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
+    if (lastTool) {
+      const toolInput = lastTool.input ? clampText(lastTool.input, 120) : "";
+      msg += `\n\n🔧 <b>Latest tool:</b> <code>${esc(lastTool.name)}</code>`;
+      if (toolInput) msg += `\n<blockquote><code>${esc(toolInput)}</code></blockquote>`;
+    }
+  }
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
   if (status === "active") {
     keyboard.push([{ text: "⏸ Pause", callback_data: `goal:pause:${sessionId}` }, { text: "🛑 Clear", callback_data: `goal:clear:${sessionId}` }]);
