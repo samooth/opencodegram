@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   opencode:
     image: node:22-slim
@@ -12,7 +10,7 @@ services:
     environment:
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD}
     command: >
-      sh -c "npm install -g opencode-ai@2.2.5 >/dev/null 2>&1;
+      sh -c "npm install -g @opencode/cli@2.2.5;
              opencode serve --hostname 0.0.0.0 --port 49374"
     ports:
       - "127.0.0.1:49374:49374"
