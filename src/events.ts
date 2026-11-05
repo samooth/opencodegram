@@ -794,6 +794,7 @@ export const eventHandlers = new Map<string, EventHandler>([
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
   const e = event as { type: string; data?: any };
   // Debug-gated compact event log (use DEBUG=events).
+  console.log("[event]", e.type);
   logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
 
   let handler = eventHandlers.get(e.type);
