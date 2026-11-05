@@ -8,7 +8,11 @@ services:
       - opencode-data:/root/.local/share/opencode
       - ${OPENCODE_DIRECTORY:-/tmp}:/workspace
     environment:
+      # Shared with the bot. Required.
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD}
+      # Optional provider keys (OpenCode Zen / Kilo gateway). Leave blank to disable.
+      - OPENCODE_API_KEY=${OPENCODE_API_KEY:-}
+      - KILO_API_KEY=${KILO_API_KEY:-}
     command: >
       sh -c "npm install -g @opencode/cli@2.2.5;
              opencode serve --hostname 0.0.0.0 --port 49374"
@@ -31,6 +35,8 @@ services:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
       - OPS_PORT=9090
     volumes:
+      # Persisted state. The host folder must be writable by uid 1000 (bun):
+      #   mkdir -p data && sudo chown -R 1000:1000 data
       - ./data:/app/data
     ports:
       - "127.0.0.1:9090:9090"

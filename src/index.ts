@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, statSync, renameSync } from "node:fs";
+import { mkdirSync, writeFileSync, statSync, renameSync, accessSync, constants } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
 import { TelegramClient } from "./telegram.js";
@@ -46,6 +46,15 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const store = new SessionStore();
+  // Fail fast with a helpful hint if the data directory is not writable
+  // (common in Docker when ./data is owned by root instead of uid 1000).
+  try {
+    mkdirSync(store.dataDir, { recursive: true });
+    accessSync(store.dataDir, constants.W_OK);
+  } catch (err) {
+    console.error("[opencodegram] data directory is not writable:", err);
+    console.error("[opencodegram] hint: mkdir -p data && sudo chown -R 1000:1000 data (Docker) or fix permissions on the host");
+  }
   const settings = new SettingsStore();
   const pendingEdits = new Map();
   const messageToSession = store.messageToSession;

@@ -8,7 +8,7 @@ RUN bun install --frozen-lockfile || bun install
 # Copy source
 COPY . .
 
-RUN chown -R bun:bun /app
+RUN mkdir -p /app/data && chown -R bun:bun /app /app/data
 USER bun
 
 # Runtime

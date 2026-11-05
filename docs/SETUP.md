@@ -89,6 +89,73 @@ VOICE_TRANSCRIPTION_LANGUAGE=es
 If no transcriber is configured, voice notes fall back to being attached as
 audio.
 
+## Docker
+
+The repository ships a `docker-compose.yml` with two services: `opencode` (the
+OpenCode HTTP server) and `bot` (this Telegram bot).
+
+### 1. Prepare `.env`
+
+```bash
+cp .env.example .env
+# fill TELEGRAM_BOT_TOKEN, ADMIN_TELEGRAM_USER_ID, OPENCODE_SERVER_PASSWORD
+# optionally OPENCODE_API_KEY / KILO_API_KEY
+```
+
+### 2. Fix data permissions (important)
+
+The bot runs as uid 1000. Before starting, make sure the host folder is writable:
+
+```bash
+mkdir -p data
+sudo chown -R 1000:1000 data
+```
+
+### 3. Start
+
+```bash
+docker compose up -d
+docker compose logs -f
+```
+
+### 4. Provider API keys
+
+- OpenCode Zen uses `OPENCODE_API_KEY` (set in `.env`, passed to the `opencode` service).
+- Kilo gateway uses `KILO_API_KEY`. If your OpenCode build does not include the
+  `kilo` provider, mount a config file:
+
+```yaml
+# in docker-compose.yml, service opencode:
+volumes:
+  - ./opencode.json:/root/.config/opencode/opencode.json:ro
+```
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "kilo": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Kilo Gateway",
+      "options": {
+        "baseURL": "https://your-kilo-gateway-url",
+        "apiKey": "YOUR_KILO_API_KEY"
+      },
+      "models": {
+        "your-model": { "name": "Your model" }
+      }
+    }
+  }
+}
+```
+
+### 5. Update / restart
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
 ## Verification
 
 ```bash
