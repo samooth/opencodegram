@@ -164,7 +164,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     let raw: any[];
     const now = Date.now();
-    if (modelCache && now - modelCache.time < 60000) {
+    if (modelCache && now - modelCache.time < 15000) {
       raw = modelCache.data;
     } else {
       const res = await oc.client.model.list(directory ? ({ location: { directory } } as unknown as Parameters<typeof oc.client.model.list>[0]) : undefined);
