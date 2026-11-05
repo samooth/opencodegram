@@ -1,6 +1,6 @@
 services:
   opencode:
-    image: node:22-slim
+    image: node:26-slim
     container_name: opencode-server
     working_dir: /workspace
     volumes:
