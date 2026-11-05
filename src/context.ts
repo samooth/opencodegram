@@ -36,7 +36,7 @@ export type FormState = {
   threadId?: number;
   title: string;
   fields: FormField[];
-  answers: Record<string, string>;
+  answers: Record<string, string | string[]>;
   messageId?: number;
   submitted: boolean;
 };

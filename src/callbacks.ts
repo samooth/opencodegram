@@ -869,7 +869,7 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
     return true;
   }
 
-  const match = data.match(/^fq:(\d+):(\d+)$/);
+  const match = data.match(/^fq:(\d+):(-?\d+)$/);
   if (!match) {
     await deps.tg.answerCallbackQuery(cq.id, "Unknown form action").catch(() => {});
     return true;
@@ -877,13 +877,44 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
   const fieldIndex = Number(match[1]);
   const optionIndex = Number(match[2]);
   const field = state.fields[fieldIndex];
-  const option = field?.options?.[optionIndex];
-  if (!field || !option) {
+  if (!field) {
     await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
     return true;
   }
-  state.answers[field.key] = option.value;
-  await deps.tg.answerCallbackQuery(cq.id, `Selected ${option.label}`).catch(() => {});
+  const multi = (() => {
+    const t = (field.type || "").toLowerCase();
+    if (t.includes("multi") || t.includes("array") || t.includes("list")) return true;
+    return (field as { multiple?: boolean }).multiple === true;
+  })();
+
+  if (optionIndex === -1) {
+    await deps.tg.answerCallbackQuery(cq.id, "Done").catch(() => {});
+    await deps.tg
+      .editRichMessage(chatId, messageId, renderForm(state), {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: formKeyboard(state) },
+      })
+      .catch(() => {});
+    return true;
+  }
+
+  const option = field.options?.[optionIndex];
+  if (!option) {
+    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+    return true;
+  }
+
+  if (multi) {
+    const current = Array.isArray(state.answers[field.key]) ? [...(state.answers[field.key] as unknown as string[])] : [];
+    const idx = current.indexOf(option.value);
+    if (idx >= 0) current.splice(idx, 1);
+    else current.push(option.value);
+    state.answers[field.key] = current;
+    await deps.tg.answerCallbackQuery(cq.id, current.includes(option.value) ? `Added ${option.label}` : `Removed ${option.label}`).catch(() => {});
+  } else {
+    state.answers[field.key] = option.value;
+    await deps.tg.answerCallbackQuery(cq.id, `Selected ${option.label}`).catch(() => {});
+  }
   await deps.tg
     .editRichMessage(chatId, messageId, renderForm(state), {
       ...threadOpts(threadId),
