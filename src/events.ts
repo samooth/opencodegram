@@ -73,7 +73,8 @@ const handleSessionReasoningStarted: EventHandler = async (event, deps) => {
   if (chatId === undefined) return;
   const s = _s0;
   if (!s) return;
-  s.reasoningBuffer = "";
+  // Preserve earlier reasoning across multiple reasoning blocks in one turn.
+  if (s.reasoningBuffer.trim()) s.reasoningBuffer += "\n\n---\n\n";
 };
 
 const handleSessionReasoningDelta: EventHandler = async (event, deps) => {
@@ -117,10 +118,15 @@ const handleSessionToolCalled: EventHandler = async (event, deps) => {
   const s = _s0;
   if (!s) return;
   const id = e.data?.id;
-  const detail = s.toolCallDetails.find((d) => d.id === id);
+  let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
+  if (!detail && s.toolCallDetails.length) {
+    // Fall back to the most recent running tool when the event omits an id.
+    detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
+  }
   if (detail) {
     const input = e.data?.input;
     detail.input = typeof input === "string" ? input : JSON.stringify(input ?? "");
+    if (id && detail.id !== id) detail.id = id;
   }
   updateStatus(chatId, s, true).catch(() => {});
 };
@@ -136,11 +142,15 @@ const handleSessionToolSuccess: EventHandler = async (event, deps) => {
   const s = _s0;
   if (!s) return;
   const id = e.data?.id;
-  const detail = s.toolCallDetails.find((d) => d.id === id);
+  let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
+  if (!detail && s.toolCallDetails.length) {
+    detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
+  }
   if (detail) {
     detail.status = "success";
-    const out = e.data?.content;
+    const out = e.data?.content ?? e.data?.output;
     detail.output = typeof out === "string" ? out.slice(0, 2000) : JSON.stringify(out ?? "").slice(0, 2000);
+    if (id && detail.id !== id) detail.id = id;
   }
   updateStatus(chatId, s, true).catch(() => {});
 };
@@ -156,10 +166,14 @@ const handleSessionToolFailed: EventHandler = async (event, deps) => {
   const s = _s0;
   if (!s) return;
   const id = e.data?.id;
-  const detail = s.toolCallDetails.find((d) => d.id === id);
+  let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
+  if (!detail && s.toolCallDetails.length) {
+    detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
+  }
   if (detail) {
     detail.status = "failed";
     detail.output = e.data?.error?.message ?? "failed";
+    if (id && detail.id !== id) detail.id = id;
   }
   updateStatus(chatId, s, true).catch(() => {});
 };
