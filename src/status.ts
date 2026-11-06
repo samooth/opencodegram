@@ -394,7 +394,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 
   /** Freeze the status card. Stop disappears; thinking/tools stay collapsible. */
   const finishStatus = async (chatId: number, s: ChatSession) => {
-    console.log("[finishStatus] called", chatId, "statusMsg=", s.statusMessageId, "edits=", s.toolCallDetails.filter((d) => isEditTool(d.name, d.input)).length);
     if (s.statusTimer) {
       clearInterval(s.statusTimer);
       s.statusTimer = undefined;

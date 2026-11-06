@@ -89,13 +89,10 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const m = data.match(/^connect:(.+)$/);
   if (!m) return;
   const sessionId = m[1];
-  console.log("[connect] start", sessionId, "chat=", chatId, "thread=", threadId, "msg=", cq.message?.message_id);
   await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
   try {
     await deps.sessions.activateSession(chatId, sessionId, true, threadId);
-    console.log("[connect] activated", sessionId);
     await deps.panels.showStatus(chatId, threadId, cq.message?.message_id);
-    console.log("[connect] status shown", sessionId);
   } catch (err) {
     console.error("[connect] failed", sessionId, err);
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
@@ -540,7 +537,6 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const { showSessions, showDeleteSessions, showModels, showCommands, showStatus, sendPanel, providerListByChat, selectedProviderByChat } = panels;
   const { activateSession, ensureActiveSession, createNewSession } = sessions;
 
-  console.log("[telegram] callback from", cq.from?.id, "data=", cq.data, "chat=", cq.message?.chat?.id);
   const userId = cq.from?.id;
   const allowedUsers = new Set<number>();
   if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);

@@ -253,7 +253,6 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
 
   const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
-  console.log("[telegram] message from", userId, chatId, "len=", (msg.text ?? msg.caption ?? "").length);
   tg.setMessageReaction(chatId, msg.message_id, "👀").catch(() => {});
   tg.sendChatAction(chatId, "typing", replyThread).catch(() => {});
   deps.audit("message", `${userId} ${chatId}: ${(msg.text ?? msg.caption ?? "").slice(0, 120)}`);

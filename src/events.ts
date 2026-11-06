@@ -326,7 +326,6 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
     if (!s.stopped) {
       const settings2 = settings.get(chatId);
       const artifacts = Array.isArray(e.data?.files) ? e.data.files : [];
-      console.log("[artifacts] count=", artifacts.length, "sample=", artifacts.slice(0, 5));
       // OpenCode sometimes reports the whole working-tree snapshot here; sending
       // hundreds of files floods Telegram. Only treat small, de-duplicated sets
       // as real turn artifacts.
@@ -353,7 +352,6 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
           await tg.sendRichMessage(chatId, `📎 ${unique.length - maxArtifacts} more artifact(s) not sent (limit ${maxArtifacts}).`, threadOpts(artifactThread)).catch(() => {});
         }
       } else if (unique.length > 20) {
-        console.log("[artifacts] skipping large artifact set:", unique.length);
       }
     }
   }
@@ -741,7 +739,6 @@ export async function handleEvent(event: { type: string; data?: any }, deps: Eve
     try {
       const res = await deps.oc.client.session.get({ sessionID: sessionId });
       const sess = (res as { data?: Record<string, unknown> })?.data ?? res;
-      console.log("[event] unknown session", sessionId, JSON.stringify(sess).slice(0, 500));
       const parentId = (sess as { parentID?: string; parent?: string })?.parentID
         ?? (sess as { parent?: string })?.parent;
       const parentChat = parentId ? deps.store.resolveChatId(parentId) : undefined;
@@ -767,7 +764,6 @@ export async function handleEvent(event: { type: string; data?: any }, deps: Eve
         deps.store.sessionsById.set(sessionId, cs);
       }
     } catch (err) {
-      console.log("[event] session.get failed", sessionId, String(err).slice(0, 200));
     }
   }
   logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));

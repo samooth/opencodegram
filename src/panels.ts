@@ -52,7 +52,6 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     if (onlyRunning && getSessionStatus) {
       const before = list.length;
       list = list.filter((s: any) => getSessionStatus(s.id) === "busy");
-      console.log("[sessions] running filter:", before, "->", list.length);
     }
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
