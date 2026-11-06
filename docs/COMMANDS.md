@@ -8,6 +8,7 @@
 - `/new` — create a session in a new topic (or the current topic).
 - `/stop`, `/abort` — stop the active turn.
 - `/retry` — re-run the last prompt (useful after rate limits).
+- `/buttons` — manage custom reply buttons (admin only): list, add, remove, clear.
 - `/fork`, `/rename <title>`, `/archive`, `/unarchive`, `/delete`,
   `/delete confirm`.
 
