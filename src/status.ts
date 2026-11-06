@@ -291,7 +291,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`✏️ Edits (${editDetails.length}): ${esc(stats.join(", "))}`);
     }
     if (settings.showPartialText && s.buffer.trim()) {
-      lines.push("<pre>" + esc(s.buffer.trim().slice(0, 300)) + "</pre>");
+      lines.push("<pre>" + esc(s.buffer.trim().slice(-500)) + "</pre>");
     }
     // Highlight the latest thought and the latest tool call, right above
     // the resource indicators, so the user always sees what the agent is
