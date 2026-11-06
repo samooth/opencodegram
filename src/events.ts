@@ -421,7 +421,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     const endedText = (e.data?.text ?? "").toString().trim();
     let finalText = endedText || s.buffer || "(empty response)";
     const sessionName = (s.topicTitle || s.sessionId || "").trim();
-    if (sessionName) finalText = `${sessionName}\n\n${finalText}`;
+    if (sessionName && (settings.get(chatId).sessionNameInMessages ?? true)) finalText = `${sessionName}\n\n${finalText}`;
     let elapsed = 0;
     let tokens = s.lastOutputTokens ?? 0;
     try {
@@ -443,7 +443,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       elapsed = (Date.now() - s.promptStartTime) / 1000;
     }
     if (elapsed > 0 && elapsed < 0.5) elapsed = 0.5;
-    if (tokens && elapsed > 0) {
+    if (tokens && elapsed > 0 && (settings.get(chatId).showTokenSpeed ?? true)) {
       const speed = (tokens / elapsed).toFixed(1);
       const modelName = s.model ? `${s.model.providerID}/${s.model.id}${s.model.variant ? " (" + s.model.variant + ")" : ""}` : "";
       finalText += modelName ? `\n\n⚡ ${modelName} · ${speed} tok/s` : `\n\n⚡ ${speed} tok/s`;
@@ -483,7 +483,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       const kb: any[] = [...(quickKeyboard ?? []), [{ text: "🔗 Ver en chat", url }]];
       await tg.editMessageReplyMarkup(chatId, finalMessage.message_id, { inline_keyboard: kb }).catch(() => {});
     }
-    await syncTopicTitle(chatId, s).catch(() => {});
+    if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";
 };

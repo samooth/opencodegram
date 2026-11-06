@@ -10,6 +10,7 @@ export type ChatSettings = {
   thinkingExpanded: boolean;
   toolsExpanded: boolean;
   showPartialText: boolean;
+  partialTextLines: number;
   autoArtifacts: boolean;
   voiceTranscription: boolean;
   compactFinal: boolean;
@@ -19,6 +20,14 @@ export type ChatSettings = {
   diffStyle: DiffStyle;
   showResourceUsage: boolean;
   resourceHistory: number;
+  showLatestThought: boolean;
+  showLatestTool: boolean;
+  showTokenSpeed: boolean;
+  showCot: boolean;
+  showToolInput: boolean;
+  autoTopicTitle: boolean;
+  sessionNameInMessages: boolean;
+  showSessionNameInStatus: boolean;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -27,6 +36,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   thinkingExpanded: false,
   toolsExpanded: true,
   showPartialText: true,
+  partialTextLines: 500,
   autoArtifacts: true,
   voiceTranscription: true,
   compactFinal: false,
@@ -36,6 +46,14 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   diffStyle: "simple",
   showResourceUsage: true,
   resourceHistory: 12,
+  showLatestThought: true,
+  showLatestTool: true,
+  showTokenSpeed: true,
+  showCot: true,
+  showToolInput: true,
+  autoTopicTitle: true,
+  sessionNameInMessages: true,
+  showSessionNameInStatus: true,
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -100,6 +118,7 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   thinkingExpanded: "🧠 Thinking expanded",
   toolsExpanded: "🔧 Tools expanded",
   showPartialText: "📝 Partial text",
+  partialTextLines: "📏 Partial text chars",
   autoArtifacts: "📎 Auto artifacts",
   voiceTranscription: "🎤 Voice transcription",
   compactFinal: "📦 Compact final",
@@ -109,12 +128,20 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   diffStyle: "🧾 Diff style",
   showResourceUsage: "📊 Resource usage",
   resourceHistory: "📈 History size",
+  showLatestThought: "💭 Latest thought",
+  showLatestTool: "🔧 Latest tool",
+  showTokenSpeed: "⚡ Token speed",
+  showCot: "🧾 COT (finished)",
+  showToolInput: "⌨️ Tool input",
+  autoTopicTitle: "🏷 Auto topic title",
+  sessionNameInMessages: "📌 Session name in messages",
+  showSessionNameInStatus: "📌 Session name in status",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
   const sections: Array<{ title: string; emoji: string; keys: Array<keyof ChatSettings> }> = [
-    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "thinkingExpanded", "toolsExpanded", "showPartialText", "compactFinal"] },
-    { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded"] },
+    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle"] },
+    { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded", "showToolInput"] },
     { title: "Archivos", emoji: "📁", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
     { title: "Voz", emoji: "🎤", keys: ["voiceTranscription"] },
     { title: "Recursos", emoji: "📊", keys: ["showResourceUsage", "resourceHistory"] },

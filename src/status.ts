@@ -86,12 +86,12 @@ export type StatusDeps = {
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
-function renderTools(details: ChatSession["toolCallDetails"], limit: number): string {
+function renderTools(details: ChatSession["toolCallDetails"], limit: number, showToolInput = true): string {
   return details
     .map((d) => {
       const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
       const lines = [status + " " + d.name];
-      if (d.input) {
+      if (showToolInput && d.input) {
         const command = parseShellCommand(d.input);
         lines.push(command ? "$ " + command : prettyJson(d.input));
       }
@@ -220,9 +220,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.stopped = false;
     try {
       const lines: string[] = [];
-      const sessionName = resolveSessionName(s);
-      if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
-      if (settings.showThinking) {
+      if (settings.showSessionNameInStatus) {
+        const sessionName = resolveSessionName(s);
+        if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
+      }
+      if (settings.showCot) {
         const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
         if (cotSrc) {
           const cot = cotSrc.slice(-1500);
@@ -256,7 +258,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };
     const sessionName = (s.topicTitle || s.sessionId || "").trim();
     if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
-    if (settings.showThinking && s.cotBuffer?.trim()) {
+    if (settings.showCot && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
     }
@@ -278,7 +280,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     if (settings.showTools && otherDetails.length) {
       sep();
-      const details = renderTools(otherDetails.slice(-5), 200);
+      const details = renderTools(otherDetails.slice(-5), 200, settings.showToolInput);
       lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
     } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
@@ -291,12 +293,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`✏️ Edits (${editDetails.length}): ${esc(stats.join(", "))}`);
     }
     if (settings.showPartialText && s.buffer.trim()) {
-      lines.push("<pre>" + esc(s.buffer.trim().slice(-500)) + "</pre>");
+      lines.push("<pre>" + esc(s.buffer.trim().slice(-settings.partialTextLines)) + "</pre>");
     }
     // Highlight the latest thought and the latest tool call, right above
     // the resource indicators, so the user always sees what the agent is
     // doing now without scrolling.
-    if (settings.showThinking && s.reasoningBuffer.trim()) {
+    if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
       lines.push("");
       sep();
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
@@ -304,14 +306,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`);
     }
     const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
-    if (lastTool) {
+    if (settings.showTools && settings.showLatestTool && lastTool) {
       sep();
       const toolName = lastTool.name;
       const isShell = isShellTool(toolName);
       const toolInput = lastTool.input ? clampText(lastTool.input, 200) : "";
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
       lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>`);
-      if (toolInput && !isShell) {
+      if (toolInput && !isShell && settings.showToolInput) {
         const wrapped = toolInput.match(/.{1,70}/g)?.join("\n") ?? toolInput;
         lines.push(`<pre>${esc(wrapped)}</pre>`);
       }
@@ -428,9 +430,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings): string => {
     const previousCot = target.cotBuffer?.trim() ?? "";
     const lines: string[] = [];
-    const sessionName = resolveSessionName(target);
-    if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
-    if (settings.showThinking && previousCot) {
+    if (settings.showSessionNameInStatus) {
+      const sessionName = resolveSessionName(target);
+      if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
+    }
+    if (settings.showCot && previousCot) {
       const cot = previousCot.slice(-3500);
       lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
     }
