@@ -645,9 +645,15 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
             .catch(() => {});
         }
       });
-      const sent = await tg
-        .sendRichMessage(chatId, `⏳ Rate limited. Retrying in ${Math.round(decision.delay / 1000)}s (attempt ${decision.attempt}/${decision.maxAttempts})…`, threadOpts(threadId))
-        .catch(() => null);
+      const existingRetryMsg = retryMessageBySession.get(sid);
+      const retryText = `⏳ Rate limited. Retrying in ${Math.round(decision.delay / 1000)}s (attempt ${decision.attempt}/${decision.maxAttempts})…`;
+      let sent: { message_id?: number } | null = null;
+      if (existingRetryMsg) {
+        await tg.editRichMessage(existingRetryMsg.chatId, existingRetryMsg.messageId, retryText).catch(() => {});
+        sent = { message_id: existingRetryMsg.messageId };
+      } else {
+        sent = await tg.sendRichMessage(chatId, retryText, threadOpts(threadId)).catch(() => null);
+      }
       if (sent?.message_id) retryMessageBySession.set(sid, { chatId, threadId, messageId: sent.message_id });
     } else if (decision.action === "exhausted") {
       const sid = sessionId as string;
