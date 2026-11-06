@@ -59,7 +59,7 @@ export const KNOWN_COMMANDS = new Set([
   "use",
 ]);
 
-export const COMMANDS = new Map<string, (deps: BotDeps, chatId: number, threadId: number | undefined, args: string, send: SendFn) => Promise<void>>();
+export const COMMANDS = new Map<string, (deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn) => Promise<boolean | void>>();
 
 function ctx(deps: BotDeps) {
   const { config, tg, oc, panels, sessions, files, store } = deps;
@@ -1384,58 +1384,58 @@ export async function handleCommand(deps: BotDeps, chatId: number, threadId: num
   // normalize command name: strip trailing? keep as-is
   const handler = COMMANDS.get(name);
   if (!handler) return false;
-  const result = await (handler as any)(deps, chatId, threadId, text, send);
+  const result = await handler(deps, chatId, threadId, text, send);
   return result !== false;
 }
 
 // Register handlers
-COMMANDS.set("start", cmd_start as any);
-COMMANDS.set("help", cmd_start as any);
-COMMANDS.set("status", cmd_status as any);
-COMMANDS.set("session", cmd_status as any);
-COMMANDS.set("new", cmd_new as any);
-COMMANDS.set("stop", cmd_stop as any);
-COMMANDS.set("abort", cmd_stop as any);
-COMMANDS.set("commands", cmd_commands as any);
-COMMANDS.set("settings", cmd_settings as any);
-COMMANDS.set("file", cmd_file as any);
-COMMANDS.set("ls", cmd_ls as any);
-COMMANDS.set("find", cmd_find as any);
-COMMANDS.set("zip", cmd_zip as any);
-COMMANDS.set("read", cmd_read as any);
-COMMANDS.set("tree", cmd_tree as any);
-COMMANDS.set("model", cmd_models as any);
-COMMANDS.set("models", cmd_models as any);
-COMMANDS.set("agent", cmd_agents as any);
-COMMANDS.set("agents", cmd_agents as any);
-COMMANDS.set("skill", cmd_skills as any);
-COMMANDS.set("skills", cmd_skills as any);
-COMMANDS.set("usage", cmd_usage as any);
-COMMANDS.set("vcs", cmd_vcs as any);
-COMMANDS.set("mcp", cmd_mcp as any);
-COMMANDS.set("branches", cmd_branches as any);
-COMMANDS.set("branch", cmd_branches as any);
-COMMANDS.set("stage", cmd_stage as any);
-COMMANDS.set("unstage", cmd_unstage as any);
-COMMANDS.set("commit", cmd_commit as any);
-COMMANDS.set("worktrees", cmd_worktree as any);
-COMMANDS.set("worktree", cmd_worktree as any);
-COMMANDS.set("forms", cmd_forms as any);
-COMMANDS.set("formreply", cmd_formreply as any);
-COMMANDS.set("fork", cmd_fork as any);
-COMMANDS.set("rename", cmd_rename as any);
-COMMANDS.set("archive", cmd_archive as any);
-COMMANDS.set("unarchive", cmd_unarchive as any);
-COMMANDS.set("delete", cmd_delete as any);
-COMMANDS.set("deletesessions", cmd_delete as any);
-COMMANDS.set("diff", cmd_diff as any);
-COMMANDS.set("sync", cmd_sync as any);
-COMMANDS.set("context", cmd_context as any);
-COMMANDS.set("compact", cmd_compact as any);
-COMMANDS.set("retry", cmd_retry as any);
-COMMANDS.set("running", cmd_running_sessions as any);
-COMMANDS.set("sessions", cmd_running_sessions as any);
-COMMANDS.set("use", cmd_use as any);
+COMMANDS.set("start", cmd_start);
+COMMANDS.set("help", cmd_start);
+COMMANDS.set("status", cmd_status);
+COMMANDS.set("session", cmd_status);
+COMMANDS.set("new", cmd_new);
+COMMANDS.set("stop", cmd_stop);
+COMMANDS.set("abort", cmd_stop);
+COMMANDS.set("commands", cmd_commands);
+COMMANDS.set("settings", cmd_settings);
+COMMANDS.set("file", cmd_file);
+COMMANDS.set("ls", cmd_ls);
+COMMANDS.set("find", cmd_find);
+COMMANDS.set("zip", cmd_zip);
+COMMANDS.set("read", cmd_read);
+COMMANDS.set("tree", cmd_tree);
+COMMANDS.set("model", cmd_models);
+COMMANDS.set("models", cmd_models);
+COMMANDS.set("agent", cmd_agents);
+COMMANDS.set("agents", cmd_agents);
+COMMANDS.set("skill", cmd_skills);
+COMMANDS.set("skills", cmd_skills);
+COMMANDS.set("usage", cmd_usage);
+COMMANDS.set("vcs", cmd_vcs);
+COMMANDS.set("mcp", cmd_mcp);
+COMMANDS.set("branches", cmd_branches);
+COMMANDS.set("branch", cmd_branches);
+COMMANDS.set("stage", cmd_stage);
+COMMANDS.set("unstage", cmd_unstage);
+COMMANDS.set("commit", cmd_commit);
+COMMANDS.set("worktrees", cmd_worktree);
+COMMANDS.set("worktree", cmd_worktree);
+COMMANDS.set("forms", cmd_forms);
+COMMANDS.set("formreply", cmd_formreply);
+COMMANDS.set("fork", cmd_fork);
+COMMANDS.set("rename", cmd_rename);
+COMMANDS.set("archive", cmd_archive);
+COMMANDS.set("unarchive", cmd_unarchive);
+COMMANDS.set("delete", cmd_delete);
+COMMANDS.set("deletesessions", cmd_delete);
+COMMANDS.set("diff", cmd_diff);
+COMMANDS.set("sync", cmd_sync);
+COMMANDS.set("context", cmd_context);
+COMMANDS.set("compact", cmd_compact);
+COMMANDS.set("retry", cmd_retry);
+COMMANDS.set("running", cmd_running_sessions);
+COMMANDS.set("sessions", cmd_running_sessions);
+COMMANDS.set("use", cmd_use);
 
 function stripHiddenFlag(raw: string): { rest: string; hidden: boolean } {
   let hidden = false;

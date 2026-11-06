@@ -77,7 +77,7 @@ async function main() {
     topicsEnabled,
     finishStatus: status.finishStatus,
   });
-  const modelListByChat = new Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string }>>();
+  const modelListByChat = new Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string }> }>>();
   const pendingModelByChat = new Map<string, { id: string; providerID: string; variant?: string } | null>();
   const panels = createPanels({
     tg,

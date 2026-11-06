@@ -21,7 +21,7 @@ export type SessionsDeps = {
 export type SessionManager = ReturnType<typeof createSessionManager>;
 
 export function listRepoDirectories(config: Config | Record<string, unknown>): string[] {
-  const root = getReposDirectory(config as any);
+  const root = getReposDirectory(config);
   if (!root) return [];
   try {
     return readdirSync(root, { withFileTypes: true })
@@ -34,7 +34,7 @@ export function listRepoDirectories(config: Config | Record<string, unknown>): s
 }
 
 export function resolveRepoDirectory(config: Config | Record<string, unknown>, name: string): string | undefined {
-  const root = getReposDirectory(config as any);
+  const root = getReposDirectory(config);
   if (!root || !name || name.includes("/") || name.includes("\\\\") || name === "." || name === "..") return undefined;
   const full = resolve(root, name);
   if (!full.startsWith(resolve(root) + sep)) return undefined;

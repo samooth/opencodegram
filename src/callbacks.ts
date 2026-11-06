@@ -179,7 +179,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   const idx = parseInt(m[1], 10);
   const scope = deps.store.routeKey(chatId, threadId);
   const models = deps.modelListByChat.get(scope) ?? [];
-  const model = models[idx] as any;
+  const model = models[idx];
   const s = deps.store.getActiveSession(chatId, threadId);
   if (!model) {
     await deps.tg.answerCallbackQuery(cq.id, "Model not found");
