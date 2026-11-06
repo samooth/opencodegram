@@ -36,7 +36,6 @@ export type EventsDeps = {
   syncTopicTitle: (chatId: number, s: ChatSession) => Promise<void>;
 };
 
-const lastGoalStatus = new Map<string, string>();
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 
 type EventHandler = (event: { type: string; data?: any }, deps: EventsDeps) => Promise<void>;
@@ -700,84 +699,6 @@ const handleSessionIdle: EventHandler = async (event, deps) => {
   }
 };
 
-const handleRpcGoalChanged: EventHandler = async (event, deps) => {
-  const { tg, store } = deps;
-  const { resolveChatId, resolveThreadId } = store;
-  const e = event;
-  logger.debug("events", "[goal]", JSON.stringify(e.data ?? {}).slice(0, 1000));
-  const sessionId = e.data?.sessionID;
-  const goal = e.data?.goal;
-  const chatId = resolveChatId(sessionId);
-  if (chatId === undefined || !goal) return;
-  const threadId = resolveThreadId(sessionId);
-  const s = sessionId ? store.findSessionById(sessionId) : undefined;
-  const status = String(goal.status ?? "");
-  const objective = goal.objective ? String(goal.objective) : "";
-  const reason = goal.reason ? String(goal.reason) : "";
-  let progress = "";
-  if (goal.progress !== undefined) progress = String(goal.progress);
-  else if (goal.completed !== undefined) progress = String(goal.completed) + (goal.total !== undefined ? `/${goal.total}` : "");
-  else if (goal.current !== undefined) progress = String(goal.current);
-  let iteration = "";
-  if (goal.iteration !== undefined) iteration = String(goal.iteration);
-  else if (goal.step !== undefined) iteration = String(goal.step);
-  else if (goal.turn !== undefined) iteration = String(goal.turn);
-  const lastToolName = s?.toolCallDetails?.length ? s.toolCallDetails[s.toolCallDetails.length - 1].name : "";
-  const reasoningLines = (s?.reasoningBuffer || "").trim().split(/\n+/).filter(Boolean);
-  const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1].slice(0, 80) : "";
-  const signature = `${status}|${objective}|${progress}|${iteration}|${reason}|${lastToolName}|${lastThought}`;
-  const prev = lastGoalStatus.get(String(sessionId ?? ""));
-  if (prev === signature) return;
-  lastGoalStatus.set(String(sessionId ?? ""), signature);
-  let msg = "";
-  const emoji = status === "active" ? "🎯" : status === "complete" ? "✅" : status === "blocked" ? "⛔" : status === "paused" ? "⏸" : "🎯";
-  msg = `${emoji} <b>Goal ${esc(status)}</b>`;
-  if (objective) msg += `\n\n<blockquote>${esc(objective)}</blockquote>`;
-  if (progress) msg += `\n<b>Progress:</b> ${esc(progress)}`;
-  if (iteration) msg += `\n<b>Iteration:</b> ${esc(iteration)}`;
-  if (reason) msg += `\n\n<b>Reason:</b>\n${esc(reason)}`;
-  if (s) {
-    const reasoningLines = (s.reasoningBuffer || "").trim().split(/\n+/).filter(Boolean);
-    const cotLines = (s.cotBuffer || "").trim().split(/\n+/).filter(Boolean);
-    const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : (cotLines.length ? cotLines[cotLines.length - 1] : "");
-    if (lastThought) msg += `\n\n💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
-    const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
-    if (lastTool) {
-      const toolInput = lastTool.input ? clampText(lastTool.input, 120) : "";
-      msg += `\n\n🔧 <b>Latest tool:</b> <code>${esc(lastTool.name)}</code>`;
-      if (toolInput) msg += `\n<blockquote><code>${esc(toolInput)}</code></blockquote>`;
-    }
-  }
-  const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-  if (status === "active") {
-    keyboard.push([{ text: "⏸ Pause", callback_data: `goal:pause:${sessionId}` }, { text: "🛑 Clear", callback_data: `goal:clear:${sessionId}` }]);
-  } else if (status === "paused") {
-    keyboard.push([{ text: "▶ Resume", callback_data: `goal:resume:${sessionId}` }, { text: "🛑 Clear", callback_data: `goal:clear:${sessionId}` }]);
-  }
-  const opts: Record<string, unknown> = { ...threadOpts(threadId) };
-  if (keyboard.length) opts.reply_markup = { inline_keyboard: keyboard };
-  const existing = store.goalMessageBySession.get(String(sessionId ?? ""));
-  if (existing && existing.chatId === chatId) {
-    // Update the existing goal message instead of spamming a new one.
-    try {
-      await tg.editRichMessage(existing.chatId, existing.messageId, msg, {
-        ...(existing.threadId ? { message_thread_id: existing.threadId } : {}),
-        ...(keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-      });
-    } catch {
-      const sent = await tg.sendRichMessage(chatId, msg, opts).catch(() => null);
-      if (sent?.message_id) store.goalMessageBySession.set(String(sessionId ?? ""), { chatId, threadId, messageId: sent.message_id });
-    }
-  } else {
-    const sent = await tg.sendRichMessage(chatId, msg, opts).catch(() => null);
-    if (sent?.message_id) store.goalMessageBySession.set(String(sessionId ?? ""), { chatId, threadId, messageId: sent.message_id });
-    if (!sent && threadId) {
-      await tg.sendRichMessage(chatId, msg, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {}).catch(() => {});
-    }
-  }
-  return;
-};
-
 export const defaultHandler: EventHandler = async () => {};
 
 export const eventHandlers = new Map<string, EventHandler>([
@@ -803,7 +724,6 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.execution.failed", handleSessionExecutionFailed],
   ["session.step.started", handleSessionStepStarted],
   ["session.idle", handleSessionIdle],
-  ["rpc.opencode.goal.changed", handleRpcGoalChanged],
 ]);
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {

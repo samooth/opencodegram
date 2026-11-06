@@ -410,7 +410,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const messageId = s.statusMessageId;
       s.expandedEditIndex = undefined;
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
-      if (editDetails.length) pendingEdits.set(messageId, s);
+      if (editDetails.length) {
+        pendingEdits.set(messageId, s);
+        store?.rememberPendingEdits(messageId, s.sessionId);
+      }
       const text = clampText(renderFinished(s, undefined, settings));
       const keyboard = editDetails.length ? finishedKeyboard(editDetails, undefined, s, messageId) : [];
       await tg
@@ -544,8 +547,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   };
 
   const showEditDiff = async (chatId: number, messageId: number, index: number): Promise<boolean> => {
-    const s = pendingEdits.get(messageId);
+    let s = pendingEdits.get(messageId);
+    if (!s && store) {
+      const sid = store.getPendingEditsSession(messageId);
+      if (sid) s = store.sessionsById.get(sid);
+    }
     if (!s) return false;
+    pendingEdits.set(messageId, s);
     const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
     if (!editDetails[index]) return false;
     if (s.expandedEditIndex === index) s.expandedEditIndex = undefined;
@@ -561,8 +569,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   };
 
   const sendFullDiffs = async (chatId: number, messageId: number, threadId?: number): Promise<boolean> => {
-    const s = pendingEdits.get(messageId);
+    let s = pendingEdits.get(messageId);
+    if (!s && store) {
+      const sid = store.getPendingEditsSession(messageId);
+      if (sid) s = store.sessionsById.get(sid);
+    }
     if (!s) return false;
+    pendingEdits.set(messageId, s);
     const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
     if (!editDetails.length) return false;
     const settings = getSettings(chatId);

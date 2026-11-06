@@ -25,9 +25,9 @@ export class SessionStore {
   readonly messageToSession = new Map<string, string>();
   readonly topicTitleBySession = new Map<string, string>();
   readonly cotBySession = new Map<string, { buffer: string; count: number }>();
-  readonly goalMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
   readonly sessionStatusBySession = new Map<string, string>();
   readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
+  readonly pendingEditsByMessage = new Map<number, string>();
 
   readonly customButtonsByChat = new Map<number, Array<{ label: string; text: string }>>();
 
@@ -41,6 +41,7 @@ export class SessionStore {
   private readonly lastChatsFile: string;
   private readonly lastPromptsFile: string;
   private readonly statusMessagesFile: string;
+  private readonly pendingEditsFile!: string;
   private readonly buttonsFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
@@ -134,7 +135,6 @@ export class SessionStore {
 
   forgetStatusMessage = (sessionId: string) => {
     this.statusMessageBySession.delete(sessionId);
-    this.goalMessageBySession.delete(sessionId);
     this.saveStatusMessages();
   };
 
@@ -173,7 +173,6 @@ export class SessionStore {
         // ignore
       }
       this.statusMessageBySession.delete(sessionId);
-    this.goalMessageBySession.delete(sessionId);
     }
     this.saveStatusMessages();
   };
@@ -226,6 +225,20 @@ export class SessionStore {
     return true;
   };
 
+  rememberPendingEdits = (messageId: number, sessionId: string) => {
+    this.pendingEditsByMessage.set(messageId, sessionId);
+    this.savePendingEdits();
+  };
+
+  getPendingEditsSession = (messageId: number): string | undefined => {
+    return this.pendingEditsByMessage.get(messageId);
+  };
+
+  forgetPendingEdits = (messageId: number) => {
+    this.pendingEditsByMessage.delete(messageId);
+    this.savePendingEdits();
+  };
+
   saveButtons = () => {
     try {
       mkdirSync(this.dataDir, { recursive: true });
@@ -234,6 +247,17 @@ export class SessionStore {
       writeFileSync(this.buttonsFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[buttons] save failed", err);
+    }
+  };
+
+  savePendingEdits = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, string> = {};
+      for (const [mid, sid] of this.pendingEditsByMessage) obj[String(mid)] = sid;
+      writeFileSync(this.pendingEditsFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[pendingEdits] save failed", err);
     }
   };
 
@@ -248,7 +272,6 @@ export class SessionStore {
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
     this.statusMessageBySession.delete(sessionId);
-    this.goalMessageBySession.delete(sessionId);
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
     this.saveThreads();
@@ -461,6 +484,19 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[buttons] load failed", err);
+    }
+
+    // Load persisted pending-edits mapping (messageId -> sessionId).
+    try {
+      if (existsSync(this.pendingEditsFile)) {
+        const parsed = JSON.parse(readFileSync(this.pendingEditsFile, "utf8")) as Record<string, string>;
+        for (const [mid, sid] of Object.entries(parsed)) {
+          const id = Number(mid);
+          if (Number.isFinite(id) && sid) this.pendingEditsByMessage.set(id, sid);
+        }
+      }
+    } catch (err) {
+      console.error("[pendingEdits] load failed", err);
     }
 
     // already records which session belongs to each topic, so reuse it.
