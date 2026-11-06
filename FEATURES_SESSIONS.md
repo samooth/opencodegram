@@ -1,7 +1,8 @@
 # Sessions & History — Feature Spec
 
-Status: **implemented** in the current codebase. This document remains as the
-original specification.
+> **Status:** historical specification. The features described here are
+> implemented in the current daemon; this document is kept for reference only.
+> See `docs/COMMANDS.md` and `docs/ARCHITECTURE.md` for the current behavior.
 
 Scope for the next OpenCodegram iteration: fork, rename, archive, delete, diff, context view, and compact.
 
