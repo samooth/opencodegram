@@ -808,8 +808,42 @@ export const eventHandlers = new Map<string, EventHandler>([
 
 export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
   const e = event as { type: string; data?: any };
-  // Debug-gated compact event log (use DEBUG=events).
-  console.log("[event]", e.type, e.data?.sessionID ?? e.data?.session?.id ?? "", JSON.stringify(e.data ?? {}).slice(0, 200));
+  const sessionId = e.data?.sessionID ?? e.data?.session?.id;
+  // Register sub-sessions (e.g. spawned by a goal) to their parent's chat so
+  // their events are not dropped.
+  if (sessionId && !deps.store.findSessionById(sessionId)) {
+    try {
+      const res = await deps.oc.client.session.get({ sessionID: sessionId });
+      const sess = (res as { data?: Record<string, unknown> })?.data ?? res;
+      console.log("[event] unknown session", sessionId, JSON.stringify(sess).slice(0, 500));
+      const parentId = (sess as { parentID?: string; parent?: string })?.parentID
+        ?? (sess as { parent?: string })?.parent;
+      const parentChat = parentId ? deps.store.resolveChatId(parentId) : undefined;
+      if (parentChat !== undefined) {
+        deps.store.rememberSessionChat(sessionId, parentChat);
+        deps.store.rememberLastChat(sessionId, parentChat);
+        const cs: ChatSession = {
+          sessionId,
+          directory: (sess as { location?: { directory?: string }; directory?: string })?.location?.directory
+            ?? (sess as { directory?: string })?.directory,
+          model: undefined,
+          draftId: 0,
+          buffer: "",
+          reasoningBuffer: "",
+          toolCalls: [],
+          toolCallDetails: [],
+          stopped: false,
+          targetChatId: parentChat,
+          cotBuffer: "",
+          cotCount: 0,
+          topicTitle: (sess as { title?: string })?.title,
+        };
+        deps.store.sessionsById.set(sessionId, cs);
+      }
+    } catch (err) {
+      console.log("[event] session.get failed", sessionId, String(err).slice(0, 200));
+    }
+  }
   logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
 
   let handler = eventHandlers.get(e.type);
