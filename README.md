@@ -53,7 +53,7 @@ add them to `ecosystem.config.cjs`.
 | Files | `/file`, `/ls`, `/find`, `/read`, `/zip` |
 | Session tools | `/diff`, `/context`, `/sync`, `/compact`, `/usage` |
 | Project | `/vcs`, `/worktrees`, `/worktree`, `/forms`, `/formreply` |
-| Other | `/settings`, `/commands`, `/fork`, `/rename`, `/archive`, `/unarchive`, `/delete` |
+| Other | `/settings`, `/commands`, `/fork`, `/rename`, `/archive`, `/unarchive`, `/delete`, `/retry`, `/buttons` |
 
 Full reference: [docs/COMMANDS.md](docs/COMMANDS.md).
 
