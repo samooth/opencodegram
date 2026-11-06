@@ -368,7 +368,8 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
   const e = event;
   const sessionId = e.data?.sessionID;
-  if (sessionId) {
+  let endedText = (e.data?.text ?? "").toString().trim();
+  if (sessionId && endedText) {
     noteTurnCompleted(sessionId);
     const retryNotice = retryMessageBySession.get(sessionId);
     if (retryNotice) {
@@ -418,7 +419,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
-    const endedText = (e.data?.text ?? "").toString().trim();
+    endedText = (e.data?.text ?? "").toString().trim();
     let finalText = endedText || s.buffer || "(empty response)";
     const sessionName = (s.topicTitle || s.sessionId || "").trim();
     if (sessionName && (settings.get(chatId).sessionNameInMessages ?? true)) finalText = `${sessionName}\n\n${finalText}`;
