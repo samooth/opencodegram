@@ -42,6 +42,7 @@ export const KNOWN_COMMANDS = new Set([
   "diff",
   "context",
   "compact",
+  "buttons",
   "retry",
   "vcs",
   "mcp",
@@ -1341,6 +1342,57 @@ async function cmd_retry(deps: BotDeps, chatId: number, threadId: number | undef
   return false;
 }
 
+async function cmd_buttons(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+  const C = ctx(deps);
+  const isAdmin = !!C.config.ADMIN_TELEGRAM_USER_ID && deps.me?.id === C.config.ADMIN_TELEGRAM_USER_ID;
+  if (text === "/buttons" || text.startsWith("/buttons ")) {
+    const args = text.slice("/buttons".length).trim();
+    if (!isAdmin) {
+      await send("Solo el admin puede gestionar botones.");
+      return true;
+    }
+    if (args === "clear") {
+      C.store.setCustomButtons(chatId, []);
+      await send("Botones eliminados.");
+      return true;
+    }
+    const removeMatch = args.match(/^remove\s+(\d+)$/);
+    if (removeMatch) {
+      const idx = Number(removeMatch[1]) - 1;
+      const ok = C.store.removeCustomButton(chatId, idx);
+      await send(ok ? "Botón eliminado." : "Índice inválido.");
+      return true;
+    }
+    const addMatch = args.match(/^add\s+(.+)$/);
+    if (addMatch) {
+      const rest = addMatch[1];
+      const sep = rest.indexOf("|");
+      if (sep === -1) {
+        await send("Uso: /buttons add <etiqueta> | <texto a enviar>");
+        return true;
+      }
+      const label = rest.slice(0, sep).trim();
+      const btnText = rest.slice(sep + 1).trim();
+      if (!label || !btnText) {
+        await send("Uso: /buttons add <etiqueta> | <texto a enviar>");
+        return true;
+      }
+      C.store.addCustomButton(chatId, label, btnText);
+      await send(`Botón añadido: <b>${esc(label)}</b> → ${esc(btnText)}`);
+      return true;
+    }
+    const buttons = C.store.getCustomButtons(chatId);
+    if (!buttons.length) {
+      await send("No hay botones custom.\nUso: /buttons add <etiqueta> | <texto>");
+      return true;
+    }
+    const lines = buttons.map((b, i) => `${i + 1}. <b>${esc(b.label)}</b> → ${esc(b.text)}`);
+    await send(`<b>Botones custom</b>\n${lines.join("\n")}\n\n/buttons add <etiqueta> | <texto>\n/buttons remove <n>\n/buttons clear`);
+    return true;
+  }
+  return false;
+}
+
 async function cmd_running_sessions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/running" || text === "/sessions running" || text === "/sessions busy") {
@@ -1432,6 +1484,7 @@ COMMANDS.set("diff", cmd_diff);
 COMMANDS.set("sync", cmd_sync);
 COMMANDS.set("context", cmd_context);
 COMMANDS.set("compact", cmd_compact);
+COMMANDS.set("buttons", cmd_buttons);
 COMMANDS.set("retry", cmd_retry);
 COMMANDS.set("running", cmd_running_sessions);
 COMMANDS.set("sessions", cmd_running_sessions);

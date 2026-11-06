@@ -29,6 +29,8 @@ export class SessionStore {
   readonly sessionStatusBySession = new Map<string, string>();
   readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 
+  readonly customButtonsByChat = new Map<number, Array<{ label: string; text: string }>>();
+
   readonly dataDir: string;
   private readonly threadsFile: string;
   private readonly chatsFile: string;
@@ -39,6 +41,7 @@ export class SessionStore {
   private readonly lastChatsFile: string;
   private readonly lastPromptsFile: string;
   private readonly statusMessagesFile: string;
+  private readonly buttonsFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
@@ -51,6 +54,7 @@ export class SessionStore {
     this.lastChatsFile = join(dataDir, "lastChats.json");
     this.lastPromptsFile = join(dataDir, "lastPrompts.json");
     this.statusMessagesFile = join(dataDir, "statusMessages.json");
+    this.buttonsFile = join(dataDir, "buttons.json");
     this.load();
   }
 
@@ -195,6 +199,42 @@ export class SessionStore {
   rememberLastPrompt = (sessionId: string, prompt: string) => {
     this.lastPromptBySession.set(sessionId, prompt);
     this.saveLastPrompts();
+  };
+
+  getCustomButtons = (chatId: number): Array<{ label: string; text: string }> => {
+    return this.customButtonsByChat.get(chatId) ?? [];
+  };
+
+  setCustomButtons = (chatId: number, buttons: Array<{ label: string; text: string }>) => {
+    this.customButtonsByChat.set(chatId, buttons);
+    this.saveButtons();
+  };
+
+  addCustomButton = (chatId: number, label: string, text: string) => {
+    const list = this.customButtonsByChat.get(chatId) ?? [];
+    list.push({ label, text });
+    this.customButtonsByChat.set(chatId, list);
+    this.saveButtons();
+  };
+
+  removeCustomButton = (chatId: number, index: number) => {
+    const list = this.customButtonsByChat.get(chatId);
+    if (!list || index < 0 || index >= list.length) return false;
+    list.splice(index, 1);
+    this.customButtonsByChat.set(chatId, list);
+    this.saveButtons();
+    return true;
+  };
+
+  saveButtons = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, Array<{ label: string; text: string }>> = {};
+      for (const [chatId, buttons] of this.customButtonsByChat) obj[String(chatId)] = buttons;
+      writeFileSync(this.buttonsFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[buttons] save failed", err);
+    }
   };
 
   forgetSession = (sessionId: string) => {
@@ -408,6 +448,21 @@ export class SessionStore {
     }
 
     // Migration for installs created before active.json existed: threads.json
+    // Load custom reply buttons.
+    try {
+      if (existsSync(this.buttonsFile)) {
+        const parsed = JSON.parse(readFileSync(this.buttonsFile, "utf8")) as Record<string, Array<{ label: string; text: string }>>;
+        for (const [chatId, buttons] of Object.entries(parsed)) {
+          const id = Number(chatId);
+          if (Number.isFinite(id) && Array.isArray(buttons)) {
+            this.customButtonsByChat.set(id, buttons.filter((b) => b && typeof b.label === "string" && typeof b.text === "string"));
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[buttons] load failed", err);
+    }
+
     // already records which session belongs to each topic, so reuse it.
     for (const [sessionId, threadId] of this.threadBySession) {
       const chatId = this.chatBySession.get(sessionId);

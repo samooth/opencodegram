@@ -232,9 +232,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         }
       }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
+      const customBtns = store?.getCustomButtons?.(chatId) ?? [];
+      const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
+      const keyboard = [[{ text: "⏹ Stop", callback_data: "panel:stop" }], ...btnRows];
       const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
         ...opts,
-        reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
+        reply_markup: { inline_keyboard: keyboard },
       });
       s.statusMessageId = sent.message_id;
       s.statusLastUpdate = Date.now();
@@ -364,9 +367,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         const headMax = 3900 - resourceBlock.length - 5;
         finalText = without.slice(0, Math.max(0, headMax)) + "\n…\n" + resourceBlock;
       }
+      const customBtns = store?.getCustomButtons?.(chatId) ?? [];
+      const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
+      const editKeyboard = [[{ text: "⏹ Stop", callback_data: "panel:stop" }], ...btnRows];
       const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(finalText, 3900), {
         ...opts,
-        reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
+        reply_markup: { inline_keyboard: editKeyboard },
       });
       s.statusEditPromise = edit.then(
         () => undefined,

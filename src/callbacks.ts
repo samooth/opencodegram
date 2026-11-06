@@ -570,6 +570,31 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   }
 
   // Fallback for unlisted prefixes.
+  // Custom reply buttons.
+  const btnMatch = cbData.match(/^btn:(\d+)$/);
+  if (btnMatch) {
+    const idx = Number(btnMatch[1]);
+    const buttons = deps.store.getCustomButtons(chatId);
+    const btn = buttons[idx];
+    if (!btn) {
+      await tg.answerCallbackQuery(cq.id, "Button expired");
+      return;
+    }
+    await tg.answerCallbackQuery(cq.id, btn.label).catch(() => {});
+    const s = deps.store.getActiveSession(chatId, threadId);
+    if (!s) {
+      await tg.sendRichMessage(chatId, "no active session.", threadOpts(threadId));
+      return;
+    }
+    // Send the configured text as a prompt.
+    const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(threadId ? { message_thread_id: threadId } : {}), ...opts });
+    await deps.status.startStatus(chatId, s).catch(() => {});
+    void deps.oc.prompt(s.sessionId, btn.text).catch(async (err) => {
+      await send(`❌ ${esc(String(err))}`);
+    });
+    return;
+  }
+
   const retryMatch = cbData.match(/^retry:(.+)$/);
   if (retryMatch) {
     const sessionId = retryMatch[1];
