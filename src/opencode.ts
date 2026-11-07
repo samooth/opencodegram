@@ -36,7 +36,7 @@ export class OpenCodeBridge {
   async listSessionsCached(ttlMs = 10_000): Promise<unknown[]> {
     const now = Date.now();
     if (this.sessionListCache && this.sessionListCache.expires > now) return this.sessionListCache.data;
-    const res = await this.client.session.list();
+    const res = await this.client.session.list({ limit: 100, order: "desc", archived: false });
     const data = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]);
     this.sessionListCache = { data, expires: now + ttlMs };
     return data;

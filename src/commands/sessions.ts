@@ -436,7 +436,9 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
         await send("No context to sync.");
         return true;
       }
-      await send("<b>Syncing " + meaningful.length + " messages…</b>");
+      const userCount = meaningful.filter((m: any) => (m.role ?? m.type) === "user").length;
+      const assistantCount = meaningful.filter((m: any) => (m.role ?? m.type) === "assistant").length;
+      await send(`<b>Syncing ${meaningful.length} messages</b> (${userCount} 👤 / ${assistantCount} 🤖) from <code>${esc(s.sessionId.slice(0, 12))}</code>…`);
       for (const m of meaningful) {
         const role = m.role ?? m.type ?? "msg";
         let body = "";
