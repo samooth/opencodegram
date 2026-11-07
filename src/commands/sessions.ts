@@ -438,6 +438,12 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
       }
       const userCount = meaningful.filter((m: any) => (m.role ?? m.type) === "user").length;
       const assistantCount = meaningful.filter((m: any) => (m.role ?? m.type) === "assistant").length;
+      const toolOnlyCount = meaningful.filter((m: any) => {
+        if ((m.role ?? m.type) !== "assistant") return false;
+        const parts = Array.isArray(m.content) ? m.content : [];
+        const hasText = parts.some((p: any) => p.type === "text" && (typeof p.text === "string" ? p.text.trim() : ""));
+        return !hasText && parts.some((p: any) => p.type === "tool");
+      }).length;
       await send(`<b>Syncing ${meaningful.length} messages</b> (${userCount} 👤 / ${assistantCount} 🤖) from <code>${esc(s.sessionId.slice(0, 12))}</code>…`);
       for (const m of meaningful) {
         const role = m.role ?? m.type ?? "msg";
@@ -456,7 +462,9 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
           body = texts.join(" ").trim();
           if (!body) {
             const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool");
-            if (tools.length) body = "🔧 " + tools.join(", ");
+            // Skip tool-only assistant turns to reduce noise; they are summarized below.
+            if (tools.length) continue;
+            body = "(no text)";
           }
         } else if (role === "compaction") {
           body = (m.summary ?? "").toString().split("\n")[0].slice(0, 200);
@@ -465,7 +473,8 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
         const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : "📦";
         await send(icon + " <b>" + esc(String(role)) + "</b>:\n" + esc(body || "(no text)"));
       }
-      await send("✅ Sync complete.");
+      if (toolOnlyCount) await send(`🔧 ${toolOnlyCount} assistant turn(s) with only tool calls omitted.`);
+      await send(`✅ Sync complete. Session <code>${esc(s.sessionId.slice(0, 12))}</code> is active.`);
     } catch (err) {
       await send("❌ " + esc(String(err)));
     }
