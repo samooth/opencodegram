@@ -83,6 +83,25 @@ export function projectLabel(directory?: string): string {
   return `${projectEmoji(directory)} ${name}`;
 }
 
+export function toolIcon(name: string): string {
+  const n = (name || "").toLowerCase();
+  if (n.includes("read")) return "📖";
+  if (n.includes("webfetch") || n.includes("fetch") || n.includes("http")) return "🌐";
+  if (n.includes("grep") || n.includes("search") || n.includes("find")) return "🔍";
+  if (n.includes("edit") || n.includes("write") || n.includes("patch")) return "✏️";
+  if (n.includes("shell") || n.includes("bash") || n === "sh") return "🖥";
+  if (n.includes("ls") || n.includes("list")) return "📂";
+  if (n.includes("zip") || n.includes("archive")) return "📦";
+  if (n.includes("diff")) return "🧾";
+  if (n.includes("context")) return "🧠";
+  if (n.includes("compact")) return "📦";
+  if (n.includes("fork") || n.includes("session")) return "🔀";
+  if (n.includes("model")) return "🤖";
+  if (n.includes("form")) return "📋";
+  if (n.includes("mcp")) return "🔌";
+  return "🔧";
+}
+
 export function colorDiff(diff: string): string {
   return diff
     .split(/\r?\n/)

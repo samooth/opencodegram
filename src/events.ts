@@ -6,7 +6,7 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { esc, rateLimitRetryAt, threadOpts, markdownToHtml, clampText } from "./util.js";
+import { esc, rateLimitRetryAt, threadOpts, markdownToHtml, clampText, toolIcon } from "./util.js";
 import { logger } from "./logger.js";
 import { formatBytes, prepareDocument } from "./files/index.js";
 import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
@@ -465,6 +465,14 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (s) {
     s.lastFinalMessageId = msgId ?? s.lastFinalMessageId;
     s.lastFinalSentAt = Date.now();
+  }
+  if (s && s.toolCallDetails.length && (settings.get(chatId).showTools ?? true)) {
+    const toolLines = s.toolCallDetails.map((d) => {
+      const icon = toolIcon(d.name);
+      const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
+      return `${status} ${icon} ${d.name}`;
+    });
+    finalText += `\n\n<details><summary>🔧 Tool calls (${s.toolCallDetails.length})</summary>\n${toolLines.join("\n")}\n</details>`;
   }
   logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");

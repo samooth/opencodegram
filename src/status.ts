@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { formatBytes } from "./files/index.js";
-import { clampText, esc, threadOpts } from "./util.js";
+import { clampText, esc, threadOpts, toolIcon, truncate } from "./util.js";
 
 function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -87,11 +87,38 @@ export type StatusDeps = {
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
 function renderTools(details: ChatSession["toolCallDetails"], limit: number, showToolInput = true): string {
-  return details
-    .map((d) => {
+  // Collapse consecutive identical tool calls into a single compact line.
+  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number }> = [];
+  for (const d of details) {
+    const last = compact[compact.length - 1];
+    if (last && last.d.name === d.name) {
+      last.count += 1;
+      last.d = d;
+    } else {
+      compact.push({ d, count: 1 });
+    }
+  }
+  return compact
+    .map(({ d, count }) => {
       const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-      const lines = [status + " " + d.name];
-      if (showToolInput && d.input) {
+      const icon = toolIcon(d.name);
+      const lower = (d.name || "").toLowerCase();
+      let summary = "";
+      if (d.input) {
+        try {
+          const parsed = JSON.parse(d.input) as Record<string, unknown>;
+          if (lower.includes("read")) summary = String(parsed.path ?? parsed.file ?? parsed.filePath ?? parsed.target ?? "");
+          else if (lower.includes("fetch") || lower.includes("web")) summary = String(parsed.url ?? parsed.uri ?? "");
+          else if (lower.includes("edit") || lower.includes("write")) summary = String(parsed.filePath ?? parsed.path ?? parsed.file ?? "");
+          else if (lower.includes("grep") || lower.includes("find") || lower.includes("search")) summary = String(parsed.pattern ?? parsed.query ?? "");
+          else if (lower.includes("glob") || lower.includes("ls") || lower.includes("list")) summary = String(parsed.path ?? parsed.pattern ?? "");
+        } catch {
+          // ignore
+        }
+      }
+      const countSuffix = count > 1 ? ` ×${count}` : "";
+      const lines = [`${status} ${icon} ${d.name}${countSuffix}${summary && summary !== "undefined" ? " " + esc(truncate(summary, 80)) : ""}`];
+      if (showToolInput && d.input && !summary) {
         const command = parseShellCommand(d.input);
         lines.push(command ? "$ " + command : prettyJson(d.input));
       }
@@ -101,7 +128,7 @@ function renderTools(details: ChatSession["toolCallDetails"], limit: number, sho
       }
       return lines.join("\n");
     })
-    .join("\n\n");
+    .join("\n");
 }
 
 function isShellTool(name: string): boolean {
@@ -110,11 +137,24 @@ function isShellTool(name: string): boolean {
 }
 
 function renderShell(details: ChatSession["toolCallDetails"], limit: number): string {
-  return details
-    .map((d) => {
+  // Collapse consecutive identical commands.
+  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number }> = [];
+  for (const d of details) {
+    const cmd = parseShellCommand(d.input ?? "") ?? d.input?.trim() ?? d.name;
+    const last = compact[compact.length - 1];
+    const lastCmd = last ? (parseShellCommand(last.d.input ?? "") ?? last.d.input?.trim() ?? last.d.name) : "";
+    if (last && lastCmd === cmd) {
+      last.count += 1;
+      last.d = d;
+    } else {
+      compact.push({ d, count: 1 });
+    }
+  }
+  return compact
+    .map(({ d, count }) => {
       const command = parseShellCommand(d.input ?? "") ?? d.input?.trim() ?? d.name;
       const output = (parseShellOutput(d.output ?? "") ?? d.output ?? "").trim();
-      const lines = ["$ " + command];
+      const lines = ["$ " + command + (count > 1 ? `  (×${count})` : "")];
       if (output) lines.push(truncateText(output, limit));
       if (d.status === "failed") lines.push("(failed)");
       return lines.join("\n");
