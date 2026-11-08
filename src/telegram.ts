@@ -69,6 +69,18 @@ function sanitizeUtf8(input: string): string {
 
 export class TelegramClient {
   constructor(private readonly token: string) {}
+  private editBackoff = new Map<number, number>();
+
+  private editBackoffActive(chatId: number): boolean {
+    const until = this.editBackoff.get(chatId) ?? 0;
+    return Date.now() < until;
+  }
+
+  private setEditBackoff(chatId: number, ms: number): void {
+    const until = Date.now() + ms;
+    const prev = this.editBackoff.get(chatId) ?? 0;
+    if (until > prev) this.editBackoff.set(chatId, until);
+  }
 
   private async call<T>(method: string, body?: unknown, attempt = 0): Promise<T> {
     const isEdit = method.toLowerCase().includes("edit");
@@ -83,12 +95,12 @@ export class TelegramClient {
     }
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
-      if (method === "editMessageText") {
-        console.error("[telegram] editMessageText error:", json.description, "method=", method);
-      }
       // Treat "message is not modified" as success for edit calls (no-op).
       if (json.error_code === 400 && /not modified/i.test(json.description ?? "") && method.toLowerCase().includes("edit")) {
         return (undefined as unknown) as T;
+      }
+      if (method === "editMessageText" && json.error_code !== 429) {
+        console.error("[telegram] editMessageText error:", json.description, "method=", method);
       }
       if (json.error_code === 429 && attempt < 3 && !isEdit) {
         const wait = (json.parameters?.retry_after ?? 1) * 1000;
@@ -223,14 +235,26 @@ export class TelegramClient {
   }
 
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
+    if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
     const safe = sanitizeUtf8(html);
     return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: safe }, ...opts }).catch((err) => {
-      console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length);
-      throw err;
+      const msg = String(err);
+      const m = msg.match(/retry after (\d+)/i);
+      if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
+      if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg)) {
+        console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length);
+      }
+      return undefined;
     });
   }
   editMessageReplyMarkup(chatId: number, messageId: number, markup: Record<string, unknown>): Promise<unknown> {
-    return this.call("editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: markup }).catch(() => undefined);
+    if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
+    return this.call("editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: markup }).catch((err) => {
+      const msg = String(err);
+      const m = msg.match(/retry after (\d+)/i);
+      if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
+      return undefined;
+    });
   }
 
   editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {

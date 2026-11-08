@@ -41,7 +41,7 @@ export class SessionStore {
   private readonly lastChatsFile: string;
   private readonly lastPromptsFile: string;
   private readonly statusMessagesFile: string;
-  private readonly pendingEditsFile!: string;
+  private readonly pendingEditsFile: string;
   private readonly buttonsFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
@@ -55,6 +55,7 @@ export class SessionStore {
     this.lastChatsFile = join(dataDir, "lastChats.json");
     this.lastPromptsFile = join(dataDir, "lastPrompts.json");
     this.statusMessagesFile = join(dataDir, "statusMessages.json");
+    this.pendingEditsFile = join(dataDir, "pendingEdits.json");
     this.buttonsFile = join(dataDir, "buttons.json");
     this.load();
   }

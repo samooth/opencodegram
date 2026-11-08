@@ -31,8 +31,8 @@ const {
 } = miscCmds;
 
 export const KNOWN_COMMANDS = new Set([
-  "start", "help", "status", "session", "sessions", "new", "stop", "abort",
-  "commands", "settings", "file", "ls", "find", "read", "zip", "model", "models",
+  "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort",
+  "commands", "settings", "file", "ls", "find", "read", "zip", "tree", "model", "models",
   "agent", "agents", "skill", "skills", "fork", "rename", "archive", "unarchive",
   "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry",
   "vcs", "mcp", "branches", "branch", "stage", "unstage", "commit", "worktrees",
