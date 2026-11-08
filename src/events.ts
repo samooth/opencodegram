@@ -467,12 +467,10 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     s.lastFinalSentAt = Date.now();
   }
   if (s && s.toolCallDetails.length && (settings.get(chatId).showTools ?? true)) {
-    const toolLines = s.toolCallDetails.map((d) => {
-      const icon = toolIcon(d.name);
-      const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
-      return `${status} ${icon} ${d.name}`;
-    });
-    finalText += `\n\n<details><summary>🔧 Tool calls (${s.toolCallDetails.length})</summary>\n${toolLines.join("\n")}\n</details>`;
+    const counts = new Map<string, number>();
+    for (const d of s.toolCallDetails) counts.set(d.name, (counts.get(d.name) ?? 0) + 1);
+    const summary = [...counts.entries()].map(([name, n]) => `${toolIcon(name)} ${esc(name)} ×${n}`).join("  ");
+    finalText += `\n\n🔧 <b>Tool calls (${s.toolCallDetails.length}):</b> ${summary}`;
   }
   logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");

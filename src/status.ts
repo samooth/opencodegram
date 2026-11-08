@@ -355,7 +355,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const isShell = isShellTool(toolName);
       const toolInput = lastTool.input ? clampText(lastTool.input, 200) : "";
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
-      lines.push(`${statusEmoji} <b>Latest tool:</b> <code>${esc(toolName)}</code>`);
+      lines.push(`${statusEmoji} <b>Latest tool:</b> ${toolIcon(toolName)} <code>${esc(toolName)}</code>`);
       if (toolInput && !isShell && settings.showToolInput) {
         const wrapped = toolInput.match(/.{1,70}/g)?.join("\n") ?? toolInput;
         lines.push(`<pre>${esc(wrapped)}</pre>`);
