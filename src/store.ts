@@ -272,6 +272,7 @@ export class SessionStore {
     this.lastChatBySession.delete(sessionId);
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
+    for (const [mid, sid] of this.pendingEditsByMessage) if (sid === sessionId) this.pendingEditsByMessage.delete(mid);
     this.statusMessageBySession.delete(sessionId);
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
@@ -284,6 +285,7 @@ export class SessionStore {
     this.saveCot();
     this.saveLastChats();
     this.saveLastPrompts();
+    this.savePendingEdits();
   };
 
   saveThreads = () => {
