@@ -319,12 +319,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showTools && settings.showShell && shellDetails.length) {
       sep();
       const shellText = renderShell(shellDetails.slice(-5), 200);
-      lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre language='bash'>" + esc(shellText) + "</pre>\n</details>");
+      lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (` + shellDetails.length + ")\n<pre language='bash'>" + esc(shellText) + "</pre></blockquote>");
     }
     if (settings.showTools && otherDetails.length) {
       sep();
       const details = renderTools(otherDetails.slice(-5), 200, settings.showToolInput);
-      lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+      lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n<pre><code>" + esc(details) + "</code></pre></blockquote>");
     } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
@@ -497,11 +497,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (settings.showTools && settings.showShell && shellDetails.length) {
         const shellText = renderShell(shellDetails, 500);
-        lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (` + shellDetails.length + ")</summary>\n<pre language='bash'>" + esc(shellText) + "</pre>\n</details>");
+        lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (` + shellDetails.length + ")\n<pre language='bash'>" + esc(shellText) + "</pre></blockquote>");
       }
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails, 500);
-        lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (` + otherDetails.length + ")</summary>\n<pre><code>" + esc(details) + "</code></pre>\n</details>");
+        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n<pre><code>" + esc(details) + "</code></pre></blockquote>");
       }
       if (settings.showTools && editDetails.length) {
         const editLines = [`✏️ Edits: ${editDetails.length}`];

@@ -64,7 +64,7 @@ export function rateLimitRetryAt(now: Date = new Date()): Date {
 }
 
 export function detailsBlock(summary: string, body: string, open = false): string {
-  return `<details${open ? " open" : ""}><summary>${summary}</summary>\n<pre>${esc(body)}</pre>\n</details>`;
+  return `<blockquote${open ? "" : " expandable"}>${summary}\n<pre>${esc(body)}</pre></blockquote>`;
 }
 
 const PROJECT_EMOJIS = ["🔵", "🟢", "🟡", "🟠", "🔴", "🟣", "🟤", "⚪", "⬛", "🔷", "🔶", "⏹️", "⏹", "⏹", "⏹"];

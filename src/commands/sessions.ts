@@ -589,7 +589,7 @@ export async function cmd_diff(deps: BotDeps, chatId: number, threadId: number |
       for (const d of diffs) {
         const patch = (d.patch ?? "").slice(0, 3500);
         await send(
-          `<details><summary><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})</summary>\n<pre><code class="language-diff">${colorDiff(patch)}</code></pre>\n</details>`,
+          `<blockquote expandable><b>${esc(d.file ?? "")}</b> (+${d.additions ?? 0}/-${d.deletions ?? 0})\n<pre><code class="language-diff">${colorDiff(patch)}</code></pre></blockquote>`,
         );
       }
     } catch (err) {
