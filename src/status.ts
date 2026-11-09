@@ -31,24 +31,38 @@ function parseShellCommand(input: string): string | null {
   return null;
 }
 
-function parseShellOutput(output: string): string | null {
-  const trimmed = output.trim();
+function parseToolOutput(output: string): string {
+  const trimmed = (output || "").trim();
+  if (!trimmed) return "";
+  // Try full JSON parse (MCP-style [{type:"text",text:"..."}] or {text/content})
   try {
     const parsed = JSON.parse(trimmed);
     if (Array.isArray(parsed)) {
       const texts = parsed
-        .map((item: { text?: unknown; content?: unknown }) => {
-          if (typeof item?.text === "string") return item.text;
-          if (typeof item?.content === "string") return item.content;
+        .map((item: unknown) => {
+          if (!item || typeof item !== "object") return typeof item === "string" ? item : "";
+          const obj = item as Record<string, unknown>;
+          if (typeof obj.text === "string") return obj.text;
+          if (typeof obj.content === "string") return obj.content;
+          if (Array.isArray(obj.content)) {
+            return (obj.content as Array<Record<string, unknown>>)
+              .map((c) => (typeof c?.text === "string" ? c.text : ""))
+              .filter(Boolean)
+              .join("\n");
+          }
           return "";
         })
         .filter(Boolean);
       if (texts.length) return texts.join("\n");
     }
-    if (parsed && typeof parsed.text === "string") return parsed.text;
-    if (parsed && typeof parsed.content === "string") return parsed.content;
+    if (parsed && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      if (typeof obj.text === "string") return obj.text;
+      if (typeof obj.content === "string") return obj.content;
+      if (typeof obj.output === "string") return obj.output;
+    }
   } catch {
-    // Fall back to extracting text fields from truncated JSON.
+    // Extract text fields from truncated/partial JSON.
   }
   const matches = [...trimmed.matchAll(/"text"\s*:\s*"((?:\\.|[^"\\])*)"/g)];
   if (matches.length) {
@@ -62,7 +76,12 @@ function parseShellOutput(output: string): string | null {
       })
       .join("\n");
   }
-  return null;
+  return trimmed;
+}
+
+function parseShellOutput(output: string): string | null {
+  const text = parseToolOutput(output);
+  return text || null;
 }
 
 function prettyJson(value: string): string {
@@ -71,6 +90,80 @@ function prettyJson(value: string): string {
   } catch {
     return value;
   }
+}
+
+function parseToolInput(input: string | undefined): Record<string, unknown> | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+type ToolSummary = { arg: string; detail?: string };
+
+function getToolSummary(name: string, input: string | undefined): ToolSummary {
+  const lower = (name || "").toLowerCase();
+  const p = parseToolInput(input);
+  const pick = (...keys: string[]) => {
+    if (!p) return "";
+    for (const k of keys) {
+      const v = p[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  };
+  if (lower.includes("read")) return { arg: pick("path", "file", "filePath", "target", "file_path") };
+  if (lower.includes("webfetch") || lower.includes("fetch") || lower.includes("web_search") || lower.includes("websearch")) {
+    return { arg: pick("url", "uri", "query", "q") };
+  }
+  if (lower.includes("edit") || lower.includes("write") || lower.includes("patch")) {
+    return { arg: pick("filePath", "path", "file", "target", "file_path") };
+  }
+  if (lower.includes("grep")) {
+    const pattern = pick("pattern", "query", "regex");
+    const path = pick("path", "include", "glob");
+    return { arg: pattern, detail: path };
+  }
+  if (lower.includes("glob")) return { arg: pick("pattern", "path", "glob") };
+  if (lower.includes("ls") || lower.includes("list")) return { arg: pick("path", "directory", "dir") };
+  if (lower.includes("bash") || lower.includes("shell")) return { arg: pick("command", "cmd") };
+  if (lower.includes("skill")) return { arg: pick("skill", "name", "id") };
+  if (lower.includes("task") || lower.includes("agent")) return { arg: pick("description", "prompt", "subagent_type") };
+  // Generic fallback: first short string value
+  if (p) {
+    for (const v of Object.values(p)) {
+      if (typeof v === "string" && v.trim() && v.length < 200) return { arg: v.trim() };
+    }
+  }
+  if (input && !input.trim().startsWith("{")) return { arg: input.trim() };
+  return { arg: "" };
+}
+
+function shortToolArg(arg: string, max = 90): string {
+  if (!arg) return "";
+  // For paths, prefer showing a meaningful tail if very long
+  if (arg.length > max && (arg.includes("/") || arg.includes("\\"))) {
+    const parts = arg.split(/[/\\]/).filter(Boolean);
+    const tail = parts.slice(-2).join("/");
+    return "…/" + truncate(tail, max - 2);
+  }
+  return truncate(arg, max);
+}
+
+function firstMeaningfulLine(text: string, max = 140): string {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    // Skip noisy preamble from read tool responses
+    if (/^\[?\{"type"\s*:\s*"text"/.test(line)) continue;
+    return truncate(line, max);
+  }
+  return "";
 }
 
 export type StatusDeps = {
@@ -86,47 +179,64 @@ export type StatusDeps = {
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
-function renderTools(details: ChatSession["toolCallDetails"], limit: number, showToolInput = true): string {
-  // Collapse consecutive identical tool calls into a single compact line.
-  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number }> = [];
+function renderTools(details: ChatSession["toolCallDetails"], _limit: number, showToolInput = true): string {
+  // Collapse consecutive calls only when name + key arg are identical.
+  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number; summary: ToolSummary }> = [];
   for (const d of details) {
+    const summary = getToolSummary(d.name, d.input);
     const last = compact[compact.length - 1];
-    if (last && last.d.name === d.name) {
+    if (last && last.d.name === d.name && last.summary.arg === summary.arg && last.summary.detail === summary.detail) {
       last.count += 1;
-      last.d = d;
+      last.d = d; // keep latest status/output
     } else {
-      compact.push({ d, count: 1 });
+      compact.push({ d, count: 1, summary });
     }
   }
   return compact
-    .map(({ d, count }) => {
-      const status = d.status === "success" ? "✅" : d.status === "failed" ? "❌" : "⏳";
+    .map(({ d, count, summary }) => {
+      const failed = d.status === "failed";
+      const status = d.status === "success" ? "✅" : failed ? "❌" : "⏳";
       const icon = toolIcon(d.name);
+      const countSuffix = count > 1 ? ` <i>×${count}</i>` : "";
+      const arg = summary.arg ? ` <code>${esc(shortToolArg(summary.arg))}</code>` : "";
+      const detail = summary.detail ? ` <i>${esc(truncate(summary.detail, 40))}</i>` : "";
+      const head = `${status} ${icon} <b>${esc(d.name)}</b>${arg}${detail}${countSuffix}`;
+      if (!showToolInput && !failed) return head;
+
+      const output = d.output ? parseToolOutput(d.output) : "";
+      if (failed && output) {
+        return `${head}\n   <i>${esc(firstMeaningfulLine(output, 160))}</i>`;
+      }
+      // For read/webfetch success, a short status line is enough; avoid dumping content.
       const lower = (d.name || "").toLowerCase();
-      let summary = "";
-      if (d.input) {
-        try {
-          const parsed = JSON.parse(d.input) as Record<string, unknown>;
-          if (lower.includes("read")) summary = String(parsed.path ?? parsed.file ?? parsed.filePath ?? parsed.target ?? "");
-          else if (lower.includes("fetch") || lower.includes("web")) summary = String(parsed.url ?? parsed.uri ?? "");
-          else if (lower.includes("edit") || lower.includes("write")) summary = String(parsed.filePath ?? parsed.path ?? parsed.file ?? "");
-          else if (lower.includes("grep") || lower.includes("find") || lower.includes("search")) summary = String(parsed.pattern ?? parsed.query ?? "");
-          else if (lower.includes("glob") || lower.includes("ls") || lower.includes("list")) summary = String(parsed.path ?? parsed.pattern ?? "");
-        } catch {
-          // ignore
+      if (!failed && (lower.includes("read") || lower.includes("webfetch") || lower.includes("fetch"))) {
+        const brief = firstMeaningfulLine(output, 100);
+        if (brief && !/^Read file\b/i.test(brief)) return `${head}\n   <i>${esc(brief)}</i>`;
+        return head;
+      }
+      if (!failed && (lower.includes("grep") || lower.includes("glob"))) {
+        // Show a compact result hint (e.g. number of matches / first line)
+        const brief = firstMeaningfulLine(output, 120);
+        if (brief) return `${head}\n   <i>${esc(brief)}</i>`;
+        return head;
+      }
+      if (output) {
+        const brief = firstMeaningfulLine(output, 140);
+        if (brief) return `${head}\n   <i>${esc(brief)}</i>`;
+      }
+      if (!summary.arg && d.input) {
+        // Last resort: compact key=value hint instead of raw JSON dump
+        const p = parseToolInput(d.input);
+        if (p) {
+          const hint = Object.entries(p)
+            .filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+            .slice(0, 2)
+            .map(([k, v]) => `${k}=${truncate(String(v), 40)}`)
+            .join(" ");
+          if (hint) return `${head}\n   <i>${esc(hint)}</i>`;
         }
       }
-      const countSuffix = count > 1 ? ` ×${count}` : "";
-      const lines = [`${status} ${icon} ${d.name}${countSuffix}${summary && summary !== "undefined" ? " " + esc(truncate(summary, 80)) : ""}`];
-      if (showToolInput && d.input && !summary) {
-        const command = parseShellCommand(d.input);
-        lines.push(command ? "$ " + command : prettyJson(d.input));
-      }
-      if (d.output) {
-        const output = parseShellOutput(d.output) ?? d.output;
-        lines.push(truncateText(output, limit));
-      }
-      return lines.join("\n");
+      return head;
     })
     .join("\n");
 }
@@ -323,8 +433,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     if (settings.showTools && otherDetails.length) {
       sep();
-      const details = renderTools(otherDetails.slice(-5), 200, settings.showToolInput);
-      lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n<pre><code>" + esc(details) + "</code></pre></blockquote>");
+      const details = renderTools(otherDetails.slice(-6), 200, settings.showToolInput);
+      lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n" + details + "</blockquote>");
     } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
       lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
     }
@@ -353,12 +463,22 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       sep();
       const toolName = lastTool.name;
       const isShell = isShellTool(toolName);
-      const toolInput = lastTool.input ? clampText(lastTool.input, 200) : "";
       const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
-      lines.push(`${statusEmoji} <b>Latest tool:</b> ${toolIcon(toolName)} <code>${esc(toolName)}</code>`);
-      if (toolInput && !isShell && settings.showToolInput) {
-        const wrapped = toolInput.match(/.{1,70}/g)?.join("\n") ?? toolInput;
-        lines.push(`<pre>${esc(wrapped)}</pre>`);
+      const summary = getToolSummary(toolName, lastTool.input);
+      const argPart = summary.arg ? ` <code>${esc(shortToolArg(summary.arg, 70))}</code>` : "";
+      lines.push(`${statusEmoji} <b>Latest tool:</b> ${toolIcon(toolName)} <b>${esc(toolName)}</b>${argPart}`);
+      if (isShell && summary.arg && settings.showToolInput) {
+        lines.push(`<pre language='bash'>$ ${esc(truncate(summary.arg, 220))}</pre>`);
+      } else if (!isShell && settings.showToolInput && !summary.arg && lastTool.input) {
+        const p = parseToolInput(lastTool.input);
+        if (p) {
+          const hint = Object.entries(p)
+            .filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+            .slice(0, 2)
+            .map(([k, v]) => `${k}=${truncate(String(v), 50)}`)
+            .join(" ");
+          if (hint) lines.push(`<i>${esc(hint)}</i>`);
+        }
       }
     }
     let resourceBlock = "";
@@ -501,7 +621,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails, 500);
-        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n<pre><code>" + esc(details) + "</code></pre></blockquote>");
+        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n" + details + "</blockquote>");
       }
       if (settings.showTools && editDetails.length) {
         const editLines = [`✏️ Edits: ${editDetails.length}`];
