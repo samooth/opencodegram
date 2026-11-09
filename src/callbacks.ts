@@ -177,14 +177,15 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   const scope = deps.store.routeKey(chatId, threadId);
   const models = deps.modelListByChat.get(scope) ?? [];
   const model = models[idx];
-  const s = deps.store.getActiveSession(chatId, threadId);
+  const targetId = deps.panels.modelTargetSessionByScope.get(scope);
+  const s = targetId ? deps.store.findSessionById(targetId) : deps.store.getActiveSession(chatId, threadId);
   if (!model) {
     await deps.tg.answerCallbackQuery(cq.id, "Model not found");
     return;
   }
   if (!s) {
-    await deps.tg.answerCallbackQuery(cq.id, "No active session");
-    await deps.tg.sendRichMessage(chatId, "No active session in this chat/topic. Activate or create one first.", {
+    await deps.tg.answerCallbackQuery(cq.id, targetId ? "Target session not found" : "No active session");
+    await deps.tg.sendRichMessage(chatId, targetId ? `Target session not found: <code>${esc(targetId)}</code>` : "No active session in this chat/topic. Activate or create one first.", {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
     }).catch(() => {});
@@ -199,7 +200,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   keyboard.push([{ text: "Default", callback_data: "variant:default" }]);
   keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }]);
   keyboard.push([
-    { text: "🧠 Models", callback_data: "panel:models" },
+    { text: "🧠 Models", callback_data: targetId ? `panel:ms:${s.sessionId}` : "panel:models" },
     { text: "🏠 Panel", callback_data: "panel:home" },
   ]);
   await deps.tg.answerCallbackQuery(cq.id);
@@ -243,14 +244,15 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const variantId = m[1];
   const scope = deps.store.routeKey(chatId, threadId);
   const model = deps.pendingModelByChat.get(scope);
-  const s = deps.store.getActiveSession(chatId, threadId);
+  const targetId = deps.panels.modelTargetSessionByScope.get(scope);
+  const s = targetId ? deps.store.findSessionById(targetId) : deps.store.getActiveSession(chatId, threadId);
   if (!model) {
     await deps.tg.answerCallbackQuery(cq.id, "No pending model");
     return;
   }
   if (!s) {
-    await deps.tg.answerCallbackQuery(cq.id, "No active session");
-    await deps.tg.sendRichMessage(chatId, "No active session in this chat/topic. Activate or create one first.", {
+    await deps.tg.answerCallbackQuery(cq.id, targetId ? "Target session not found" : "No active session");
+    await deps.tg.sendRichMessage(chatId, targetId ? `Target session not found: <code>${esc(targetId)}</code>` : "No active session in this chat/topic. Activate or create one first.", {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
     }).catch(() => {});
@@ -271,7 +273,7 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "🧠 Models", callback_data: "panel:models" },
+                { text: "🧠 Models", callback_data: deps.panels.modelTargetSessionByScope.get(scope) ? `panel:ms:${s.sessionId}` : "panel:models" },
                 { text: "🏠 Panel", callback_data: "panel:home" },
               ],
             ],
@@ -392,7 +394,13 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   }
   if (data === "panel:models") {
     await tg.answerCallbackQuery(cq.id);
-    await panels.showModels(chatId, 0, cq.message?.message_id, threadId);
+    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, null);
+    return;
+  }
+  if (data.startsWith("panel:ms:")) {
+    const targetSessionId = data.slice("panel:ms:".length).trim();
+    await tg.answerCallbackQuery(cq.id);
+    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, targetSessionId || null);
     return;
   }
   if (data === "panel:stop") {
@@ -797,6 +805,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   if (cbData === "modelcancel") {
     const scope = routeKey(chatId, threadId);
     pendingModelByChat.delete(scope);
+    panels.modelTargetSessionByScope.delete(scope);
     await tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
     if (cq.message?.message_id) {
       await tg.editRichMessage(chatId, cq.message.message_id, "Model selection cancelled.", {

@@ -30,6 +30,8 @@ export class SessionStore {
   readonly pendingEditsByMessage = new Map<number, string>();
 
   readonly customButtonsByChat = new Map<number, Array<{ label: string; text: string }>>();
+  /** Last session the user interacted with per route (for @tag / reply routing). */
+  readonly lastInteractedSessionByRoute = new Map<string, { sessionId: string; at: number }>();
 
   readonly dataDir: string;
   private readonly threadsFile: string;
@@ -43,6 +45,7 @@ export class SessionStore {
   private readonly statusMessagesFile: string;
   private readonly pendingEditsFile: string;
   private readonly buttonsFile: string;
+  private readonly lastInteractedFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
@@ -57,6 +60,7 @@ export class SessionStore {
     this.statusMessagesFile = join(dataDir, "statusMessages.json");
     this.pendingEditsFile = join(dataDir, "pendingEdits.json");
     this.buttonsFile = join(dataDir, "buttons.json");
+    this.lastInteractedFile = join(dataDir, "lastInteracted.json");
     this.load();
   }
 
@@ -201,6 +205,27 @@ export class SessionStore {
     this.saveLastPrompts();
   };
 
+  rememberLastInteracted = (chatId: number, threadId: number | undefined, sessionId: string) => {
+    this.lastInteractedSessionByRoute.set(this.routeKey(chatId, threadId), { sessionId, at: Date.now() });
+    this.saveLastInteracted();
+  };
+
+  getLastInteractedSession = (chatId: number, threadId?: number): string | undefined => {
+    if (threadId !== undefined) {
+      return this.lastInteractedSessionByRoute.get(this.routeKey(chatId, threadId))?.sessionId;
+    }
+    // Route-specific first, then most recent across any route of this chat.
+    const direct = this.lastInteractedSessionByRoute.get(this.routeKey(chatId, undefined))?.sessionId;
+    if (direct) return direct;
+    let best: { sessionId: string; at: number } | undefined;
+    const prefix = `${chatId}:`;
+    for (const [key, value] of this.lastInteractedSessionByRoute) {
+      if (!key.startsWith(prefix)) continue;
+      if (!best || value.at > best.at) best = value;
+    }
+    return best?.sessionId;
+  };
+
   getCustomButtons = (chatId: number): Array<{ label: string; text: string }> => {
     return this.customButtonsByChat.get(chatId) ?? [];
   };
@@ -267,6 +292,7 @@ export class SessionStore {
     for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);
     for (const [key, cs] of this.sessionsByThread) if (cs.sessionId === sessionId) this.sessionsByThread.delete(key);
     for (const [k, v] of this.activeSessionByRoute) if (v === sessionId) this.activeSessionByRoute.delete(k);
+    for (const [k, v] of this.lastInteractedSessionByRoute) if (v.sessionId === sessionId) this.lastInteractedSessionByRoute.delete(k);
     this.threadBySession.delete(sessionId);
     this.chatBySession.delete(sessionId);
     this.lastChatBySession.delete(sessionId);
@@ -286,6 +312,7 @@ export class SessionStore {
     this.saveLastChats();
     this.saveLastPrompts();
     this.savePendingEdits();
+    this.saveLastInteracted();
   };
 
   saveThreads = () => {
@@ -359,6 +386,17 @@ export class SessionStore {
       writeFileSync(this.lastPromptsFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[lastPrompts] save failed", err);
+    }
+  };
+
+  saveLastInteracted = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, { sessionId: string; at: number }> = {};
+      for (const [k, v] of this.lastInteractedSessionByRoute) obj[k] = v;
+      writeFileSync(this.lastInteractedFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[lastInteracted] save failed", err);
     }
   };
 
@@ -451,6 +489,18 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[lastPrompts] load failed", err);
+    }
+    try {
+      if (existsSync(this.lastInteractedFile)) {
+        const parsed = JSON.parse(readFileSync(this.lastInteractedFile, "utf8")) as Record<string, { sessionId?: string; at?: number }>;
+        for (const [key, value] of Object.entries(parsed)) {
+          if (key && value?.sessionId && Number.isFinite(value.at)) {
+            this.lastInteractedSessionByRoute.set(key, { sessionId: value.sessionId, at: Number(value.at) });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[lastInteracted] load failed", err);
     }
 
     // Explicit tab bindings.

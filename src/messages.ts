@@ -126,17 +126,38 @@ async function resolveSessionForMessage(
   const { store, sessions, me } = deps;
   const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
 
-  let s = await ensureActiveSession(chatId, replyThread);
-  if (!s && repliedSessionId) {
+  // 1) Reply to a bot message that belongs to a session -> route to that session.
+  if (repliedSessionId) {
+    const active = store.getActiveSession(chatId, replyThread);
+    if (active?.sessionId === repliedSessionId) return active;
     try {
       await activateSession(chatId, repliedSessionId, true, replyThread);
-      s = await restoreActiveSession(chatId, replyThread);
+      const resolved = await restoreActiveSession(chatId, replyThread);
+      if (resolved) return resolved;
     } catch (err) {
-      console.error("[reply] activate failed", repliedSessionId, err);
-      s = undefined;
+      console.error("[reply] activate related session failed", repliedSessionId, err);
     }
+    // Fallback to in-memory session if activation couldn't switch route cleanly.
+    const inMem = store.findSessionById(repliedSessionId);
+    if (inMem) return inMem;
   }
-  if (!s && !repliedSessionId && chatId < 0) {
+
+  // 2) Active session for this exact route.
+  let s = await ensureActiveSession(chatId, replyThread);
+  if (s) return s;
+
+  // 3) In groups, prefer the last session the user interacted with.
+  if (chatId < 0) {
+    const last = store.getLastInteractedSession(chatId, replyThread);
+    if (last) {
+      try {
+        await activateSession(chatId, last, true, replyThread);
+        s = await restoreActiveSession(chatId, replyThread);
+        if (s) return s;
+      } catch (err) {
+        console.error("[reply] activate last-interacted failed", last, err);
+      }
+    }
     const candidates = [...store.activeSessionByRoute.entries()]
       .filter(([k]) => k.startsWith(`${chatId}:`))
       .map(([, sid]) => sid);
@@ -145,12 +166,13 @@ async function resolveSessionForMessage(
       try {
         await activateSession(chatId, unique[0], true, replyThread);
         s = await restoreActiveSession(chatId, replyThread);
+        if (s) return s;
       } catch (err) {
         console.error("[reply] single-candidate activate failed", unique[0], err);
-        s = undefined;
       }
     }
   }
+
   const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
   if (!s && (chatId >= 0 || isMention)) {
     await createNewSession(chatId, true, replyThread);
@@ -182,6 +204,7 @@ async function startPrompt(
     s.sentArtifacts = new Set();
     store.rememberSessionChat(s.sessionId, chatId);
     store.rememberActiveRoute(chatId, replyThread, s.sessionId);
+    store.rememberLastInteracted(chatId, replyThread, s.sessionId);
     s.promptStartTime = Date.now();
     store.rememberLastChat(s.sessionId, chatId);
     store.rememberLastPrompt(s.sessionId, text);

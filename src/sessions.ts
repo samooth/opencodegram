@@ -332,7 +332,18 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       let text = `${projectEmoji(directory)} <b>Active session</b>\n<code>${esc(sessionId)}</code>\n${esc(title)}\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`;
       if (lastPrompt) text += `\n\n<b>Último prompt:</b> ${esc(clampText(lastPrompt, 200))}`;
       if (cot) text += `\n<b>COT:</b> ${esc(clampText(cot, 200))}`;
-      await tg.sendRichMessage(chatId, text, threadOpts(targetThread)).catch(() => {});
+      await tg.sendRichMessage(chatId, text, {
+        ...threadOpts(targetThread),
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
+              { text: "📊 Status", callback_data: "panel:status" },
+              { text: "🏠 Panel", callback_data: "panel:home" },
+            ],
+          ],
+        },
+      }).catch(() => {});
     }
     return cs;
   }

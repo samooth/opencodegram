@@ -85,6 +85,7 @@ async function main() {
     config,
     getActiveSession: store.getActiveSession,
     restoreActiveSession: sessions.restoreActiveSession,
+    findSessionById: store.findSessionById,
     getLastPrompt: (sid) => store.lastPromptBySession.get(sid),
     getLastCot: (sid) => store.getCotBuffer(sid),
     modelListByChat,

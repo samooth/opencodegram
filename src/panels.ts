@@ -14,6 +14,7 @@ export type PanelsDeps = {
   config: Config;
   getActiveSession: (chatId: number, threadId?: number) => ChatSession | undefined;
   restoreActiveSession?: (chatId: number, threadId?: number) => Promise<ChatSession | undefined>;
+  findSessionById?: (sessionId: string) => ChatSession | undefined;
   getLastPrompt?: (sessionId: string) => string | undefined;
   getLastCot?: (sessionId: string) => string | undefined;
   modelListByChat: Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string }> }>>;
@@ -25,10 +26,12 @@ export type PanelsDeps = {
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, getSessionStatus, metrics }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, getSessionStatus, metrics }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
+  /** When set, model selection targets this session instead of the route's active session. */
+  const modelTargetSessionByScope = new Map<string, string>();
 
   async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}): Promise<void> {
     if (messageId) {
@@ -157,9 +160,13 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     });
   }
 
-  async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number, provider?: string): Promise<void> {
-    let s = getActiveSession(chatId, threadId);
-    if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
+  async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number, provider?: string, targetSessionId?: string | null): Promise<void> {
+    const scope = routeKey(chatId, threadId);
+    if (targetSessionId === null) modelTargetSessionByScope.delete(scope);
+    else if (typeof targetSessionId === "string" && targetSessionId) modelTargetSessionByScope.set(scope, targetSessionId);
+    const targetId = modelTargetSessionByScope.get(scope);
+    let s = targetId ? (findSessionById?.(targetId) ?? getActiveSession(chatId, threadId)) : getActiveSession(chatId, threadId);
+    if (!s && !targetId && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     let raw: any[];
     const now = Date.now();
@@ -177,9 +184,9 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       return String(a.name ?? a.id).localeCompare(String(b.name ?? b.id));
     });
     const current = s?.model;
-    const scope = routeKey(chatId, threadId);
     modelListByChat.set(scope, list as Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string }> }>);
     const providers = [...new Set(list.map((m: any) => m.providerID ?? m.provider ?? "unknown"))].sort();
+    const targetNote = targetId ? `\nTarget session: <code>${esc(targetId)}</code>` : "";
 
     if (!provider) {
       selectedProviderByChat.delete(scope);
@@ -208,8 +215,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
       if (nav.length) keyboard.push(nav);
       keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-      const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
-      await sendOrEditRich(chatId, messageId, `<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, {
+      const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
+      await sendOrEditRich(chatId, messageId, `<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${targetNote}\n${currentLine}\n\n${table}`, {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: keyboard },
       });
@@ -241,8 +248,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     if (nav.length) keyboard.push(nav);
     keyboard.push([{ text: "◀ Providers", callback_data: "prov:back" }, { text: "❌ Cancel", callback_data: "modelcancel" }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}\n\n` : "";
-    await sendOrEditRich(chatId, messageId, `<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}${table}`, {
+    const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
+    await sendOrEditRich(chatId, messageId, `<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${targetNote}\n${currentLine}\n\n${table}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
@@ -375,5 +382,5 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
 
-  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, providerListByChat, selectedProviderByChat };
+  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, providerListByChat, selectedProviderByChat, modelTargetSessionByScope };
 }

@@ -258,7 +258,17 @@ export class TelegramClient {
   }
 
   editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown: sanitizeUtf8(markdown) }, ...opts });
+    if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
+    const safe = sanitizeUtf8(markdown);
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown: safe }, ...opts }).catch((err) => {
+      const msg = String(err);
+      const m = msg.match(/retry after (\d+)/i);
+      if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
+      if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg)) {
+        console.error("[telegram] editRichMessageMarkdown failed", chatId, messageId, "len=", safe.length);
+      }
+      return undefined;
+    });
   }
 
   deleteMessage(chatId: number, messageId: number): Promise<boolean> {
