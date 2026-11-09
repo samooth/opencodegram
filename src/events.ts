@@ -184,6 +184,7 @@ const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
   const sessionId = e.data?.sessionID;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
+  logger.info("events", "compaction.started", { sessionId, chatId, hasSession: !!_s0 });
   if (chatId === undefined) return;
   const s = _s0;
   if (s) {
@@ -237,6 +238,7 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
   await tg
     .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
     .catch(() => {});
+  logger.info("events", "compaction.ended", { sessionId, chatId, threadId, summaryLen: summary.length });
 };
 
 const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
@@ -254,6 +256,7 @@ const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
     s.compacting = false;
     updateStatus(chatId, s, true).catch(() => {});
   }
+  logger.warn("events", "compaction.failed", { sessionId, chatId, threadId, error: msg });
   await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
 };
 

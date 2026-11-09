@@ -345,6 +345,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     // Restore the persisted binding for this exact tab.
     const mapped = activeSessionByRoute.get(routeKey(chatId, threadId));
     if (mapped) {
+      logger.info("sessions", "restore.attempt", { sessionId: mapped, chatId, threadId });
       try {
         await activateSession(chatId, mapped, true, threadId);
         return getActiveSession(chatId, threadId);
@@ -354,6 +355,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
         if (notFound) {
           // The session no longer exists on the server; drop the stale binding
           // so we stop retrying and the user can create a new one.
+          logger.warn("sessions", "restore.forget_binding", { sessionId: mapped, chatId, threadId, error: msg });
           console.warn("[session] session gone, forgetting binding", mapped);
           store.forgetSession(mapped);
           activeSessionByRoute.delete(routeKey(chatId, threadId));
@@ -364,8 +366,8 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
         }
         // Keep the persisted binding on transient failures so a restart
         // does not silently unlink the session; the next interaction retries.
+        logger.warn("sessions", "restore.failed_keep_binding", { sessionId: mapped, chatId, threadId, error: msg });
         console.error("[session] restore failed (keeping binding)", mapped, err);
-        logger.breadcrumb("sessions", "restore.failed", { sessionId: mapped });
         return getActiveSession(chatId, threadId);
       }
     }
