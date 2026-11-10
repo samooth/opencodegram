@@ -431,46 +431,49 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
           const role = m.role ?? m.type;
           return role === "user" || role === "assistant" || role === "compaction";
         })
-        .slice(-30);
+        .slice(-40);
       if (!meaningful.length) {
         await send(sessionHeader(s) + "<i>No context to sync.</i>");
         return true;
       }
-      const blocks: string[] = [sessionHeader(s) + "📜 <b>Contenido de la sesión</b>"];
-      for (const m of meaningful) {
+      const renderItem = (m: any): string => {
         const role = m.role ?? m.type ?? "msg";
         if (role === "user") {
           const t = m.text;
           const body = typeof t === "string" ? t : t ? JSON.stringify(t) : "";
-          if (!body.trim()) continue;
-          blocks.push(`👤 <b>Tú</b>\n<blockquote>${esc(body.trim().slice(0, 1800))}</blockquote>`);
-        } else if (role === "assistant") {
+          if (!body.trim()) return "";
+          return `👤 <b>Tú</b>\n<blockquote>${esc(body.trim().slice(0, 1400))}</blockquote>`;
+        }
+        if (role === "assistant") {
           const parts = Array.isArray(m.content) ? m.content : [];
           const texts = parts
             .filter((p: any) => p.type === "text")
             .map((p: any) => (typeof p.text === "string" ? p.text : p?.text ? JSON.stringify(p.text) : ""))
             .join("\n\n")
             .trim();
-          if (texts) {
-            blocks.push(`🤖 <b>OpenCode</b>\n${markdownToHtml(texts.slice(0, 2600))}`);
-          } else {
-            const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool").slice(0, 6);
-            if (tools.length) blocks.push(`🤖 <b>OpenCode</b>\n<blockquote expandable>🔧 ${esc(tools.join(", "))}</blockquote>`);
-          }
-        } else if (role === "compaction") {
-          const sum = (m.summary ?? "").toString().trim().slice(0, 600);
-          if (sum) blocks.push(`<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum)}</blockquote>`);
+          if (texts) return `🤖 <b>OpenCode</b>\n${markdownToHtml(texts.slice(0, 2200))}`;
+          const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool").slice(0, 6);
+          if (tools.length) return `🤖 <b>OpenCode</b>\n<blockquote expandable>🔧 ${esc(tools.join(", "))}</blockquote>`;
+          return "";
         }
+        if (role === "compaction") {
+          const sum = (m.summary ?? "").toString().trim().slice(0, 500);
+          return sum ? `<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum)}</blockquote>` : "";
+        }
+        return "";
+      };
+      const rendered = meaningful.map(renderItem).filter(Boolean);
+      const recentCount = Math.min(6, rendered.length);
+      const recent = rendered.slice(-recentCount);
+      const older = rendered.slice(0, Math.max(0, rendered.length - recentCount));
+      const header = sessionHeader(s) + `📜 <b>Contenido de la sesión</b> <i>(${rendered.length} mensajes)</i>`;
+      let html = header + "\n\n" + recent.join("\n\n");
+      if (older.length) {
+        const olderText = esc(older.join("\n\n---\n\n").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 6000));
+        html += `\n\n<blockquote expandable>📚 Transcripción anterior (${older.length} mensajes)\n${olderText}</blockquote>`;
       }
-      // Send as one (or few) normal messages, all linked to the session for replies.
-      const full = blocks.join("\n\n");
-      const chunkSize = 3800;
-      for (let i = 0; i < full.length; i += chunkSize) {
-        const part = full.slice(i, i + chunkSize);
-        const prefix = i > 0 ? sessionHeader(s) : "";
-        const sent = await send(prefix + part) as { message_id?: number } | undefined;
-        if (sent?.message_id) C.store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
-      }
+      const sent = await send(clampText(html, 3900)) as { message_id?: number } | undefined;
+      if (sent?.message_id) C.store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
     } catch (err) {
       await send("❌ " + esc(String(err)));
     }

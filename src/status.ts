@@ -407,6 +407,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 5000) return;
     s.statusEditing = true;
     s.statusLastUpdate = now;
+    // Draft keep-alive: drafts expire ~30s; refresh while turn is active (private chats).
+    if (!s.stopped && s.draftId) {
+      void flushDraft(chatId, s);
+    }
     const lines: string[] = [];
     try {
     const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };

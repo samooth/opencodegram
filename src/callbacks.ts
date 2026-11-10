@@ -92,7 +92,7 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
   try {
     await deps.sessions.activateSession(chatId, sessionId, true, threadId);
-    // Show session content like a normal message, linked to this session for replies.
+    // Show session content like a normal message (digest), linked to session.
     const cs = deps.store.findSessionById(sessionId);
     let body = "";
     try {
@@ -103,37 +103,45 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
           const role = m.role ?? m.type;
           return role === "user" || role === "assistant" || role === "compaction";
         })
-        .slice(-30);
+        .slice(-40);
       if (!meaningful.length) {
         body = "<i>No context yet.</i>";
       } else {
-        const blocks: string[] = [];
-        for (const m of meaningful) {
+        const renderItem = (m: any): string => {
           const role = m.role ?? m.type ?? "msg";
           if (role === "user") {
             const t = m.text;
             const text = typeof t === "string" ? t : t ? JSON.stringify(t) : "";
-            if (!text.trim()) continue;
-            blocks.push(`👤 <b>Tú</b>\n<blockquote>${esc(text.trim().slice(0, 2000))}</blockquote>`);
-          } else if (role === "assistant") {
+            if (!text.trim()) return "";
+            return `👤 <b>Tú</b>\n<blockquote>${esc(text.trim().slice(0, 1400))}</blockquote>`;
+          }
+          if (role === "assistant") {
             const content = Array.isArray(m.content) ? m.content : [];
             const texts = content
               .filter((p: any) => p.type === "text")
               .map((p: any) => (typeof p.text === "string" ? p.text : ""))
               .join("\n\n")
               .trim();
-            if (texts) {
-              blocks.push(`🤖 <b>OpenCode</b>\n${markdownToHtml(texts.slice(0, 3200))}`);
-            } else {
-              const tools = content.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool").slice(0, 6);
-              if (tools.length) blocks.push(`🤖 <b>OpenCode</b>\n<blockquote expandable>🔧 ${esc(tools.join(", "))}</blockquote>`);
-            }
-          } else if (role === "compaction") {
-            const sum = (m.summary ?? "").toString().trim().slice(0, 800);
-            if (sum) blocks.push(`<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum)}</blockquote>`);
+            if (texts) return `🤖 <b>OpenCode</b>\n${markdownToHtml(texts.slice(0, 2200))}`;
+            const tools = content.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool").slice(0, 6);
+            if (tools.length) return `🤖 <b>OpenCode</b>\n<blockquote expandable>🔧 ${esc(tools.join(", "))}</blockquote>`;
+            return "";
           }
+          if (role === "compaction") {
+            const sum = (m.summary ?? "").toString().trim().slice(0, 500);
+            return sum ? `<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum)}</blockquote>` : "";
+          }
+          return "";
+        };
+        const rendered = meaningful.map(renderItem).filter(Boolean);
+        const recentCount = Math.min(6, rendered.length);
+        const recent = rendered.slice(-recentCount);
+        const older = rendered.slice(0, Math.max(0, rendered.length - recentCount));
+        body = recent.join("\n\n");
+        if (older.length) {
+          const olderText = esc(older.join("\n\n---\n\n").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 6000));
+          body += `\n\n<blockquote expandable>📚 Transcripción anterior (${older.length} mensajes)\n${olderText}</blockquote>`;
         }
-        body = blocks.join("\n\n");
       }
     } catch (err) {
       body = `<i>No se pudo cargar el contexto:</i> ${esc(String(err))}`;

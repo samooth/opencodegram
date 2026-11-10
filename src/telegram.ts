@@ -67,6 +67,11 @@ function sanitizeUtf8(input: string): string {
   return out;
 }
 
+function stripDraftOnlyRichBlocks(html: string): string {
+  // <tg-thinking> is valid only in drafts; never send in finals/edits.
+  return html.replace(/<tg-thinking\b[^>]*>[\s\S]*?<\/tg-thinking>/gi, "").replace(/<tg-thinking\b[^>]*\/>/gi, "");
+}
+
 export class TelegramClient {
   constructor(private readonly token: string) {}
   private editBackoff = new Map<number, number>();
@@ -189,7 +194,7 @@ export class TelegramClient {
   }
 
   sendRichMessage(chatId: number, html: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const safe = sanitizeUtf8(html);
+    const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(html));
     const body = { chat_id: chatId, rich_message: { html: safe }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
       const msg = String(err);
@@ -248,7 +253,7 @@ export class TelegramClient {
 
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
     if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
-    const safe = sanitizeUtf8(html);
+    const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(html));
     return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: safe }, ...opts }).catch((err) => {
       const msg = String(err);
       const m = msg.match(/retry after (\d+)/i);
