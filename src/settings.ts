@@ -183,6 +183,14 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     "showShell",
     "shellExpanded",
     "showResourceUsage",
+    "showCot",
+    "showLatestThought",
+    "showLatestTool",
+    "showTokenSpeed",
+    "showToolInput",
+    "autoTopicTitle",
+    "sessionNameInMessages",
+    "showSessionNameInStatus",
   ];
   // Two buttons per row for compactness.
   for (let i = 0; i < booleanKeys.length; i += 2) {
