@@ -29,7 +29,8 @@ export type ChatSession = {
   statusLastUpdate?: number;
   statusLastText?: string;
   statusEditing?: boolean;
-  lastFinalMessageId?: string;
+  lastFinalMessageId?: string; // OpenCode assistant message ID (duplicate suppression)
+  lastFinalTelegramMessageId?: number; // Telegram message ID (coalescing rapid finals)
   lastFinalSentAt?: number;
   textEndedHandled?: boolean;
   sentArtifacts?: Set<string>;

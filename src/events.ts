@@ -503,33 +503,46 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     } catch {
       quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     }
+    const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
+    const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
     if (s) {
-    s.lastFinalMessageId = msgId ?? s.lastFinalMessageId;
-    s.lastFinalSentAt = Date.now();
-  }
-  let extraHtml = "";
-  if (s && s.toolCallDetails.length && (settings.get(chatId).showTools ?? true)) {
-    const counts = new Map<string, number>();
-    for (const d of s.toolCallDetails) counts.set(d.name, (counts.get(d.name) ?? 0) + 1);
-    const summary = [...counts.entries()].map(([name, n]) => `${toolIcon(name)} ${esc(name)} ×${n}`).join("  ");
-    // Appended as HTML (not markdown) so tags are not escaped.
-    extraHtml += `\n\n🔧 <b>Tool calls (${s.toolCallDetails.length}):</b> ${summary}`;
-  }
-  logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
+      s.lastFinalMessageId = msgId ?? s.lastFinalMessageId; // OpenCode assistant msg id
+      s.lastFinalSentAt = Date.now();
+    }
+    let extraHtml = "";
+    if (s && s.toolCallDetails.length && (settings.get(chatId).showTools ?? true)) {
+      const counts = new Map<string, number>();
+      for (const d of s.toolCallDetails) counts.set(d.name, (counts.get(d.name) ?? 0) + 1);
+      const summary = [...counts.entries()].map(([name, n]) => `${toolIcon(name)} ${esc(name)} ×${n}`).join("  ");
+      // Appended as HTML (not markdown) so tags are not escaped.
+      extraHtml += `\n\n🔧 <b>Tool calls (${s.toolCallDetails.length}):</b> ${summary}`;
+    }
+    logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
     const finalHtml = sessionHeader(s) + markdownToHtml(finalText) + extraHtml + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
-    const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
-      console.error("[send final]", err);
-      return undefined;
-    });
-    if (finalMessage?.message_id) store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
-    // Deep link button to jump to this message in the chat.
-    if (finalMessage?.message_id && chatId < 0) {
-      const internalId = String(chatId).replace(/^-100/, "");
-      const url = `https://t.me/c/${internalId}/${finalMessage.message_id}`;
-      const kb: any[] = [...(quickKeyboard ?? []), [{ text: "🔗 Ver en chat", url }]];
-      await tg.editMessageReplyMarkup(chatId, finalMessage.message_id, { inline_keyboard: kb }).catch(() => {});
+    // Coalesce rapid autonomous finals (e.g. DeepSeek multi-step) by editing the
+    // previous final message instead of flooding the chat with new messages.
+    const rapidFinal = !!(s && prevFinalTelegramMessageId && Date.now() - prevFinalSentAt < 12000);
+    let finalMessage: { message_id?: number } | undefined;
+    if (rapidFinal) {
+      logger.breadcrumb("events", "send.final.coalesced", { chatId, sessionId: s.sessionId, prev: prevFinalTelegramMessageId });
+      await tg.editRichMessage(chatId, prevFinalTelegramMessageId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch(() => {});
+      finalMessage = { message_id: prevFinalTelegramMessageId };
+    } else {
+      finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
+        console.error("[send final]", err);
+        return undefined;
+      });
+      if (finalMessage?.message_id) store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
+      // Deep link button to jump to this message in the chat.
+      if (finalMessage?.message_id && chatId < 0) {
+        const internalId = String(chatId).replace(/^-100/, "");
+        const url = `https://t.me/c/${internalId}/${finalMessage.message_id}`;
+        const kb: any[] = [...(quickKeyboard ?? []), [{ text: "🔗 Ver en chat", url }]];
+        await tg.editMessageReplyMarkup(chatId, finalMessage.message_id, { inline_keyboard: kb }).catch(() => {});
+      }
     }
+    if (finalMessage?.message_id && s) s.lastFinalTelegramMessageId = finalMessage.message_id;
     if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";
