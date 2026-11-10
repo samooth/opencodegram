@@ -517,8 +517,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     sep();
     if (s.compacting) {
       lines.push("📦 <b>Compacting context…</b>");
+    } else if (s.compactionError?.trim()) {
+      lines.push(`📦 <b>Compaction failed</b>\n<i>${esc(s.compactionError.trim().slice(0, 240))}</i>`);
     } else if (s.compactionSummary?.trim()) {
-      lines.push("📦 " + esc(s.compactionSummary.trim().slice(0, 200)));
+      const sum = s.compactionSummary.trim();
+      if (sum.length > 220) lines.push(`<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum.slice(0, 1500))}</blockquote>`);
+      else lines.push(`📦 <b>Compaction</b>: ${esc(sum)}`);
     }
       const fullText = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
       let finalText = fullText;
@@ -639,8 +643,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     if (target.compacting) {
       lines.push("📦 <b>Compacting context…</b>");
+    } else if (target.compactionError?.trim()) {
+      lines.push(`📦 <b>Compaction failed</b>\n<i>${esc(target.compactionError.trim().slice(0, 240))}</i>`);
     } else if (target.compactionSummary?.trim()) {
-      lines.push("📦 " + esc(target.compactionSummary.trim().slice(0, 300)));
+      const sum = target.compactionSummary.trim();
+      if (sum.length > 220) lines.push(`<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum.slice(0, 2000))}</blockquote>`);
+      else lines.push(`📦 <b>Compaction</b>: ${esc(sum)}`);
     }
     let resourceBlock = "";
     if (settings.showResourceUsage) {

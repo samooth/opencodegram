@@ -54,7 +54,7 @@ describe("SessionStore routing", () => {
     expect(store.activeSessionByRoute.get("100:11")).toBe("ses_a");
   });
 
-  test("replacing a route retires the previous session", () => {
+  test("replacing a route moves the binding without forgetting the previous session", () => {
     const store = new SessionStore(dataDir);
     store.sessionsByThread.set(store.routeKey(100, 10), makeSession("ses_a", 10));
     store.sessionsById.set("ses_a", store.sessionsByThread.get(store.routeKey(100, 10))!);
@@ -63,9 +63,10 @@ describe("SessionStore routing", () => {
 
     store.rememberActiveRoute(100, 10, "ses_b");
     expect(store.activeSessionByRoute.get("100:10")).toBe("ses_b");
-    expect(store.sessionsById.has("ses_a")).toBe(false);
-    expect(store.sessionsByThread.has(store.routeKey(100, 10))).toBe(false);
-    expect(store.chatBySession.has("ses_a")).toBe(false);
+    // Previous session remains known for reply-to/background event handling;
+    // explicit deletion uses forgetSession().
+    expect(store.sessionsById.has("ses_a")).toBe(true);
+    expect(store.chatBySession.has("ses_a")).toBe(true);
   });
 
   test("persists and reloads tab bindings", () => {

@@ -117,11 +117,8 @@ export class SessionStore {
 
   rememberActiveRoute = (chatId: number, threadId: number | undefined, sessionId: string) => {
     const key = this.routeKey(chatId, threadId);
-    const previous = this.activeSessionByRoute.get(key);
-    if (previous && previous !== sessionId) {
-      const stillUsed = [...this.activeSessionByRoute.entries()].some(([k, v]) => v === previous && k !== key);
-      if (!stillUsed) this.forgetSession(previous);
-    }
+    // Unbind previous session from this route without forgetting it: sessions can
+    // be resumed (reply-to / multi-session navigation) and may still receive events.
     // One session can only live in one tab at a time.
     for (const [k, v] of this.activeSessionByRoute) if (v === sessionId && k !== key) this.activeSessionByRoute.delete(k);
     this.activeSessionByRoute.set(key, sessionId);

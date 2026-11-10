@@ -189,8 +189,13 @@ const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
   const s = _s0;
   if (s) {
     s.compacting = true;
+    s.compactionError = undefined;
     s.compactionSummary = undefined;
-    updateStatus(chatId, s, true).catch(() => {});
+    if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
+    else {
+      const threadId = resolveThreadId(sessionId);
+      await tg.sendRichMessage(chatId, "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
+    }
   } else {
     const threadId = resolveThreadId(sessionId);
     await tg.sendRichMessage(chatId, "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
@@ -208,7 +213,7 @@ const handleSessionCompactionDelta: EventHandler = async (event, deps) => {
   const s = _s0;
   if (s) {
     s.compactionSummary = (s.compactionSummary ?? "") + (e.data?.text ?? "");
-    updateStatus(chatId, s).catch(() => {});
+    if (s.statusMessageId) updateStatus(chatId, s).catch(() => {});
   }
 };
 
@@ -227,18 +232,31 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
   const tokenText = tokens ? ` · ${((tokens.input ?? 0) + (tokens.output ?? 0)).toLocaleString()} tokens` : "";
   if (s) {
     s.compacting = false;
-    s.compactionSummary = summary || s.compactionSummary;
-    updateStatus(chatId, s, true).catch(() => {});
+    s.compactionError = undefined;
+    s.compactionSummary = summary ? (summary + (tokenText ? `\n${tokenText.trim()}` : "")) : (s.compactionSummary ?? "");
+    if (s.statusMessageId) {
+      updateStatus(chatId, s, true).catch(() => {});
+    } else {
+      const shortSummary = summary.slice(0, 900);
+      const truncated = summary.length > shortSummary.length;
+      const body = summary
+        ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre></blockquote>`
+        : "";
+      await tg
+        .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
+        .catch(() => {});
+    }
+  } else {
+    const shortSummary = summary.slice(0, 900);
+    const truncated = summary.length > shortSummary.length;
+    const body = summary
+      ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre></blockquote>`
+      : "";
+    await tg
+      .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
+      .catch(() => {});
   }
-  const shortSummary = summary.slice(0, 900);
-  const truncated = summary.length > shortSummary.length;
-  const body = summary
-    ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre></blockquote>`
-    : "";
-  await tg
-    .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
-    .catch(() => {});
-  logger.info("events", "compaction.ended", { sessionId, chatId, threadId, summaryLen: summary.length });
+  logger.info("events", "compaction.ended", { sessionId, chatId, threadId, summaryLen: summary.length, usedStatus: !!(s?.statusMessageId) });
 };
 
 const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
@@ -254,10 +272,13 @@ const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
   const msg = e.data?.error?.message ?? "compaction failed";
   if (s) {
     s.compacting = false;
-    updateStatus(chatId, s, true).catch(() => {});
+    s.compactionError = msg;
+    if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
+    else await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
+  } else {
+    await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
   }
   logger.warn("events", "compaction.failed", { sessionId, chatId, threadId, error: msg });
-  await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
 };
 
 const handleMcpStatusChanged: EventHandler = async (event, deps) => {

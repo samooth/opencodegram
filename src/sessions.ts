@@ -61,9 +61,12 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     saveThreads,
   } = store;
 
-  // A tab only ever shows one session. When its owner changes, stop the old
-  // turn, remove its Stop button and drop it from the routing tables.
-  const retireSession = async (chatId: number, previous: ChatSession) => {
+  // A tab only ever shows one session. When its owner changes, detach the old
+  // session from this route's UI (finalize its status card here) but keep the
+  // session tracked so background events and reply-to routing still work.
+  const retireSession = async (chatId: number, previous: ChatSession, opts?: { forget?: boolean; interrupt?: boolean }) => {
+    const forget = opts?.forget === true;
+    const interrupt = opts?.interrupt === true || forget;
     previous.stopped = true;
     if (previous.timer) {
       clearTimeout(previous.timer);
@@ -77,15 +80,25 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       clearInterval(previous.statusTimer);
       previous.statusTimer = undefined;
     }
-    await oc.interrupt(previous.sessionId).catch(() => {});
+    if (interrupt) await oc.interrupt(previous.sessionId).catch(() => {});
     if (previous.statusMessageId) {
       await tg
-        .editRichMessage(chatId, previous.statusMessageId, "⏹ <b>Replaced by another session</b>", {
+        .editRichMessage(chatId, previous.statusMessageId, forget ? "⏹ <b>Session closed</b>" : "⏹ <b>Session detached from this tab</b>", {
           ...store.threadOptsFor(previous),
           reply_markup: { inline_keyboard: [] },
         })
         .catch(() => {});
       previous.statusMessageId = undefined;
+    }
+    // Remove route bindings for this session in this chat context; keep in-memory
+    // state for event handling unless explicitly forgotten.
+    if (!forget) {
+      for (const [key, cs] of sessionsByThread) if (cs.sessionId === previous.sessionId) sessionsByThread.delete(key);
+      for (const [cid, cs] of sessionsByChat) if (cs.sessionId === previous.sessionId) sessionsByChat.delete(cid);
+      for (const [k, v] of store.activeSessionByRoute) if (v === previous.sessionId) store.activeSessionByRoute.delete(k);
+      store.saveActiveSessions();
+      saveThreads();
+      return;
     }
     forgetSession(previous.sessionId);
   };
