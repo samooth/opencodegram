@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
 import { createTranscriptManager } from "../src/transcriptmanager.js";
-import { paginateTranscript, splitText, TRANSCRIPT_MAX_BLOCKS, type TranscriptBlock } from "../src/transcript.js";
+import { paginateTranscript, splitText, TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS, type TranscriptBlock } from "../src/transcript.js";
 import { markdownToHtml } from "../src/util.js";
 import type { ChatSession } from "../src/types.js";
 
@@ -153,6 +153,22 @@ describe("transcript manager", () => {
       transcript.addBlock(s, "answer", `<p>${i}</p>`, `bloque ${i}`);
     }
     expect(store.getTranscript("ses_x").length).toBe(TRANSCRIPT_MAX_BLOCKS);
+  });
+
+  test("thinking and tools are capped but answers are kept", () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    for (let i = 0; i < 20; i++) {
+      transcript.addBlock(s, "thinking", `<p>t${i}</p>`, `pensamiento ${i}`);
+      transcript.addBlock(s, "tools", `<p>k${i}</p>`, `herramienta ${i}`);
+      transcript.addBlock(s, "answer", `<p>a${i}</p>`, `respuesta ${i}`);
+    }
+    const blocks = store.getTranscript("ses_x");
+    const count = (kind: string) => blocks.filter((b) => b.kind === kind).length;
+    expect(count("thinking")).toBeLessThanOrEqual(TRANSCRIPT_MAX_THINKING_BLOCKS);
+    expect(count("tools")).toBeLessThanOrEqual(TRANSCRIPT_MAX_TOOLS_BLOCKS);
+    // The answers survive: they are the useful part of the history.
+    expect(count("answer")).toBeGreaterThan(TRANSCRIPT_MAX_THINKING_BLOCKS);
   });
 
   test("markdown is rendered to rich text, not stored as raw markdown", () => {

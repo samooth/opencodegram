@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChatSession } from "./types.js";
 import type { TranscriptBlock } from "./transcript.js";
-import { TRANSCRIPT_MAX_BLOCKS } from "./transcript.js";
+import { TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS } from "./transcript.js";
 import { esc } from "./util.js";
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
@@ -517,8 +517,19 @@ export class SessionStore {
       return;
     }
     list.push(block);
-    // Bound the memory and disk usage per session.
+    // Bound the memory and disk usage per session. Answers are the valuable
+    // part and are kept in full; thinking and tools are only useful for the
+    // recent turns, so they are capped separately.
     while (list.length > TRANSCRIPT_MAX_BLOCKS) list.shift();
+    for (const kind of ["thinking", "tools"] as const) {
+      const limit = kind === "thinking" ? TRANSCRIPT_MAX_THINKING_BLOCKS : TRANSCRIPT_MAX_TOOLS_BLOCKS;
+      let seen = 0;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].kind !== kind) continue;
+        seen++;
+        if (seen > limit) list.splice(i, 1);
+      }
+    }
     this.transcriptBySession.set(sessionId, list);
     this.scheduleSaveTranscripts();
   };

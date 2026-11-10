@@ -32,6 +32,13 @@ export type TranscriptPage = {
  * card keeps a navigable size instead of growing without limit.
  */
 export const TRANSCRIPT_MAX_BLOCKS = 150;
+/**
+ * Only the most recent thinking/tools blocks are kept. The answers are the
+ * valuable part of the history; the reasoning and the tool log are only
+ * useful for the last turns.
+ */
+export const TRANSCRIPT_MAX_THINKING_BLOCKS = 6;
+export const TRANSCRIPT_MAX_TOOLS_BLOCKS = 10;
 /** Maximum size of a single block (raw characters). */
 export const TRANSCRIPT_BLOCK_BUDGET = 1200;
 /**
