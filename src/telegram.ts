@@ -189,15 +189,27 @@ export class TelegramClient {
   }
 
   sendRichMessage(chatId: number, html: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const body = { chat_id: chatId, rich_message: { html: sanitizeUtf8(html) }, ...opts };
+    const safe = sanitizeUtf8(html);
+    const body = { chat_id: chatId, rich_message: { html: safe }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
-      if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { html: sanitizeUtf8(html) } };
+      const msg = String(err);
+      if (opts.message_thread_id && /message thread not found/i.test(msg)) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { html: safe } };
         for (const [key, value] of Object.entries(opts)) {
           if (key === "message_thread_id" || value === undefined || value === null) continue;
           retryBody[key] = value;
         }
         return this.call<TelegramMessage>("sendRichMessage", retryBody);
+      }
+      // Definite parse failure: fall back to plain text to avoid losing the message.
+      if (/can't parse entities|can't find end of|unsupported start tag|parse/i.test(msg) && /400|Bad Request/i.test(msg)) {
+        const plain = safe.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"').slice(0, 3900);
+        const retryBody: Record<string, unknown> = { chat_id: chatId, text: plain };
+        for (const [key, value] of Object.entries(opts)) {
+          if (value === undefined || value === null) continue;
+          retryBody[key] = value;
+        }
+        return this.call<TelegramMessage>("sendMessage", retryBody);
       }
       throw err;
     });

@@ -6,7 +6,7 @@ import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./setti
 import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
-import { esc, threadOpts } from "./util.js";
+import { clampText, esc, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 
 type CallbackHandler = (
@@ -92,7 +92,60 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
   try {
     await deps.sessions.activateSession(chatId, sessionId, true, threadId);
-    await deps.panels.showStatus(chatId, threadId, cq.message?.message_id);
+    // Update the same message in place with recent OpenCode output/context.
+    let body = "";
+    try {
+      const ctxData = await deps.oc.context(sessionId);
+      const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
+      const meaningful = items
+        .filter((m: any) => {
+          const role = m.role ?? m.type;
+          return role === "user" || role === "assistant" || role === "compaction";
+        })
+        .slice(-12);
+      if (!meaningful.length) {
+        body = "<i>No context yet.</i>";
+      } else {
+        const parts: string[] = [];
+        for (const item of meaningful) {
+          const role = item.role ?? item.type ?? "msg";
+          let text = "";
+          if (role === "user") {
+            const t = item.text;
+            text = typeof t === "string" ? t : t ? JSON.stringify(t) : "";
+          } else if (role === "assistant") {
+            const content = Array.isArray(item.content) ? item.content : [];
+            text = content
+              .filter((p: any) => p.type === "text")
+              .map((p: any) => (typeof p.text === "string" ? p.text : ""))
+              .join(" ")
+              .trim();
+            if (!text) {
+              const tools = content.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool").slice(0, 4);
+              if (tools.length) text = `🔧 ${tools.join(", ")}`;
+            }
+          } else if (role === "compaction") {
+            text = `📦 ${(item.summary ?? "").toString().split("\n")[0]}`;
+          }
+          text = text.replace(/\s+/g, " ").trim().slice(0, 420);
+          const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : "📦";
+          parts.push(`${icon} <b>${esc(String(role))}</b>\n${esc(text || "(no text)")}`);
+        }
+        body = parts.join("\n\n");
+      }
+    } catch (err) {
+      body = `<i>No se pudo cargar el contexto:</i> ${esc(String(err))}`;
+    }
+    const header = `✅ <b>Sesión conectada</b>\n<code>${esc(sessionId)}</code>\n\n<b>Salida reciente de OpenCode</b>`;
+    const keyboard = [[
+      { text: "🧠 Model", callback_data: `panel:ms:${sessionId}` },
+      { text: "📂 Sessions", callback_data: "panel:sessions" },
+      { text: "📊 Status", callback_data: "panel:status" },
+    ]];
+    const msgId = cq.message?.message_id;
+    const html = clampText(`${header}\n\n${body}`, 3900);
+    if (msgId) await deps.tg.editRichMessage(chatId, msgId, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => {});
+    else await deps.tg.sendRichMessage(chatId, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => {});
   } catch (err) {
     console.error("[connect] failed", sessionId, err);
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));

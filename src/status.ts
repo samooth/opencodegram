@@ -384,7 +384,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
-      const keyboard = [[{ text: "⏹ Stop", callback_data: "panel:stop" }], ...btnRows];
+      const keyboard = [
+        [{ text: "⏹ Stop", callback_data: "panel:stop" }],
+        [{ text: "🧠 Model", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sessions", callback_data: "panel:sessions" }],
+        ...btnRows,
+      ];
       const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
         ...opts,
         reply_markup: { inline_keyboard: keyboard },
@@ -533,7 +537,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
-      const editKeyboard = [[{ text: "⏹ Stop", callback_data: "panel:stop" }], ...btnRows];
+      const editKeyboard = [
+        [{ text: "⏹ Stop", callback_data: "panel:stop" }],
+        [{ text: "🧠 Model", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sessions", callback_data: "panel:sessions" }],
+        ...btnRows,
+      ];
       const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(finalText, 3900), {
         ...opts,
         reply_markup: { inline_keyboard: editKeyboard },
@@ -578,7 +586,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         store?.rememberPendingEdits(messageId, s.sessionId);
       }
       const text = clampText(renderFinished(s, undefined, settings));
-      const keyboard = editDetails.length ? finishedKeyboard(editDetails, undefined, s, messageId) : [];
+      const keyboard = finishedKeyboard(editDetails, undefined, s, messageId);
       await tg
         .editRichMessage(chatId, messageId, text, {
           ...threadOptsFor(s),
@@ -702,6 +710,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (editDetails.length && messageId !== undefined) {
       keyboard.push([{ text: "📄 Full diffs", callback_data: `edits:full:${messageId}` }]);
     }
+    keyboard.push([
+      { text: "🧠 Model", callback_data: `panel:ms:${target.sessionId}` },
+      { text: "📂 Sessions", callback_data: "panel:sessions" },
+    ]);
     return keyboard;
   };
 
