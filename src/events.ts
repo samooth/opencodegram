@@ -528,6 +528,8 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           const url = `https://t.me/c/${internalId}/${s.transcriptMessageId}`;
           const kb: any[] = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s)))];
           kb.push([{ text: "🔗 Ver en chat", url }]);
+          // The markup edit must not race with the card edits.
+          await new Promise((r) => setTimeout(r, 400));
           await tg.editMessageReplyMarkup(chatId, s.transcriptMessageId, { inline_keyboard: kb }).catch(() => {});
         }
       }

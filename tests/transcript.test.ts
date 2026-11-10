@@ -120,4 +120,30 @@ describe("transcript manager", () => {
     transcript.addBlock(s, "answer", "<p>hi</p>", "hi");
     expect(store.getTranscript("ses_x").length).toBe(1);
   });
+
+  test("publishes are serialized so concurrent edits do not cancel each other", async () => {
+    const { store, transcript } = makeHarness();
+    const order: string[] = [];
+    const tg = {
+      sendRichMessage: async () => ({ message_id: 7 }),
+      editRichMessage: async (_chat: number, _id: number, _html: string) => {
+        order.push("start");
+        await new Promise((r) => setTimeout(r, 20));
+        order.push("end");
+        return { message_id: _id };
+      },
+    } as any;
+    const manager = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession();
+    await Promise.all([
+      manager.publish(1, s),
+      manager.publish(1, s),
+      manager.publish(1, s),
+    ]);
+    // Edits never overlap.
+    for (let i = 0; i < order.length; i += 2) {
+      expect(order[i]).toBe("start");
+      expect(order[i + 1]).toBe("end");
+    }
+  });
 });

@@ -34,6 +34,13 @@ export type TranscriptDeps = {
 export type TranscriptManager = ReturnType<typeof createTranscriptManager>;
 
 export function createTranscriptManager({ tg, store, threadOptsFor }: TranscriptDeps) {
+  /**
+   * Telegram cancels an edit when a newer one arrives for the same message.
+   * Since every update of a session now targets the same card, publishes must
+   * be serialized per session to avoid losing content.
+   */
+  const publishQueue = new Map<string, Promise<void>>();
+
   /** Blocks of a session, persisted in the store so they survive restarts. */
   const blocksOf = (s: ChatSession): TranscriptBlock[] => {
     const stored = store.getTranscript(s.sessionId);
@@ -108,8 +115,10 @@ export function createTranscriptManager({ tg, store, threadOptsFor }: Transcript
   /**
    * Push the current page to Telegram, editing the existing card when
    * possible so no new message is created.
+   * Publishes are serialized per session: Telegram cancels an edit when a
+   * newer one arrives for the same message.
    */
-  const publish = async (
+  const publishNow = async (
     chatId: number,
     s: ChatSession,
     opts?: { extraTop?: string; working?: boolean },
@@ -142,6 +151,24 @@ export function createTranscriptManager({ tg, store, threadOptsFor }: Transcript
       s.statusMessageId = sent.message_id;
       s.transcriptPage = rendered.page;
       store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
+    }
+  };
+
+  /** Serialized publish: one card update at a time per session. */
+  const publish = async (
+    chatId: number,
+    s: ChatSession,
+    opts?: { extraTop?: string; working?: boolean },
+  ): Promise<void> => {
+    const key = s.sessionId;
+    const previous = publishQueue.get(key) ?? Promise.resolve();
+    // Chain on the previous publish and swallow its errors.
+    const next = previous.then(() => publishNow(chatId, s, opts)).catch(() => {});
+    publishQueue.set(key, next);
+    try {
+      await next;
+    } finally {
+      if (publishQueue.get(key) === next) publishQueue.delete(key);
     }
   };
 
