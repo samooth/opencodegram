@@ -5,7 +5,7 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { MetricsStore } from "./metrics.js";
-import { esc, threadOpts, projectLabel, truncate } from "./util.js";
+import { esc, sessionHeader, threadOpts, projectLabel, truncate } from "./util.js";
 import { BOT_COMMANDS } from "./botcommands.js";
 
 export type PanelsDeps = {
@@ -109,15 +109,15 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 45))}</i>` : "";
       return `<tr><td>${start + i + 1}</td><td>${statusIcon} <b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}<br/><i>${esc(dirLabel)}</i></td></tr>`;
     });
-    const body = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Model / Dir</th></tr>${rows.join("")}</table>`;
-    const keyboard: any[][] = slice.map((s: any, i: number) => {
+    const keyboard: any[][] = slice.map((s: any) => {
       const title = (s.title ?? "(untitled)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
       const st = getSessionStatus ? getSessionStatus(s.id) : undefined;
       const statusIcon = st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
-      const label = `${statusIcon} ${title}${model}${dirSuffix}`.slice(0, 64);
+      const mark = activeId && activeId === s.id ? " ✓" : "";
+      const label = `${statusIcon} ${title}${model}${dirSuffix}${mark}`.slice(0, 64);
       return [{ text: label, callback_data: `use:${s.id}` }];
     });
     const nav: any[] = [];
@@ -130,7 +130,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       { text: "📁 Group", callback_data: "sessions:filter:group" },
     ]);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${body}`, {
+    const activeLine = activeId ? `\nActiva: <code>${esc(activeId.slice(0, 8))}</code>` : "";
+    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${activeLine}\n<i>Selecciona una sesión:</i>`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
@@ -199,7 +200,10 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const pageSize = 8;
       const start = page * pageSize;
       const slice = providers.slice(start, start + pageSize);
-      const lines = slice.map((providerId: string, i: number) => {
+      const targetHeader = s
+      ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
+      : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
+    const lines = slice.map((providerId: string, i: number) => {
         const count = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
         const isCurrent = current && current.providerID === providerId;
         const mark = isCurrent ? " ✅" : "";
@@ -216,7 +220,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       if (nav.length) keyboard.push(nav);
       keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
       const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
-      await sendOrEditRich(chatId, messageId, `<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${targetNote}\n${currentLine}\n\n${table}`, {
+      await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n\n${table}`, {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: keyboard },
       });
@@ -249,7 +253,10 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     keyboard.push([{ text: "◀ Providers", callback_data: "prov:back" }, { text: "❌ Cancel", callback_data: "modelcancel" }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
-    await sendOrEditRich(chatId, messageId, `<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${targetNote}\n${currentLine}\n\n${table}`, {
+    const targetHeader = s
+      ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
+      : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
+    await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n\n${table}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
