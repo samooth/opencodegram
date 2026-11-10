@@ -122,7 +122,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     });
     const nav: any[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });
-    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
+    // Next button removed per UX request.
     if (nav.length) keyboard.push(nav);
     keyboard.push([
       { text: "📋 All", callback_data: "sessions:filter:all" },
