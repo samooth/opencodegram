@@ -112,6 +112,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       for (const [k, v] of store.activeSessionByRoute) if (v === previous.sessionId) store.activeSessionByRoute.delete(k);
       store.saveActiveSessions();
       saveThreads();
+      logger.info("sessions", "session.detached", { sessionId: previous.sessionId, chatId, wasLive: live });
       return;
     }
     forgetSession(previous.sessionId);

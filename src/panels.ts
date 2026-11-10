@@ -148,6 +148,10 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const st = getSessionStatus ? getSessionStatus(id) : undefined;
       return st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
     };
+    const statusLabel = (id: string) => {
+      const st = getSessionStatus ? getSessionStatus(id) : undefined;
+      return st === "busy" ? "trabajando" : st === "retry" ? "reintentando" : st === "idle" ? "idle" : "—";
+    };
     const rows = slice.map((s: any, i: number) => {
       const title = esc(truncate(s.title ?? "(untitled)", 26));
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
@@ -155,7 +159,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const dirLabel = projectLabel(s.location?.directory ?? s.directory);
       const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
       const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 45))}</i>` : "";
-      return `<tr><td>${start + i + 1}</td><td>${statusIcon(s.id)} <b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}<br/><i>${esc(dirLabel)}</i></td></tr>`;
+      const busy = statusIcon(s.id) === "🔴" ? " 🔴" : "";
+      return `<tr><td>${start + i + 1}</td><td>${statusIcon(s.id)} <b>${title}</b>${mark}${busy}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}<br/><i>${esc(dirLabel)}</i></td></tr>`;
     });
     const keyboard: any[][] = slice.map((s: any) => {
       const title = (s.title ?? "(untitled)").slice(0, 36);

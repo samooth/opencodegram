@@ -490,7 +490,8 @@ export async function cmd_running_sessions(deps: BotDeps, chatId: number, thread
   }
   if (text === "/sessions" || text.startsWith("/sessions ")) {
     const arg = text.slice("/sessions".length).trim();
-    if (arg === "group" || arg === "g") {
+    if (arg === "group" || arg === "g" || arg === "here") {
+      // Sessions used from this chat (and its topics).
       await C.showSessions(chatId, 0, undefined, threadId, chatId);
       return true;
     }

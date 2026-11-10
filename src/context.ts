@@ -73,4 +73,6 @@ export type BotDeps = {
   /** Messages waiting for the user to pick a session (groups with several). */
   pendingGroupPrompts: Map<string, { text: string; files?: Array<{ uri: string; name: string }>; at: number }>;
   audit: (action: string, detail: string) => void;
+  /** Structured per-session trace for diagnosing multi-session routing. */
+  sessionTrace?: (event: string, fields: Record<string, unknown>) => void;
 };

@@ -40,6 +40,8 @@ export type EventsDeps = {
   transcript?: TranscriptManager;
   /** Republish the session card (live strip or Done strip). */
   publishCard?: (chatId: number, s: ChatSession) => Promise<void>;
+  /** Structured per-session trace. */
+  sessionTrace?: (event: string, fields: Record<string, unknown>) => void;
 };
 
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
@@ -498,6 +500,15 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       s.lastFinalSentAt = Date.now();
     }
     logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
+    deps.sessionTrace?.("turn.final", {
+      sessionId: s.sessionId,
+      chatId,
+      threadId: s.targetThreadId ?? s.threadId,
+      len: finalText.length,
+      elapsedMs: s.promptStartTime ? Date.now() - s.promptStartTime : undefined,
+      cardMessageId: s.transcriptMessageId,
+      pages: deps.transcript?.pageCount(s),
+    });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
     const answerHtml = markdownToHtml(finalText);
     const copyRow = `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;

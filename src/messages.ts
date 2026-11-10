@@ -142,7 +142,10 @@ async function resolveSessionForMessage(
     try {
       await activateSession(chatId, repliedSessionId, true, replyThread);
       const resolved = await restoreActiveSession(chatId, replyThread);
-      if (resolved) return { session: resolved };
+      if (resolved) {
+        deps.sessionTrace?.("route.reply", { chatId, threadId: replyThread, sessionId: repliedSessionId });
+        return { session: resolved };
+      }
     } catch (err) {
       console.error("[reply] activate related session failed", repliedSessionId, err);
     }
@@ -153,7 +156,10 @@ async function resolveSessionForMessage(
 
   // 2) Active session for this exact route.
   const ensured = await ensureActiveSession(chatId, replyThread);
-  if (ensured) return { session: ensured };
+  if (ensured) {
+    deps.sessionTrace?.("route.active", { chatId, threadId: replyThread, sessionId: ensured.sessionId });
+    return { session: ensured };
+  }
 
   // 3) In groups, prefer the last session the user interacted with.
   if (chatId < 0) {
@@ -185,6 +191,7 @@ async function resolveSessionForMessage(
       // guessing, and remember the pending message to send afterwards.
       const route = store.routeKey(chatId, replyThread);
       if (pending) deps.pendingGroupPrompts.set(route, { ...pending, at: Date.now() });
+      deps.sessionTrace?.("route.picker", { chatId, threadId: replyThread, candidates: unique.length });
       const keyboard = unique.slice(0, 8).map((sid) => {
         const cs = store.findSessionById(sid);
         const title = (cs?.topicTitle ?? cs?.directory?.split("/").pop() ?? sid).slice(0, 40);

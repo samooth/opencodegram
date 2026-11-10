@@ -153,6 +153,16 @@ async function main() {
     }
   };
 
+  /** Structured per-session trace: chat, topic, session and latency. */
+  const sessionTrace = (event: string, fields: Record<string, unknown>) => {
+    try {
+      const line = `${new Date().toISOString()} ${event} ${JSON.stringify(fields)}\n`;
+      writeFileSync(join(process.cwd(), "data", "sessions.log"), line, { flag: "a" });
+    } catch {
+      // Tracing must never break the bot.
+    }
+  };
+
   const deps: BotDeps = {
     config,
     tg,
@@ -179,6 +189,7 @@ async function main() {
     pendingModelByChat,
     pendingGroupPrompts: new Map(),
     audit,
+    sessionTrace,
   };
 
   startEventLoop({
@@ -198,6 +209,7 @@ async function main() {
     syncTopicTitle: sessions.syncTopicTitle,
     transcript,
     publishCard: status.publishCard,
+    sessionTrace,
   });
 
   let webhookServer: ReturnType<typeof createWebhookServer> | undefined;
