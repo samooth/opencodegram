@@ -312,8 +312,9 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     cs.draftId = 0;
     cs.sentArtifacts = new Set();
     cs.topicTitle = cs.topicTitle ?? store.topicTitleBySession.get(sessionId) ?? title;
-    if (!cs.cotBuffer) cs.cotBuffer = "";
-    if (!cs.cotCount) cs.cotCount = 0;
+    // Restore persisted COT (finished-turn reasoning history) if not already in memory.
+    if (!cs.cotBuffer) cs.cotBuffer = store.getCotBuffer(sessionId) ?? "";
+    if (!cs.cotCount) cs.cotCount = store.getCotCount(sessionId) ?? 0;
     cs.topicTitle = store.topicTitleBySession.get(sessionId) ?? title;
 
     // If this session was already tracked, retire its old status message so it

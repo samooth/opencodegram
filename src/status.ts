@@ -420,7 +420,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     else lines.push("<h4>⏳ Working…" + (elapsed ? ` <i>(${elapsed}s)</i>` : "") + "</h4>");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       sep();
-      const r = s.reasoningBuffer.trim().slice(-800);
+      const r = s.reasoningBuffer.trim().slice(-3200);
       lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(r)}</blockquote>`);
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
@@ -581,6 +581,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         pendingEdits.set(messageId, s);
         store?.rememberPendingEdits(messageId, s.sessionId);
       }
+      const fullThinking = (!s.stopped && s.reasoningBuffer.trim()) ? s.reasoningBuffer.trim() : "";
       const text = clampText(renderFinished(s, undefined, settings));
       const keyboard = finishedKeyboard(editDetails, undefined, s, messageId);
       await tg
@@ -589,15 +590,27 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           reply_markup: { inline_keyboard: keyboard },
         })
         .catch((err) => console.error("[status] finish edit FAILED", messageId, err));
-      if (!s.stopped && s.reasoningBuffer.trim()) {
-        const chunk = s.reasoningBuffer.trim();
+      if (fullThinking) {
+        // Persist as COT history (larger cap to avoid losing context).
         const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
-        let next = prev + chunk;
-        if (next.length > 4000) next = next.slice(next.length - 4000);
+        let next = prev + fullThinking;
+        if (next.length > 16000) next = next.slice(next.length - 16000);
         s.cotBuffer = next;
         s.cotCount = (s.cotCount ?? 0) + 1;
-        s.reasoningBuffer = "";
         rememberCot(s.sessionId, next, s.cotCount);
+        // If thinking was too large to fit in the status card, send full chunks.
+        if (settings.showThinking && fullThinking.length > 3500) {
+          const opts = threadOptsFor(s);
+          const chunkSize = 3400;
+          for (let i = 0; i < fullThinking.length; i += chunkSize) {
+            const part = fullThinking.slice(i, i + chunkSize);
+            const n = Math.ceil(fullThinking.length / chunkSize);
+            const idx = Math.floor(i / chunkSize) + 1;
+            const label = n > 1 ? `🧠 Thinking completo (${idx}/${n})` : "🧠 Thinking completo";
+            await tg.sendRichMessage(chatId, `${sessionHeader(s)}<blockquote expandable>${label}\n${esc(part)}</blockquote>`, opts).catch(() => {});
+          }
+        }
+        s.reasoningBuffer = "";
       }
       s.statusMessageId = undefined;
     }
@@ -614,7 +627,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     lines.push("✅ <b>Done</b>");
     if (!settings.compactFinal) {
       if (settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
-        const r = target.reasoningBuffer.trim().slice(0, 3500);
+        const r = target.reasoningBuffer.trim().slice(-6000);
         lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n` + esc(r) + "</blockquote>");
       }
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));

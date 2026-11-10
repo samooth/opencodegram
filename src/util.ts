@@ -146,7 +146,13 @@ export function markdownToHtml(md: string): string {
   let tableBuf: string[] = [];
   let inList = false;
   let listType = "ul";
+  let paraBuf: string[] = [];
 
+  const flushPara = () => {
+    if (!paraBuf.length) return;
+    out.push(paraBuf.join("<br>"));
+    paraBuf = [];
+  };
   const flushList = () => {
     if (!inList) return;
     out.push(listType === "ol" ? "</ol>" : "</ul>");
@@ -180,10 +186,12 @@ export function markdownToHtml(md: string): string {
     s = esc(s);
     s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
     s = s.replace(/\*\*([^*]+)\*\*/g, (_, c) => `<b>${c}</b>`);
-    s = s.replace(/(^|[^*])\*([^*]+)\*/g, (_, pre, c) => `${pre}<i>${c}</i>`);
+    s = s.replace(/__([^_]+)__/g, (_, c) => `<b>${c}</b>`);
+    s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, (_, pre, c) => `${pre}<i>${c}</i>`);
+    s = s.replace(/(^|[\s(])_([^_\n]+)_/g, (_, pre, c) => `${pre}<i>${c}</i>`);
     s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => {
       const url = String(u).trim();
-      if (!/^(https?:|mailto:)/i.test(url)) return `${t}`;
+      if (!/^(https?:|mailto:|tg:)/i.test(url)) return `${t}`;
       return `<a href="${url.replace(/"/g, "&quot;")}">${t}</a>`;
     });
     return s;
@@ -191,6 +199,7 @@ export function markdownToHtml(md: string): string {
 
   for (const line of lines) {
     if (line.trim().startsWith("```")) {
+      flushPara(); flushList(); flushTable();
       if (inCodeBlock) flushCode();
       else {
         inCodeBlock = true;
@@ -203,6 +212,7 @@ export function markdownToHtml(md: string): string {
       continue;
     }
     if (/^\s*\|.*\|\s*$/.test(line)) {
+      flushPara(); flushList();
       if (!inTable) inTable = true;
       tableBuf.push(line);
       continue;
@@ -212,43 +222,46 @@ export function markdownToHtml(md: string): string {
 
     const trimmed = line.trim();
     if (!trimmed) {
-      flushList();
+      flushPara(); flushList();
       out.push("");
       continue;
     }
     const h = trimmed.match(/^(#{1,6})\s+(.+)/);
     if (h) {
-      flushList();
+      flushPara(); flushList();
       const size = h[1].length;
       out.push(`<h${size}>${inline(h[2])}</h${size}>`);
       continue;
     }
     if (/^[-*_]{3,}\s*$/.test(trimmed)) {
-      flushList();
+      flushPara(); flushList();
       out.push("<hr/>");
       continue;
     }
     const bullet = trimmed.match(/^[-*+]\s+(.+)/);
     if (bullet) {
+      flushPara();
       if (!inList) { out.push("<ul>"); inList = true; listType = "ul"; }
       out.push(`<li>${inline(bullet[1])}</li>`);
       continue;
     }
     const num = trimmed.match(/^\d+\.\s+(.+)/);
     if (num) {
+      flushPara();
       if (!inList) { out.push("<ol>"); inList = true; listType = "ol"; }
       out.push(`<li>${inline(num[1])}</li>`);
       continue;
     }
     const bq = trimmed.match(/^>\s*(.*)/);
     if (bq) {
-      flushList();
+      flushPara(); flushList();
       out.push(`<blockquote>${inline(bq[1])}</blockquote>`);
       continue;
     }
     flushList();
-    out.push(inline(line));
+    paraBuf.push(inline(line));
   }
+  flushPara();
   if (inCodeBlock) flushCode();
   if (inTable) flushTable();
   flushList();
