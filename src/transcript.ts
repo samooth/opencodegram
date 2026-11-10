@@ -10,7 +10,7 @@ import type { ChatSession } from "./types.js";
  * every piece of output reachable.
  */
 
-export type TranscriptKind = "answer" | "thinking" | "tools";
+export type TranscriptKind = "answer" | "thinking" | "tools" | "meta";
 
 export type TranscriptBlock = {
   kind: TranscriptKind;

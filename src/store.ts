@@ -535,6 +535,16 @@ export class SessionStore {
       return;
     }
     list.push(block);
+    // The model/speed line is a single block: replace the previous one instead
+    // of stacking a copy per step.
+    if (block.kind === "meta") {
+      for (let i = list.length - 2; i >= 0; i--) {
+        if (list[i].kind === "meta") {
+          list.splice(i, 1);
+          break;
+        }
+      }
+    }
     // Bound the memory and disk usage per session. Answers are the valuable
     // part and are kept in full; thinking and tools are only useful for the
     // recent turns, so they are capped separately.

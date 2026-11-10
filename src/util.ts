@@ -74,6 +74,39 @@ export function rateLimitRetryAt(now: Date = new Date()): Date {
   return retry;
 }
 
+/**
+ * Remove the parts of a reasoning text that just restate the user's prompt.
+ *
+ * Models frequently quote the prompt back ("What is 2+2?: - DEBUG_LEVEL=1 …")
+ * before answering. Repeating it in the card duplicates information the user
+ * already sent, so those fragments are dropped.
+ */
+export function stripRestatedPrompt(text: string, prompt?: string): string {
+  if (!text.trim()) return text;
+  let out = text;
+  // 1) Drop an exact restatement of the prompt.
+  const promptText = (prompt ?? "").trim();
+  if (promptText.length > 24) {
+    // Longest lines of the prompt are the most likely to be quoted back.
+    const lines = promptText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 40)
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 3);
+    for (const line of lines) {
+      const idx = out.indexOf(line);
+      if (idx === -1) continue;
+      // Remove the restatement and the separator that follows it.
+      out = out.slice(0, idx) + out.slice(idx + line.length);
+      out = out.replace(/^[\s:,\-–—]+/, "");
+    }
+  }
+  // 2) Drop trailing "reply to the prompt" markers left by the model.
+  out = out.replace(/\n{3,}/g, "\n\n").trim();
+  return out;
+}
+
 export function detailsBlock(summary: string, body: string, open = false): string {
   return `<blockquote${open ? "" : " expandable"}>${summary}\n<pre>${esc(body)}</pre></blockquote>`;
 }

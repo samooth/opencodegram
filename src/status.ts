@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { formatBytes } from "./files/index.js";
-import { clampText, esc, sessionHeader, threadOpts, toolIcon, truncate } from "./util.js";
+import { clampText, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
@@ -330,7 +330,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
       const last = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-      lines.push(`💭 <b>Último pensamiento</b>\n<blockquote><mark>${esc(clampText(last, 240))}</mark></blockquote>`);
+      // Render the reasoning as markdown so code and emphasis keep their rich
+      // text instead of appearing as one flat wall of text.
+      lines.push(`💭 <b>Último pensamiento</b>\n<blockquote expandable><mark>${markdownToHtml(clampText(last, 240))}</mark></blockquote>`);
     }
     if (settings.showTools && settings.showLatestTool && s.toolCallDetails.length) {
       const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
@@ -346,7 +348,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showCot && s.cotBuffer?.trim()) {
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
-    return lines.join("\n");
+    return lines.join("\n\n");
   };
 
   /** Summary shown once the turn is over. */
@@ -584,13 +586,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       // in place, so no extra message is sent for thinking or tools.
       const fullThinking = !s.stopped && s.reasoningBuffer.trim() ? s.reasoningBuffer.trim() : "";
       if (fullThinking) {
-        transcript.addBlock(
-          s,
-          "thinking",
-          `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(fullThinking)}</blockquote>`,
-          fullThinking,
-          (chunk) => `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(chunk)}</blockquote>`,
-        );
+        // The reasoning is markdown: render it so code blocks and emphasis
+        // keep their rich text inside the card.
+        const renderThinking = (chunk: string) =>
+          `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${markdownToHtml(chunk)}</blockquote>`;
+        // Models often restate the prompt inside their reasoning; showing it
+        // again duplicates information the user already sent.
+        const cleanThinking = stripRestatedPrompt(fullThinking, store?.lastPromptBySession.get(s.sessionId));
+        transcript.addBlock(s, "thinking", renderThinking(cleanThinking), cleanThinking, renderThinking);
         // Persist as COT history (larger cap to avoid losing context).
         const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
         let next = prev + fullThinking;

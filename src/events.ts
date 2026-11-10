@@ -490,10 +490,13 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       elapsed = (Date.now() - s.promptStartTime) / 1000;
     }
     if (elapsed > 0 && elapsed < 0.5) elapsed = 0.5;
+    // The model/speed line is shown once per turn, in its own block, instead of
+    // being appended to every answer (it would be duplicated on each step).
+    let metaLine = "";
     if (tokens && elapsed > 0 && (settings.get(chatId).showTokenSpeed ?? true)) {
       const speed = (tokens / elapsed).toFixed(1);
       const modelName = s.model ? `${s.model.providerID}/${s.model.id}${s.model.variant ? " (" + s.model.variant + ")" : ""}` : "";
-      finalText += modelName ? `\n\n⚡ ${modelName} · ${speed} tok/s` : `\n\n⚡ ${speed} tok/s`;
+      metaLine = modelName ? `⚡ ${modelName} · ${speed} tok/s` : `⚡ ${speed} tok/s`;
     }
     const threadOpts2 = store.threadOptsFor(s);
     if (s) {
@@ -522,6 +525,11 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         const partHtml = markdownToHtml(chunk);
         return partHtml + copyRow;
       });
+      // The model/speed line is a single block, replaced on every step so it
+      // is not duplicated across the answers of the same turn.
+      if (metaLine) {
+        transcript.addBlock(s, "meta", `<i>${esc(metaLine)}</i>`, metaLine);
+      }
       s.transcriptFollow = true;
       if (publishCard) await publishCard(chatId, s);
       else await transcript.publish(chatId, s, { extraTop: "" });

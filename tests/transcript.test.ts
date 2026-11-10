@@ -171,6 +171,19 @@ describe("transcript manager", () => {
     expect(count("answer")).toBeGreaterThan(TRANSCRIPT_MAX_THINKING_BLOCKS);
   });
 
+  test("the model/speed line is replaced instead of duplicated", () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>a</p>", "respuesta 1");
+    transcript.addBlock(s, "meta", "<i>⚡ modelo · 100 tok/s</i>", "⚡ modelo · 100 tok/s");
+    transcript.addBlock(s, "answer", "<p>b</p>", "respuesta 2");
+    transcript.addBlock(s, "meta", "<i>⚡ modelo · 200 tok/s</i>", "⚡ modelo · 200 tok/s");
+    const blocks = store.getTranscript("ses_x");
+    const metas = blocks.filter((b) => b.kind === "meta");
+    expect(metas.length).toBe(1);
+    expect(metas[0].text).toContain("200 tok/s");
+  });
+
   test("the limits also apply when loading the transcript from disk", () => {
     const dir = join(root, "data-load");
     mkdirSync(dir, { recursive: true });
