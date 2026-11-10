@@ -339,6 +339,10 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const keyboard: any[][] = [];
     if (s?.sessionId) keyboard.push([{ text: "🔗 Conectar", callback_data: `connect:${s.sessionId}` }]);
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
+    keyboard.push([
+      { text: "🧠 Models", callback_data: s?.sessionId ? `panel:ms:${s.sessionId}` : "panel:models" },
+      { text: "📂 Sessions", callback_data: "panel:sessions" },
+    ]);
     keyboard.push([{ text: "🔄 Refresh", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
