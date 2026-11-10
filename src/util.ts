@@ -150,7 +150,7 @@ export function markdownToHtml(md: string): string {
 
   const flushPara = () => {
     if (!paraBuf.length) return;
-    out.push(paraBuf.join("<br>"));
+    out.push(paraBuf.join("\n"));
     paraBuf = [];
   };
   const flushList = () => {
