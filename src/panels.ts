@@ -22,27 +22,31 @@ export type PanelsDeps = {
   chatBySession?: Map<string, number>;
   getSessionStatus?: (sessionId: string) => string | undefined;
   metrics: MetricsStore;
+  rememberMessageSession?: (chatId: number, messageId: number, sessionId: string) => void;
 };
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, getSessionStatus, metrics }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
   let modelCache: { time: number; data: any[] } | null = null;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
   /** When set, model selection targets this session instead of the route's active session. */
   const modelTargetSessionByScope = new Map<string, string>();
 
-  async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}): Promise<void> {
+  async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}, rememberSessionId?: string): Promise<number | undefined> {
     if (messageId) {
       try {
         await tg.editRichMessage(chatId, messageId, html, opts);
-        return;
+        if (rememberSessionId) rememberMessageSession?.(chatId, messageId, rememberSessionId);
+        return messageId;
       } catch (err) {
         console.error("[edit]", err);
       }
     }
-    await tg.sendRichMessage(chatId, html, opts);
+    const sent = await tg.sendRichMessage(chatId, html, opts).catch((err) => { console.error("[send]", err); return undefined; });
+    if (sent?.message_id && rememberSessionId) rememberMessageSession?.(chatId, sent.message_id, rememberSessionId);
+    return sent?.message_id;
   }
 
   async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean, includeArchived?: boolean): Promise<void> {
@@ -223,7 +227,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n\n${table}`, {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: keyboard },
-      });
+      }, s?.sessionId ?? targetId);
       return;
     }
 
@@ -259,7 +263,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n\n${table}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
-    });
+    }, s?.sessionId ?? targetId);
   }
 
   async function showStatus(chatId: number, threadId?: number, messageId?: number): Promise<void> {
@@ -344,7 +348,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       { text: "📂 Sessions", callback_data: "panel:sessions" },
     ]);
     keyboard.push([{ text: "🔄 Refresh", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+    await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }, s?.sessionId);
   }
 
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {

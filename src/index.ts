@@ -93,6 +93,7 @@ async function main() {
     chatBySession: store.chatBySession,
     getSessionStatus: (sid: string) => store.getSessionStatus(sid),
     metrics,
+    rememberMessageSession: store.rememberMessageSession,
   });
   const files = createFileBrowser({
     tg,
