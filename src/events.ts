@@ -511,11 +511,35 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     }
     let extraHtml = "";
     if (s && s.toolCallDetails.length && (settings.get(chatId).showTools ?? true)) {
-      const counts = new Map<string, number>();
-      for (const d of s.toolCallDetails) counts.set(d.name, (counts.get(d.name) ?? 0) + 1);
-      const summary = [...counts.entries()].map(([name, n]) => `${toolIcon(name)} ${esc(name)} ×${n}`).join("  ");
-      // Appended as HTML (not markdown) so tags are not escaped.
-      extraHtml += `\n\n🔧 <b>Tool calls (${s.toolCallDetails.length}):</b> ${summary}`;
+      const details = s.toolCallDetails;
+      const isShell = (n: string) => /shell|bash|exec|run/i.test(n);
+      const shellDetails = details.filter((d) => isShell(d.name));
+      const otherDetails = details.filter((d) => !isShell(d.name));
+      if (shellDetails.length) {
+        const body = shellDetails.slice(-12).map((d) => {
+          let cmd = d.name;
+          if (d.input) {
+            try {
+              const p = JSON.parse(d.input) as Record<string, unknown>;
+              cmd = String(p.command ?? p.cmd ?? d.input).slice(0, 220);
+            } catch {
+              cmd = d.input.slice(0, 220);
+            }
+          }
+          const out = (d.output ?? "").toString().trim().slice(0, 400);
+          return `$ ${esc(cmd)}${out ? `\n${esc(out)}` : ""}${d.status === "failed" ? "\n(failed)" : ""}`;
+        }).join("\n\n");
+        extraHtml += `\n\n<blockquote expandable>🖥 Shell (${shellDetails.length})\n<pre>${body}</pre></blockquote>`;
+      }
+      if (otherDetails.length) {
+        const body = otherDetails.slice(-20).map((d) => {
+          const inp = d.input ? esc(d.input.slice(0, 180)) : "";
+          const out = (d.output ?? "").toString().trim();
+          const outShort = out ? esc(out.slice(0, 220)) : "";
+          return `${toolIcon(d.name)} <b>${esc(d.name)}</b>${inp ? `\n<i>${inp}</i>` : ""}${outShort ? `\n<code>${outShort}</code>` : ""}${d.status === "failed" ? " <i>(failed)</i>" : ""}`;
+        }).join("\n\n");
+        extraHtml += `\n\n<blockquote expandable>🔧 Tool calls (${otherDetails.length})\n${body}</blockquote>`;
+      }
     }
     logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
@@ -529,7 +553,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       await tg.editRichMessage(chatId, prevFinalTelegramMessageId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch(() => {});
       finalMessage = { message_id: prevFinalTelegramMessageId };
     } else {
-      finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
+      finalMessage = await tg.sendRichMessage(chatId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
         console.error("[send final]", err);
         return undefined;
       });
