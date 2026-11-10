@@ -383,7 +383,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const keyboard = [
         [{ text: "⏹ Stop", callback_data: "panel:stop" }],
-        [{ text: "🧠 Model", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sessions", callback_data: "panel:sessions" }],
         ...btnRows,
       ];
       const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
@@ -539,7 +538,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const editKeyboard = [
         [{ text: "⏹ Stop", callback_data: "panel:stop" }],
-        [{ text: "🧠 Model", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sessions", callback_data: "panel:sessions" }],
         ...btnRows,
       ];
       const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(finalText, 3900), {
