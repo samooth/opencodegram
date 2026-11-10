@@ -6,7 +6,7 @@ import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./setti
 import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
-import { clampText, esc, threadOpts } from "./util.js";
+import { clampText, esc, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 
 type CallbackHandler = (
@@ -136,7 +136,8 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     } catch (err) {
       body = `<i>No se pudo cargar el contexto:</i> ${esc(String(err))}`;
     }
-    const header = `✅ <b>Sesión conectada</b>\n<code>${esc(sessionId)}</code>\n\n<b>Salida reciente de OpenCode</b>`;
+    const cs = deps.store.findSessionById(sessionId);
+    const header = `${sessionHeader(cs, sessionId)}✅ <b>Sesión conectada</b>\n\n<b>Salida reciente de OpenCode</b>`;
     const keyboard = [[
       { text: "🧠 Model", callback_data: `panel:ms:${sessionId}` },
       { text: "📂 Sessions", callback_data: "panel:sessions" },

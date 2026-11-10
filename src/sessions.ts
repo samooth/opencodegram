@@ -6,7 +6,7 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
-import { esc, threadOpts, projectLabel, projectEmoji, clampText } from "./util.js";
+import { clampText, esc, projectEmoji, projectLabel, sessionHeader, threadOpts } from "./util.js";
 import { logger } from "./logger.js";
 
 export type SessionsDeps = {
@@ -342,7 +342,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     if (!silent) {
       const lastPrompt = store.lastPromptBySession.get(sessionId);
       const cot = store.getCotBuffer(sessionId);
-      let text = `${projectEmoji(directory)} <b>Active session</b>\n<code>${esc(sessionId)}</code>\n${esc(title)}\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`;
+      let text = `${sessionHeader(cs)}${projectEmoji(directory)} <b>Active session</b>\n<code>${esc(sessionId)}</code>\n${esc(title)}\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`;
       if (lastPrompt) text += `\n\n<b>Último prompt:</b> ${esc(clampText(lastPrompt, 200))}`;
       if (cot) text += `\n<b>COT:</b> ${esc(clampText(cot, 200))}`;
       await tg.sendRichMessage(chatId, text, {

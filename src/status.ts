@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { formatBytes } from "./files/index.js";
-import { clampText, esc, threadOpts, toolIcon, truncate } from "./util.js";
+import { clampText, esc, sessionHeader, threadOpts, toolIcon, truncate } from "./util.js";
 
 function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -370,10 +370,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.stopped = false;
     try {
       const lines: string[] = [];
-      if (settings.showSessionNameInStatus) {
-        const sessionName = resolveSessionName(s);
-        if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
-      }
+      lines.unshift(sessionHeader(s).trimEnd());
       if (settings.showCot) {
         const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
         if (cotSrc) {
@@ -413,8 +410,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const lines: string[] = [];
     try {
     const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };
-    const sessionName = (s.topicTitle || s.sessionId || "").trim();
-    if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
+    lines.unshift(sessionHeader(s).trimEnd());
     if (settings.showCot && s.cotBuffer?.trim()) {
       const cot = s.cotBuffer.trim().slice(-1500);
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
@@ -610,10 +606,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings): string => {
     const previousCot = target.cotBuffer?.trim() ?? "";
     const lines: string[] = [];
-    if (settings.showSessionNameInStatus) {
-      const sessionName = resolveSessionName(target);
-      if (sessionName) lines.push(`📌 <b>${esc(sessionName)}</b>`);
-    }
+    lines.unshift(sessionHeader(target).trimEnd());
     if (settings.showCot && previousCot) {
       const cot = previousCot.slice(-3500);
       lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})\n${esc(cot)}</blockquote>`);

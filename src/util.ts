@@ -83,6 +83,16 @@ export function projectLabel(directory?: string): string {
   return `${projectEmoji(directory)} ${name}`;
 }
 
+export function sessionHeader(session?: { sessionId?: string; topicTitle?: string; directory?: string } | null, fallbackId?: string): string {
+  const sid = (session?.sessionId ?? fallbackId ?? "").trim();
+  if (!sid) return "";
+  let name = (session?.topicTitle ?? "").trim();
+  if (!name && session?.directory) name = session.directory.split("/").filter(Boolean).pop() || "";
+  if (!name) name = sid.slice(0, 16);
+  const short = sid.slice(0, 8);
+  return `📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>\n`;
+}
+
 export function toolIcon(name: string): string {
   const n = (name || "").toLowerCase();
   if (n.includes("read")) return "📖";

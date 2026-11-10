@@ -181,6 +181,7 @@ async function main() {
     settings: deps.settings,
     messageToSession: deps.messageToSession,
     flushDraft: status.flushDraft,
+    startStatus: status.startStatus,
     updateStatus: status.updateStatus,
     finishStatus: status.finishStatus,
     syncTopicTitle: sessions.syncTopicTitle,

@@ -6,7 +6,7 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { esc, rateLimitRetryAt, threadOpts, markdownToHtml, clampText, toolIcon } from "./util.js";
+import { clampText, esc, markdownToHtml, rateLimitRetryAt, sessionHeader, threadOpts, toolIcon } from "./util.js";
 import { logger } from "./logger.js";
 import { formatBytes, prepareDocument } from "./files/index.js";
 import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
@@ -31,6 +31,7 @@ export type EventsDeps = {
   messageToSession: Map<string, string>;
   settings: SettingsStore;
   flushDraft: (chatId: number, s: ChatSession | undefined) => Promise<void>;
+  startStatus: (chatId: number, s: ChatSession) => Promise<void>;
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
   syncTopicTitle: (chatId: number, s: ChatSession) => Promise<void>;
@@ -40,26 +41,44 @@ const retryMessageBySession = new Map<string, { chatId: number; threadId?: numbe
 
 type EventHandler = (event: { type: string; data?: any }, deps: EventsDeps) => Promise<void>;
 
+async function ensureLiveStatus(deps: EventsDeps, sessionId: string | undefined, chatId: number | undefined): Promise<ChatSession | undefined> {
+  if (!sessionId || chatId === undefined) return undefined;
+  const s = deps.store.findSessionById(sessionId);
+  if (!s || s.stopped) return s;
+  if (s.statusMessageId && !s.statusFinished) return s;
+  // New autonomous/resumed activity: start a live status card so tool/step/text
+  // updates edit in place instead of sending a new message per event.
+  s.stopped = false;
+  s.statusFinished = false;
+  try {
+    await deps.startStatus(chatId, s);
+    if (s.statusMessageId) deps.store.rememberMessageSession(chatId, s.statusMessageId, sessionId);
+  } catch (err) {
+    logger.warn("events", "ensureLiveStatus.failed", { sessionId, chatId, error: String(err) });
+  }
+  return s;
+}
+
 // ---------- handlers ----------
 
 const handleSessionTextStarted: EventHandler = async (event, deps) => {
-  const { tg, store, flushDraft } = deps;
-  const { findSessionById, resolveChatId } = store;
+  const { tg, store } = deps;
+  const { resolveChatId } = store;
   const e = event;
   const sessionId = e.data?.sessionID ?? e.data?.session?.id;
-  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId === undefined) return;
-  const s = _s0;
+  const s = await ensureLiveStatus(deps, sessionId, chatId);
   if (!s) return;
+  // Ensure per-block buffer/typing state is reset even when status already live.
   s.buffer = "";
-  s.draftId = Math.floor(Math.random() * 2147483647) + 1;
+  if (!s.draftId) s.draftId = Math.floor(Math.random() * 2147483647) + 1;
   s.stopped = false;
   if (s.typingTimer) clearInterval(s.typingTimer);
   s.typingTimer = setInterval(() => {
-    tg.sendChatAction(chatId, "typing", s.threadId).catch(() => {});
+    tg.sendChatAction(chatId, "typing", s.threadId ?? s.targetThreadId).catch(() => {});
   }, 4000);
-  tg.sendChatAction(chatId, "typing", s.threadId).catch(() => {});
+  tg.sendChatAction(chatId, "typing", s.threadId ?? s.targetThreadId).catch(() => {});
 };
 
 const handleSessionReasoningStarted: EventHandler = async (event, deps) => {
@@ -194,11 +213,11 @@ const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
     if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
     else {
       const threadId = resolveThreadId(sessionId);
-      await tg.sendRichMessage(chatId, "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
+      await tg.sendRichMessage(chatId, sessionHeader(s) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
     }
   } else {
     const threadId = resolveThreadId(sessionId);
-    await tg.sendRichMessage(chatId, "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
+    await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
   }
 };
 
@@ -243,7 +262,7 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
         ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre></blockquote>`
         : "";
       await tg
-        .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
+        .sendRichMessage(chatId, sessionHeader(s) + `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
         .catch(() => {});
     }
   } else {
@@ -253,7 +272,7 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
       ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre></blockquote>`
       : "";
     await tg
-      .sendRichMessage(chatId, `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
+      .sendRichMessage(chatId, sessionHeader(null, sessionId) + `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
       .catch(() => {});
   }
   logger.info("events", "compaction.ended", { sessionId, chatId, threadId, summaryLen: summary.length, usedStatus: !!(s?.statusMessageId) });
@@ -274,9 +293,9 @@ const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
     s.compacting = false;
     s.compactionError = msg;
     if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
-    else await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
+    else await tg.sendRichMessage(chatId, sessionHeader(s) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
   } else {
-    await tg.sendRichMessage(chatId, `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
+    await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
   }
   logger.warn("events", "compaction.failed", { sessionId, chatId, threadId, error: msg });
 };
@@ -289,7 +308,7 @@ const handleMcpStatusChanged: EventHandler = async (event, deps) => {
   const chatId = resolveChatId(e.data?.sessionID);
   if (chatId !== undefined && server) {
     const threadId = resolveThreadId(e.data?.sessionID);
-    await tg.sendRichMessage(chatId, `🔌 MCP status changed: <b>${esc(server)}</b>\nUse /mcp to inspect.`, threadOpts(threadId)).catch(() => {});
+    await tg.sendRichMessage(chatId, sessionHeader(store.findSessionById(e.data?.sessionID), e.data?.sessionID) + `🔌 MCP status changed: <b>${esc(server)}</b>\nUse /mcp to inspect.`, threadOpts(threadId)).catch(() => {});
   }
   return;
 };
@@ -302,7 +321,7 @@ const handleMcpResourcesChanged: EventHandler = async (event, deps) => {
   const chatId = resolveChatId(e.data?.sessionID);
   if (chatId !== undefined && server) {
     const threadId = resolveThreadId(e.data?.sessionID);
-    await tg.sendRichMessage(chatId, `📚 MCP resources changed: <b>${esc(server)}</b>\nUse /mcp resources.`, threadOpts(threadId)).catch(() => {});
+    await tg.sendRichMessage(chatId, sessionHeader(store.findSessionById(e.data?.sessionID), e.data?.sessionID) + `📚 MCP resources changed: <b>${esc(server)}</b>\nUse /mcp resources.`, threadOpts(threadId)).catch(() => {});
   }
   return;
 };
@@ -373,7 +392,7 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
           }
         }
         if (unique.length > maxArtifacts) {
-          await tg.sendRichMessage(chatId, `📎 ${unique.length - maxArtifacts} more artifact(s) not sent (limit ${maxArtifacts}).`, threadOpts(artifactThread)).catch(() => {});
+          await tg.sendRichMessage(chatId, sessionHeader(s, sessionId) + `📎 ${unique.length - maxArtifacts} more artifact(s) not sent (limit ${maxArtifacts}).`, threadOpts(artifactThread)).catch(() => {});
         }
       } else if (unique.length > 20) {
       }
@@ -419,7 +438,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     // No in-memory session (e.g. after restart). Still deliver the final text if available.
     const fallbackText = (e.data?.text ?? "").toString().trim();
     if (fallbackText) {
-      const sent = await tg.sendRichMessage(chatId, markdownToHtml(fallbackText), threadOpts(resolveThreadId(sessionId))).catch((err) => { console.error("[send final]", err); return undefined; });
+      const sent = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + markdownToHtml(fallbackText), threadOpts(resolveThreadId(sessionId))).catch((err) => { console.error("[send final]", err); return undefined; });
       if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
     }
     return;
@@ -442,8 +461,6 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     }
     endedText = (e.data?.text ?? "").toString().trim();
     let finalText = endedText || s.buffer || "(empty response)";
-    const sessionName = (s.topicTitle || s.sessionId || "").trim();
-    if (sessionName && (settings.get(chatId).sessionNameInMessages ?? true)) finalText = `${sessionName}\n\n${finalText}`;
     let elapsed = 0;
     let tokens = s.lastOutputTokens ?? 0;
     try {
@@ -500,7 +517,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   }
   logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
-    const finalHtml = markdownToHtml(finalText) + extraHtml + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
+    const finalHtml = sessionHeader(s) + markdownToHtml(finalText) + extraHtml + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
     const finalMessage = await tg.sendRichMessage(chatId, finalHtml, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
       console.error("[send final]", err);
       return undefined;
@@ -531,7 +548,7 @@ const handlePermissionAsked: EventHandler = async (event, deps) => {
   const label = p.tool ?? p.action ?? "permission";
   const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
   const threadId = resolveThreadId(sessionId);
-  const sent = await tg.sendRichMessage(chatId, `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>\n\n<i>Expires in 5 minutes</i>`, {
+  const sent = await tg.sendRichMessage(chatId, sessionHeader(_s0, sessionId) + `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>\n\n<i>Expires in 5 minutes</i>`, {
     ...threadOpts(threadId),
     reply_markup: {
       inline_keyboard: [
@@ -613,7 +630,7 @@ const handleFormCreated: EventHandler = async (event, deps) => {
       answers: {},
       submitted: false,
     };
-    const sent = await tg.sendRichMessage(chatId, renderForm(state), {
+    const sent = await tg.sendRichMessage(chatId, sessionHeader(store.findSessionById(state.sessionId), state.sessionId) + renderForm(state), {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: formKeyboard(state) },
     });
@@ -682,20 +699,20 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
         await tg.editRichMessage(existingRetryMsg.chatId, existingRetryMsg.messageId, retryText).catch(() => {});
         sent = { message_id: existingRetryMsg.messageId };
       } else {
-        sent = await tg.sendRichMessage(chatId, retryText, threadOpts(threadId)).catch(() => null);
+        sent = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + retryText, threadOpts(threadId)).catch(() => null);
       }
       if (sent?.message_id) retryMessageBySession.set(sid, { chatId, threadId, messageId: sent.message_id });
     } else if (decision.action === "exhausted") {
       const sid = sessionId as string;
       await tg.sendRichMessage(
         chatId,
-        `❌ ${esc(msg)}${esc(hint)}\n\n⛔ Auto-retry limit reached (${decision.attempts}/${decision.maxAttempts}). Use /retry to try again manually.`,
+        sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}\n\n⛔ Auto-retry limit reached (${decision.attempts}/${decision.maxAttempts}). Use /retry to try again manually.`,
         threadOpts(threadId),
       );
       retryMessageBySession.delete(sid);
       cancelAutoRetry(sid);
     } else if (decision.action === "none") {
-      await tg.sendRichMessage(chatId, `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId));
+      await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId));
       if (sessionId) retryMessageBySession.delete(sessionId);
     }
     // "wait": a retry is already pending for this prompt; avoid duplicate events.
@@ -712,6 +729,8 @@ const handleSessionStepStarted: EventHandler = async (event, deps) => {
   if (sid) {
     store.setSessionStatus(sid, "busy");
     logger.debug("events", "[step.started]", sid);
+    const chatId = store.resolveChatId(sid);
+    await ensureLiveStatus(deps, sid, chatId).catch(() => {});
   }
 };
 
