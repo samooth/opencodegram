@@ -3,7 +3,6 @@ import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
 import { clampText, esc, sessionHeader } from "./util.js";
 import {
-  appendTranscript,
   paginateTranscript,
   resolvePage,
   splitMarkdown,
@@ -64,8 +63,9 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     text: string,
     render?: (chunk: string) => string,
   ): void => {
+    // The store owns the block list; `s.transcript` is only a view of it.
+    // Pushing to both would duplicate every block.
     const push = (piece: TranscriptBlock) => {
-      appendTranscript(s, piece);
       store.appendTranscript(s.sessionId, piece);
     };
     if (!render) {

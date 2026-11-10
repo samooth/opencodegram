@@ -506,11 +506,21 @@ export class SessionStore {
 
   appendTranscript = (sessionId: string, block: TranscriptBlock): void => {
     const list = this.transcriptBySession.get(sessionId) ?? [];
+    // Skip an exact repeat of the last block: the same event can be delivered
+    // twice and it must not flood the transcript.
+    const last = list[list.length - 1];
+    if (last && last.kind === block.kind && last.text === block.text && last.text.trim()) {
+      // Replace it so the newer timestamp wins without duplicating content.
+      list[list.length - 1] = block;
+      this.transcriptBySession.set(sessionId, list);
+      this.scheduleSaveTranscripts();
+      return;
+    }
     list.push(block);
     // Bound the memory and disk usage per session.
     while (list.length > TRANSCRIPT_MAX_BLOCKS) list.shift();
     this.transcriptBySession.set(sessionId, list);
-    this.saveTranscripts();
+    this.scheduleSaveTranscripts();
   };
 
   clearTranscript = (sessionId: string): void => {
@@ -526,6 +536,22 @@ export class SessionStore {
     } catch (err) {
       console.error("[transcripts] save failed", err);
     }
+  };
+
+  /**
+   * Debounced transcript persistence: a turn can add many blocks and the file
+   * is rewritten for each one, which blocks the event loop.
+   */
+  private transcriptsSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  scheduleSaveTranscripts = (delayMs = 2000) => {
+    if (this.transcriptsSaveTimer) return;
+    this.transcriptsSaveTimer = setTimeout(() => {
+      this.transcriptsSaveTimer = undefined;
+      this.saveTranscripts();
+    }, delayMs);
+    // Do not keep the process alive just for the pending save.
+    this.transcriptsSaveTimer.unref?.();
   };
 
   private saveNumberMap(file: string, map: Map<string, number>, tag: string) {

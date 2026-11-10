@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
 import { createTranscriptManager } from "../src/transcriptmanager.js";
-import { paginateTranscript, splitText, type TranscriptBlock } from "../src/transcript.js";
+import { paginateTranscript, splitText, TRANSCRIPT_MAX_BLOCKS, type TranscriptBlock } from "../src/transcript.js";
 import { markdownToHtml } from "../src/util.js";
 import type { ChatSession } from "../src/types.js";
 
@@ -101,7 +101,8 @@ describe("transcript manager", () => {
     const { transcript } = makeHarness();
     const s = makeSession();
     for (let i = 0; i < 8; i++) {
-      transcript.addBlock(s, "answer", `<p>${"z".repeat(600)} ${i}</p>`, "z".repeat(600));
+      // The rendered HTML drives the pagination, as in the real flow.
+      transcript.addBlock(s, "answer", "", `${"z".repeat(600)} ${i}`, (chunk) => `<p>${chunk}</p>`);
     }
     await transcript.publish(123, s);
     const total = transcript.pageCount(s);
@@ -120,6 +121,38 @@ describe("transcript manager", () => {
     const s = makeSession();
     transcript.addBlock(s, "answer", "<p>hi</p>", "hi");
     expect(store.getTranscript("ses_x").length).toBe(1);
+  });
+
+  test("a block is stored once (no duplication between session and store)", () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    for (let i = 0; i < 5; i++) {
+      transcript.addBlock(s, "answer", `<p>${i}</p>`, `respuesta ${i}`, (chunk) => `<p>${chunk}</p>`);
+    }
+    const blocks = store.getTranscript("ses_x");
+    expect(blocks.length).toBe(5);
+    // No duplicated content.
+    expect(new Set(blocks.map((b) => b.text)).size).toBe(5);
+    // The session view and the store agree.
+    expect(transcript.blocksOf(s).length).toBe(5);
+  });
+
+  test("an exact repeated block replaces the previous one instead of duplicating", () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>x</p>", "mismo texto");
+    transcript.addBlock(s, "answer", "<p>x</p>", "mismo texto");
+    const blocks = store.getTranscript("ses_x");
+    expect(blocks.length).toBe(1);
+  });
+
+  test("the transcript is bounded so the card stays navigable", () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    for (let i = 0; i < TRANSCRIPT_MAX_BLOCKS + 40; i++) {
+      transcript.addBlock(s, "answer", `<p>${i}</p>`, `bloque ${i}`);
+    }
+    expect(store.getTranscript("ses_x").length).toBe(TRANSCRIPT_MAX_BLOCKS);
   });
 
   test("markdown is rendered to rich text, not stored as raw markdown", () => {

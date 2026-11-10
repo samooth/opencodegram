@@ -27,15 +27,19 @@ export type TranscriptPage = {
   text: string;
 };
 
-/** Maximum number of blocks kept in memory per session. */
-export const TRANSCRIPT_MAX_BLOCKS = 400;
+/**
+ * Maximum number of blocks kept per session. Older blocks are dropped, so the
+ * card keeps a navigable size instead of growing without limit.
+ */
+export const TRANSCRIPT_MAX_BLOCKS = 150;
 /** Maximum size of a single block (raw characters). */
-export const TRANSCRIPT_BLOCK_BUDGET = 1800;
+export const TRANSCRIPT_BLOCK_BUDGET = 1200;
 /**
  * Maximum size of one rendered page (HTML characters). Fixed so the pagination
- * does not reshuffle while the live section changes size.
+ * does not reshuffle while the live section changes size. It leaves room for
+ * the header, the live strip, the page indicator and the resource indicators.
  */
-export const TRANSCRIPT_PAGE_BUDGET = 2200;
+export const TRANSCRIPT_PAGE_BUDGET = 2600;
 
 export function transcriptBlocks(s: ChatSession): TranscriptBlock[] {
   if (!s.transcript) s.transcript = [];
