@@ -488,21 +488,10 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       finalText += modelName ? `\n\n⚡ ${modelName} · ${speed} tok/s` : `\n\n⚡ ${speed} tok/s`;
     }
     const threadOpts2 = store.threadOptsFor(s);
-    // Build quick-switch keyboard (prev/next session in the project).
-    const quickKeyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    try {
-      const res = await oc.client.session.list();
-      const list = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as Array<{ id?: string }>;
-      const ids = list.map((x) => x.id).filter((x): x is string => !!x);
-      const idx = ids.indexOf(s.sessionId);
-      const nav: Array<{ text: string; callback_data: string }> = [];
-      if (idx > 0) nav.push({ text: "◀ Prev", callback_data: `qswitch:${ids[idx - 1]}` });
-      if (idx >= 0 && idx < ids.length - 1) nav.push({ text: "Next ▶", callback_data: `qswitch:${ids[idx + 1]}` });
-      if (nav.length) quickKeyboard.push(nav);
-      quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    } catch {
-      quickKeyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    }
+    // Keyboard for final response messages (quick-switch removed; pagination stays in sessions/models).
+    const quickKeyboard: Array<Array<{ text: string; callback_data: string }>> = [
+      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }],
+    ];
     const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
     const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
     if (s) {
