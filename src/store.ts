@@ -504,6 +504,24 @@ export class SessionStore {
 
   getTranscript = (sessionId: string): TranscriptBlock[] => this.transcriptBySession.get(sessionId) ?? [];
 
+  /**
+   * Apply the per-kind and total limits to a block list.
+   * Used both when appending and when loading from disk.
+   */
+  private limitTranscript = (list: TranscriptBlock[]): TranscriptBlock[] => {
+    const out = list.slice(-TRANSCRIPT_MAX_BLOCKS);
+    for (const kind of ["thinking", "tools"] as const) {
+      const limit = kind === "thinking" ? TRANSCRIPT_MAX_THINKING_BLOCKS : TRANSCRIPT_MAX_TOOLS_BLOCKS;
+      let seen = 0;
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (out[i].kind !== kind) continue;
+        seen++;
+        if (seen > limit) out.splice(i, 1);
+      }
+    }
+    return out;
+  };
+
   appendTranscript = (sessionId: string, block: TranscriptBlock): void => {
     const list = this.transcriptBySession.get(sessionId) ?? [];
     // Skip an exact repeat of the last block: the same event can be delivered
@@ -520,17 +538,7 @@ export class SessionStore {
     // Bound the memory and disk usage per session. Answers are the valuable
     // part and are kept in full; thinking and tools are only useful for the
     // recent turns, so they are capped separately.
-    while (list.length > TRANSCRIPT_MAX_BLOCKS) list.shift();
-    for (const kind of ["thinking", "tools"] as const) {
-      const limit = kind === "thinking" ? TRANSCRIPT_MAX_THINKING_BLOCKS : TRANSCRIPT_MAX_TOOLS_BLOCKS;
-      let seen = 0;
-      for (let i = list.length - 1; i >= 0; i--) {
-        if (list[i].kind !== kind) continue;
-        seen++;
-        if (seen > limit) list.splice(i, 1);
-      }
-    }
-    this.transcriptBySession.set(sessionId, list);
+    this.transcriptBySession.set(sessionId, this.limitTranscript(list));
     this.scheduleSaveTranscripts();
   };
 
@@ -683,7 +691,7 @@ export class SessionStore {
       if (existsSync(this.transcriptsFile)) {
         const parsed = JSON.parse(readFileSync(this.transcriptsFile, "utf8")) as Record<string, TranscriptBlock[]>;
         for (const [sid, blocks] of Object.entries(parsed)) {
-          if (sid && Array.isArray(blocks)) this.transcriptBySession.set(sid, blocks.slice(-TRANSCRIPT_MAX_BLOCKS));
+          if (sid && Array.isArray(blocks)) this.transcriptBySession.set(sid, this.limitTranscript(blocks));
         }
       }
     } catch (err) {

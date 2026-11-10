@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
 import { createTranscriptManager } from "../src/transcriptmanager.js";
@@ -169,6 +169,21 @@ describe("transcript manager", () => {
     expect(count("tools")).toBeLessThanOrEqual(TRANSCRIPT_MAX_TOOLS_BLOCKS);
     // The answers survive: they are the useful part of the history.
     expect(count("answer")).toBeGreaterThan(TRANSCRIPT_MAX_THINKING_BLOCKS);
+  });
+
+  test("the limits also apply when loading the transcript from disk", () => {
+    const dir = join(root, "data-load");
+    mkdirSync(dir, { recursive: true });
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      kind: "thinking" as const,
+      html: `<p>t${i}</p>`,
+      text: `pensamiento ${i}`,
+      at: i,
+    }));
+    writeFileSync(join(dir, "transcripts.json"), JSON.stringify({ ses_x: many }));
+    const store = new SessionStore(dir);
+    const blocks = store.getTranscript("ses_x");
+    expect(blocks.length).toBeLessThanOrEqual(TRANSCRIPT_MAX_THINKING_BLOCKS);
   });
 
   test("markdown is rendered to rich text, not stored as raw markdown", () => {
