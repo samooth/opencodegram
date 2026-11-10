@@ -6,6 +6,7 @@ import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 import { SessionStore } from "./store.js";
 import { createStatusManager } from "./status.js";
 import { createTranscriptManager } from "./transcriptmanager.js";
+import { renderResourceBlock } from "./resources.js";
 import { SettingsStore } from "./settings.js";
 import { MetricsStore } from "./metrics.js";
 import { createOpsServer } from "./ops.js";
@@ -64,6 +65,7 @@ async function main() {
     tg,
     store,
     threadOptsFor: (s) => store.threadOptsFor(s),
+    renderResources: (s) => renderResourceBlock(s),
   });
   const status = createStatusManager({
     tg,

@@ -11,6 +11,7 @@ import { logger } from "./logger.js";
 import { formatBytes, prepareDocument } from "./files/index.js";
 import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
+import { renderResourceBlock } from "./resources.js";
 
 export type PermissionInfo = {
   chatId: number;
@@ -516,7 +517,11 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (transcript) {
       // The answer is appended to the session transcript and the session card
       // is edited in place: no new message per event.
-      transcript.addBlock(s, "answer", answerHtml + copyRow, finalText);
+      // Each chunk is rendered on its own so markdown keeps its rich text.
+      transcript.addBlock(s, "answer", answerHtml + copyRow, finalText, (chunk) => {
+        const partHtml = markdownToHtml(chunk);
+        return partHtml + copyRow;
+      });
       s.transcriptFollow = true;
       if (publishCard) await publishCard(chatId, s);
       else await transcript.publish(chatId, s, { extraTop: "" });
@@ -570,7 +575,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           extraHtml += `\n\n<blockquote expandable>🔧 Tool calls (${otherDetails.length})\n${body}</blockquote>`;
         }
       }
-      const finalHtml = sessionHeader(s) + answerHtml + extraHtml + copyRow;
+      const finalHtml = sessionHeader(s) + answerHtml + extraHtml + copyRow + `\n${renderResourceBlock(s)}`;
       const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
       const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
       const rapidFinal = !!(s && prevFinalTelegramMessageId && Date.now() - prevFinalSentAt < 12000);

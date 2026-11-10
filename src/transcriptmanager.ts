@@ -6,7 +6,7 @@ import {
   appendTranscript,
   paginateTranscript,
   resolvePage,
-  splitText,
+  splitMarkdown,
   TRANSCRIPT_BLOCK_BUDGET,
   TRANSCRIPT_MAX_BLOCKS,
   type TranscriptBlock,
@@ -29,11 +29,13 @@ export type TranscriptDeps = {
   tg: TelegramClient;
   store: SessionStore;
   threadOptsFor: (s: ChatSession | undefined) => Record<string, unknown>;
+  /** System indicators rendered at the bottom of every message. */
+  renderResources?: (s: ChatSession) => string;
 };
 
 export type TranscriptManager = ReturnType<typeof createTranscriptManager>;
 
-export function createTranscriptManager({ tg, store, threadOptsFor }: TranscriptDeps) {
+export function createTranscriptManager({ tg, store, threadOptsFor, renderResources }: TranscriptDeps) {
   /**
    * Telegram cancels an edit when a newer one arrives for the same message.
    * Since every update of a session now targets the same card, publishes must
@@ -50,25 +52,41 @@ export function createTranscriptManager({ tg, store, threadOptsFor }: Transcript
 
   /**
    * Append a block of content to the session transcript.
-   * Long texts are split so a single page never overflows.
+   *
+   * `render` converts a chunk of raw text into HTML. Long content is split so
+   * a single page never overflows, and EVERY chunk is rendered on its own:
+   * the HTML is never lost and never mixed with raw markdown.
    */
-  const addBlock = (s: ChatSession, kind: TranscriptKind, html: string, text: string): void => {
-    const chunks = splitText(text, TRANSCRIPT_BLOCK_BUDGET);
-    if (!chunks.length) {
-      const piece: TranscriptBlock = { kind, html, text, at: Date.now() };
+  const addBlock = (
+    s: ChatSession,
+    kind: TranscriptKind,
+    html: string,
+    text: string,
+    render?: (chunk: string) => string,
+  ): void => {
+    const push = (piece: TranscriptBlock) => {
       appendTranscript(s, piece);
       store.appendTranscript(s.sessionId, piece);
+    };
+    if (!render) {
+      // Already-rendered HTML: keep it as one block.
+      if (!text.trim() && !html.trim()) return;
+      push({ kind, html, text, at: Date.now() });
+      return;
+    }
+    const chunks = splitMarkdown(text, TRANSCRIPT_BLOCK_BUDGET);
+    if (!chunks.length) {
+      push({ kind, html, text, at: Date.now() });
       return;
     }
     chunks.forEach((chunk, i) => {
       const piece: TranscriptBlock = {
         kind,
-        html: chunks.length > 1 ? `${chunk}\n<i>(parte ${i + 1}/${chunks.length})</i>` : chunk,
+        html: chunks.length > 1 ? `${render(chunk)}\n<i>(parte ${i + 1}/${chunks.length})</i>` : render(chunk),
         text: chunk,
         at: Date.now(),
       };
-      appendTranscript(s, piece);
-      store.appendTranscript(s.sessionId, piece);
+      push(piece);
     });
   };
 
@@ -76,13 +94,20 @@ export function createTranscriptManager({ tg, store, threadOptsFor }: Transcript
   const renderPage = (s: ChatSession, extraTop: string = ""): { html: string; page: number; total: number } | undefined => {
     const pages = paginateTranscript(blocksOf(s));
     const header = sessionHeader(s).trimEnd();
+    // System indicators always close the message.
+    const resources = renderResources ? renderResources(s) : "";
+    const parts: string[] = [header];
+    if (extraTop) parts.push(extraTop);
     if (!pages.length) {
-      return { html: clampText(`${header}${extraTop}`, 3900), page: 0, total: 0 };
+      if (resources) parts.push(resources);
+      return { html: clampText(parts.join("\n"), 3900), page: 0, total: 0 };
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
-    const nav = page.total > 1 ? `\n<i>📄 ${page.index + 1}/${page.total}</i>` : "";
-    const html = clampText(`${header}${extraTop}\n${page.html}${nav}`, 3900);
+    parts.push(page.html);
+    if (page.total > 1) parts.push(`<i>📄 ${page.index + 1}/${page.total}</i>`);
+    if (resources) parts.push(resources);
+    const html = clampText(parts.join("\n\n"), 3900);
     return { html, page: page.index, total: page.total };
   };
 

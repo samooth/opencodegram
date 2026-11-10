@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
 import { createTranscriptManager } from "../src/transcriptmanager.js";
 import { paginateTranscript, splitText, type TranscriptBlock } from "../src/transcript.js";
+import { markdownToHtml } from "../src/util.js";
 import type { ChatSession } from "../src/types.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -119,6 +120,63 @@ describe("transcript manager", () => {
     const s = makeSession();
     transcript.addBlock(s, "answer", "<p>hi</p>", "hi");
     expect(store.getTranscript("ses_x").length).toBe(1);
+  });
+
+  test("markdown is rendered to rich text, not stored as raw markdown", () => {
+    const { transcript } = makeHarness();
+    const s = makeSession();
+    transcript.addBlock(
+      s,
+      "answer",
+      "<b>ignored</b>",
+      "Hola **mundo**\n\n- uno\n- dos",
+      (chunk) => markdownToHtml(chunk),
+    );
+    const blocks = transcript.blocksOf(s);
+    expect(blocks.length).toBe(1);
+    // Rich text is preserved...
+    expect(blocks[0].html).toContain("<b>mundo</b>");
+    expect(blocks[0].html).toContain("<li>uno</li>");
+    // ...and the raw markdown is not leaked into the HTML.
+    expect(blocks[0].html).not.toContain("**mundo**");
+  });
+
+  test("long markdown is split into blocks and each chunk is rendered", () => {
+    const { transcript } = makeHarness();
+    const s = makeSession();
+    const long = Array.from({ length: 80 }, (_, i) => `linea ${i} con **negrita**`).join("\n\n");
+    transcript.addBlock(s, "answer", "", long, (chunk) => markdownToHtml(chunk));
+    const blocks = transcript.blocksOf(s);
+    expect(blocks.length).toBeGreaterThan(1);
+    for (const block of blocks) {
+      expect(block.html).not.toContain("**negrita**");
+      expect(block.html).toContain("<b>negrita</b>");
+    }
+  });
+
+  test("resource indicators are rendered at the bottom of the card", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const sent: any[] = [];
+    const tg = {
+      sendRichMessage: async (...args: any[]) => {
+        sent.push(args);
+        return { message_id: 5 };
+      },
+      editRichMessage: async (...args: any[]) => ({ message_id: args[1] }),
+    } as any;
+    const transcript = createTranscriptManager({
+      tg,
+      store,
+      threadOptsFor: () => ({}),
+      renderResources: () => "<pre>CPU ▓ 10%\nRAM ▓ 20%</pre>",
+    });
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>x</p>", "x");
+    await transcript.publish(1, s);
+    const html = sent[0][1] as string;
+    expect(html).toContain("CPU");
+    // The indicators close the message.
+    expect(html.trimEnd().endsWith("</pre>")).toBe(true);
   });
 
   test("publishes are serialized so concurrent edits do not cancel each other", async () => {

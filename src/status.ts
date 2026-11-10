@@ -10,6 +10,7 @@ import { formatBytes } from "./files/index.js";
 import { clampText, esc, sessionHeader, threadOpts, toolIcon, truncate } from "./util.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
+import { renderResourceBlock } from "./resources.js";
 
 function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -280,56 +281,6 @@ function renderShell(details: ChatSession["toolCallDetails"], limit: number): st
  * Owns the lifecycle of the single "status" card that accompanies a turn:
  * Working… (thinking, tools, partial text) → Done / Stopped, no Stop button.
  */
-function readMemoryPercent(): number {
-  try {
-    const meminfo = readFileSync("/proc/meminfo", "utf8");
-    const total = Number(meminfo.match(/MemTotal:\s+(\d+)/)?.[1]);
-    const available = Number(meminfo.match(/MemAvailable:\s+(\d+)/)?.[1]);
-    if (Number.isFinite(total) && total > 0 && Number.isFinite(available) && available >= 0) {
-      return Math.max(0, Math.min(100, Math.round((1 - available / total) * 100)));
-    }
-  } catch {
-    // Fall back to os.freemem() on non-Linux or permission errors.
-  }
-  return Math.max(0, Math.min(100, Math.round((1 - os.freemem() / os.totalmem()) * 100)));
-}
-
-function readGpuPercent(): number | null {
-  const info = readGpuInfo();
-  return info ? info.load : null;
-}
-
-function progressBar(percent: number, width = 10): string {
-  const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)));
-  return "▓".repeat(filled) + "░".repeat(width - filled);
-}
-
-type GpuInfo = { name: string; usedMB: number; totalMB: number; load: number; temperature: number | null };
-
-function readGpuInfo(): GpuInfo | null {
-  try {
-    const out = execFileSync(
-      "nvidia-smi",
-      ["--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-      { timeout: 1500, encoding: "utf8" },
-    )
-      .trim()
-      .split("\n")[0];
-    const parts = out.split(",").map((part) => part.trim());
-    if (parts.length < 4) return null;
-    const name = parts[0] || "GPU";
-    const usedMB = Number(parts[1]);
-    const totalMB = Number(parts[2]);
-    const load = Number(parts[3]);
-    const temperature = parts[4] ? Number(parts[4]) : null;
-    if (!Number.isFinite(usedMB) || !Number.isFinite(totalMB) || totalMB <= 0 || !Number.isFinite(load)) return null;
-    return { name, usedMB, totalMB, load: Math.max(0, Math.min(100, load)), temperature: Number.isFinite(temperature as number) ? temperature : null };
-  } catch {
-    // No GPU or nvidia-smi unavailable.
-  }
-  return null;
-}
-
 /** Clamp a diff to at most `max` lines, appending a "... +N more" hint. */
 function capDiff(diff: string, max: number): string {
   const lines = diff.split("\n");
@@ -638,6 +589,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           "thinking",
           `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(fullThinking)}</blockquote>`,
           fullThinking,
+          (chunk) => `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(chunk)}</blockquote>`,
         );
         // Persist as COT history (larger cap to avoid losing context).
         const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
@@ -658,6 +610,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
             "tools",
             `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`,
             shellText,
+            (chunk) => `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell\n<pre language='bash'>${esc(chunk)}</pre></blockquote>`,
           );
         }
         if (otherDetails.length) {
@@ -667,6 +620,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
             "tools",
             `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`,
             details,
+            (chunk) => `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls\n${chunk}</blockquote>`,
           );
         }
       }
@@ -782,34 +736,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     let resourceBlock = "";
     if (settings.showResourceUsage) {
-      if (!target.cpuHistory) target.cpuHistory = [];
-      if (!target.memHistory) target.memHistory = [];
-      const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
-      const memPercent = readMemoryPercent();
-      target.cpuHistory.push(cpuPercent);
-      target.memHistory.push(memPercent);
-      const limit = settings.resourceHistory;
-      while (target.cpuHistory.length > limit) target.cpuHistory.shift();
-      while (target.memHistory.length > limit) target.memHistory.shift();
-      const cpuBar = progressBar(cpuPercent);
-      const memBar = progressBar(memPercent);
-      const prevCpu = target.cpuHistory.length >= 2 ? target.cpuHistory[target.cpuHistory.length - 2] : cpuPercent;
-      const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
-      const prevMem = target.memHistory.length >= 2 ? target.memHistory[target.memHistory.length - 2] : memPercent;
-      const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
-      const resourceLines: string[] = [];
-      resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
-      resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
-      const gpu = readGpuInfo();
-      if (gpu) {
-        const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
-        const vramBar = progressBar(vramPercent);
-        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-        resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}`);
-        resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
-        resourceLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
-      }
-      resourceBlock = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
+      resourceBlock = renderResourceBlock(target);
       lines.push(resourceBlock);
       const full = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
       if (full.length > 3900 && resourceBlock) {

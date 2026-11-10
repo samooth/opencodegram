@@ -70,6 +70,61 @@ export function splitText(text: string, budget = TRANSCRIPT_BLOCK_BUDGET): strin
   return chunks;
 }
 
+/**
+ * Split markdown so that every block of structure stays intact: paragraphs,
+ * fenced code blocks and tables are never cut in half. Only a single oversized
+ * paragraph is broken by lines.
+ */
+export function splitMarkdown(md: string, budget = TRANSCRIPT_BLOCK_BUDGET): string[] {
+  const source = md.replace(/\r\n/g, "\n");
+  if (!source.trim()) return [];
+  if (source.length <= budget) return [source.trimEnd()];
+
+  // Group into segments: a paragraph, a fenced code block or a table.
+  const segments: string[] = [];
+  const lines = source.split("\n");
+  let buf: string[] = [];
+  let inFence = false;
+  const flush = () => {
+    if (!buf.length) return;
+    const seg = buf.join("\n").trimEnd();
+    if (seg) segments.push(seg);
+    buf = [];
+  };
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) inFence = !inFence;
+    buf.push(line);
+    if (!inFence && !line.trim()) flush();
+  }
+  flush();
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const segment of segments) {
+    if (segment.length > budget) {
+      // Oversized segment: flush what we have and split it by lines.
+      if (current) {
+        chunks.push(current.trimEnd());
+        current = "";
+      }
+      chunks.push(...splitText(segment, budget));
+      continue;
+    }
+    if (!current) {
+      current = segment;
+      continue;
+    }
+    if (current.length + segment.length + 2 <= budget) {
+      current += `\n\n${segment}`;
+      continue;
+    }
+    chunks.push(current.trimEnd());
+    current = segment;
+  }
+  if (current) chunks.push(current.trimEnd());
+  return chunks.filter((c) => c.trim());
+}
+
 /** Group blocks into pages that respect the page budget. */
 export function paginateTranscript(
   blocks: TranscriptBlock[],
