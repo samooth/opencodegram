@@ -4,7 +4,7 @@ import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument, treeD
 import * as mcp from "../mcp.js";
 import { isSettingsKey, renderSettings, settingsKeyboard } from "../settings.js";
 import * as vcs from "../vcs.js";
-import { clampText, colorDiff, esc, threadOpts, truncate } from "../util.js";
+import { clampText, colorDiff, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "../util.js";
 import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
@@ -431,67 +431,46 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
           const role = m.role ?? m.type;
           return role === "user" || role === "assistant" || role === "compaction";
         })
-        .slice(-20);
+        .slice(-30);
       if (!meaningful.length) {
-        await send("No context to sync.");
+        await send(sessionHeader(s) + "<i>No context to sync.</i>");
         return true;
       }
-      const userCount = meaningful.filter((m: any) => (m.role ?? m.type) === "user").length;
-      const assistantCount = meaningful.filter((m: any) => (m.role ?? m.type) === "assistant").length;
-      const toolOnlyLines: string[] = [];
-      await send(`<b>Syncing ${meaningful.length} messages</b> (${userCount} 👤 / ${assistantCount} 🤖) from <code>${esc(s.sessionId.slice(0, 12))}</code>…`);
+      const blocks: string[] = [sessionHeader(s) + "📜 <b>Contenido de la sesión</b>"];
       for (const m of meaningful) {
         const role = m.role ?? m.type ?? "msg";
-        let body = "";
         if (role === "user") {
           const t = m.text;
-          body = typeof t === "string" ? t : t ? JSON.stringify(t) : "";
+          const body = typeof t === "string" ? t : t ? JSON.stringify(t) : "";
+          if (!body.trim()) continue;
+          blocks.push(`👤 <b>Tú</b>\n<blockquote>${esc(body.trim().slice(0, 1800))}</blockquote>`);
         } else if (role === "assistant") {
           const parts = Array.isArray(m.content) ? m.content : [];
           const texts = parts
             .filter((p: any) => p.type === "text")
-            .map((p: any) => {
-              const t = p.text;
-              return typeof t === "string" ? t : t ? JSON.stringify(t) : "";
-            });
-          body = texts.join(" ").trim();
-          if (!body) {
-            const tools = parts.filter((p: any) => p.type === "tool");
-            if (tools.length) {
-              for (const t of tools) {
-                const name = t.name ?? t.tool ?? "tool";
-                const input = typeof t.input === "string" ? t.input : (t.input ? JSON.stringify(t.input) : "");
-                toolOnlyLines.push(input ? `$ ${name}  ${input.slice(0, 80)}` : `$ ${name}`);
-              }
-              continue;
-            }
-            body = "(no text)";
+            .map((p: any) => (typeof p.text === "string" ? p.text : p?.text ? JSON.stringify(p.text) : ""))
+            .join("\n\n")
+            .trim();
+          if (texts) {
+            blocks.push(`🤖 <b>OpenCode</b>\n${markdownToHtml(texts.slice(0, 2600))}`);
+          } else {
+            const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool").slice(0, 6);
+            if (tools.length) blocks.push(`🤖 <b>OpenCode</b>\n<blockquote expandable>🔧 ${esc(tools.join(", "))}</blockquote>`);
           }
         } else if (role === "compaction") {
-          body = (m.summary ?? "").toString().split("\n")[0].slice(0, 200);
+          const sum = (m.summary ?? "").toString().trim().slice(0, 600);
+          if (sum) blocks.push(`<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum)}</blockquote>`);
         }
-        body = body.replace(/\s+/g, " ").trim().slice(0, 1000);
-        const icon = role === "user" ? "👤" : role === "assistant" ? "🤖" : "📦";
-        await send(icon + " <b>" + esc(String(role)) + "</b>:\n" + esc(body || "(no text)"));
       }
-      if (toolOnlyLines.length) {
-        const shell = toolOnlyLines.join("\n");
-        await send(`🔧 <b>Tool calls (${toolOnlyLines.length})</b>\n<blockquote expandable><pre><code class="language-bash">${esc(shell)}</code></pre></blockquote>`);
+      // Send as one (or few) normal messages, all linked to the session for replies.
+      const full = blocks.join("\n\n");
+      const chunkSize = 3800;
+      for (let i = 0; i < full.length; i += chunkSize) {
+        const part = full.slice(i, i + chunkSize);
+        const prefix = i > 0 ? sessionHeader(s) : "";
+        const sent = await send(prefix + part) as { message_id?: number } | undefined;
+        if (sent?.message_id) C.store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
       }
-      // Show latest thinking and tool from the live session state.
-      const cot = (s.cotBuffer || "").trim();
-      if (cot) {
-        const lastThought = cot.split(/\n+/).filter(Boolean).pop() || "";
-        if (lastThought) await send(`💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`);
-      }
-      const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
-      if (lastTool) {
-        const toolInput = lastTool.input ? clampText(lastTool.input, 120) : "";
-        let msg = `🔧 <b>Latest tool:</b> <code>${esc(lastTool.name)}</code>`;
-        if (toolInput) msg += `\n<blockquote><code>${esc(toolInput)}</code></blockquote>`;
-        await send(msg);
-      }
-      await send(`✅ Sync complete. Session <code>${esc(s.sessionId.slice(0, 12))}</code> is active.`);
     } catch (err) {
       await send("❌ " + esc(String(err)));
     }
