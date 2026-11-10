@@ -410,137 +410,202 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (!s.stopped && s.draftId) {
       void flushDraft(chatId, s);
     }
-    const lines: string[] = [];
+    const fitBlockquote = (label: string, body: string, budget: number, expandable = true): string => {
+      const open = `<blockquote${expandable ? " expandable" : ""}>${label}\n`;
+      const close = `</blockquote>`;
+      const overhead = open.length + close.length + 24;
+      if (budget <= overhead) return "";
+      let text = body;
+      const note = `\n… (${body.length} chars, completo al finalizar)`;
+      const fullEsc = esc(text);
+      if (fullEsc.length + overhead <= budget) {
+        return `${open}${fullEsc}${close}`;
+      }
+      // Keep tail (most recent) and add note if truncated.
+      let allow = Math.max(80, budget - overhead - esc(note).length - 8);
+      let tail = text.slice(-allow);
+      // avoid cutting surrogate
+      if (tail.length && /[\uD800-\uDBFF]/.test(tail[0])) tail = tail.slice(1);
+      text = "…\n" + tail + (body.length > tail.length ? note : "");
+      return `${open}${esc(text)}${close}`;
+    };
     try {
-    const sep = () => { if (lines.length && lines[lines.length - 1] !== "") lines.push(""); };
-    lines.unshift(sessionHeader(s).trimEnd());
-    if (settings.showCot && s.cotBuffer?.trim()) {
-      const cot = s.cotBuffer.trim().slice(-1500);
-      lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
-    }
-    const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
-    if (s.stopped) lines.push("<h4>⏹ Stopped</h4>");
-    else lines.push("<h4>⏳ Working…" + (elapsed ? ` <i>(${elapsed}s)</i>` : "") + "</h4>");
-    if (settings.showThinking && s.reasoningBuffer.trim()) {
-      sep();
-      const r = s.reasoningBuffer.trim();
-      lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(r)}</blockquote>`);
-    }
-    const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
-    const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
-    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
-    if (settings.showTools && settings.showShell && shellDetails.length) {
-      sep();
-      const shellText = renderShell(shellDetails.slice(-5), 200);
-      lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (` + shellDetails.length + ")\n<pre language='bash'>" + esc(shellText) + "</pre></blockquote>");
-    }
-    if (settings.showTools && otherDetails.length) {
-      sep();
-      const details = renderTools(otherDetails.slice(-6), 200, settings.showToolInput);
-      lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (` + otherDetails.length + ")\n" + details + "</blockquote>");
-    } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
-      lines.push("🔧 " + esc(s.toolCalls.slice(-5).join(", ")));
-    }
-    if (settings.showTools && editDetails.length) {
-      const stats = editDetails.map((detail) => {
-        const { file, added, removed } = editStats(detail.input);
-        return `${file.split("/").pop() ?? file} (+${added}/-${removed})`;
-      });
-      lines.push(`✏️ Edits (${editDetails.length}): ${esc(stats.join(", "))}`);
-    }
-    if (settings.showPartialText && s.buffer.trim()) {
-      lines.push("<pre>" + esc(s.buffer.trim().slice(-settings.partialTextLines)) + "</pre>");
-    }
-    // Highlight the latest thought and the latest tool call, right above
-    // the resource indicators, so the user always sees what the agent is
-    // doing now without scrolling.
-    if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
-      lines.push("");
-      sep();
-      const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
-      const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-      lines.push(`💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`);
-    }
-    const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
-    if (settings.showTools && settings.showLatestTool && lastTool) {
-      sep();
-      const toolName = lastTool.name;
-      const isShell = isShellTool(toolName);
-      const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
-      const summary = getToolSummary(toolName, lastTool.input);
-      const argPart = summary.arg ? ` <code>${esc(shortToolArg(summary.arg, 70))}</code>` : "";
-      lines.push(`${statusEmoji} <b>Latest tool:</b> ${toolIcon(toolName)} <b>${esc(toolName)}</b>${argPart}`);
-      if (isShell && summary.arg && settings.showToolInput) {
-        lines.push(`<pre language='bash'>$ ${esc(truncate(summary.arg, 220))}</pre>`);
-      } else if (!isShell && settings.showToolInput && !summary.arg && lastTool.input) {
-        const p = parseToolInput(lastTool.input);
-        if (p) {
-          const hint = Object.entries(p)
-            .filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean")
-            .slice(0, 2)
-            .map(([k, v]) => `${k}=${truncate(String(v), 50)}`)
-            .join(" ");
-          if (hint) lines.push(`<i>${esc(hint)}</i>`);
+      const MAX = 3800;
+      const header = sessionHeader(s).trimEnd();
+      const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
+      const statusLine = s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`;
+
+      const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
+      const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
+      const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
+
+      // High-priority: latest tool & latest thought (always visible when available)
+      let latestToolBlock = "";
+      const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
+      if (settings.showTools && settings.showLatestTool && lastTool) {
+        const toolName = lastTool.name;
+        const shell = isShellTool(toolName);
+        const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
+        const summary = getToolSummary(toolName, lastTool.input);
+        const argPart = summary.arg ? ` <code>${esc(shortToolArg(summary.arg, 70))}</code>` : "";
+        const parts = [`${statusEmoji} <b>Latest tool:</b> ${toolIcon(toolName)} <b>${esc(toolName)}</b>${argPart}`];
+        if (shell && summary.arg && settings.showToolInput) {
+          parts.push(`<pre language='bash'>$ ${esc(truncate(summary.arg, 220))}</pre>`);
+        } else if (!shell && settings.showToolInput && !summary.arg && lastTool.input) {
+          const p = parseToolInput(lastTool.input);
+          if (p) {
+            const hint = Object.entries(p)
+              .filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+              .slice(0, 2)
+              .map(([k, v]) => `${k}=${truncate(String(v), 50)}`)
+              .join(" ");
+            if (hint) parts.push(`<i>${esc(hint)}</i>`);
+          }
         }
+        latestToolBlock = parts.join("\n");
       }
-    }
-    let resourceBlock = "";
-    if (settings.showResourceUsage) {
-      sep();
-      if (!s.cpuHistory) s.cpuHistory = [];
-      if (!s.memHistory) s.memHistory = [];
-      const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
-      const memPercent = readMemoryPercent();
-      s.cpuHistory.push(cpuPercent);
-      s.memHistory.push(memPercent);
-      const limit = settings.resourceHistory;
-      while (s.cpuHistory.length > limit) s.cpuHistory.shift();
-      while (s.memHistory.length > limit) s.memHistory.shift();
-      const cpuBar = progressBar(cpuPercent);
-      const memBar = progressBar(memPercent);
-      const prevCpu = s.cpuHistory.length >= 2 ? s.cpuHistory[s.cpuHistory.length - 2] : cpuPercent;
-      const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
-      const prevMem = s.memHistory.length >= 2 ? s.memHistory[s.memHistory.length - 2] : memPercent;
-      const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
-      const resourceLines: string[] = [];
-      resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
-      resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
-      const gpu = readGpuInfo();
-      if (gpu) {
-        const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
-        const vramBar = progressBar(vramPercent);
-        const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-        resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}`);
-        resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
-        resourceLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
+
+      let latestThoughtBlock = "";
+      if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
+        const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
+        const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
+        latestThoughtBlock = `💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
       }
-      resourceBlock = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
-      lines.push(resourceBlock);
-    }
-    sep();
-    if (s.compacting) {
-      lines.push("📦 <b>Compacting context…</b>");
-    } else if (s.compactionError?.trim()) {
-      lines.push(`📦 <b>Compaction failed</b>\n<i>${esc(s.compactionError.trim().slice(0, 240))}</i>`);
-    } else if (s.compactionSummary?.trim()) {
-      const sum = s.compactionSummary.trim();
-      if (sum.length > 220) lines.push(`<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum.slice(0, 1500))}</blockquote>`);
-      else lines.push(`📦 <b>Compaction</b>: ${esc(sum)}`);
-    }
-      const fullText = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
-      let finalText = fullText;
-      if (fullText.length > 3900 && resourceBlock) {
-        const without = fullText.replace(resourceBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd();
-        const headMax = 3900 - resourceBlock.length - 5;
-        finalText = without.slice(0, Math.max(0, headMax)) + "\n…\n" + resourceBlock;
+
+      let shellBlock = "";
+      if (settings.showTools && settings.showShell && shellDetails.length) {
+        const shellText = renderShell(shellDetails.slice(-5), 180);
+        shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;
       }
+
+      let toolsBlock = "";
+      if (settings.showTools && otherDetails.length) {
+        const details = renderTools(otherDetails.slice(-6), 180, settings.showToolInput);
+        toolsBlock = `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`;
+      } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
+        toolsBlock = "🔧 " + esc(s.toolCalls.slice(-6).join(", "));
+      }
+
+      let editsLine = "";
+      if (settings.showTools && editDetails.length) {
+        const stats = editDetails.map((detail) => {
+          const { file, added, removed } = editStats(detail.input);
+          return `${file.split("/").pop() ?? file} (+${added}/-${removed})`;
+        });
+        editsLine = `✏️ Edits (${editDetails.length}): ${esc(stats.join(", "))}`;
+      }
+
+      let partialBlock = "";
+      if (settings.showPartialText && s.buffer.trim()) {
+        const txt = s.buffer.trim().slice(-Math.min(settings.partialTextLines, 1000));
+        partialBlock = "<pre>" + esc(txt) + "</pre>";
+      }
+
+      let compactionBlock = "";
+      if (s.compacting) {
+        compactionBlock = "📦 <b>Compacting context…</b>";
+      } else if (s.compactionError?.trim()) {
+        compactionBlock = `📦 <b>Compaction failed</b>\n<i>${esc(s.compactionError.trim().slice(0, 240))}</i>`;
+      } else if (s.compactionSummary?.trim()) {
+        const sum = s.compactionSummary.trim();
+        compactionBlock = sum.length > 220
+          ? `<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum.slice(0, 1000))}</blockquote>`
+          : `📦 <b>Compaction</b>: ${esc(sum)}`;
+      }
+
+      let resourceBlock = "";
+      if (settings.showResourceUsage) {
+        if (!s.cpuHistory) s.cpuHistory = [];
+        if (!s.memHistory) s.memHistory = [];
+        const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
+        const memPercent = readMemoryPercent();
+        s.cpuHistory.push(cpuPercent);
+        s.memHistory.push(memPercent);
+        const limit = settings.resourceHistory;
+        while (s.cpuHistory.length > limit) s.cpuHistory.shift();
+        while (s.memHistory.length > limit) s.memHistory.shift();
+        const cpuBar = progressBar(cpuPercent);
+        const memBar = progressBar(memPercent);
+        const prevCpu = s.cpuHistory.length >= 2 ? s.cpuHistory[s.cpuHistory.length - 2] : cpuPercent;
+        const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
+        const prevMem = s.memHistory.length >= 2 ? s.memHistory[s.memHistory.length - 2] : memPercent;
+        const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
+        const resourceLines: string[] = [];
+        resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
+        resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
+        const gpu = readGpuInfo();
+        if (gpu) {
+          const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
+          const vramBar = progressBar(vramPercent);
+          const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
+          resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}`);
+          resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+          resourceLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
+        }
+        resourceBlock = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
+      }
+
+      // High-priority core (must keep): status + what the agent is doing now.
+      const coreParts = [header, statusLine, latestToolBlock, latestThoughtBlock, shellBlock, toolsBlock, editsLine].filter(Boolean);
+      let used = coreParts.join("\n\n").length;
+
+      // Medium: partial text (trim to fit)
+      if (partialBlock && used + partialBlock.length + 2 > MAX - 80) {
+        const room = Math.max(0, MAX - used - 100);
+        if (room > 120) {
+          const txt = s.buffer.trim().slice(-Math.min(settings.partialTextLines, 400));
+          partialBlock = "<pre>" + esc(txt) + "</pre>";
+          if (used + partialBlock.length + 2 > MAX - 80) partialBlock = "";
+        } else partialBlock = "";
+      }
+      if (partialBlock) used += partialBlock.length + 2;
+
+      // Lower priority, budget-aware: COT, Thinking, compaction, resources.
+      let cotBlock = "";
+      if (settings.showCot && s.cotBuffer?.trim()) {
+        const cot = s.cotBuffer.trim();
+        const budget = Math.min(700, Math.max(0, MAX - used - 120));
+        cotBlock = fitBlockquote(`🧾 COT (${s.cotCount ?? 0})`, cot.slice(-1500), budget, true);
+        if (cotBlock) used += cotBlock.length + 2;
+      }
+
+      let thinkingBlock = "";
+      if (settings.showThinking && s.reasoningBuffer.trim()) {
+        const r = s.reasoningBuffer.trim();
+        const reserve = (compactionBlock ? Math.min(compactionBlock.length + 2, 300) : 0) + (resourceBlock ? Math.min(resourceBlock.length + 2, 180) : 0) + 40;
+        const budget = Math.max(0, MAX - used - reserve);
+        thinkingBlock = fitBlockquote("🧠 Thinking", r, budget, !settings.thinkingExpanded);
+        if (thinkingBlock) used += thinkingBlock.length + 2;
+      }
+
+      if (compactionBlock && used + compactionBlock.length + 2 > MAX - 20) compactionBlock = "";
+      if (compactionBlock) used += compactionBlock.length + 2;
+      if (resourceBlock && used + resourceBlock.length + 2 > MAX - 10) resourceBlock = "";
+
+      const parts = [
+        header,
+        statusLine,
+        latestToolBlock,
+        latestThoughtBlock,
+        shellBlock,
+        toolsBlock,
+        editsLine,
+        cotBlock,
+        thinkingBlock,
+        partialBlock,
+        compactionBlock,
+        resourceBlock,
+      ].filter(Boolean);
+
+      const finalText = clampText(parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trimEnd(), 3900);
+
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const editKeyboard = [
         [{ text: "⏹ Stop", callback_data: "panel:stop" }],
         ...btnRows,
       ];
-      const edit = tg.editRichMessage(chatId, s.statusMessageId, clampText(finalText, 3900), {
+      const edit = tg.editRichMessage(chatId, s.statusMessageId, finalText, {
         ...opts,
         reply_markup: { inline_keyboard: editKeyboard },
       });
