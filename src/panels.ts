@@ -20,6 +20,7 @@ export type PanelsDeps = {
   modelListByChat: Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string }> }>>;
   routeKey: (chatId: number, threadId?: number) => string;
   chatBySession?: Map<string, number>;
+  deliveryBySession?: Map<string, { chatId: number; threadId?: number }>;
   getSessionStatus?: (sessionId: string) => string | undefined;
   metrics: MetricsStore;
   rememberMessageSession?: (chatId: number, messageId: number, sessionId: string) => void;
@@ -27,12 +28,20 @@ export type PanelsDeps = {
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
-  let modelCache: { time: number; data: any[] } | null = null;
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, deliveryBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
+  /** Model lists depend on the project directory, so the cache is per directory. */
+  const modelCache = new Map<string, { time: number; data: any[] }>();
+  const MODEL_CACHE_TTL_MS = 15000;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
   /** When set, model selection targets this session instead of the route's active session. */
   const modelTargetSessionByScope = new Map<string, string>();
+  /**
+   * Per-user scope key. In groups several people can browse models in the same
+   * topic at once; their pending selections must not overwrite each other.
+   */
+  const userScope = (chatId: number, threadId: number | undefined, userId?: number) =>
+    `${routeKey(chatId, threadId)}#${userId ?? 0}`;
 
   async function sendOrEditRich(chatId: number, messageId: number | undefined, html: string, opts: Record<string, unknown> = {}, rememberSessionId?: string): Promise<number | undefined> {
     if (messageId) {
@@ -91,51 +100,88 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       reply_markup: { inline_keyboard: keyboard },
     });
   }
-  async function showSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean): Promise<void> {
+  async function showSessions(
+    chatId: number,
+    page = 0,
+    messageId?: number,
+    threadId?: number,
+    filterChatId?: number,
+    onlyRunning?: boolean,
+    opts?: { userId?: number },
+  ): Promise<void> {
     const pageSize = 8;
     const list = await oc.listSessionsCached();
     if (!list.length) {
       await tg.sendRichMessage(chatId, "no sessions found. Use /new to create one.", threadOpts(threadId));
       return;
     }
-    const total = list.length;
+    // Filter by chat: a session belongs to every chat it was used from, so we
+    // look at both the persisted binding and the delivery target.
+    const chatsOf = (id: string): number[] => {
+      const out = new Set<number>();
+      const bound = chatBySession?.get(id);
+      if (bound !== undefined) out.add(bound);
+      const delivery = deliveryBySession?.get(id);
+      if (delivery) out.add(delivery.chatId);
+      return [...out];
+    };
+    let filtered = list;
+    if (filterChatId !== undefined) {
+      filtered = filtered.filter((s: any) => chatsOf(String(s.id)).includes(filterChatId));
+    }
+    if (onlyRunning && getSessionStatus) {
+      filtered = filtered.filter((s: any) => {
+        const st = getSessionStatus(String(s.id));
+        return st === "busy" || st === "retry";
+      });
+    }
+    if (!filtered.length) {
+      const text = onlyRunning ? "no running sessions." : filterChatId !== undefined ? "no sessions for this chat." : "no sessions found.";
+      await tg.sendRichMessage(chatId, text, threadOpts(threadId));
+      return;
+    }
+    const total = filtered.length;
     const start = page * pageSize;
-    const slice = list.slice(start, start + pageSize);
+    const slice = filtered.slice(start, start + pageSize);
     const activeId = getActiveSession(chatId, threadId)?.sessionId;
+    const statusIcon = (id: string) => {
+      const st = getSessionStatus ? getSessionStatus(id) : undefined;
+      return st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
+    };
     const rows = slice.map((s: any, i: number) => {
       const title = esc(truncate(s.title ?? "(untitled)", 26));
       const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
       const mark = activeId && activeId === s.id ? " ✅" : "";
-      const st = getSessionStatus ? getSessionStatus(s.id) : undefined;
-      const statusIcon = st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
       const dirLabel = projectLabel(s.location?.directory ?? s.directory);
       const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
       const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 45))}</i>` : "";
-      return `<tr><td>${start + i + 1}</td><td>${statusIcon} <b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}<br/><i>${esc(dirLabel)}</i></td></tr>`;
+      return `<tr><td>${start + i + 1}</td><td>${statusIcon(s.id)} <b>${title}</b>${mark}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}<br/><i>${esc(dirLabel)}</i></td></tr>`;
     });
     const keyboard: any[][] = slice.map((s: any) => {
       const title = (s.title ?? "(untitled)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
-      const st = getSessionStatus ? getSessionStatus(s.id) : undefined;
-      const statusIcon = st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
       const mark = activeId && activeId === s.id ? " ✓" : "";
-      const label = `${statusIcon} ${title}${model}${dirSuffix}${mark}`.slice(0, 64);
+      const label = `${statusIcon(s.id)} ${title}${model}${dirSuffix}${mark}`.slice(0, 64);
       return [{ text: label, callback_data: `use:${s.id}` }];
     });
     const nav: any[] = [];
-    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}` });
-    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}` });
+    const mode = onlyRunning ? "running" : filterChatId !== undefined ? "group" : "all";
+    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}:${mode}` });
+    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}:${mode}` });
     if (nav.length) keyboard.push(nav);
-    keyboard.push([
-      { text: "📋 All", callback_data: "sessions:filter:all" },
-      { text: "🔴 Running", callback_data: "sessions:filter:running" },
-      { text: "📁 Group", callback_data: "sessions:filter:group" },
-    ]);
+    // Filters keep the current scope so pagination and filters compose.
+    const filterRow = [
+      { text: mode === "all" ? "✅ All" : "📋 All", callback_data: "sessions:filter:all" },
+      { text: mode === "running" ? "✅ Running" : "🔴 Running", callback_data: "sessions:filter:running" },
+      { text: mode === "group" ? "✅ Group" : "📁 Group", callback_data: "sessions:filter:group" },
+    ];
+    keyboard.push(filterRow);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const activeLine = activeId ? `\nActiva: <code>${esc(activeId.slice(0, 8))}</code>` : "";
-    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${activeLine}\n<i>Selecciona una sesión:</i>`, {
+    const scopeLine = filterChatId !== undefined ? "\n<i>Mostrando sesiones de este chat</i>" : "";
+    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${activeLine}${scopeLine}\n<i>Selecciona una sesión:</i>`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
@@ -165,8 +211,30 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     });
   }
 
-  async function showModels(chatId: number, page = 0, messageId?: number, threadId?: number, provider?: string, targetSessionId?: string | null): Promise<void> {
-    const scope = routeKey(chatId, threadId);
+  /**
+   * State of a rendered model panel, keyed by the Telegram message id.
+   * Keeping the snapshot per message (instead of a shared index) makes the
+   * buttons robust: a list refresh or a second user browsing models in the
+   * same topic can no longer make a click apply the wrong model.
+   */
+  const modelPanels = new Map<number, {
+    list: any[];
+    scope: string;
+    targetSessionId?: string;
+    provider?: string;
+    pendingModel?: { id: string; providerID: string; variant?: string };
+  }>();
+
+  async function showModels(
+    chatId: number,
+    page = 0,
+    messageId?: number,
+    threadId?: number,
+    provider?: string,
+    targetSessionId?: string | null,
+    opts?: { userId?: number },
+  ): Promise<void> {
+    const scope = userScope(chatId, threadId, opts?.userId);
     if (targetSessionId === null) modelTargetSessionByScope.delete(scope);
     else if (typeof targetSessionId === "string" && targetSessionId) modelTargetSessionByScope.set(scope, targetSessionId);
     const targetId = modelTargetSessionByScope.get(scope);
@@ -175,12 +243,15 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     let raw: any[];
     const now = Date.now();
-    if (modelCache && now - modelCache.time < 15000) {
-      raw = modelCache.data;
+    // The model list depends on the project directory: cache per directory.
+    const cacheKey = directory ?? "__default__";
+    const cached = modelCache.get(cacheKey);
+    if (cached && now - cached.time < MODEL_CACHE_TTL_MS) {
+      raw = cached.data;
     } else {
       const res = await oc.client.model.list(directory ? ({ location: { directory } } as unknown as Parameters<typeof oc.client.model.list>[0]) : undefined);
       raw = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
-      modelCache = { time: now, data: raw };
+      modelCache.set(cacheKey, { time: now, data: raw });
     }
     const list = [...raw].sort((a: any, b: any) => {
       const aFree = /free/i.test(a.id ?? "") || /free/i.test(a.name ?? "");
@@ -189,9 +260,9 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       return String(a.name ?? a.id).localeCompare(String(b.name ?? b.id));
     });
     const current = s?.model;
-    modelListByChat.set(scope, list as Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string }> }>);
+    modelListByChat.set(scope, list as Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id: string }> }>);
     const providers = [...new Set(list.map((m: any) => m.providerID ?? m.provider ?? "unknown"))].sort();
-    const targetNote = targetId ? `\nTarget session: <code>${esc(targetId)}</code>` : "";
+    const dirLabel = directory ? `<i>dir: <code>${esc(directory)}</code></i>` : "";
 
     if (!provider) {
       selectedProviderByChat.delete(scope);
@@ -205,9 +276,9 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const start = page * pageSize;
       const slice = providers.slice(start, start + pageSize);
       const targetHeader = s
-      ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
-      : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
-    const lines = slice.map((providerId: string, i: number) => {
+        ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
+        : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
+      const lines = slice.map((providerId: string, i: number) => {
         const count = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
         const isCurrent = current && current.providerID === providerId;
         const mark = isCurrent ? " ✅" : "";
@@ -224,10 +295,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       if (nav.length) keyboard.push(nav);
       keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
       const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
-      await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n\n${table}`, {
+      const sentId = await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n${dirLabel}\n\n${table}`, {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: keyboard },
       }, s?.sessionId ?? targetId);
+      if (sentId !== undefined) modelPanels.set(sentId, { list, scope, targetSessionId: s?.sessionId ?? targetId });
       return;
     }
 
@@ -260,10 +332,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const targetHeader = s
       ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
       : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
-    await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n\n${table}`, {
+    const sentId = await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n${dirLabel}\n\n${table}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     }, s?.sessionId ?? targetId);
+    if (sentId !== undefined) modelPanels.set(sentId, { list, scope, targetSessionId: s?.sessionId ?? targetId, provider });
   }
 
   async function showStatus(chatId: number, threadId?: number, messageId?: number): Promise<void> {
@@ -397,5 +470,5 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
 
-  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, providerListByChat, selectedProviderByChat, modelTargetSessionByScope };
+  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, providerListByChat, selectedProviderByChat, modelTargetSessionByScope, modelPanels, userScope };
 }

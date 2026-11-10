@@ -5,6 +5,7 @@ import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 import { SessionStore } from "./store.js";
 import { createStatusManager } from "./status.js";
+import { createTranscriptManager } from "./transcriptmanager.js";
 import { SettingsStore } from "./settings.js";
 import { MetricsStore } from "./metrics.js";
 import { createOpsServer } from "./ops.js";
@@ -59,6 +60,11 @@ async function main() {
   const pendingEdits = new Map();
   const messageToSession = store.messageToSession;
   const metrics = new MetricsStore();
+  const transcript = createTranscriptManager({
+    tg,
+    store,
+    threadOptsFor: (s) => store.threadOptsFor(s),
+  });
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),
@@ -68,6 +74,7 @@ async function main() {
     rememberStatusMessage: (sessionId, chatId, threadId, messageId) => store.rememberStatusMessage(sessionId, chatId, threadId, messageId),
     forgetStatusMessage: (sessionId) => store.forgetStatusMessage(sessionId),
     store,
+    transcript,
   });
   const sessions = createSessionManager({
     config,
@@ -91,6 +98,7 @@ async function main() {
     modelListByChat,
     routeKey: store.routeKey,
     chatBySession: store.chatBySession,
+    deliveryBySession: store.deliveryBySession,
     getSessionStatus: (sid: string) => store.getSessionStatus(sid),
     metrics,
     rememberMessageSession: store.rememberMessageSession,
@@ -154,6 +162,7 @@ async function main() {
     topicsEnabled,
     sessions,
     status,
+    transcript,
     panels,
     files,
     settings,
@@ -168,6 +177,7 @@ async function main() {
     awaitingReason: new Map(),
     modelListByChat,
     pendingModelByChat,
+    pendingGroupPrompts: new Map(),
     audit,
   };
 
@@ -186,6 +196,8 @@ async function main() {
     updateStatus: status.updateStatus,
     finishStatus: status.finishStatus,
     syncTopicTitle: sessions.syncTopicTitle,
+    transcript,
+    publishCard: status.publishCard,
   });
 
   let webhookServer: ReturnType<typeof createWebhookServer> | undefined;

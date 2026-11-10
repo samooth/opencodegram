@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { formatBytes } from "./files/index.js";
 import { clampText, esc, sessionHeader, threadOpts, toolIcon, truncate } from "./util.js";
+import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
+import type { TranscriptManager } from "./transcriptmanager.js";
 
 function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -175,6 +177,8 @@ export type StatusDeps = {
   rememberStatusMessage: (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => void;
   forgetStatusMessage: (sessionId: string) => void;
   store?: SessionStore;
+  /** Session card: one paginated message per session. */
+  transcript?: TranscriptManager;
 };
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -333,7 +337,7 @@ function capDiff(diff: string, max: number): string {
   return lines.slice(0, max).join("\n") + `\n… (+${lines.length - max} more lines)`;
 }
 
-export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript }: StatusDeps) {
   const resolveSessionName = (s: ChatSession): string => {
     let name = (s.topicTitle || "").trim();
     if (!name && store) name = (store.topicTitleBySession.get(s.sessionId) || "").trim();
@@ -357,8 +361,70 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
   };
 
+  /**
+   * Compact live strip shown above the transcript while the session works:
+   * status, background note, latest tool and latest thought.
+   */
+  const renderLiveStrip = (s: ChatSession, settings: ChatSettings): string => {
+    const lines: string[] = [];
+    const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
+    lines.push(
+      s.stopped
+        ? "<h4>⏹ Stopped</h4>"
+        : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`,
+    );
+    if (s.detached && !s.stopped) {
+      lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
+    }
+    if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
+      const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
+      const last = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
+      lines.push(`💭 <b>Último pensamiento</b>\n<blockquote><mark>${esc(clampText(last, 240))}</mark></blockquote>`);
+    }
+    if (settings.showTools && settings.showLatestTool && s.toolCallDetails.length) {
+      const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
+      const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
+      const summary = getToolSummary(lastTool.name, lastTool.input);
+      const argPart = summary.arg ? ` <code>${esc(shortToolArg(summary.arg, 70))}</code>` : "";
+      lines.push(`${statusEmoji} <b>Última herramienta</b> ${toolIcon(lastTool.name)} <b>${esc(lastTool.name)}</b>${argPart}`);
+    }
+    if (settings.showPartialText && s.buffer.trim()) {
+      const tail = s.buffer.trim().slice(-400);
+      lines.push(`<pre>${esc(tail)}</pre>`);
+    }
+    if (settings.showCot && s.cotBuffer?.trim()) {
+      lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
+    }
+    return lines.join("\n");
+  };
+
+  /** Summary shown once the turn is over. */
+  const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
+    const lines: string[] = ["✅ <b>Done</b>"];
+    if (s.detached) lines.push("<i>🔀 Esta sesión quedó en segundo plano.</i>");
+    if (settings.showTools && s.toolCallDetails.length) {
+      const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;
+      const other = s.toolCallDetails.length - shell;
+      const parts: string[] = [];
+      if (shell) parts.push(`${shell} shell`);
+      if (other) parts.push(`${other} tools`);
+      lines.push(`<i>🔧 ${parts.join(" · ")}</i>`);
+    }
+    return lines.join("\n");
+  };
+
+  /**
+   * Publish the session card with the right strip for the current state:
+   * live while working, "Done" when the turn finished.
+   */
+  const publishCard = async (chatId: number, s: ChatSession): Promise<void> => {
+    if (!transcript) return;
+    const settings = getSettings(chatId);
+    const strip = s.statusFinished ? renderDoneStrip(s, settings) : renderLiveStrip(s, settings);
+    await transcript.publish(chatId, s, { extraTop: strip, working: !s.statusFinished });
+  };
+
   const startStatus = async (chatId: number, s: ChatSession) => {
-    const opts = threadOptsFor(s);
     const settings = getSettings(chatId);
     s.statusFinished = false;
     s.statusEditPromise = undefined;
@@ -368,16 +434,20 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.toolCalls = [];
     s.toolCallDetails = [];
     s.stopped = false;
+    s.statusLastUpdate = Date.now();
     try {
+      if (transcript) {
+        // One card per session: reuse it instead of sending a new message.
+        await publishCard(chatId, s);
+        if (s.transcriptMessageId) {
+          s.statusMessageId = s.transcriptMessageId;
+          rememberStatusMessage(s.sessionId, chatId, s.targetThreadId ?? s.threadId, s.transcriptMessageId);
+        }
+        return;
+      }
+      const opts = threadOptsFor(s);
       const lines: string[] = [];
       lines.unshift(sessionHeader(s).trimEnd());
-      if (settings.showCot) {
-        const cotSrc = s.cotBuffer?.trim() ? s.cotBuffer.trim() : "";
-        if (cotSrc) {
-          const cot = cotSrc.slice(-1500);
-          lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(cot)}</blockquote>`);
-        }
-      }
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
@@ -390,7 +460,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         reply_markup: { inline_keyboard: keyboard },
       });
       s.statusMessageId = sent.message_id;
-      s.statusLastUpdate = Date.now();
       rememberStatusMessage(s.sessionId, chatId, s.targetThreadId ?? s.threadId, sent.message_id);
     } catch (err) {
       console.error("[status]", err);
@@ -398,48 +467,42 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   };
 
   const updateStatus = async (chatId: number, s: ChatSession, force = false) => {
-    if (!s.statusMessageId || s.statusFinished) return;
+    if (s.statusFinished) return;
+    if (!s.statusMessageId && !s.transcriptMessageId) return;
     if (s.statusEditing) { s.statusPendingUpdate = true; return; }
     const opts = threadOptsFor(s);
     const settings = getSettings(chatId);
     const now = Date.now();
-    if (!force && s.statusLastUpdate && now - s.statusLastUpdate < 5000) return;
+    // A session that lost its route (another session took over the tab) keeps
+    // updating its card, but at a slower cadence to avoid Telegram rate limits.
+    // Forced updates are throttled too in that case.
+    const minGap = s.detached ? STATUS_BACKGROUND_GAP_MS : STATUS_MIN_UPDATE_GAP_MS;
+    if (s.statusLastUpdate && now - s.statusLastUpdate < minGap) {
+      if (s.detached || !force) return;
+    }
     s.statusEditing = true;
     s.statusLastUpdate = now;
     // Draft keep-alive: drafts expire ~30s; refresh while turn is active (private chats).
     if (!s.stopped && s.draftId) {
       void flushDraft(chatId, s);
     }
-    const fitBlockquote = (label: string, body: string, budget: number, expandable = true): string => {
-      const open = `<blockquote${expandable ? " expandable" : ""}>${label}\n`;
-      const close = `</blockquote>`;
-      const overhead = open.length + close.length + 24;
-      if (budget <= overhead) return "";
-      let text = body;
-      const note = `\n… (${body.length} chars, completo al finalizar)`;
-      const fullEsc = esc(text);
-      if (fullEsc.length + overhead <= budget) {
-        return `${open}${fullEsc}${close}`;
-      }
-      // Keep tail (most recent) and add note if truncated.
-      let allow = Math.max(80, budget - overhead - esc(note).length - 8);
-      let tail = text.slice(-allow);
-      // avoid cutting surrogate
-      if (tail.length && /[\uD800-\uDBFF]/.test(tail[0])) tail = tail.slice(1);
-      text = "…\n" + tail + (body.length > tail.length ? note : "");
-      return `${open}${esc(text)}${close}`;
-    };
     try {
+      if (transcript) {
+        await publishCard(chatId, s);
+        return;
+      }
       const MAX = 3800;
       const header = sessionHeader(s).trimEnd();
       const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
       const statusLine = s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`;
+      const backgroundNote = s.detached && !s.stopped
+        ? "<i>🔀 Esta sesión sigue en segundo plano (otra sesión ocupa la pestaña).</i>"
+        : "";
 
       const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
       const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
 
-      // High-priority: latest tool & latest thought (always visible when available)
       let latestToolBlock = "";
       const lastTool = s.toolCallDetails.length ? s.toolCallDetails[s.toolCallDetails.length - 1] : null;
       if (settings.showTools && settings.showLatestTool && lastTool) {
@@ -501,100 +564,16 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         partialBlock = "<pre>" + esc(txt) + "</pre>";
       }
 
-      let compactionBlock = "";
-      if (s.compacting) {
-        compactionBlock = "📦 <b>Compacting context…</b>";
-      } else if (s.compactionError?.trim()) {
-        compactionBlock = `📦 <b>Compaction failed</b>\n<i>${esc(s.compactionError.trim().slice(0, 240))}</i>`;
-      } else if (s.compactionSummary?.trim()) {
-        const sum = s.compactionSummary.trim();
-        compactionBlock = sum.length > 220
-          ? `<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum.slice(0, 1000))}</blockquote>`
-          : `📦 <b>Compaction</b>: ${esc(sum)}`;
-      }
-
-      let resourceBlock = "";
-      if (settings.showResourceUsage) {
-        if (!s.cpuHistory) s.cpuHistory = [];
-        if (!s.memHistory) s.memHistory = [];
-        const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
-        const memPercent = readMemoryPercent();
-        s.cpuHistory.push(cpuPercent);
-        s.memHistory.push(memPercent);
-        const limit = settings.resourceHistory;
-        while (s.cpuHistory.length > limit) s.cpuHistory.shift();
-        while (s.memHistory.length > limit) s.memHistory.shift();
-        const cpuBar = progressBar(cpuPercent);
-        const memBar = progressBar(memPercent);
-        const prevCpu = s.cpuHistory.length >= 2 ? s.cpuHistory[s.cpuHistory.length - 2] : cpuPercent;
-        const cpuTrend = cpuPercent > prevCpu ? " ↑" : cpuPercent < prevCpu ? " ↓" : "";
-        const prevMem = s.memHistory.length >= 2 ? s.memHistory[s.memHistory.length - 2] : memPercent;
-        const memTrend = memPercent > prevMem ? " ↑" : memPercent < prevMem ? " ↓" : "";
-        const resourceLines: string[] = [];
-        resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
-        resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
-        const gpu = readGpuInfo();
-        if (gpu) {
-          const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
-          const vramBar = progressBar(vramPercent);
-          const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-          resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}`);
-          resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
-          resourceLines.push(`Load ${progressBar(gpu.load)} ${gpu.load}%${temp}`);
-        }
-        resourceBlock = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
-      }
-
-      // High-priority core (must keep): status + what the agent is doing now.
-      const coreParts = [header, statusLine, latestToolBlock, latestThoughtBlock, shellBlock, toolsBlock, editsLine].filter(Boolean);
-      let used = coreParts.join("\n\n").length;
-
-      // Medium: partial text (trim to fit)
-      if (partialBlock && used + partialBlock.length + 2 > MAX - 80) {
-        const room = Math.max(0, MAX - used - 100);
-        if (room > 120) {
-          const txt = s.buffer.trim().slice(-Math.min(settings.partialTextLines, 400));
-          partialBlock = "<pre>" + esc(txt) + "</pre>";
-          if (used + partialBlock.length + 2 > MAX - 80) partialBlock = "";
-        } else partialBlock = "";
-      }
-      if (partialBlock) used += partialBlock.length + 2;
-
-      // Lower priority, budget-aware: COT, Thinking, compaction, resources.
-      let cotBlock = "";
-      if (settings.showCot && s.cotBuffer?.trim()) {
-        const cot = s.cotBuffer.trim();
-        const budget = Math.min(700, Math.max(0, MAX - used - 120));
-        cotBlock = fitBlockquote(`🧾 COT (${s.cotCount ?? 0})`, cot.slice(-1500), budget, true);
-        if (cotBlock) used += cotBlock.length + 2;
-      }
-
-      let thinkingBlock = "";
-      if (settings.showThinking && s.reasoningBuffer.trim()) {
-        const r = s.reasoningBuffer.trim();
-        const reserve = (compactionBlock ? Math.min(compactionBlock.length + 2, 300) : 0) + (resourceBlock ? Math.min(resourceBlock.length + 2, 180) : 0) + 40;
-        const budget = Math.max(0, MAX - used - reserve);
-        thinkingBlock = fitBlockquote("🧠 Thinking", r, budget, !settings.thinkingExpanded);
-        if (thinkingBlock) used += thinkingBlock.length + 2;
-      }
-
-      if (compactionBlock && used + compactionBlock.length + 2 > MAX - 20) compactionBlock = "";
-      if (compactionBlock) used += compactionBlock.length + 2;
-      if (resourceBlock && used + resourceBlock.length + 2 > MAX - 10) resourceBlock = "";
-
       const parts = [
         header,
         statusLine,
+        backgroundNote,
         latestToolBlock,
         latestThoughtBlock,
         shellBlock,
         toolsBlock,
         editsLine,
-        cotBlock,
-        thinkingBlock,
         partialBlock,
-        compactionBlock,
-        resourceBlock,
       ].filter(Boolean);
 
       const finalText = clampText(parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trimEnd(), 3900);
@@ -605,7 +584,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         [{ text: "⏹ Stop", callback_data: "panel:stop" }],
         ...btnRows,
       ];
-      const edit = tg.editRichMessage(chatId, s.statusMessageId, finalText, {
+      const edit = tg.editRichMessage(chatId, s.statusMessageId!, finalText, {
         ...opts,
         reply_markup: { inline_keyboard: editKeyboard },
       });
@@ -629,27 +608,109 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 
   /** Freeze the status card. Stop disappears; thinking/tools stay collapsible. */
   const finishStatus = async (chatId: number, s: ChatSession) => {
+    if (s.statusFinished) {
+      // Idempotent: step.ended and text.ended may both close the same turn.
+      if (s.statusTimer) {
+        clearInterval(s.statusTimer);
+        s.statusTimer = undefined;
+      }
+      return;
+    }
     if (s.statusTimer) {
       clearInterval(s.statusTimer);
       s.statusTimer = undefined;
     }
     s.statusFinished = true;
-    forgetStatusMessage(s.sessionId);
     if (s.statusEditPromise) {
       await s.statusEditPromise.catch(() => {});
       s.statusEditPromise = undefined;
     }
+    const settings = getSettings(chatId);
+    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
+
+    if (transcript) {
+      // Append the turn output to the session transcript: the card is edited
+      // in place, so no extra message is sent for thinking or tools.
+      const fullThinking = !s.stopped && s.reasoningBuffer.trim() ? s.reasoningBuffer.trim() : "";
+      if (fullThinking) {
+        transcript.addBlock(
+          s,
+          "thinking",
+          `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(fullThinking)}</blockquote>`,
+          fullThinking,
+        );
+        // Persist as COT history (larger cap to avoid losing context).
+        const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
+        let next = prev + fullThinking;
+        if (next.length > 16000) next = next.slice(next.length - 16000);
+        s.cotBuffer = next;
+        s.cotCount = (s.cotCount ?? 0) + 1;
+        rememberCot(s.sessionId, next, s.cotCount);
+        s.reasoningBuffer = "";
+      }
+      if (settings.showTools && s.toolCallDetails.length) {
+        const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
+        const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
+        if (shellDetails.length) {
+          const shellText = renderShell(shellDetails, 800);
+          transcript.addBlock(
+            s,
+            "tools",
+            `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`,
+            shellText,
+          );
+        }
+        if (otherDetails.length) {
+          const details = renderTools(otherDetails, 1200, settings.showToolInput);
+          transcript.addBlock(
+            s,
+            "tools",
+            `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`,
+            details,
+          );
+        }
+      }
+      s.transcriptFollow = true;
+      await publishCard(chatId, s);
+      // The card stays alive for pagination; only the live status ends.
+      s.statusMessageId = undefined;
+      forgetStatusMessage(s.sessionId);
+      // Edits are offered in their own message so the session card keeps its
+      // paginated content intact.
+      if (editDetails.length && s.transcriptMessageId) {
+        const editMessageId = s.transcriptMessageId;
+        const editLines: string[] = [];
+        for (const detail of editDetails) {
+          const file = relativeEditPath(s, extractEditFile(detail.input) ?? `edit ${editLines.length + 1}`);
+          const diff = formatEditDiff(detail.input, settings.diffStyle, s.directory);
+          const capped = capDiff(diff, 12);
+          editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>` : ""}`);
+        }
+        try {
+          const sent = await tg.sendRichMessage(chatId, `${sessionHeader(s)}<b>Edits</b> (${editDetails.length})\n${editLines.join("\n")}`, {
+            ...threadOptsFor(s),
+            reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, editMessageId) },
+          });
+          if (sent?.message_id) {
+            pendingEdits.set(sent.message_id, s);
+            store?.rememberPendingEdits(sent.message_id, s.sessionId);
+          }
+        } catch (err) {
+          console.error("[status] edits message failed", err);
+        }
+      }
+      return;
+    }
+
+    forgetStatusMessage(s.sessionId);
     if (s.statusMessageId) {
-      const settings = getSettings(chatId);
       const messageId = s.statusMessageId;
       s.expandedEditIndex = undefined;
-      const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (editDetails.length) {
         pendingEdits.set(messageId, s);
         store?.rememberPendingEdits(messageId, s.sessionId);
       }
       const fullThinking = (!s.stopped && s.reasoningBuffer.trim()) ? s.reasoningBuffer.trim() : "";
-      // If we send full thinking chunks, don't also inline it in the clamped status card.
       const text = clampText(renderFinished(s, undefined, settings, !fullThinking || !settings.showThinking));
       const keyboard = finishedKeyboard(editDetails, undefined, s, messageId);
       await tg
@@ -659,25 +720,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         })
         .catch((err) => console.error("[status] finish edit FAILED", messageId, err));
       if (fullThinking) {
-        // Persist as COT history (larger cap to avoid losing context).
         const prev = s.cotBuffer?.trim() ? s.cotBuffer.trim() + "\n\n---\n\n" : "";
         let next = prev + fullThinking;
         if (next.length > 16000) next = next.slice(next.length - 16000);
         s.cotBuffer = next;
         s.cotCount = (s.cotCount ?? 0) + 1;
         rememberCot(s.sessionId, next, s.cotCount);
-        // Send full thinking in chunks so it is never truncated.
-        if (settings.showThinking) {
-          const opts = threadOptsFor(s);
-          const chunkSize = 3400;
-          for (let i = 0; i < fullThinking.length; i += chunkSize) {
-            const part = fullThinking.slice(i, i + chunkSize);
-            const n = Math.ceil(fullThinking.length / chunkSize);
-            const idx = Math.floor(i / chunkSize) + 1;
-            const label = n > 1 ? `🧠 Thinking (${idx}/${n})` : "🧠 Thinking";
-            await tg.sendRichMessage(chatId, `${sessionHeader(s)}<blockquote expandable>${label}\n${esc(part)}</blockquote>`, opts).catch(() => {});
-          }
-        }
         s.reasoningBuffer = "";
       }
       s.statusMessageId = undefined;
@@ -855,5 +903,5 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     return true;
   };
 
-  return { flushDraft, startStatus, updateStatus, finishStatus, showEditDiff, sendFullDiffs };
+  return { flushDraft, startStatus, updateStatus, finishStatus, publishCard, showEditDiff, sendFullDiffs };
 }

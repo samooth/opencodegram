@@ -37,7 +37,27 @@ const PREFIXES = [
   "sessions:",
   "filter:",
   "cmd:",
+  "tpage:",
 ].sort((a, b) => b.length - a.length);
+
+/**
+ * Navigate the paginated session card (◀/▶ pages of the session transcript).
+ */
+async function handleTranscriptPage(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const m = data.match(/^tpage:(.+):(\d+)$/);
+  if (!m) return;
+  const sessionId = m[1];
+  const page = parseInt(m[2], 10);
+  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  const s = deps.store.findSessionById(sessionId);
+  if (!s || !deps.transcript) {
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  await deps.transcript.goToPage(chatId, s, page).catch((err) => {
+    console.error("[tpage] failed", err);
+  });
+}
 
 async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const m = data.match(/^perm:(allow|always|reject|rejectreason):(.+)$/);
@@ -242,10 +262,14 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   const m = data.match(/^model:(\d+)$/);
   if (!m) return;
   const idx = parseInt(m[1], 10);
-  const scope = deps.store.routeKey(chatId, threadId);
-  const models = deps.modelListByChat.get(scope) ?? [];
+  const userId = cq.from?.id;
+  // Prefer the snapshot rendered in this very message: a shared index could
+  // point to another model after a refresh or a concurrent user action.
+  const panel = messageId !== undefined ? deps.panels.modelPanels.get(messageId) : undefined;
+  const scope = panel?.scope ?? deps.panels.userScope(chatId, threadId, userId);
+  const models = panel?.list ?? deps.modelListByChat.get(scope) ?? [];
   const model = models[idx];
-  const targetId = deps.panels.modelTargetSessionByScope.get(scope);
+  const targetId = panel?.targetSessionId ?? deps.panels.modelTargetSessionByScope.get(scope);
   const s = targetId ? deps.store.findSessionById(targetId) : deps.store.getActiveSession(chatId, threadId);
   if (!model) {
     await deps.tg.answerCallbackQuery(cq.id, "Model not found");
@@ -259,7 +283,12 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     }).catch(() => {});
     return;
   }
-  deps.pendingModelByChat.set(scope, model as { id: string; providerID: string; variant?: string });
+  const pending = { id: model.id, providerID: model.providerID, variant: model.variant };
+  if (messageId !== undefined) {
+    const entry = deps.panels.modelPanels.get(messageId);
+    if (entry) entry.pendingModel = pending;
+  }
+  if (!messageId) deps.pendingModelByChat.set(scope, pending);
   const variants = Array.isArray(model.variants) ? model.variants : [];
   const keyboard: any[][] = [];
   for (const v of variants) {
@@ -268,7 +297,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   keyboard.push([{ text: "Default", callback_data: "variant:default" }]);
   keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }]);
   keyboard.push([
-    { text: "🧠 Models", callback_data: targetId ? `panel:ms:${s.sessionId}` : "panel:models" },
+    { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },
     { text: "🏠 Panel", callback_data: "panel:home" },
   ]);
   await deps.tg.answerCallbackQuery(cq.id);
@@ -310,9 +339,11 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const m = data.match(/^variant:(.+)$/);
   if (!m) return;
   const variantId = m[1];
-  const scope = deps.store.routeKey(chatId, threadId);
-  const model = deps.pendingModelByChat.get(scope);
-  const targetId = deps.panels.modelTargetSessionByScope.get(scope);
+  const userId = cq.from?.id;
+  const panel = messageId !== undefined ? deps.panels.modelPanels.get(messageId) : undefined;
+  const scope = panel?.scope ?? deps.panels.userScope(chatId, threadId, userId);
+  const model = panel?.pendingModel ?? deps.pendingModelByChat.get(scope);
+  const targetId = panel?.targetSessionId ?? deps.panels.modelTargetSessionByScope.get(scope);
   const s = targetId ? deps.store.findSessionById(targetId) : deps.store.getActiveSession(chatId, threadId);
   if (!model) {
     await deps.tg.answerCallbackQuery(cq.id, "No pending model");
@@ -331,17 +362,18 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   try {
     await deps.oc.switchModel(s.sessionId, { id: model.id, providerID: model.providerID, variant });
     deps.pendingModelByChat.delete(scope);
+    if (panel) panel.pendingModel = undefined;
     s.model = { id: model.id, providerID: model.providerID, variant };
     if (cq.message?.message_id) {
       await deps.tg.editRichMessage(
         chatId,
         cq.message.message_id,
-        `✅ Model switched\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${variant ? " (" + esc(variant) + ")" : ""}`,
+        `${sessionHeader(s)}✅ Model switched\n<code>${esc(model.providerID)}/${esc(model.id)}</code>${variant ? " (" + esc(variant) + ")" : ""}`,
         {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "🧠 Models", callback_data: deps.panels.modelTargetSessionByScope.get(scope) ? `panel:ms:${s.sessionId}` : "panel:models" },
+                { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },
                 { text: "🏠 Panel", callback_data: "panel:home" },
               ],
             ],
@@ -462,22 +494,23 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   }
   if (data === "panel:models") {
     await tg.answerCallbackQuery(cq.id);
-    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, null);
+    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, null, { userId: cq.from?.id });
     return;
   }
   if (data.startsWith("panel:ms:")) {
     const targetSessionId = data.slice("panel:ms:".length).trim();
     await tg.answerCallbackQuery(cq.id);
-    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, targetSessionId || null);
+    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, targetSessionId || null, { userId: cq.from?.id });
     return;
   }
   if (data === "panel:stop") {
     let s = store.getActiveSession(chatId, threadId);
-    // Fall back to the session bound to this status message (survives
-    // in-memory resets and thread mismatches).
-    if (!s && messageId !== undefined) {
-      const sid = store.messageToSession.get(`${chatId}:${messageId}`);
-      if (sid) s = store.sessionsById.get(sid);
+    // The Stop button lives in the status card of a specific session. Prefer
+    // that session: a detached session can keep working in another tab while
+    // this route already shows a different one.
+    if (messageId !== undefined) {
+      const sid = store.findSessionByStatusMessage(chatId, messageId) ?? store.messageToSession.get(`${chatId}:${messageId}`);
+      if (sid) s = store.sessionsById.get(sid) ?? store.findSessionById(sid);
     }
     // Last resort: restore the persisted binding for this tab.
     if (!s) {
@@ -500,7 +533,11 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     cancelAutoRetry(s.sessionId);
     await oc.interrupt(s.sessionId).catch(() => {});
     await tg.answerCallbackQuery(cq.id, "Stopped");
-    if (s.statusMessageId) {
+    if (s.transcriptMessageId) {
+      // The session card keeps its paginated transcript; only the live part ends.
+      await deps.status.publishCard(chatId, s).catch(() => {});
+      s.statusMessageId = undefined;
+    } else if (s.statusMessageId) {
       await tg
         .editRichMessage(chatId, s.statusMessageId, "⏹ <b>Stopped</b>", {
           ...store.threadOptsFor(s),
@@ -528,10 +565,14 @@ async function handleSessions(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
     else await deps.panels.showSessions(chatId, 0, cq.message?.message_id, threadId);
     return;
   }
-  const pageMatch = data.match(/^sessions:page:(\d+)$/);
+  const pageMatch = data.match(/^sessions:page:(\d+)(?::(all|running|group))?$/);
   if (pageMatch) {
+    const page = parseInt(pageMatch[1], 10);
+    const mode = pageMatch[2] ?? "all";
     await deps.tg.answerCallbackQuery(cq.id);
-    await deps.panels.showSessions(chatId, parseInt(pageMatch[1], 10), cq.message?.message_id, threadId);
+    if (mode === "running") await deps.panels.showSessions(chatId, page, cq.message?.message_id, threadId, undefined, true);
+    else if (mode === "group") await deps.panels.showSessions(chatId, page, cq.message?.message_id, threadId, chatId);
+    else await deps.panels.showSessions(chatId, page, cq.message?.message_id, threadId);
     return;
   }
 }
@@ -572,6 +613,7 @@ async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
 
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "fs:": handleFs,
+  "tpage:": handleTranscriptPage,
   "panel:": handlePanel,
   "perm:": handlePerm,
   "use:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {
@@ -581,6 +623,22 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
     await deps.tg.answerCallbackQuery(cq.id, "Connecting…");
     try {
       await deps.sessions.activateSession(chatId, sessionId, true, threadId);
+      // A message may have been waiting for the user to pick a session.
+      const route = deps.store.routeKey(chatId, threadId);
+      const pending = deps.pendingGroupPrompts.get(route);
+      if (pending && Date.now() - pending.at < 10 * 60 * 1000) {
+        deps.pendingGroupPrompts.delete(route);
+        const s = deps.store.findSessionById(sessionId);
+        if (s) {
+          s.targetChatId = chatId;
+          s.targetThreadId = threadId;
+          await deps.status.startStatus(chatId, s);
+          void deps.oc.prompt(s.sessionId, pending.text, pending.files).catch((err) => {
+            deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+          });
+          return;
+        }
+      }
       await deps.panels.showStatus(chatId, threadId, cq.message?.message_id);
     } catch (err) {
       await deps.tg.answerCallbackQuery(cq.id, "Failed");
@@ -851,12 +909,13 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   const provMatch = cbData.match(/^prov:(.+)$/);
   if (provMatch) {
-    const scope = routeKey(chatId, threadId);
+    const userId = cq.from?.id;
+    const scope = deps.panels.userScope(chatId, threadId, userId);
     const providers = providerListByChat.get(scope) ?? [];
     const raw = provMatch[1];
     if (raw === "back") {
       await tg.answerCallbackQuery(cq.id);
-      await showModels(chatId, 0, cq.message?.message_id, threadId);
+      await showModels(chatId, 0, cq.message?.message_id, threadId, undefined, undefined, { userId });
       return;
     }
     const index = parseInt(raw, 10);
@@ -866,14 +925,16 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       return;
     }
     await tg.answerCallbackQuery(cq.id);
-    await showModels(chatId, 0, cq.message?.message_id, threadId, provider);
+    await showModels(chatId, 0, cq.message?.message_id, threadId, provider, undefined, { userId });
     return;
   }
 
   if (cbData === "modelcancel") {
-    const scope = routeKey(chatId, threadId);
+    const userId = cq.from?.id;
+    const scope = deps.panels.userScope(chatId, threadId, userId);
     pendingModelByChat.delete(scope);
-    panels.modelTargetSessionByScope.delete(scope);
+    deps.panels.modelTargetSessionByScope.delete(scope);
+    if (messageId !== undefined) deps.panels.modelPanels.delete(messageId);
     await tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
     if (cq.message?.message_id) {
       await tg.editRichMessage(chatId, cq.message.message_id, "Model selection cancelled.", {
@@ -885,10 +946,11 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   const modelsPageMatch = cbData.match(/^models:page:(\d+)$/);
   if (modelsPageMatch) {
-    const scope = routeKey(chatId, threadId);
+    const userId = cq.from?.id;
+    const scope = deps.panels.userScope(chatId, threadId, userId);
     const provider = selectedProviderByChat?.get(scope);
     await tg.answerCallbackQuery(cq.id);
-    await showModels(chatId, parseInt(modelsPageMatch[1], 10), cq.message?.message_id, threadId, provider);
+    await showModels(chatId, parseInt(modelsPageMatch[1], 10), cq.message?.message_id, threadId, provider, undefined, { userId });
     return;
   }
 

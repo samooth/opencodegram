@@ -1,3 +1,5 @@
+import type { TranscriptBlock } from "./transcript.js";
+
 export type ChatSession = {
   sessionId: string;
   directory?: string;
@@ -11,6 +13,12 @@ export type ChatSession = {
   typingTimer?: ReturnType<typeof setInterval>;
   statusTimer?: ReturnType<typeof setInterval>;
   stopped: boolean;
+  /**
+   * True when the session lost its route binding but is still alive.
+   * Detached sessions keep working and must still deliver their final answer
+   * to the chat/topic they were started in.
+   */
+  detached?: boolean;
   threadId?: number;
   cotBuffer?: string;
   cotCount?: number;
@@ -39,4 +47,12 @@ export type ChatSession = {
   statusEditPromise?: Promise<unknown>;
   promptStartTime?: number;
   lastOutputTokens?: number;
+  /** Full transcript of the session, rendered as paginated pages. */
+  transcript?: TranscriptBlock[];
+  /** Telegram message that hosts the paginated transcript. */
+  transcriptMessageId?: number;
+  /** Page currently displayed in the transcript message. */
+  transcriptPage?: number;
+  /** True while the user has not navigated away from the latest page. */
+  transcriptFollow?: boolean;
 };

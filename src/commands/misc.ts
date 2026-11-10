@@ -8,7 +8,7 @@ import { clampText, colorDiff, esc, threadOpts, truncate } from "../util.js";
 import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
-export async function cmd_start(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_start(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/start" || text === "/help") {
     await C.sendPanel(chatId, threadId);
@@ -17,7 +17,7 @@ export async function cmd_start(deps: BotDeps, chatId: number, threadId: number 
   return false;
 }
 
-export async function cmd_commands(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_commands(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/commands") {
     await C.showCommands(chatId, threadId);
@@ -26,7 +26,7 @@ export async function cmd_commands(deps: BotDeps, chatId: number, threadId: numb
   return false;
 }
 
-export async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/settings") {
     const settings = C.settings.get(chatId);
@@ -36,16 +36,16 @@ export async function cmd_settings(deps: BotDeps, chatId: number, threadId: numb
   return false;
 }
 
-export async function cmd_models(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_models(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/models" || text === "/model") {
-    await C.showModels(chatId, 0, undefined, threadId);
+    await C.showModels(chatId, 0, undefined, threadId, undefined, undefined, { userId });
     return true;
   }
   return false;
 }
 
-export async function cmd_agents(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_agents(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/agents" || text === "/agent") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -69,7 +69,7 @@ export async function cmd_agents(deps: BotDeps, chatId: number, threadId: number
   return false;
 }
 
-export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/skills" || text === "/skill") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -108,7 +108,7 @@ export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number
   return false;
 }
 
-export async function cmd_retry(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_retry(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/retry" || text.startsWith("/retry ")) {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -157,7 +157,7 @@ export async function cmd_retry(deps: BotDeps, chatId: number, threadId: number 
   return false;
 }
 
-export async function cmd_buttons(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_buttons(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   const isAdmin = !!C.config.ADMIN_TELEGRAM_USER_ID && deps.me?.id === C.config.ADMIN_TELEGRAM_USER_ID;
   if (text === "/buttons" || text.startsWith("/buttons ")) {

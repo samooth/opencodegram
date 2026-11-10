@@ -8,7 +8,7 @@ import { clampText, colorDiff, esc, threadOpts, truncate } from "../util.js";
 import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
-export async function cmd_vcs(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_vcs(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/vcs" || text.startsWith("/vcs ")) {
     const args = text.slice(4).trim().split(/\s+/).filter(Boolean);
@@ -60,7 +60,7 @@ export async function cmd_vcs(deps: BotDeps, chatId: number, threadId: number | 
   return false;
 }
 
-export async function cmd_branches(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_branches(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/branches" || text === "/branch" || text.startsWith("/branch ")) {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -109,7 +109,7 @@ export async function cmd_branches(deps: BotDeps, chatId: number, threadId: numb
   return false;
 }
 
-export async function cmd_stage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_stage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/stage" || text.startsWith("/stage ")) {
     const path = text.slice(6).trim();
@@ -130,7 +130,7 @@ export async function cmd_stage(deps: BotDeps, chatId: number, threadId: number 
   return false;
 }
 
-export async function cmd_unstage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_unstage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/unstage" || text.startsWith("/unstage ")) {
     const path = text.slice(8).trim();
@@ -151,7 +151,7 @@ export async function cmd_unstage(deps: BotDeps, chatId: number, threadId: numbe
   return false;
 }
 
-export async function cmd_commit(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_commit(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/commit" || text.startsWith("/commit ")) {
     const rest = text.slice(7).trim();
@@ -181,7 +181,7 @@ export async function cmd_commit(deps: BotDeps, chatId: number, threadId: number
   return false;
 }
 
-export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/worktrees") {
     const s = await C.restoreActiveSession(chatId, threadId);

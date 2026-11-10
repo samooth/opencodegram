@@ -39,7 +39,16 @@ export const KNOWN_COMMANDS = new Set([
   "worktree", "usage", "forms", "formreply", "sync", "use",
 ]);
 
-export const COMMANDS = new Map<string, (deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn) => Promise<boolean | void>>();
+export type CommandHandler = (
+  deps: BotDeps,
+  chatId: number,
+  threadId: number | undefined,
+  text: string,
+  send: SendFn,
+  userId?: number,
+) => Promise<boolean | void>;
+
+export const COMMANDS = new Map<string, CommandHandler>();
 
 COMMANDS.set("start", cmd_start);
 COMMANDS.set("help", cmd_start);
@@ -90,10 +99,10 @@ COMMANDS.set("running", cmd_running_sessions);
 COMMANDS.set("sessions", cmd_running_sessions);
 COMMANDS.set("use", cmd_use);
 
-export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean> {
+export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean> {
   const name = text.startsWith("/") ? (text.slice(1).split(/\s/, 1)[0] ?? "") : "";
   const handler = COMMANDS.get(name);
   if (!handler) return false;
-  const result = await handler(deps, chatId, threadId, text, send);
+  const result = await handler(deps, chatId, threadId, text, send, userId);
   return result !== false;
 }

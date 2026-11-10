@@ -1,9 +1,22 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChatSession } from "./types.js";
+import type { TranscriptBlock } from "./transcript.js";
+import { TRANSCRIPT_MAX_BLOCKS } from "./transcript.js";
 import { esc } from "./util.js";
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
+
+/**
+ * Delivery target of a session: the chat/topic its current turn must be
+ * answered in. A session can be referenced from several chats (e.g. a group
+ * topic and a private chat), so events must be routed to the place where the
+ * prompt was actually sent, not to whatever chat was recorded last.
+ */
+export type DeliveryTarget = { chatId: number; threadId?: number };
+
+/** Maximum number of remembered message→session mappings kept on disk. */
+const MAX_MESSAGE_MAPPINGS = 4000;
 
 /**
  * In-memory routing tables plus their JSON persistence.
@@ -32,6 +45,14 @@ export class SessionStore {
   readonly customButtonsByChat = new Map<number, Array<{ label: string; text: string }>>();
   /** Last session the user interacted with per route (for @tag / reply routing). */
   readonly lastInteractedSessionByRoute = new Map<string, { sessionId: string; at: number }>();
+  /** Where each session's events must be delivered (chat + topic). */
+  readonly deliveryBySession = new Map<string, DeliveryTarget>();
+  /**
+   * Transcript of every session: blocks of output (answers, thinking, tools).
+   * Rendered as ONE paginated message per session instead of one message per
+   * event, which keeps the chat readable without losing any output.
+   */
+  readonly transcriptBySession = new Map<string, TranscriptBlock[]>();
 
   readonly dataDir: string;
   private readonly threadsFile: string;
@@ -46,6 +67,8 @@ export class SessionStore {
   private readonly pendingEditsFile: string;
   private readonly buttonsFile: string;
   private readonly lastInteractedFile: string;
+  private readonly deliveryFile: string;
+  private readonly transcriptsFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
@@ -61,6 +84,8 @@ export class SessionStore {
     this.pendingEditsFile = join(dataDir, "pendingEdits.json");
     this.buttonsFile = join(dataDir, "buttons.json");
     this.lastInteractedFile = join(dataDir, "lastInteracted.json");
+    this.deliveryFile = join(dataDir, "delivery.json");
+    this.transcriptsFile = join(dataDir, "transcripts.json");
     this.load();
   }
 
@@ -76,6 +101,10 @@ export class SessionStore {
 
   resolveChatId = (sessionId: string | undefined): number | undefined => {
     if (!sessionId) return undefined;
+    // The delivery target is the most precise source: it holds the chat and
+    // the topic the current turn belongs to.
+    const delivery = this.deliveryBySession.get(sessionId);
+    if (delivery) return delivery.chatId;
     // Prefer the persisted chat binding over the in-memory targetChatId, which
     // can be stale when a session object is reused across chats.
     const persisted = this.chatBySession.get(sessionId) ?? this.lastChatBySession.get(sessionId);
@@ -86,10 +115,25 @@ export class SessionStore {
 
   resolveThreadId = (sessionId: string | undefined): number | undefined => {
     if (!sessionId) return undefined;
+    const delivery = this.deliveryBySession.get(sessionId);
+    if (delivery?.threadId !== undefined) return delivery.threadId;
     const s = this.findSessionById(sessionId);
     if (s?.targetThreadId !== undefined) return s.targetThreadId;
     if (s?.threadId !== undefined) return s.threadId;
     return this.threadBySession.get(sessionId);
+  };
+
+  /** Bind a session to the chat/topic its events must be delivered to. */
+  rememberDelivery = (sessionId: string, chatId: number, threadId?: number) => {
+    if (!sessionId || !Number.isFinite(chatId)) return;
+    const current = this.deliveryBySession.get(sessionId);
+    if (current && current.chatId === chatId && current.threadId === threadId) return;
+    this.deliveryBySession.set(sessionId, { chatId, threadId });
+    this.saveDelivery();
+  };
+
+  forgetDelivery = (sessionId: string) => {
+    if (this.deliveryBySession.delete(sessionId)) this.saveDelivery();
   };
 
   threadOptsFor = (s: ChatSession | undefined): Record<string, unknown> => {
@@ -100,7 +144,16 @@ export class SessionStore {
   getActiveSession = (chatId: number, threadId?: number): ChatSession | undefined => {
     // A topic must never fall back to another tab's session, and topics from
     // different chats must never collide even when their thread ids match.
-    if (threadId !== undefined) return this.sessionsByThread.get(this.routeKey(chatId, threadId));
+    const key = this.routeKey(chatId, threadId);
+    // The persisted route binding is the source of truth; resolve it to the
+    // in-memory session object when it is still known.
+    const bound = this.activeSessionByRoute.get(key);
+    if (bound) {
+      const s = this.sessionsById.get(bound);
+      if (s) return s;
+    }
+    // Fall back to the in-memory tables (legacy installs, tests).
+    if (threadId !== undefined) return this.sessionsByThread.get(key);
     return this.sessionsByChat.get(chatId);
   };
 
@@ -121,18 +174,51 @@ export class SessionStore {
     // be resumed (reply-to / multi-session navigation) and may still receive events.
     // One session can only live in one tab at a time.
     for (const [k, v] of this.activeSessionByRoute) if (v === sessionId && k !== key) this.activeSessionByRoute.delete(k);
+    // The previous owner of this route leaves the in-memory tables so both
+    // sources of truth agree on who owns the tab.
+    const previousId = this.activeSessionByRoute.get(key);
+    if (previousId && previousId !== sessionId) {
+      if (this.sessionsByThread.get(key)?.sessionId === previousId) this.sessionsByThread.delete(key);
+      if (this.sessionsByChat.get(chatId)?.sessionId === previousId) this.sessionsByChat.delete(chatId);
+    }
     this.activeSessionByRoute.set(key, sessionId);
+    // The session owns exactly this route now: drop it from the other tables.
+    for (const [k, cs] of this.sessionsByThread) if (cs.sessionId === sessionId && k !== key) this.sessionsByThread.delete(k);
+    if (threadId === undefined) {
+      for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId && cid !== chatId) this.sessionsByChat.delete(cid);
+    } else {
+      // A session bound to a topic no longer owns the main chat of that chat.
+      for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);
+    }
     this.saveActiveSessions();
   };
 
   rememberMessageSession = (chatId: number, messageId: number, sessionId: string) => {
-    this.messageToSession.set(`${chatId}:${messageId}`, sessionId);
+    const key = `${chatId}:${messageId}`;
+    // Refresh insertion order so the oldest mapping can be pruned later.
+    this.messageToSession.delete(key);
+    this.messageToSession.set(key, sessionId);
+    // Keep the map bounded: it is persisted on every write, so an unbounded
+    // map makes every message a full-file rewrite.
+    while (this.messageToSession.size > MAX_MESSAGE_MAPPINGS) {
+      const oldest = this.messageToSession.keys().next();
+      if (oldest.done) break;
+      this.messageToSession.delete(oldest.value);
+    }
     this.saveMessages();
   };
 
   rememberStatusMessage = (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => {
     this.statusMessageBySession.set(sessionId, { chatId, threadId, messageId });
     this.saveStatusMessages();
+  };
+
+  /** Session that owns a given status card message (for Stop/Detach buttons). */
+  findSessionByStatusMessage = (chatId: number, messageId: number): string | undefined => {
+    for (const [sid, info] of this.statusMessageBySession) {
+      if (info.chatId === chatId && info.messageId === messageId) return sid;
+    }
+    return undefined;
   };
 
   forgetStatusMessage = (sessionId: string) => {
@@ -203,7 +289,10 @@ export class SessionStore {
   };
 
   rememberLastInteracted = (chatId: number, threadId: number | undefined, sessionId: string) => {
-    this.lastInteractedSessionByRoute.set(this.routeKey(chatId, threadId), { sessionId, at: Date.now() });
+    const key = this.routeKey(chatId, threadId);
+    const current = this.lastInteractedSessionByRoute.get(key);
+    if (current?.sessionId === sessionId) return;
+    this.lastInteractedSessionByRoute.set(key, { sessionId, at: Date.now() });
     this.saveLastInteracted();
   };
 
@@ -299,6 +388,8 @@ export class SessionStore {
     this.statusMessageBySession.delete(sessionId);
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
+    this.deliveryBySession.delete(sessionId);
+    this.transcriptBySession.delete(sessionId);
     this.saveThreads();
     this.saveChats();
     this.saveActiveSessions();
@@ -310,6 +401,7 @@ export class SessionStore {
     this.saveLastPrompts();
     this.savePendingEdits();
     this.saveLastInteracted();
+    this.saveDelivery();
   };
 
   saveThreads = () => {
@@ -394,6 +486,45 @@ export class SessionStore {
       writeFileSync(this.lastInteractedFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[lastInteracted] save failed", err);
+    }
+  };
+
+  saveDelivery = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, DeliveryTarget> = {};
+      for (const [sid, target] of this.deliveryBySession) obj[sid] = target;
+      writeFileSync(this.deliveryFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[delivery] save failed", err);
+    }
+  };
+
+  // ---------- transcripts ----------
+
+  getTranscript = (sessionId: string): TranscriptBlock[] => this.transcriptBySession.get(sessionId) ?? [];
+
+  appendTranscript = (sessionId: string, block: TranscriptBlock): void => {
+    const list = this.transcriptBySession.get(sessionId) ?? [];
+    list.push(block);
+    // Bound the memory and disk usage per session.
+    while (list.length > TRANSCRIPT_MAX_BLOCKS) list.shift();
+    this.transcriptBySession.set(sessionId, list);
+    this.saveTranscripts();
+  };
+
+  clearTranscript = (sessionId: string): void => {
+    if (this.transcriptBySession.delete(sessionId)) this.saveTranscripts();
+  };
+
+  saveTranscripts = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, TranscriptBlock[]> = {};
+      for (const [sid, blocks] of this.transcriptBySession) obj[sid] = blocks;
+      writeFileSync(this.transcriptsFile, JSON.stringify(obj));
+    } catch (err) {
+      console.error("[transcripts] save failed", err);
     }
   };
 
@@ -498,6 +629,28 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[lastInteracted] load failed", err);
+    }
+    try {
+      if (existsSync(this.deliveryFile)) {
+        const parsed = JSON.parse(readFileSync(this.deliveryFile, "utf8")) as Record<string, { chatId?: number; threadId?: number }>;
+        for (const [sid, value] of Object.entries(parsed)) {
+          if (sid && value && Number.isFinite(value.chatId)) {
+            this.deliveryBySession.set(sid, { chatId: Number(value.chatId), threadId: Number.isFinite(value.threadId) ? Number(value.threadId) : undefined });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[delivery] load failed", err);
+    }
+    try {
+      if (existsSync(this.transcriptsFile)) {
+        const parsed = JSON.parse(readFileSync(this.transcriptsFile, "utf8")) as Record<string, TranscriptBlock[]>;
+        for (const [sid, blocks] of Object.entries(parsed)) {
+          if (sid && Array.isArray(blocks)) this.transcriptBySession.set(sid, blocks.slice(-TRANSCRIPT_MAX_BLOCKS));
+        }
+      }
+    } catch (err) {
+      console.error("[transcripts] load failed", err);
     }
 
     // Explicit tab bindings.

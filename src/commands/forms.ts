@@ -8,7 +8,7 @@ import { clampText, colorDiff, esc, threadOpts, truncate } from "../util.js";
 import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
-export async function cmd_forms(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_forms(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/forms") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -39,7 +39,7 @@ export async function cmd_forms(deps: BotDeps, chatId: number, threadId: number 
   return false;
 }
 
-export async function cmd_formreply(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_formreply(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text.startsWith("/formreply ")) {
     const s = await C.restoreActiveSession(chatId, threadId);

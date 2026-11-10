@@ -8,7 +8,7 @@ import { clampText, colorDiff, esc, markdownToHtml, sessionHeader, threadOpts, t
 import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
-export async function cmd_status(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_status(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/status" || text === "/session") {
     await C.showStatus(chatId, threadId);
@@ -17,7 +17,7 @@ export async function cmd_status(deps: BotDeps, chatId: number, threadId: number
   return false;
 }
 
-export async function cmd_new(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_new(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/new") {
     const active = await C.restoreActiveSession(chatId, threadId);
@@ -50,7 +50,7 @@ export async function cmd_new(deps: BotDeps, chatId: number, threadId: number | 
   return false;
 }
 
-export async function cmd_stop(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_stop(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/stop" || text === "/abort") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -77,7 +77,7 @@ export async function cmd_stop(deps: BotDeps, chatId: number, threadId: number |
   return false;
 }
 
-export async function cmd_fork(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_fork(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/fork") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -107,7 +107,7 @@ export async function cmd_fork(deps: BotDeps, chatId: number, threadId: number |
   return false;
 }
 
-export async function cmd_rename(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_rename(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text.startsWith("/rename ")) {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -150,7 +150,7 @@ export async function cmd_rename(deps: BotDeps, chatId: number, threadId: number
   return false;
 }
 
-export async function cmd_archive(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_archive(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/archive") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -171,7 +171,7 @@ export async function cmd_archive(deps: BotDeps, chatId: number, threadId: numbe
   return false;
 }
 
-export async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/unarchive") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -192,7 +192,7 @@ export async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: num
   return false;
 }
 
-export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/deletesessions group" || text === "/delete sessions group" || text === "/deletesessions g") {
     await C.showDeleteSessions(chatId, 0, undefined, threadId, chatId);
@@ -243,7 +243,7 @@ export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number
   return false;
 }
 
-export async function cmd_compact(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_compact(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/compact") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -264,7 +264,7 @@ export async function cmd_compact(deps: BotDeps, chatId: number, threadId: numbe
   return false;
 }
 
-export async function cmd_context(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_context(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/context") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -387,7 +387,7 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
   return false;
 }
 
-export async function cmd_usage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_usage(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/usage") {
     try {
@@ -415,7 +415,7 @@ export async function cmd_usage(deps: BotDeps, chatId: number, threadId: number 
   return false;
 }
 
-export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/sync") {
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -482,7 +482,7 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
   return false;
 }
 
-export async function cmd_running_sessions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_running_sessions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/running" || text === "/sessions running" || text === "/sessions busy") {
     await C.showSessions(chatId, 0, undefined, threadId, undefined, true);
@@ -501,7 +501,7 @@ export async function cmd_running_sessions(deps: BotDeps, chatId: number, thread
   return false;
 }
 
-export async function cmd_use(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_use(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/use" || text.startsWith("/use ")) {
     const sessionId = text.slice(4).trim();
@@ -550,7 +550,7 @@ export function parseReadArgs(raw: string): { path: string; startLine: number } 
   return { path: raw.trim(), startLine: 1 };
 }
 
-export async function cmd_diff(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_diff(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/diff") {
     const s = await C.restoreActiveSession(chatId, threadId);

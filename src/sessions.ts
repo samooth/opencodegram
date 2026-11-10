@@ -62,28 +62,42 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
   } = store;
 
   // A tab only ever shows one session. When its owner changes, detach the old
-  // session from this route's UI (finalize its status card here) but keep the
+  // session from this route (finalize its status card here) but keep the
   // session tracked so background events and reply-to routing still work.
+  //
+  // Detach != stop: a detached session that is still working must keep its
+  // status card alive and must still deliver its final answer to the chat and
+  // topic it was started in. Only `stopped` (explicit Stop) suppresses output.
   const retireSession = async (chatId: number, previous: ChatSession, opts?: { forget?: boolean; interrupt?: boolean }) => {
     const forget = opts?.forget === true;
     const interrupt = opts?.interrupt === true || forget;
-    previous.stopped = true;
-    if (previous.timer) {
-      clearTimeout(previous.timer);
-      previous.timer = undefined;
+    // A live session (status card open and not finished) is still producing
+    // events; detaching it must not silence it.
+    const live = !!previous.statusMessageId && !previous.statusFinished;
+    if (forget) {
+      previous.stopped = true;
+      previous.detached = false;
+    } else {
+      previous.detached = true;
     }
-    if (previous.typingTimer) {
-      clearInterval(previous.typingTimer);
-      previous.typingTimer = undefined;
-    }
-    if (previous.statusTimer) {
-      clearInterval(previous.statusTimer);
-      previous.statusTimer = undefined;
+    if (forget || !live) {
+      if (previous.timer) {
+        clearTimeout(previous.timer);
+        previous.timer = undefined;
+      }
+      if (previous.typingTimer) {
+        clearInterval(previous.typingTimer);
+        previous.typingTimer = undefined;
+      }
+      if (previous.statusTimer) {
+        clearInterval(previous.statusTimer);
+        previous.statusTimer = undefined;
+      }
     }
     if (interrupt) await oc.interrupt(previous.sessionId).catch(() => {});
-    if (previous.statusMessageId) {
+    if (forget && previous.statusMessageId) {
       await tg
-        .editRichMessage(chatId, previous.statusMessageId, forget ? "⏹ <b>Session closed</b>" : "⏹ <b>Session detached from this tab</b>", {
+        .editRichMessage(chatId, previous.statusMessageId, "⏹ <b>Session closed</b>", {
           ...store.threadOptsFor(previous),
           reply_markup: { inline_keyboard: [] },
         })
@@ -234,10 +248,15 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     return targetThread;
   }
 
-  async function bindTab(chatId: number, cs: ChatSession, targetThread?: number): Promise<void> {
+  async function bindTab(chatId: number, cs: ChatSession, targetThread?: number, opts?: { preserveTarget?: boolean }): Promise<void> {
+    // A running session keeps answering where its prompt was sent, so its
+    // target chat/topic must not be rewritten while it works.
+    const preserveTarget = opts?.preserveTarget === true;
     if (targetThread !== undefined) {
-      cs.threadId = targetThread;
-      cs.targetThreadId = targetThread;
+      if (!preserveTarget) {
+        cs.threadId = targetThread;
+        cs.targetThreadId = targetThread;
+      }
       const route = store.routeKey(chatId, targetThread);
       const previous = sessionsByThread.get(route);
       if (previous && previous.sessionId !== cs.sessionId) await retireSession(chatId, previous);
@@ -246,7 +265,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
       }
       for (const [sid, tid] of threadBySession) if (tid === targetThread && sid !== cs.sessionId && (store.chatBySession.get(sid) ?? chatId) === chatId) threadBySession.delete(sid);
       sessionsByThread.set(route, cs);
-      threadBySession.set(cs.sessionId, targetThread);
+      if (!preserveTarget) threadBySession.set(cs.sessionId, targetThread);
       saveThreads();
     } else {
       for (const [key, existing] of sessionsByThread) if (existing.sessionId === cs.sessionId) sessionsByThread.delete(key);
@@ -301,16 +320,23 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     cs.sessionId = sessionId;
     cs.directory = directory;
     cs.model = model;
-    cs.stopped = false;
-    cs.targetChatId = chatId;
+    // A session with an open status card is still working: keep its buffers,
+    // its target chat/topic and its "detached" flag so the card keeps
+    // updating where the user started it.
+    const busy = !!cs.statusMessageId && !cs.statusFinished;
+    cs.detached = false;
+    if (!busy) {
+      cs.stopped = false;
+      cs.targetChatId = chatId;
+      cs.buffer = "";
+      cs.reasoningBuffer = "";
+      cs.toolCalls = [];
+      cs.toolCallDetails = [];
+      cs.draftId = 0;
+      cs.sentArtifacts = new Set();
+    }
     store.rememberSessionChat(sessionId, chatId);
     store.rememberLastChat(sessionId, chatId);
-    cs.buffer = "";
-    cs.reasoningBuffer = "";
-    cs.toolCalls = [];
-    cs.toolCallDetails = [];
-    cs.draftId = 0;
-    cs.sentArtifacts = new Set();
     cs.topicTitle = cs.topicTitle ?? store.topicTitleBySession.get(sessionId) ?? title;
     // Restore persisted COT (finished-turn reasoning history) if not already in memory.
     if (!cs.cotBuffer) cs.cotBuffer = store.getCotBuffer(sessionId) ?? "";
@@ -330,7 +356,7 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
 
     let targetThread = await resolveThread(chatId, sessionId, threadId, topicsEnabled, title);
 
-    await bindTab(chatId, cs, targetThread);
+    await bindTab(chatId, cs, targetThread, { preserveTarget: busy });
 
     if (targetThread !== undefined) {
       const newThread = await syncTitle(chatId, cs, title, threadId);
@@ -340,6 +366,11 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     sessionsById.set(sessionId, cs);
     rememberSessionChat(sessionId, chatId);
     rememberActiveRoute(chatId, targetThread, sessionId);
+    // The group fallback ("last session the user interacted with") must follow
+    // explicit activations too, not only prompts.
+    store.rememberLastInteracted(chatId, targetThread, sessionId);
+    // A running session keeps answering where its prompt was sent.
+    if (!busy) store.rememberDelivery(sessionId, chatId, targetThread);
     if (!silent) {
       const lastPrompt = store.lastPromptBySession.get(sessionId);
       const cot = store.getCotBuffer(sessionId);

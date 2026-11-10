@@ -5,7 +5,7 @@ import type { Config } from "./config.js";
 import type { SettingsStore } from "./settings.js";
 import type { TelegramClient, TelegramMessage } from "./telegram.js";
 import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
-import { clampText, esc, normalizeCommandText, parseSlashCommand } from "./util.js";
+import { clampText, esc, normalizeCommandText, parseSlashCommand, threadOpts } from "./util.js";
 import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
 import { notePromptSent } from "./autoretry.js";
@@ -113,6 +113,14 @@ export async function downloadAttachments(
 }
 
 /**
+ * Outcome of resolving the session for a message.
+ * - `session`: the session that must receive the message.
+ * - `asked`: true when the user was asked to pick a session (group with
+ *   several candidates), so the caller must not print "no active session".
+ */
+export type SessionResolution = { session?: ChatSession; asked?: boolean };
+
+/**
  * Find, restore or create the session that should receive a message.
  * Returns undefined when the tab has no session and none can be created.
  */
@@ -122,29 +130,30 @@ async function resolveSessionForMessage(
   replyThread: number | undefined,
   repliedSessionId: string | undefined,
   rawText: string,
-): Promise<ChatSession | undefined> {
-  const { store, sessions, me } = deps;
+  pending?: { text: string; files?: Array<{ uri: string; name: string }> },
+): Promise<SessionResolution> {
+  const { store, sessions, me, tg } = deps;
   const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
 
   // 1) Reply to a bot message that belongs to a session -> route to that session.
   if (repliedSessionId) {
     const active = store.getActiveSession(chatId, replyThread);
-    if (active?.sessionId === repliedSessionId) return active;
+    if (active?.sessionId === repliedSessionId) return { session: active };
     try {
       await activateSession(chatId, repliedSessionId, true, replyThread);
       const resolved = await restoreActiveSession(chatId, replyThread);
-      if (resolved) return resolved;
+      if (resolved) return { session: resolved };
     } catch (err) {
       console.error("[reply] activate related session failed", repliedSessionId, err);
     }
     // Fallback to in-memory session if activation couldn't switch route cleanly.
     const inMem = store.findSessionById(repliedSessionId);
-    if (inMem) return inMem;
+    if (inMem) return { session: inMem };
   }
 
   // 2) Active session for this exact route.
-  let s = await ensureActiveSession(chatId, replyThread);
-  if (s) return s;
+  const ensured = await ensureActiveSession(chatId, replyThread);
+  if (ensured) return { session: ensured };
 
   // 3) In groups, prefer the last session the user interacted with.
   if (chatId < 0) {
@@ -152,8 +161,8 @@ async function resolveSessionForMessage(
     if (last) {
       try {
         await activateSession(chatId, last, true, replyThread);
-        s = await restoreActiveSession(chatId, replyThread);
-        if (s) return s;
+        const s = await restoreActiveSession(chatId, replyThread);
+        if (s) return { session: s };
       } catch (err) {
         console.error("[reply] activate last-interacted failed", last, err);
       }
@@ -161,24 +170,44 @@ async function resolveSessionForMessage(
     const candidates = [...store.activeSessionByRoute.entries()]
       .filter(([k]) => k.startsWith(`${chatId}:`))
       .map(([, sid]) => sid);
-    const unique = [...new Set(candidates)];
+    const unique = [...new Set(candidates)].filter((sid) => store.findSessionById(sid));
     if (unique.length === 1) {
       try {
         await activateSession(chatId, unique[0], true, replyThread);
-        s = await restoreActiveSession(chatId, replyThread);
-        if (s) return s;
+        const s = await restoreActiveSession(chatId, replyThread);
+        if (s) return { session: s };
       } catch (err) {
         console.error("[reply] single-candidate activate failed", unique[0], err);
       }
     }
+    if (unique.length > 1) {
+      // Several sessions live in this group: let the user pick instead of
+      // guessing, and remember the pending message to send afterwards.
+      const route = store.routeKey(chatId, replyThread);
+      if (pending) deps.pendingGroupPrompts.set(route, { ...pending, at: Date.now() });
+      const keyboard = unique.slice(0, 8).map((sid) => {
+        const cs = store.findSessionById(sid);
+        const title = (cs?.topicTitle ?? cs?.directory?.split("/").pop() ?? sid).slice(0, 40);
+        return [{ text: `💬 ${title}`, callback_data: `use:${sid}` }];
+      });
+      keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]);
+      await tg
+        .sendRichMessage(chatId, "🤖 <b>¿A qué sesión respondo?</b>\n<i>Este grupo tiene varias sesiones activas. Elige una para enviar tu mensaje.</i>", {
+          ...threadOpts(replyThread),
+          reply_markup: { inline_keyboard: keyboard },
+        })
+        .catch(() => {});
+      return { asked: true };
+    }
   }
 
   const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
-  if (!s && (chatId >= 0 || isMention)) {
+  if (chatId >= 0 || isMention) {
     await createNewSession(chatId, true, replyThread);
-    s = await restoreActiveSession(chatId, replyThread);
+    const s = await restoreActiveSession(chatId, replyThread);
+    return { session: s };
   }
-  return s;
+  return {};
 }
 
 /**
@@ -205,6 +234,9 @@ async function startPrompt(
     store.rememberSessionChat(s.sessionId, chatId);
     store.rememberActiveRoute(chatId, replyThread, s.sessionId);
     store.rememberLastInteracted(chatId, replyThread, s.sessionId);
+    // Events for this turn must be delivered here, even if the session is
+    // also reachable from another chat/topic.
+    store.rememberDelivery(s.sessionId, chatId, replyThread);
     s.promptStartTime = Date.now();
     store.rememberLastChat(s.sessionId, chatId);
     store.rememberLastPrompt(s.sessionId, text);
@@ -351,8 +383,17 @@ export async function handleMediaMessage(
   }
   if (!mediaToAttach.length) return;
 
-  const s = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, (msg.text ?? msg.caption ?? "").trim());
+  const resolution = await resolveSessionForMessage(
+    deps,
+    chatId,
+    replyThread,
+    repliedSessionId,
+    (msg.text ?? msg.caption ?? "").trim(),
+    { text: (msg.text ?? msg.caption ?? "").trim() || "Analiza este archivo", files: mediaToAttach },
+  );
+  const s = resolution.session;
   if (!s) {
+    if (resolution.asked) return;
     await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
     return;
   }
@@ -390,17 +431,20 @@ export async function handleTextMessage(
   send: SendFn,
 ): Promise<void> {
   const { oc, me } = deps;
+  const userId = msg.from?.id;
 
   if (!msg.text) return;
   let text = (msg.text ?? msg.caption ?? "").trim();
   text = normalizeCommandText(text, me.username);
 
-  if (await handleCommand(deps, chatId, replyThread, text, send)) return;
+  if (await handleCommand(deps, chatId, replyThread, text, send, userId)) return;
 
   // Create or restore the session bound to this tab.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
-  const s = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, rawText);
+  const resolution = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, rawText, { text: rawText });
+  const s = resolution.session;
   if (!s) {
+    if (resolution.asked) return;
     await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
     return;
   }

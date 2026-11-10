@@ -10,6 +10,7 @@ import { clampText, esc, markdownToHtml, rateLimitRetryAt, sessionHeader, thread
 import { logger } from "./logger.js";
 import { formatBytes, prepareDocument } from "./files/index.js";
 import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
+import type { TranscriptManager } from "./transcriptmanager.js";
 
 export type PermissionInfo = {
   chatId: number;
@@ -35,6 +36,10 @@ export type EventsDeps = {
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
   syncTopicTitle: (chatId: number, s: ChatSession) => Promise<void>;
+  /** Session card: one paginated message per session. */
+  transcript?: TranscriptManager;
+  /** Republish the session card (live strip or Done strip). */
+  publishCard?: (chatId: number, s: ChatSession) => Promise<void>;
 };
 
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
@@ -404,7 +409,7 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
 };
 
 const handleSessionTextEnded: EventHandler = async (event, deps) => {
-  const { tg, oc, store, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle } = deps;
+  const { tg, oc, store, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle, transcript, publishCard } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
   const e = event;
   const sessionId = e.data?.sessionID;
@@ -488,74 +493,87 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       finalText += modelName ? `\n\n⚡ ${modelName} · ${speed} tok/s` : `\n\n⚡ ${speed} tok/s`;
     }
     const threadOpts2 = store.threadOptsFor(s);
-    // Keyboard for final response messages (quick-switch removed; pagination stays in sessions/models).
-    const quickKeyboard: Array<Array<{ text: string; callback_data: string }>> = [
-      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }],
-    ];
-    const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
-    const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
     if (s) {
       s.lastFinalMessageId = msgId ?? s.lastFinalMessageId; // OpenCode assistant msg id
       s.lastFinalSentAt = Date.now();
     }
-    let extraHtml = "";
-    if (s && s.toolCallDetails.length && (settings.get(chatId).showTools ?? true)) {
-      const details = s.toolCallDetails;
-      const isShell = (n: string) => /shell|bash|exec|run/i.test(n);
-      const shellDetails = details.filter((d) => isShell(d.name));
-      const otherDetails = details.filter((d) => !isShell(d.name));
-      if (shellDetails.length) {
-        const body = shellDetails.slice(-12).map((d) => {
-          let cmd = d.name;
-          if (d.input) {
-            try {
-              const p = JSON.parse(d.input) as Record<string, unknown>;
-              cmd = String(p.command ?? p.cmd ?? d.input).slice(0, 220);
-            } catch {
-              cmd = d.input.slice(0, 220);
-            }
-          }
-          const out = (d.output ?? "").toString().trim().slice(0, 400);
-          return `$ ${esc(cmd)}${out ? `\n${esc(out)}` : ""}${d.status === "failed" ? "\n(failed)" : ""}`;
-        }).join("\n\n");
-        extraHtml += `\n\n<blockquote expandable>🖥 Shell (${shellDetails.length})\n<pre>${body}</pre></blockquote>`;
-      }
-      if (otherDetails.length) {
-        const body = otherDetails.slice(-20).map((d) => {
-          const inp = d.input ? esc(d.input.slice(0, 180)) : "";
-          const out = (d.output ?? "").toString().trim();
-          const outShort = out ? esc(out.slice(0, 220)) : "";
-          return `${toolIcon(d.name)} <b>${esc(d.name)}</b>${inp ? `\n<i>${inp}</i>` : ""}${outShort ? `\n<code>${outShort}</code>` : ""}${d.status === "failed" ? " <i>(failed)</i>" : ""}`;
-        }).join("\n\n");
-        extraHtml += `\n\n<blockquote expandable>🔧 Tool calls (${otherDetails.length})\n${body}</blockquote>`;
-      }
-    }
     logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
-    const finalHtml = sessionHeader(s) + markdownToHtml(finalText) + extraHtml + `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
-    // Coalesce rapid autonomous finals (e.g. DeepSeek multi-step) by editing the
-    // previous final message instead of flooding the chat with new messages.
-    const rapidFinal = !!(s && prevFinalTelegramMessageId && Date.now() - prevFinalSentAt < 12000);
-    let finalMessage: { message_id?: number } | undefined;
-    if (rapidFinal) {
-      logger.breadcrumb("events", "send.final.coalesced", { chatId, sessionId: s.sessionId, prev: prevFinalTelegramMessageId });
-      await tg.editRichMessage(chatId, prevFinalTelegramMessageId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch(() => {});
-      finalMessage = { message_id: prevFinalTelegramMessageId };
-    } else {
-      finalMessage = await tg.sendRichMessage(chatId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
-        console.error("[send final]", err);
-        return undefined;
-      });
-      if (finalMessage?.message_id) store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
-      // Deep link button to jump to this message in the chat.
-      if (finalMessage?.message_id && chatId < 0) {
-        const internalId = String(chatId).replace(/^-100/, "");
-        const url = `https://t.me/c/${internalId}/${finalMessage.message_id}`;
-        const kb: any[] = [...(quickKeyboard ?? []), [{ text: "🔗 Ver en chat", url }]];
-        await tg.editMessageReplyMarkup(chatId, finalMessage.message_id, { inline_keyboard: kb }).catch(() => {});
+    const answerHtml = markdownToHtml(finalText);
+    const copyRow = `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
+
+    if (transcript) {
+      // The answer is appended to the session transcript and the session card
+      // is edited in place: no new message per event.
+      transcript.addBlock(s, "answer", answerHtml + copyRow, finalText);
+      s.transcriptFollow = true;
+      if (publishCard) await publishCard(chatId, s);
+      else await transcript.publish(chatId, s, { extraTop: "" });
+      if (s.transcriptMessageId) {
+        s.lastFinalTelegramMessageId = s.transcriptMessageId;
+        // Deep link button to jump to this message in the chat.
+        if (chatId < 0) {
+          const internalId = String(chatId).replace(/^-100/, "");
+          const url = `https://t.me/c/${internalId}/${s.transcriptMessageId}`;
+          const kb: any[] = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s)))];
+          kb.push([{ text: "🔗 Ver en chat", url }]);
+          await tg.editMessageReplyMarkup(chatId, s.transcriptMessageId, { inline_keyboard: kb }).catch(() => {});
+        }
       }
+    } else {
+      // Fallback without the session card: send a standalone message.
+      const quickKeyboard: Array<Array<{ text: string; callback_data: string }>> = [
+        [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }],
+      ];
+      let extraHtml = "";
+      if (s && s.toolCallDetails.length && (settings.get(chatId).showTools ?? true)) {
+        const details = s.toolCallDetails;
+        const isShell = (n: string) => /shell|bash|exec|run/i.test(n);
+        const shellDetails = details.filter((d) => isShell(d.name));
+        const otherDetails = details.filter((d) => !isShell(d.name));
+        if (shellDetails.length) {
+          const body = shellDetails.slice(-12).map((d) => {
+            let cmd = d.name;
+            if (d.input) {
+              try {
+                const p = JSON.parse(d.input) as Record<string, unknown>;
+                cmd = String(p.command ?? p.cmd ?? d.input).slice(0, 220);
+              } catch {
+                cmd = d.input.slice(0, 220);
+              }
+            }
+            const out = (d.output ?? "").toString().trim().slice(0, 400);
+            return `$ ${esc(cmd)}${out ? `\n${esc(out)}` : ""}${d.status === "failed" ? "\n(failed)" : ""}`;
+          }).join("\n\n");
+          extraHtml += `\n\n<blockquote expandable>🖥 Shell (${shellDetails.length})\n<pre>${body}</pre></blockquote>`;
+        }
+        if (otherDetails.length) {
+          const body = otherDetails.slice(-20).map((d) => {
+            const inp = d.input ? esc(d.input.slice(0, 180)) : "";
+            const out = (d.output ?? "").toString().trim();
+            const outShort = out ? esc(out.slice(0, 220)) : "";
+            return `${toolIcon(d.name)} <b>${esc(d.name)}</b>${inp ? `\n<i>${inp}</i>` : ""}${outShort ? `\n<code>${outShort}</code>` : ""}${d.status === "failed" ? " <i>(failed)</i>" : ""}`;
+          }).join("\n\n");
+          extraHtml += `\n\n<blockquote expandable>🔧 Tool calls (${otherDetails.length})\n${body}</blockquote>`;
+        }
+      }
+      const finalHtml = sessionHeader(s) + answerHtml + extraHtml + copyRow;
+      const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
+      const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
+      const rapidFinal = !!(s && prevFinalTelegramMessageId && Date.now() - prevFinalSentAt < 12000);
+      let finalMessage: { message_id?: number } | undefined;
+      if (rapidFinal) {
+        await tg.editRichMessage(chatId, prevFinalTelegramMessageId!, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch(() => {});
+        finalMessage = { message_id: prevFinalTelegramMessageId };
+      } else {
+        finalMessage = await tg.sendRichMessage(chatId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
+          console.error("[send final]", err);
+          return undefined;
+        });
+        if (finalMessage?.message_id) store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
+      }
+      if (finalMessage?.message_id && s) s.lastFinalTelegramMessageId = finalMessage.message_id;
     }
-    if (finalMessage?.message_id && s) s.lastFinalTelegramMessageId = finalMessage.message_id;
     if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";

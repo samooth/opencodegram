@@ -9,7 +9,7 @@ import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 import { parseListArgs, parseFindArgs, parseReadArgs } from "./sessions.js";
 
-export async function cmd_file(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_file(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/file" || text.startsWith("/file ")) {
     const rawPath = text.slice("/file".length).trim();
@@ -41,7 +41,7 @@ export async function cmd_file(deps: BotDeps, chatId: number, threadId: number |
   return false;
 }
 
-export async function cmd_ls(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_ls(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/ls" || text.startsWith("/ls ")) {
     const { path, hidden } = parseListArgs(text.slice(3).trim());
@@ -55,7 +55,7 @@ export async function cmd_ls(deps: BotDeps, chatId: number, threadId: number | u
   return false;
 }
 
-export async function cmd_find(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_find(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/find" || text.startsWith("/find ")) {
     const { query, hidden } = parseFindArgs(text.slice(5).trim());
@@ -73,7 +73,7 @@ export async function cmd_find(deps: BotDeps, chatId: number, threadId: number |
   return false;
 }
 
-export async function cmd_zip(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_zip(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/zip" || text.startsWith("/zip ")) {
     const rawPath = text.slice("/zip".length).trim() || ".";
@@ -102,7 +102,7 @@ export async function cmd_zip(deps: BotDeps, chatId: number, threadId: number | 
   return false;
 }
 
-export async function cmd_read(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_read(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/read" || text.startsWith("/read ")) {
     const raw = text.slice(5).trim();
@@ -141,7 +141,7 @@ export async function cmd_read(deps: BotDeps, chatId: number, threadId: number |
   return false;
 }
 
-export async function cmd_tree(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn): Promise<boolean | void> {
+export async function cmd_tree(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/tree" || text.startsWith("/tree ")) {
     const raw = text.slice(5).trim();

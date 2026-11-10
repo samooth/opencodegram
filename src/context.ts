@@ -10,6 +10,7 @@ import type { SettingsStore } from "./settings.js";
 import type { StatusManager } from "./status.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient, TelegramUser } from "./telegram.js";
+import type { TranscriptManager } from "./transcriptmanager.js";
 
 export type PermissionInfo = {
   chatId: number;
@@ -53,6 +54,8 @@ export type BotDeps = {
   topicsEnabled: boolean;
   sessions: SessionManager;
   status: StatusManager;
+  /** Session card: one paginated message per session. */
+  transcript: TranscriptManager;
   panels: Panels;
   files: FileBrowser;
   settings: SettingsStore;
@@ -67,5 +70,7 @@ export type BotDeps = {
   awaitingReason: Map<string, string>;
   modelListByChat: Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string }> }>>;
   pendingModelByChat: Map<string, { id: string; providerID: string; variant?: string } | null>;
+  /** Messages waiting for the user to pick a session (groups with several). */
+  pendingGroupPrompts: Map<string, { text: string; files?: Array<{ uri: string; name: string }>; at: number }>;
   audit: (action: string, detail: string) => void;
 };
