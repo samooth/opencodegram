@@ -420,7 +420,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     else lines.push("<h4>⏳ Working…" + (elapsed ? ` <i>(${elapsed}s)</i>` : "") + "</h4>");
     if (settings.showThinking && s.reasoningBuffer.trim()) {
       sep();
-      const r = s.reasoningBuffer.trim().slice(-3200);
+      const r = s.reasoningBuffer.trim();
       lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${esc(r)}</blockquote>`);
     }
     const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
@@ -582,7 +582,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         store?.rememberPendingEdits(messageId, s.sessionId);
       }
       const fullThinking = (!s.stopped && s.reasoningBuffer.trim()) ? s.reasoningBuffer.trim() : "";
-      const text = clampText(renderFinished(s, undefined, settings));
+      // If we send full thinking chunks, don't also inline it in the clamped status card.
+      const text = clampText(renderFinished(s, undefined, settings, !fullThinking || !settings.showThinking));
       const keyboard = finishedKeyboard(editDetails, undefined, s, messageId);
       await tg
         .editRichMessage(chatId, messageId, text, {
@@ -598,15 +599,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         s.cotBuffer = next;
         s.cotCount = (s.cotCount ?? 0) + 1;
         rememberCot(s.sessionId, next, s.cotCount);
-        // If thinking was too large to fit in the status card, send full chunks.
-        if (settings.showThinking && fullThinking.length > 3500) {
+        // Send full thinking in chunks so it is never truncated.
+        if (settings.showThinking) {
           const opts = threadOptsFor(s);
           const chunkSize = 3400;
           for (let i = 0; i < fullThinking.length; i += chunkSize) {
             const part = fullThinking.slice(i, i + chunkSize);
             const n = Math.ceil(fullThinking.length / chunkSize);
             const idx = Math.floor(i / chunkSize) + 1;
-            const label = n > 1 ? `🧠 Thinking completo (${idx}/${n})` : "🧠 Thinking completo";
+            const label = n > 1 ? `🧠 Thinking (${idx}/${n})` : "🧠 Thinking";
             await tg.sendRichMessage(chatId, `${sessionHeader(s)}<blockquote expandable>${label}\n${esc(part)}</blockquote>`, opts).catch(() => {});
           }
         }
@@ -616,7 +617,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
   };
 
-  const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings): string => {
+  const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings, inlineThinking = true): string => {
     const previousCot = target.cotBuffer?.trim() ?? "";
     const lines: string[] = [];
     lines.unshift(sessionHeader(target).trimEnd());
@@ -626,8 +627,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     lines.push("✅ <b>Done</b>");
     if (!settings.compactFinal) {
-      if (settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
-        const r = target.reasoningBuffer.trim().slice(-6000);
+      if (inlineThinking && settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
+        const r = target.reasoningBuffer.trim();
         lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n` + esc(r) + "</blockquote>");
       }
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
