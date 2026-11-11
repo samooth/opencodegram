@@ -322,9 +322,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   };
 
   /**
-   * Live strip for the session card. In flexible mode the thought is kept
-   * compact inside the top strip; in unified mode the thought is streamed at
-   * the bottom of M2 for readability (returned separately).
+   * Live strip for the session card. The latest thought is streamed at the
+   * bottom of the message (above resource indicators) for readability.
    */
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
     const lines: string[] = [];
@@ -336,11 +335,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     );
     if (s.detached && !s.stopped) {
       lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
-    }
-    if (!unified && settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
-      const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
-      const last = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-      lines.push(`💭 <b>Último pensamiento</b>\n<blockquote expandable><mark>${markdownToHtml(clampText(last, 240))}</mark></blockquote>`);
     }
     if (settings.showTools && settings.showLatestTool && s.toolCallDetails.length) {
       const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
@@ -358,7 +352,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     return {
       top: lines.join("\n\n"),
-      bottom: unified ? renderThinkingBottom(s, settings) : "",
+      bottom: renderThinkingBottom(s, settings),
     };
   };
 
