@@ -153,8 +153,35 @@ volumes:
 
 ```bash
 docker compose pull
-docker compose up -d
+docker compose up -d --build
 ```
+
+After changing `.env` (token, user IDs, passwords, etc.) recreate the
+container so the new environment is loaded (`restart` alone is not enough):
+
+```bash
+docker compose up -d --force-recreate bot
+docker compose logs -f bot
+```
+
+If you switch to a **different Telegram bot/token** while keeping the `./data`
+volume, the polling offset is reset automatically on startup (it is stored with
+the bot identity in `data/telegram_offset.json`). On older versions, delete
+`data/telegram_offset.json` and restart. Ensure only one instance polls the
+token and that no webhook is registered (`getWebhookInfo`).
+
+## Troubleshooting
+
+- **Bot does not respond (no activity in logs):** confirm a single poller is
+  running and no webhook is set (`curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
+  should show an empty `url`). If you changed bots with persisted `data/`,
+  reset/remove `data/telegram_offset.json` (auto-handled in current versions)
+  and recreate the bot container.
+- **"Not authorized" in private / silent in groups:** check
+  `ADMIN_TELEGRAM_USER_ID` / `ALLOWED_TELEGRAM_USER_IDS` match your Telegram
+  user ID. In groups the bot responds only to commands, mentions of the
+  configured bot username, or replies to the bot (and needs appropriate group
+  permissions/privacy settings).
 
 ## Verification
 

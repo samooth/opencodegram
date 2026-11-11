@@ -14,22 +14,26 @@
 | `context.ts` | `BotDeps` shared by update handlers |
 | `store.ts` | Route tables and JSON persistence (`data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
-| `status.ts` | Status card lifecycle, drafts, thinking, tools, Stop |
-| `events.ts` | OpenCode event stream → Telegram |
+| `status.ts` | Turn/status lifecycle, live strip, M2 publishing and mode behavior |
+| `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
+| `transcript.ts` | Transcript blocks, splitting and pagination |
+| `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
+| `resources.ts` | CPU/GPU/RAM/VRAM/temp indicators |
+| `events.ts` | OpenCode event stream → Telegram, artifacts, retries, final-answer delivery |
 | `panels.ts` | Panel, sessions, models and commands views |
 | `files.ts` | Barrel re-export of `files/*` |
 | `files/*` | Safe path resolution, listing, search, text preview, documents, zip, summary, tree |
 | `autoretry.ts` | Bounded auto-retry state after rate limits |
 | `botcommands.ts` | Single source of `BOT_COMMANDS` |
-| `callbacks.ts` | Inline buttons and permission decisions |
-| `commands.ts` | Slash commands |
-| `messages.ts` | Access control, media download, prompts |
-| `updates.ts` | Polling loop, update dispatch, offset persistence |
-| `telegram.ts` | Telegram client (text, rich messages, documents) |
-| `util.ts` | Escaping, clamping, thread options, retry time |
+| `callbacks.ts` | Inline buttons, settings/profiles and permission decisions |
+| `commands.ts` | Slash commands and `KNOWN_COMMANDS` |
+| `messages.ts` | Access control, media download, prompts, command dispatch |
+| `updates.ts` | Polling loop, update dispatch, offset persistence (bot-aware) |
+| `telegram.ts` | Telegram client (text, rich messages, documents, pin/unpin) |
+| `util.ts` | Escaping, clamping, thread options, retry time, command parsing |
 | `editutil.ts` | Edit detection and diff formatting |
 | `formui.ts` | Interactive form rendering and keyboards |
-| `settings.ts` | Persistent per-chat settings |
+| `settings.ts` | Persistent per-chat settings (modes, profiles, delivery, toggles) |
 | `logger.ts` | Structured logging |
 | `mcp.ts` | MCP server/resource bridge |
 | `metrics.ts` | Counters and error recording |
@@ -40,6 +44,19 @@
 | `vcs.ts` | VCS and worktree helpers |
 | `webhook.ts` | Optional webhook server |
 | `constants.ts` | Named intervals and limits |
+
+## Polling and runtime state
+
+- Telegram updates are consumed via long polling (`getUpdates`) by a single
+  process. The confirmed update offset is persisted in `data/telegram_offset.json`
+  together with the bot identity (`botId`).
+- On startup, if the stored `botId` differs from the current bot, the offset is
+  reset to `0` and a warning is logged. This prevents polling from stalling when
+  the bot/token is changed while reusing persisted `data/` (Telegram `update_id`
+  sequences are per-bot). The offset is also saved on startup so the identity is
+  recorded even before new updates arrive.
+- Webhook mode is mutually exclusive with polling; when webhook mode is disabled
+  the bot clears any registered webhook.
 
 ## Routing invariants
 
@@ -64,24 +81,45 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/`:
+`bun test` runs the Bun suite in `tests/` (112 tests across 17 files):
 
 - `store.test.ts` — route/tab isolation, persistence and retirement.
 - `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.
-- `filebrowser.test.ts` — listing, navigation, preview, search and expiry.
+- `filebrowser.test.ts` — listing, navigation, preview, search, expiry and documents.
 - `commands.test.ts` — command dispatch, usage and safe `/file`.
 - `util.test.ts` — `:15` retry timing, mention normalization and parsing.
 - `autoretry.test.ts` — bounded auto-retry and stale-prompt guard.
 - `callbacks.test.ts`, `events.test.ts`, `panels.test.ts`, `sessions.test.ts`,
   `status.test.ts`, `updates.test.ts` — handlers, rendering and routing.
+- `settings.test.ts` — per-chat settings, persistence and normalization.
+- `transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
+- `transcribe.test.ts` — voice transcription config and execution.
+- `promptdedupe.test.ts` — stripping restated prompts from reasoning.
+- `summary.test.ts` — file summaries, search and tree rendering.
 
 `bun run typecheck` checks `src/` with `tsc --noEmit`.
 
-## Turn lifecycle
+## Display modes and turn lifecycle
 
-1. Prompt → `startStatus` creates the status card and clears previous artifacts.
-2. `session.text.delta` → draft; `reasoning`/`tool` events update the card.
-3. `session.step.ended` with `finish !== "tool-calls"` → `finishStatus`
-   (fallback: `session.idle`). Thinking and tools stay collapsible, Stop is
-   removed.
-4. `session.text.ended` → final answer as a new message and topic title sync.
+- **Flexible mode** (default): one session card (M2) holds the paginated transcript
+  (answers, thinking, tools), edited/refloated according to card behavior, with
+  indicators at the bottom.
+- **Unified mode**: up to 2 bot messages per active session in a route:
+  - **M1 (dashboard, pinned best-effort)**: session/model, controls, resource
+    indicators and tool-call stats; updated on turn/session events.
+  - **M2 (conversation card)**: follows the conversation, streams the latest
+    thought at the bottom while working, and keeps the transcript paginated.
+  Profiles and long-answer delivery are configurable in `/settings`.
+
+Turn lifecycle:
+
+1. Prompt/activation → `startStatus` prepares the turn (ensures M1 in unified
+   mode) and publishes M2; previous turn state is cleared as needed.
+2. `session.text.delta` / `reasoning` / `tool` events update M2 (and M1 stats in
+   unified mode) with throttled edits.
+3. `session.step.ended` with `finish !== "tool-calls"` (or `session.idle`) →
+   `finishStatus`: thinking/tools are recorded in the transcript, Stop is
+   removed and M2 is finalized.
+4. `session.text.ended` → final answer is added to the transcript; depending on
+   settings/length it may also be sent as separate rich-text message(s) and is
+   available via **“Ver completo”**; topic title sync runs.

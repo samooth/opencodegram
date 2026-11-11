@@ -62,14 +62,18 @@ Main modules:
 | `context.ts` | Shared `BotDeps` |
 | `store.ts` | Route tables and JSON persistence (`data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
-| `status.ts` | Status card lifecycle, drafts, thinking, tools, Stop |
-| `events.ts` | OpenCode event stream to Telegram, artifacts, retries |
+| `status.ts` | Turn/status lifecycle, live strip, M2 publishing and mode behavior |
+| `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
+| `transcript.ts` | Transcript blocks, splitting and pagination |
+| `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
+| `resources.ts` | CPU/GPU/RAM/VRAM/temp indicators |
+| `events.ts` | OpenCode event stream to Telegram, artifacts, retries, final-answer delivery |
 | `panels.ts` | Panel, sessions, models and commands views |
-| `callbacks.ts` | Inline buttons and permission decisions |
+| `callbacks.ts` | Inline buttons, settings/profiles and permission decisions |
 | `commands.ts` | Slash commands and `KNOWN_COMMANDS` |
 | `messages.ts` | Access control, media download, prompts, command dispatch |
 | `updates.ts` | Polling loop, update dispatch, offset persistence |
-| `telegram.ts` | Telegram client |
+| `telegram.ts` | Telegram client (messages, rich text, documents, pin/unpin) |
 | `util.ts` | Escaping, clamping, thread options, retry time, command parsing |
 | `files.ts` | Barrel re-export of `files/*` |
 | `files/*` | Safe path resolution, listing, search, text preview, documents, zip, summary, tree |
@@ -82,7 +86,7 @@ Main modules:
 | `mcp.ts` | MCP server/resource bridge |
 | `metrics.ts` | Counters and error recording |
 | `ops.ts` | Health endpoint, metrics, disk guard |
-| `settings.ts` | Persistent per-chat settings |
+| `settings.ts` | Persistent per-chat settings (modes, profiles, delivery, toggles) |
 | `transcribe.ts` | Local voice-note transcription |
 | `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
 | `types.ts` | Shared types (`ChatSession`, etc.) |
@@ -113,18 +117,22 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers:
+`bun test` covers (112 tests across 17 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement.
 - `tests/files.test.ts` — path confinement, symlinks, list/find/read, `/file`.
-- `tests/filebrowser.test.ts` — listing, navigation, preview, search, expiry,
-  document sends.
+- `tests/filebrowser.test.ts` — listing, navigation, preview, search, expiry, documents.
 - `tests/commands.test.ts` — command dispatch, usage, safe `/file`.
 - `tests/util.test.ts` — `:15` retry timing, mention normalization, parsing.
 - `tests/autoretry.test.ts` — bounded auto-retry, stale-prompt guard.
 - `tests/callbacks.test.ts`, `tests/events.test.ts`, `tests/panels.test.ts`,
   `tests/sessions.test.ts`, `tests/status.test.ts`, `tests/updates.test.ts` —
   handlers, rendering and routing.
+- `tests/settings.test.ts` — per-chat settings, persistence and normalization.
+- `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
+- `tests/transcribe.test.ts` — voice transcription config and execution.
+- `tests/promptdedupe.test.ts` — stripping restated prompts from reasoning.
+- `tests/summary.test.ts` — file summaries, search and tree rendering.
 
 ## Conventions
 
@@ -154,9 +162,16 @@ Esquema rápido:
 
 ## Runtime state
 
-`data/` is ignored by git and contains:
+`data/` is ignored by git and contains persisted runtime state, including route
+bindings and mappings (`active.json`, `threads.json`, `chats.json`,
+`messages.json`, `delivery.json`, `last*`, `topicTitles.json`), Telegram polling
+offset/identity (`telegram_offset.json`), session data (`transcripts.json`,
+`statusMessages.json`, `dashboard.json`, `cot.json`, `pendingEdits.json`,
+`buttons.json`), per-chat settings (`settings.json`) and logs (`audit.log`,
+`sessions.log`).
 
-- `active.json`, `threads.json`, `chats.json`
-- `audit.log`
+`telegram_offset.json` stores the confirmed update offset and the bot `botId`;
+on startup the offset is reset if the bot identity changes, so switching bots
+while keeping `data/` does not stall polling.
 
 Do not commit runtime state.
