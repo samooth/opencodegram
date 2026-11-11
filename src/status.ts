@@ -366,7 +366,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (!unified && settings.showCot && s.cotBuffer?.trim()) {
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
-    const bottomParts = [renderLatestToolBottom(s, settings), renderThinkingBottom(s, settings)].filter(Boolean);
+    const bottomParts = [renderThinkingBottom(s, settings), renderLatestToolBottom(s, settings)].filter(Boolean);
     return {
       top: lines.join("\n\n"),
       bottom: bottomParts.join("\n\n"),
@@ -442,11 +442,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
       }
       if (transcript) {
-        // In unified mode M2 always follows the conversation at the bottom.
-        const shouldRefloat = unified || settings.cardBehavior !== "fixed";
-        const keep = !unified && settings.cardBehavior === "refloat_keep";
-        if (shouldRefloat) {
-          await transcript.refloat(chatId, s, { keep });
+        // Continue the same session card in place: follow the latest page and
+        // keep the thread continuous instead of deleting/recreating the message.
+        if (!unified && settings.cardBehavior === "refloat_keep") {
+          await transcript.refloat(chatId, s, { keep: true });
+        } else {
+          s.transcriptFollow = true;
         }
         // One card per session: reuse it instead of sending a new message.
         await publishCard(chatId, s);
@@ -687,21 +688,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
       s.transcriptFollow = true;
       const unified = settings.displayMode === "unified";
+      let finishedCardId: number | undefined;
       if (!unified && settings.cardBehavior === "refloat_keep") {
         // Finalize the current card in place, then detach it so it is preserved as
         // history and the next turn creates a fresh card at the bottom.
         await publishCard(chatId, s);
-      } else if (unified || settings.cardBehavior === "refloat") {
-        // Bring the finished card to the bottom as well (M2 follows conversation).
-        await transcript.refloat(chatId, s);
-        await publishCard(chatId, s);
-      } else {
-        await publishCard(chatId, s);
-      }
-      // Capture the card id for the edits message before a keep-refloat detaches it.
-      const finishedCardId = s.transcriptMessageId;
-      if (!unified && settings.cardBehavior === "refloat_keep") {
+        finishedCardId = s.transcriptMessageId;
         await transcript.refloat(chatId, s, { keep: true });
+      } else {
+        // Keep the same card and continue the thread in place (paginate/follow)
+        // instead of deleting and recreating the message.
+        await publishCard(chatId, s);
+        finishedCardId = s.transcriptMessageId;
       }
       // The card stays alive for pagination; only the live status ends.
       s.statusMessageId = undefined;
