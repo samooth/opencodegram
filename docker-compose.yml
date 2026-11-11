@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.opencode
       args:
-        OPENCODE_VERSION: "2.2.5"
+        OPENCODE_VERSION: "2.2.7"
     container_name: opencode-server
     working_dir: /workspace
     volumes:
@@ -20,13 +20,20 @@ services:
       - KILO_API_KEY=${KILO_API_KEY:-}
     ports:
       - "127.0.0.1:49374:49374"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -w '%{content_type}' -H \"Authorization: Basic $(printf 'opencode:%s' \"$OPENCODE_SERVER_PASSWORD\" | base64)\" http://127.0.0.1:49374/api/info | grep -q 'application/json'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     restart: unless-stopped
 
   bot:
     build: .
     container_name: opencodegram
     depends_on:
-      - opencode
+      opencode:
+        condition: service_healthy
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ADMIN_TELEGRAM_USER_ID=${ADMIN_TELEGRAM_USER_ID}

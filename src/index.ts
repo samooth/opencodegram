@@ -42,7 +42,12 @@ async function main() {
       info = await oc.serverInfo();
       break;
     } catch (err) {
-      console.error(`[opencodegram] waiting for opencode (attempt ${attempt}/30): ${err instanceof Error ? err.message : String(err)}`);
+      const e = err as { message?: string; reason?: string; detail?: string; cause?: unknown } | null | undefined;
+      const reason = e?.reason ? ` reason=${e.reason}` : "";
+      const detail = e?.detail ? ` detail=${String(e.detail)}` : "";
+      const cause = e?.cause ? ` cause=${e.cause instanceof Error ? e.cause.message : String(e.cause)}` : "";
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[opencodegram] waiting for opencode (attempt ${attempt}/30): ${msg}${reason}${detail}${cause}`);
       await new Promise((r) => setTimeout(r, 2000));
     }
   }
