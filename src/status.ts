@@ -359,6 +359,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (s.detached && !s.stopped) {
       lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
     }
+    // Show the prompt being processed so the fresh card confirms what was sent.
+    const prompt = store?.lastPromptBySession.get(s.sessionId);
+    if (prompt?.trim()) {
+      lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
+    }
     if (settings.showPartialText && s.buffer.trim()) {
       const tail = s.buffer.trim().slice(-(unified ? 600 : 400));
       lines.push(`<pre>${esc(tail)}</pre>`);
@@ -442,14 +447,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
       }
       if (transcript) {
-        // Continue the same session card in place: follow the latest page and
-        // keep the thread continuous instead of deleting/recreating the message.
-        if (!unified && settings.cardBehavior === "refloat_keep") {
-          await transcript.refloat(chatId, s, { keep: true });
-        } else {
-          s.transcriptFollow = true;
+        // Every turn gets its own card created immediately at the bottom, with
+        // live streaming while working. Unified and "única" (refloat) replace
+        // the previous card (single message per session); "conservar" keeps the
+        // finished card as history; "fija" keeps editing the same card in place.
+        s.turnSeq = (s.turnSeq ?? 0) + 1;
+        s.transcriptFollow = true;
+        if (unified || settings.cardBehavior !== "fixed") {
+          await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
         }
-        // One card per session: reuse it instead of sending a new message.
         await publishCard(chatId, s);
         if (s.transcriptMessageId) {
           s.statusMessageId = s.transcriptMessageId;
@@ -688,19 +694,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
       s.transcriptFollow = true;
       const unified = settings.displayMode === "unified";
-      let finishedCardId: number | undefined;
-      if (!unified && settings.cardBehavior === "refloat_keep") {
-        // Finalize the current card in place, then detach it so it is preserved as
-        // history and the next turn creates a fresh card at the bottom.
-        await publishCard(chatId, s);
-        finishedCardId = s.transcriptMessageId;
-        await transcript.refloat(chatId, s, { keep: true });
-      } else {
-        // Keep the same card and continue the thread in place (paginate/follow)
-        // instead of deleting and recreating the message.
-        await publishCard(chatId, s);
-        finishedCardId = s.transcriptMessageId;
-      }
+      // Keep the finished card attached: it holds the final answer and stays
+      // navigable (pagination). The next turn start decides whether it is
+      // replaced (única), preserved (conservar) or kept editing in place (fija).
+      const finishedCardId = s.transcriptMessageId;
+      await publishCard(chatId, s);
       // The card stays alive for pagination; only the live status ends.
       s.statusMessageId = undefined;
       forgetStatusMessage(s.sessionId);

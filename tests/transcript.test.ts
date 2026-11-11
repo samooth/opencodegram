@@ -58,6 +58,18 @@ describe("transcript pagination", () => {
     expect(pages.length).toBe(1);
     expect(pages[0].blocks.length).toBe(1);
   });
+
+  test("a pageBreak block starts a fresh page for the new turn", () => {
+    const blocks: TranscriptBlock[] = [
+      { kind: "answer", html: "old-1", text: "old-1", at: 1 },
+      { kind: "answer", html: "old-2", text: "old-2", at: 2 },
+      { kind: "answer", html: "new-turn", text: "new-turn", at: 3, pageBreak: true },
+    ];
+    const pages = paginateTranscript(blocks, 1000);
+    expect(pages.length).toBe(2);
+    expect(pages[0].blocks.map((b) => b.html)).toEqual(["old-1", "old-2"]);
+    expect(pages[1].blocks.map((b) => b.html)).toEqual(["new-turn"]);
+  });
 });
 
 describe("transcript manager", () => {
@@ -135,6 +147,43 @@ describe("transcript manager", () => {
     expect(new Set(blocks.map((b) => b.text)).size).toBe(5);
     // The session view and the store agree.
     expect(transcript.blocksOf(s).length).toBe(5);
+  });
+
+  test("the first block of a turn is tagged and starts a fresh page", () => {
+    const { transcript } = makeHarness();
+    const s = makeSession();
+    s.turnSeq = 1;
+    transcript.addBlock(s, "thinking", "<p>think</p>", "think");
+    transcript.addBlock(s, "answer", "<p>answer</p>", "answer");
+    s.turnSeq = 2;
+    transcript.addBlock(s, "answer", "<p>next turn</p>", "next turn");
+    const blocks = transcript.blocksOf(s);
+    expect(blocks.map((b) => b.turn)).toEqual([1, 1, 2]);
+    expect(blocks[0].pageBreak).toBe(true);
+    expect(blocks[1].pageBreak).toBeFalsy();
+    expect(blocks[2].pageBreak).toBe(true);
+  });
+
+  test("while a turn streams the card shows only the live strip, not the previous page", async () => {
+    const { transcript } = makeHarness();
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>previous answer</p>", "previous answer");
+    await transcript.publish(123, s);
+    // New turn starts: nothing recorded yet for this turn.
+    s.turnSeq = 1;
+    s.statusFinished = false;
+    s.transcriptFollow = true;
+    const rendered = transcript.renderPage(s, { extraTop: "⏳ Working…" });
+    expect(rendered).toBeDefined();
+    expect(rendered!.html).not.toContain("previous answer");
+    expect(rendered!.html).toContain("⏳ Working…");
+    // The keyboard still browses the full history.
+    expect(rendered!.total).toBe(1);
+    // After the turn records its blocks, the fresh page shows them.
+    transcript.addBlock(s, "answer", "<p>new answer</p>", "new answer");
+    const after = transcript.renderPage(s, { extraTop: "" });
+    expect(after!.html).toContain("new answer");
+    expect(after!.html).not.toContain("previous answer");
   });
 
   test("an exact repeated block replaces the previous one instead of duplicating", () => {

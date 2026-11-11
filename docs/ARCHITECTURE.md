@@ -111,15 +111,24 @@
     thought at the bottom while working, and keeps the transcript paginated.
   Profiles and long-answer delivery are configurable in `/settings`.
 
-Turn lifecycle:
+Turn lifecycle (one card per turn):
 
-1. Prompt/activation → `startStatus` prepares the turn (ensures M1 in unified
-   mode) and publishes M2; previous turn state is cleared as needed.
+1. Prompt/activation → `startStatus` bumps `turnSeq` and immediately publishes
+   M2, so the new card appears right away (with a 📝 prompt line) instead of
+   waiting for the first model output. According to `cardBehavior`, the previous
+   card is replaced (unified and `única` delete it), kept as history (`nueva`)
+   or edited in place (`fija`).
 2. `session.text.delta` / `reasoning` / `tool` events update M2 (and M1 stats in
-   unified mode) with throttled edits.
+   unified mode) with throttled edits. While streaming, the card shows a fresh
+   view of the current turn (the live strip plus this turn's blocks) instead of
+   repeating the previous turn's page; ◀ browsing still reaches the full
+   history. Blocks are tagged with the turn sequence and the first block of a
+   turn starts a fresh page.
 3. `session.step.ended` with `finish !== "tool-calls"` (or `session.idle`) →
    `finishStatus`: thinking/tools are recorded in the transcript, Stop is
-   removed and M2 is finalized.
-4. `session.text.ended` → final answer is added to the transcript; depending on
-   settings/length it may also be sent as separate rich-text message(s) and is
-   available via **“Ver completo”**; topic title sync runs.
+   removed and M2 is finalized; the finished card stays in place for
+   pagination.
+4. `session.text.ended` → final answer is added to the transcript (restoring
+   the full paginated view); depending on settings/length it may also be sent
+   as separate rich-text message(s) and is available via **“Ver completo”**;
+   topic title sync runs.

@@ -17,6 +17,10 @@ export type TranscriptBlock = {
   html: string;
   text: string;
   at: number;
+  /** Turn sequence the block belongs to (see ChatSession.turnSeq). */
+  turn?: number;
+  /** Forces this block to start a new page (first block of a turn). */
+  pageBreak?: boolean;
 };
 
 export type TranscriptPage = {
@@ -158,7 +162,9 @@ export function paginateTranscript(
   };
   for (const block of blocks) {
     const len = block.html.length + 2;
-    if (current.length && size + len > budget) flush();
+    // A turn's first block always starts a fresh page so the card shows the new
+    // turn's content instead of re-showing the previous one.
+    if (current.length && (size + len > budget || block.pageBreak)) flush();
     current.push(block);
     size += len;
   }

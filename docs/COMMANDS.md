@@ -20,7 +20,7 @@
 ## Settings
 
 - `/settings` — show and toggle bot behavior per chat (with quick profiles):
-  - **Mode & delivery**: `displayMode` (`unified` pinned dashboard M1 + conversation M2, or `flexible`), card behavior (`fija` / `reflotar` / `reflotar (conservar)`), long-answer delivery (`en tarjeta` / `mensaje aparte` / `auto`) and threshold.
+  - **Mode & delivery**: `displayMode` (`unified` pinned dashboard M1 + conversation M2, or `flexible`), card behavior (`fija (edita en sitio)` / `única (borra anterior)` / `nueva (conserva anterior)`: each turn gets its own card created immediately with live streaming; `fija` keeps editing the same card), long-answer delivery (`en tarjeta` / `mensaje aparte` / `auto`) and threshold.
   - **Profiles**: `Unificado`, `Unificado+msg`, `Flexible`.
   - **Visualization**: thinking/tools/COT/latest thought & tool, token speed, partial text, compact final, session name/topic options.
   - **Shell, files, voice, resources**: shell/tool input, auto artifacts, preview lines, diff style, voice transcription, resource usage/history.

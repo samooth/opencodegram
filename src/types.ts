@@ -55,6 +55,8 @@ export type ChatSession = {
   transcriptPage?: number;
   /** True while the user has not navigated away from the latest page. */
   transcriptFollow?: boolean;
+  /** Increments on every turn start; transcript blocks are tagged with it. */
+  turnSeq?: number;
   /** Cumulative tool-call counters for the session (dashboard/stats). */
   toolStats?: { total: number; success: number; failed: number };
   /** Last final answer text, kept for "view full" actions. */

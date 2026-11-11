@@ -227,9 +227,9 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
 
   {
     const cardLabels: Record<CardBehavior, string> = {
-      fixed: "fija",
-      refloat: "reflotar",
-      refloat_keep: "reflotar (conservar)",
+      fixed: "fija (edita en sitio)",
+      refloat: "única (borra anterior)",
+      refloat_keep: "nueva (conserva anterior)",
     };
     const cardCycle: Record<CardBehavior, CardBehavior> = {
       fixed: "refloat",

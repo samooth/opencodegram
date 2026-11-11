@@ -68,15 +68,25 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const push = (piece: TranscriptBlock) => {
       store.appendTranscript(s.sessionId, piece);
     };
+    // Tag blocks with the current turn and mark the first block of the turn so
+    // pagination starts a fresh page for it (the card then shows the new turn's
+    // content instead of re-showing the previous turn's page).
+    const stamp = (piece: TranscriptBlock): TranscriptBlock => {
+      if (s.turnSeq !== undefined) {
+        piece.turn = s.turnSeq;
+        if (!blocksOf(s).some((b) => b.turn === s.turnSeq)) piece.pageBreak = true;
+      }
+      return piece;
+    };
     if (!render) {
       // Already-rendered HTML: keep it as one block.
       if (!text.trim() && !html.trim()) return;
-      push({ kind, html, text, at: Date.now() });
+      push(stamp({ kind, html, text, at: Date.now() }));
       return;
     }
     const chunks = splitMarkdown(text, TRANSCRIPT_BLOCK_BUDGET);
     if (!chunks.length) {
-      push({ kind, html, text, at: Date.now() });
+      push(stamp({ kind, html, text, at: Date.now() }));
       return;
     }
     chunks.forEach((chunk, i) => {
@@ -86,7 +96,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
         text: chunk,
         at: Date.now(),
       };
-      push(piece);
+      push(stamp(piece));
     });
   };
 
@@ -95,12 +105,26 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     s: ChatSession,
     opts: { extraTop?: string; extraBottom?: string; showResources?: boolean } = {},
   ): { html: string; page: number; total: number } | undefined => {
-    const pages = paginateTranscript(blocksOf(s));
+    const all = blocksOf(s);
+    const pages = paginateTranscript(all);
     const header = sessionHeader(s).trimEnd();
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = opts.showResources === false ? "" : renderResources ? renderResources(s) : "";
     const extraTop = opts.extraTop ?? "";
     const extraBottom = opts.extraBottom ?? "";
+
+    // While a turn is streaming and the user follows the card, show only the
+    // content produced by the current turn. Nothing has been recorded yet at
+    // that point, so the card shows the live strip alone instead of repeating
+    // the previous turn's page. ◀ still browses the full history via the
+    // keyboard, which is built over all pages.
+    if (s.transcriptFollow !== false && !s.statusFinished && s.turnSeq !== undefined) {
+      const hasTurnBlocks = all.some((b) => b.turn === s.turnSeq);
+      if (!hasTurnBlocks) {
+        const parts = [header, extraTop, extraBottom, resources].filter(Boolean);
+        return { html: clampText(parts.join("\n\n"), 3900), page: Math.max(0, pages.length - 1), total: pages.length };
+      }
+    }
 
     if (!pages.length) {
       const parts = [header, extraTop, extraBottom, resources].filter(Boolean);
