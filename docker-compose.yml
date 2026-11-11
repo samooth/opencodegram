@@ -1,21 +1,23 @@
 services:
   opencode:
-    image: node:26-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.opencode
+      args:
+        OPENCODE_VERSION: "2.2.5"
     container_name: opencode-server
     working_dir: /workspace
     volumes:
       - opencode-config:/root/.config/opencode
       - opencode-data:/root/.local/share/opencode
       - ${OPENCODE_DIRECTORY:-/tmp}:/workspace
+    env_file: ".env"
     environment:
       # Shared with the bot. Required.
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD}
       # Optional provider keys (OpenCode Zen / Kilo gateway). Leave blank to disable.
       - OPENCODE_API_KEY=${OPENCODE_API_KEY:-}
       - KILO_API_KEY=${KILO_API_KEY:-}
-    command: >
-      sh -c "npm install -g @opencode/cli@2.2.5;
-             opencode serve --hostname 0.0.0.0 --port 49374"
     ports:
       - "127.0.0.1:49374:49374"
     restart: unless-stopped

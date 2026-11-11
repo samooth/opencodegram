@@ -1,0 +1,61 @@
+FROM node:26-slim
+
+ARG OPENCODE_VERSION=2.2.5
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# Base tools for a coding agent: git, fast search, shell utils, network/SSH,
+# archives, diagnostics, and common native-build dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash \
+      git \
+      ripgrep \
+      fd-find \
+      ca-certificates \
+      curl \
+      wget \
+      openssh-client \
+      jq \
+      unzip \
+      zip \
+      xz-utils \
+      tar \
+      gzip \
+      procps \
+      lsof \
+      less \
+      file \
+      diffutils \
+      patch \
+      make \
+      build-essential \
+      pkg-config \
+      python3 \
+      gnupg \
+    && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
+    && rm -rf /var/lib/apt/lists/*
+
+# GitHub CLI (gh): useful for PR/issue/review workflows.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# OpenCode CLI (pinned). Installed at build time to avoid runtime npm installs.
+RUN npm install -g "@opencode/cli@${OPENCODE_VERSION}" \
+    && npm cache clean --force
+
+# Repositories are usually mounted from the host with a different owner.
+RUN git config --system --add safe.directory '*'
+
+WORKDIR /workspace
+
+EXPOSE 49374
+
+CMD ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "49374"]
