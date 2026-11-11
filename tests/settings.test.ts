@@ -50,4 +50,19 @@ describe("SettingsStore", () => {
     store.set(100, "showTools", false);
     expect(store.get(200).showTools).toBe(true);
   });
+
+  test("supports cardBehavior including preserve mode", () => {
+    const store = new SettingsStore(dataDir);
+    expect(store.get(100).cardBehavior).toBe("fixed");
+    expect(store.set(100, "cardBehavior", "refloat").cardBehavior).toBe("refloat");
+    expect(store.set(100, "cardBehavior", "refloat_keep").cardBehavior).toBe("refloat_keep");
+    const reloaded = new SettingsStore(dataDir);
+    expect(reloaded.get(100).cardBehavior).toBe("refloat_keep");
+  });
+
+  test("normalizes unknown cardBehavior to fixed", () => {
+    const store = new SettingsStore(dataDir);
+    (store as any).settings.set(100, { cardBehavior: "bogus" });
+    expect(store.get(100).cardBehavior).toBe("fixed");
+  });
 });

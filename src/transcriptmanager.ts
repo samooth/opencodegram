@@ -208,17 +208,21 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
   };
 
   /**
-   * "Refloat" the session card: remove the current message so the next publish
-   * sends a fresh one at the bottom of the chat, keeping it visible near the
-   * latest activity. Call only at turn boundaries (never during streaming).
+   * "Refloat" the session card: detach it so the next publish sends a fresh
+   * one at the bottom of the chat, keeping it visible near the latest
+   * activity. By default the previous message is deleted; pass `keep: true`
+   * to leave it in place as preserved history. Call only at turn boundaries
+   * (never during streaming).
    */
-  const refloat = async (chatId: number, s: ChatSession): Promise<void> => {
+  const refloat = async (chatId: number, s: ChatSession, opts?: { keep?: boolean }): Promise<void> => {
     const messageId = s.transcriptMessageId;
     if (!messageId) return;
-    // Clear first so a concurrent publish cannot edit the message we are about to remove.
+    // Clear first so a concurrent publish cannot edit the message we are about to detach/remove.
     s.transcriptMessageId = undefined;
     if (s.statusMessageId === messageId) s.statusMessageId = undefined;
-    await tg.deleteMessage(chatId, messageId).catch(() => {});
+    if (!opts?.keep) {
+      await tg.deleteMessage(chatId, messageId).catch(() => {});
+    }
   };
 
   /** Total number of pages currently available. */

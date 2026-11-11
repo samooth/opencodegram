@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { esc } from "./util.js";
 
 export type DiffStyle = "simple" | "unified";
-export type CardBehavior = "fixed" | "refloat";
+/** Where the session card lives and whether its previous messages are preserved. */
+export type CardBehavior = "fixed" | "refloat" | "refloat_keep";
 
 export type ChatSettings = {
   showThinking: boolean;
@@ -73,7 +74,11 @@ export class SettingsStore {
   }
 
   get(chatId: number): ChatSettings {
-    return { ...DEFAULT_SETTINGS, ...(this.settings.get(chatId) ?? {}) };
+    const merged = { ...DEFAULT_SETTINGS, ...(this.settings.get(chatId) ?? {}) };
+    if (merged.cardBehavior !== "fixed" && merged.cardBehavior !== "refloat" && merged.cardBehavior !== "refloat_keep") {
+      merged.cardBehavior = DEFAULT_SETTINGS.cardBehavior;
+    }
+    return merged;
   }
 
   set(chatId: number, key: keyof ChatSettings, value: ChatSettings[keyof ChatSettings]): ChatSettings {
@@ -211,7 +216,25 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     { text: `📈 History: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` },
   ]);
   keyboard.push([{ text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
-  keyboard.push([{ text: `📍 Tarjeta: ${settings.cardBehavior === "refloat" ? "reflotar" : "fija"}`, callback_data: `set:cardBehavior:${settings.cardBehavior === "fixed" ? "refloat" : "fixed"}` }]);
+  {
+    const cardLabels: Record<CardBehavior, string> = {
+      fixed: "fija",
+      refloat: "reflotar",
+      refloat_keep: "reflotar (conservar)",
+    };
+    const cardCycle: Record<CardBehavior, CardBehavior> = {
+      fixed: "refloat",
+      refloat: "refloat_keep",
+      refloat_keep: "fixed",
+    };
+    const behavior: CardBehavior = cardLabels[settings.cardBehavior] ? settings.cardBehavior : "fixed";
+    keyboard.push([
+      {
+        text: `📍 Tarjeta: ${cardLabels[behavior]}`,
+        callback_data: `set:cardBehavior:${cardCycle[behavior]}`,
+      },
+    ]);
+  }
   keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
   return keyboard;
 }

@@ -348,4 +348,42 @@ describe("transcript manager", () => {
     expect(edited.length).toBe(0);
     expect(s.transcriptMessageId).toBe(302);
   });
+
+  test("refloat with keep preserves the card message and detaches it", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const sent: any[] = [];
+    const deleted: any[] = [];
+    const edited: any[] = [];
+    const tg = {
+      sendRichMessage: async (...args: any[]) => {
+        sent.push(args);
+        return { message_id: 400 + sent.length };
+      },
+      editRichMessage: async (...args: any[]) => {
+        edited.push(args);
+        return { message_id: args[1] };
+      },
+      deleteMessage: async (...args: any[]) => {
+        deleted.push(args);
+        return true;
+      },
+    } as any;
+    const transcript = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>a</p>", "a");
+    await transcript.publish(1, s);
+    expect(sent.length).toBe(1);
+    expect(s.transcriptMessageId).toBe(401);
+
+    await transcript.refloat(1, s, { keep: true });
+    expect(deleted).toEqual([]);
+    expect(s.transcriptMessageId).toBeUndefined();
+
+    // The next publish sends a new message at the bottom instead of editing.
+    transcript.addBlock(s, "answer", "<p>b</p>", "b");
+    await transcript.publish(1, s);
+    expect(sent.length).toBe(2);
+    expect(edited.length).toBe(0);
+    expect(s.transcriptMessageId).toBe(402);
+  });
 });

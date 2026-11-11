@@ -390,10 +390,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.statusLastUpdate = Date.now();
     try {
       if (transcript) {
-        // In "refloat" mode the card is re-sent at the bottom on each turn so
-        // it stays close to the latest activity (editing never moves a message).
-        if (settings.cardBehavior === "refloat") {
-          await transcript.refloat(chatId, s);
+        // In "refloat" modes the card is re-sent at the bottom on each turn so it
+        // stays close to the latest activity (editing never moves a message).
+        if (settings.cardBehavior !== "fixed") {
+          await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
         }
         // One card per session: reuse it instead of sending a new message.
         await publishCard(chatId, s);
@@ -633,18 +633,29 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         }
       }
       s.transcriptFollow = true;
-      // In "refloat" mode, bring the finished card to the bottom as well.
-      if (settings.cardBehavior === "refloat") {
+      if (settings.cardBehavior === "refloat_keep") {
+        // Finalize the current card in place, then detach it so it is preserved as
+        // history and the next turn creates a fresh card at the bottom.
+        await publishCard(chatId, s);
+      } else if (settings.cardBehavior === "refloat") {
+        // Bring the finished card to the bottom as well.
         await transcript.refloat(chatId, s);
+        await publishCard(chatId, s);
+      } else {
+        await publishCard(chatId, s);
       }
-      await publishCard(chatId, s);
+      // Capture the card id for the edits message before a keep-refloat detaches it.
+      const finishedCardId = s.transcriptMessageId;
+      if (settings.cardBehavior === "refloat_keep") {
+        await transcript.refloat(chatId, s, { keep: true });
+      }
       // The card stays alive for pagination; only the live status ends.
       s.statusMessageId = undefined;
       forgetStatusMessage(s.sessionId);
       // Edits are offered in their own message so the session card keeps its
       // paginated content intact.
-      if (editDetails.length && s.transcriptMessageId) {
-        const editMessageId = s.transcriptMessageId;
+      if (editDetails.length && finishedCardId) {
+        const editMessageId = finishedCardId;
         const editLines: string[] = [];
         for (const detail of editDetails) {
           const file = relativeEditPath(s, extractEditFile(detail.input) ?? `edit ${editLines.length + 1}`);
