@@ -11,7 +11,8 @@ import { ctx } from "./shared.js";
 export async function cmd_status(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/status" || text === "/session") {
-    await C.showStatus(chatId, threadId);
+    const placeholder = await send("⏳ Cargando estado…").catch(() => undefined) as { message_id?: number } | undefined;
+    await C.showStatus(chatId, threadId, placeholder?.message_id);
     return true;
   }
   return false;
@@ -485,18 +486,20 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
 export async function cmd_running_sessions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/running" || text === "/sessions running" || text === "/sessions busy") {
-    await C.showSessions(chatId, 0, undefined, threadId, undefined, true);
+    const placeholder = await send("⏳ Cargando sesiones…").catch(() => undefined) as { message_id?: number } | undefined;
+    await C.showSessions(chatId, 0, placeholder?.message_id, threadId, undefined, true);
     return true;
   }
   if (text === "/sessions" || text.startsWith("/sessions ")) {
     const arg = text.slice("/sessions".length).trim();
+    const placeholder = await send("⏳ Cargando sesiones…").catch(() => undefined) as { message_id?: number } | undefined;
     if (arg === "group" || arg === "g" || arg === "here") {
       // Sessions used from this chat (and its topics).
-      await C.showSessions(chatId, 0, undefined, threadId, chatId);
+      await C.showSessions(chatId, 0, placeholder?.message_id, threadId, chatId);
       return true;
     }
     const page = /^\d+$/.test(arg) ? Math.max(0, parseInt(arg, 10) - 1) : 0;
-    await C.showSessions(chatId, page, undefined, threadId);
+    await C.showSessions(chatId, page, placeholder?.message_id, threadId);
     return true;
   }
   return false;
@@ -507,7 +510,8 @@ export async function cmd_use(deps: BotDeps, chatId: number, threadId: number | 
   if (text === "/use" || text.startsWith("/use ")) {
     const sessionId = text.slice(4).trim();
     if (!sessionId) {
-      await C.showSessions(chatId, 0, undefined, threadId);
+      const placeholder = await send("⏳ Cargando sesiones…").catch(() => undefined) as { message_id?: number } | undefined;
+      await C.showSessions(chatId, 0, placeholder?.message_id, threadId);
       return true;
     }
     try {

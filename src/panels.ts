@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import os from "node:os";
 import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
@@ -7,6 +6,7 @@ import type { ChatSession } from "./types.js";
 import type { MetricsStore } from "./metrics.js";
 import { esc, sessionHeader, threadOpts, projectLabel, truncate } from "./util.js";
 import { BOT_COMMANDS } from "./botcommands.js";
+import { readGpuInfo } from "./resources.js";
 
 export type PanelsDeps = {
   tg: TelegramClient;
@@ -70,7 +70,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       list = list.filter((s: any) => getSessionStatus(s.id) === "busy");
     }
     if (!list.length) {
-      await tg.sendRichMessage(chatId, "no sessions found.", threadOpts(threadId));
+      await sendOrEditRich(chatId, messageId, "no sessions found.", threadOpts(threadId));
       return;
     }
     const total = list.length;
@@ -112,7 +112,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const pageSize = 8;
     const list = await oc.listSessionsCached();
     if (!list.length) {
-      await tg.sendRichMessage(chatId, "no sessions found. Use /new to create one.", threadOpts(threadId));
+      await sendOrEditRich(chatId, messageId, "no sessions found. Use /new to create one.", threadOpts(threadId));
       return;
     }
     // Filter by chat: a session belongs to every chat it was used from, so we
@@ -137,7 +137,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     }
     if (!filtered.length) {
       const text = onlyRunning ? "no running sessions." : filterChatId !== undefined ? "no sessions for this chat." : "no sessions found.";
-      await tg.sendRichMessage(chatId, text, threadOpts(threadId));
+      await sendOrEditRich(chatId, messageId, text, threadOpts(threadId));
       return;
     }
     const total = filtered.length;
@@ -273,7 +273,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       selectedProviderByChat.delete(scope);
       providerListByChat.set(scope, providers);
       if (!providers.length) {
-        await tg.sendRichMessage(chatId, "no models available.", threadOpts(threadId));
+        await sendOrEditRich(chatId, messageId, "no models available.", threadOpts(threadId), s?.sessionId ?? targetId);
         return;
       }
       const total = providers.length;
@@ -347,31 +347,19 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
   async function showStatus(chatId: number, threadId?: number, messageId?: number): Promise<void> {
     let s = getActiveSession(chatId, threadId);
     if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
-    const ocInfo = await oc.serverInfo().catch(() => null);
-    let sessionCount = 0;
-    try {
-      const list = await oc.listSessionsCached();
-      sessionCount = list.length;
-    } catch {
-      // ignore
-    }
+    const [ocInfo, sessionCount, sessionDetail] = await Promise.all([
+      oc.serverInfo().catch(() => null),
+      oc.listSessionsCached().then((list) => list.length).catch(() => 0),
+      s?.sessionId ? oc.client.session.get({ sessionID: s.sessionId }).catch(() => null) : Promise.resolve(null),
+    ]);
     const cpuCount = os.cpus().length;
     const load = os.loadavg().map((x) => x.toFixed(2)).join(" ");
     const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
     const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
     let gpu = "";
-    try {
-      const out = execFileSync("nvidia-smi", ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
-      if (out) {
-        const parts = out.split(",").map((x) => x.trim());
-        const name = esc(parts[0] || "GPU");
-        const used = esc(parts[1] || "?");
-        const total = esc(parts[2] || "?");
-        const util = esc(parts[3] || "?");
-        gpu = `${name}<br>VRAM: ${used}/${total}<br>Load: ${util}`;
-      }
-    } catch {
-      // no gpu
+    const gpuInfo = readGpuInfo();
+    if (gpuInfo) {
+      gpu = `${esc(gpuInfo.name)}<br>VRAM: ${gpuInfo.usedMB} MiB/${gpuInfo.totalMB} MiB<br>Load: ${gpuInfo.util}%`;
     }
 
     const botUptimeSeconds = Math.max(1, Math.round((Date.now() - metrics.startedAt) / 1000));
@@ -386,17 +374,17 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     let updatedLine = "—";
     let turnLine = s?.statusMessageId ? "⏳ active" : "✅ idle";
     if (s?.sessionId) {
-      try {
-        const session = (await oc.client.session.get({ sessionID: s.sessionId })) as { title?: string; model?: { id?: string; providerID?: string; variant?: string }; location?: { directory?: string }; directory?: string; tokens?: Record<string, unknown>; cost?: number; time?: { updated?: number } };
+      if (sessionDetail) {
+        const session = sessionDetail as { title?: string; model?: { id?: string; providerID?: string; variant?: string }; location?: { directory?: string }; directory?: string; tokens?: Record<string, unknown>; cost?: number; time?: { updated?: number } };
         title = session?.title ?? s.sessionId;
         const model = session?.model ?? s.model;
         modelLine = model ? `${esc(model.providerID ?? "")}/${esc(model.id ?? "")}${model.variant ? " (" + esc(model.variant) + ")" : ""}` : "—";
         directory = session?.location?.directory ?? session?.directory ?? directory;
-        const tokens = session?.tokens ?? {};
+        const tokens = (session?.tokens ?? {}) as Record<string, any>;
         tokensLine = `in ${(tokens.input ?? 0).toLocaleString()} · out ${(tokens.output ?? 0).toLocaleString()} · reasoning ${(tokens.reasoning ?? 0).toLocaleString()}`;
         costLine = (session?.cost ?? 0).toFixed(4);
         if (session?.time?.updated) updatedLine = `<tg-time unix="${Math.floor(session.time.updated / 1000)}" format="wDT">${new Date(session.time.updated).toISOString().slice(0, 16).replace("T", " ")}</tg-time>`;
-      } catch {
+      } else {
         title = s.sessionId;
         if (s.model) modelLine = `${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}`;
       }
@@ -432,31 +420,18 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
   async function sendPanel(chatId: number, threadId?: number): Promise<void> {
     let s = getActiveSession(chatId, threadId);
     if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
-    const ocInfo = await oc.serverInfo().catch(() => null);
-    let sessionCount = 0;
-    try {
-      const list = await oc.listSessionsCached();
-      sessionCount = list.length;
-    } catch {
-      // ignore
-    }
+    const [ocInfo, sessionCount] = await Promise.all([
+      oc.serverInfo().catch(() => null),
+      oc.listSessionsCached().then((list) => list.length).catch(() => 0),
+    ]);
     const cpuCount = os.cpus().length;
     const load = os.loadavg().map((x) => x.toFixed(2)).join(" ");
     const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
     const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
     let gpu = "";
-    try {
-      const out = execFileSync("nvidia-smi", ["--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], { timeout: 1500, encoding: "utf8" }).trim().split("\n")[0];
-      if (out) {
-        const parts = out.split(",").map((x) => x.trim());
-        const name = esc(parts[0] || "GPU");
-        const used = esc(parts[1] || "?");
-        const total = esc(parts[2] || "?");
-        const util = esc(parts[3] || "?");
-        gpu = `${name}<br>VRAM: ${used}/${total}<br>Load: ${util}`;
-      }
-    } catch {
-      // no gpu
+    const gpuInfo = readGpuInfo();
+    if (gpuInfo) {
+      gpu = `${esc(gpuInfo.name)}<br>VRAM: ${gpuInfo.usedMB} MiB/${gpuInfo.totalMB} MiB<br>Load: ${gpuInfo.util}%`;
     }
     const rows = [
       s ? `<tr><td><b>Session</b></td><td><code>${esc(s.sessionId)}</code></td></tr>` : `<tr><td><b>Session</b></td><td>none</td></tr>`,

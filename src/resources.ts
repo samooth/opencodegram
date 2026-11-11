@@ -16,9 +16,15 @@ export function progressBar(percent: number, width = 10): string {
   return "▓".repeat(filled) + "░".repeat(width - filled);
 }
 
-type GpuInfo = { name: string; usedMB: number; totalMB: number; util: number; temperature: number | null };
+export type GpuInfo = { name: string; usedMB: number; totalMB: number; util: number; temperature: number | null };
+
+let gpuCache: { time: number; value: GpuInfo | null } | null = null;
+const GPU_CACHE_TTL_MS = 5000;
 
 export function readGpuInfo(): GpuInfo | null {
+  const now = Date.now();
+  if (gpuCache && now - gpuCache.time < GPU_CACHE_TTL_MS) return gpuCache.value;
+  let value: GpuInfo | null = null;
   try {
     const out = execFileSync(
       "nvidia-smi",
@@ -28,18 +34,21 @@ export function readGpuInfo(): GpuInfo | null {
       .trim()
       .split("\n")[0];
     const parts = out.split(",").map((s) => s.trim());
-    if (parts.length < 5) return null;
-    const name = parts[0] || "GPU";
-    const usedMB = Number(parts[1]);
-    const totalMB = Number(parts[2]);
-    const util = Number(parts[3]);
-    const temperature = Number(parts[4]);
-    if (!Number.isFinite(usedMB) || !Number.isFinite(totalMB) || totalMB <= 0 || !Number.isFinite(util)) return null;
-    return { name, usedMB, totalMB, util, temperature: Number.isFinite(temperature) ? temperature : null };
+    if (parts.length >= 5) {
+      const name = parts[0] || "GPU";
+      const usedMB = Number(parts[1]);
+      const totalMB = Number(parts[2]);
+      const util = Number(parts[3]);
+      const temperature = Number(parts[4]);
+      if (Number.isFinite(usedMB) && Number.isFinite(totalMB) && totalMB > 0 && Number.isFinite(util)) {
+        value = { name, usedMB, totalMB, util, temperature: Number.isFinite(temperature) ? temperature : null };
+      }
+    }
   } catch {
     // No GPU or nvidia-smi unavailable.
   }
-  return null;
+  gpuCache = { time: now, value };
+  return value;
 }
 
 export function readMemoryPercent(): number {

@@ -152,12 +152,22 @@ export class TelegramClient {
   }
 
   sendMessage(chatId: number, text: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const body = { chat_id: chatId, text: sanitizeUtf8(text), ...opts };
+    const safe = sanitizeUtf8(text);
+    const body = { chat_id: chatId, text: safe, ...opts };
     return this.call<TelegramMessage>("sendMessage", body).catch(async (err) => {
-      if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, text };
+      const msg = String(err);
+      if (opts.message_thread_id && /message thread not found/i.test(msg)) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, text: safe };
         for (const [key, value] of Object.entries(opts)) {
           if (key === "message_thread_id" || value === undefined || value === null) continue;
+          retryBody[key] = value;
+        }
+        return this.call<TelegramMessage>("sendMessage", retryBody);
+      }
+      if (/message is too long|RICH_MESSAGE_TEXT_TOO_LONG|MESSAGE_TOO_LONG/i.test(msg)) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, text: safe.slice(0, 3900) };
+        for (const [key, value] of Object.entries(opts)) {
+          if (value === undefined || value === null) continue;
           retryBody[key] = value;
         }
         return this.call<TelegramMessage>("sendMessage", retryBody);
@@ -209,6 +219,16 @@ export class TelegramClient {
         }
         return this.call<TelegramMessage>("sendRichMessage", retryBody);
       }
+      // Message too long: fall back to truncated plain text to avoid losing it.
+      if (/message is too long|RICH_MESSAGE_TEXT_TOO_LONG|MESSAGE_TOO_LONG/i.test(msg)) {
+        const plain = safe.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"').slice(0, 3900);
+        const retryBody: Record<string, unknown> = { chat_id: chatId, text: plain };
+        for (const [key, value] of Object.entries(opts)) {
+          if (value === undefined || value === null) continue;
+          retryBody[key] = value;
+        }
+        return this.call<TelegramMessage>("sendMessage", retryBody);
+      }
       // Definite parse failure: fall back to plain text to avoid losing the message.
       if (/can't parse entities|can't find end of|unsupported start tag|parse/i.test(msg) && /400|Bad Request/i.test(msg)) {
         const plain = safe.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"').slice(0, 3900);
@@ -224,15 +244,25 @@ export class TelegramClient {
   }
 
   sendRichMessageMarkdown(chatId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const body = { chat_id: chatId, rich_message: { markdown: sanitizeUtf8(markdown) }, ...opts };
+    const safe = sanitizeUtf8(markdown);
+    const body = { chat_id: chatId, rich_message: { markdown: safe }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
-      if (opts.message_thread_id && /message thread not found/i.test(String(err))) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { markdown: sanitizeUtf8(markdown) } };
+      const msg = String(err);
+      if (opts.message_thread_id && /message thread not found/i.test(msg)) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { markdown: safe } };
         for (const [key, value] of Object.entries(opts)) {
           if (key === "message_thread_id" || value === undefined || value === null) continue;
           retryBody[key] = value;
         }
         return this.call<TelegramMessage>("sendRichMessage", retryBody);
+      }
+      if (/message is too long|RICH_MESSAGE_TEXT_TOO_LONG|MESSAGE_TOO_LONG/i.test(msg)) {
+        const retryBody: Record<string, unknown> = { chat_id: chatId, text: safe.slice(0, 3900) };
+        for (const [key, value] of Object.entries(opts)) {
+          if (value === undefined || value === null) continue;
+          retryBody[key] = value;
+        }
+        return this.call<TelegramMessage>("sendMessage", retryBody);
       }
       throw err;
     });

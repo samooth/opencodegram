@@ -39,7 +39,8 @@ export async function cmd_settings(deps: BotDeps, chatId: number, threadId: numb
 export async function cmd_models(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/models" || text === "/model") {
-    await C.showModels(chatId, 0, undefined, threadId, undefined, undefined, { userId });
+    const placeholder = await send("⏳ Cargando modelos…").catch(() => undefined) as { message_id?: number } | undefined;
+    await C.showModels(chatId, 0, placeholder?.message_id, threadId, undefined, undefined, { userId });
     return true;
   }
   return false;
