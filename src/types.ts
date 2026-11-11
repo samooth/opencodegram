@@ -55,4 +55,10 @@ export type ChatSession = {
   transcriptPage?: number;
   /** True while the user has not navigated away from the latest page. */
   transcriptFollow?: boolean;
+  /** Cumulative tool-call counters for the session (dashboard/stats). */
+  toolStats?: { total: number; success: number; failed: number };
+  /** Last final answer text, kept for "view full" actions. */
+  lastFinalText?: string;
+  /** Throttle timestamp for dashboard (M1) updates. */
+  dashboardLastUpdate?: number;
 };

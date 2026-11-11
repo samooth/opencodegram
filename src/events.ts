@@ -513,6 +513,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       cardMessageId: s.transcriptMessageId,
       pages: deps.transcript?.pageCount(s),
     });
+    s.lastFinalText = finalText;
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
     const answerHtml = markdownToHtml(finalText);
     const copyRow = `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
@@ -539,11 +540,25 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         if (chatId < 0) {
           const internalId = String(chatId).replace(/^-100/, "");
           const url = `https://t.me/c/${internalId}/${s.transcriptMessageId}`;
-          const kb: any[] = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s)))];
+          const kb: any[] = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s), { unified: settings.get(chatId).displayMode === "unified" }))];
           kb.push([{ text: "🔗 Ver en chat", url }]);
           // The markup edit must not race with the card edits.
           await new Promise((r) => setTimeout(r, 400));
           await tg.editMessageReplyMarkup(chatId, s.transcriptMessageId, { inline_keyboard: kb }).catch(() => {});
+        }
+      }
+      // Optional: deliver the final answer as a separate rich-text message for readability.
+      const st = settings.get(chatId);
+      const sendSeparately =
+        st.longAnswerDelivery === "message" ||
+        (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold);
+      if (sendSeparately) {
+        const { splitMarkdown } = await import("./transcript.js");
+        const parts = splitMarkdown(finalText, 3200);
+        for (let i = 0; i < parts.length; i++) {
+          const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
+          const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(parts[i])}`;
+          await tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts2).catch(() => {});
         }
       }
     } else {

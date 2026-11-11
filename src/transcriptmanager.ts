@@ -91,24 +91,50 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
   };
 
   /** Render the current page of the transcript. */
-  const renderPage = (s: ChatSession, extraTop: string = ""): { html: string; page: number; total: number } | undefined => {
+  const renderPage = (
+    s: ChatSession,
+    opts: { extraTop?: string; extraBottom?: string; showResources?: boolean } = {},
+  ): { html: string; page: number; total: number } | undefined => {
     const pages = paginateTranscript(blocksOf(s));
     const header = sessionHeader(s).trimEnd();
-    // System indicators always close the message.
-    const resources = renderResources ? renderResources(s) : "";
-    const parts: string[] = [header];
-    if (extraTop) parts.push(extraTop);
+    // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
+    const resources = opts.showResources === false ? "" : renderResources ? renderResources(s) : "";
+    const extraTop = opts.extraTop ?? "";
+    const extraBottom = opts.extraBottom ?? "";
+
     if (!pages.length) {
-      if (resources) parts.push(resources);
-      return { html: clampText(parts.join("\n"), 3900), page: 0, total: 0 };
+      const parts = [header, extraTop, extraBottom, resources].filter(Boolean);
+      return { html: clampText(parts.join("\n\n"), 3900), page: 0, total: 0 };
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
-    parts.push(page.html);
-    if (page.total > 1) parts.push(`<i>📄 ${page.index + 1}/${page.total}</i>`);
-    if (resources) parts.push(resources);
-    const html = clampText(parts.join("\n\n"), 3900);
-    return { html, page: page.index, total: page.total };
+    const indicator = page.total > 1 ? `<i>📄 ${page.index + 1}/${page.total}</i>` : "";
+
+    // When streaming a bottom section (e.g. live thought), protect it from being truncated.
+    if (extraBottom) {
+      const tailParts = [indicator, extraBottom, resources].filter(Boolean);
+      const headParts = [header, extraTop].filter(Boolean);
+      const overhead = headParts.join("\n\n").length + (headParts.length ? 2 : 0) + tailParts.join("\n\n").length + (tailParts.length ? 2 : 0);
+      let budget = 3900 - overhead - 2;
+      let content = page.html;
+      if (content.length > budget && page.blocks.length > 1) {
+        let kept = [] as typeof page.blocks;
+        let used = 0;
+        for (let i = page.blocks.length - 1; i >= 0; i--) {
+          const len = page.blocks[i].html.length + 2;
+          if (kept.length && used + len > budget) break;
+          kept.unshift(page.blocks[i]);
+          used += len;
+        }
+        content = (kept.length < page.blocks.length ? "<i>…</i>\n\n" : "") + kept.map((b) => b.html).join("\n\n");
+      }
+      if (content.length > budget) content = content.slice(0, Math.max(0, budget)) + "\n…";
+      const parts = [header, extraTop, content, ...tailParts].filter(Boolean);
+      return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
+    }
+
+    const parts = [header, extraTop, page.html, indicator, resources].filter(Boolean);
+    return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
   };
 
   /** Keyboard for the session card. */
@@ -116,7 +142,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     s: ChatSession,
     page: number,
     total: number,
-    opts?: { working?: boolean },
+    opts?: { working?: boolean; unified?: boolean },
   ): Array<Array<{ text: string; callback_data: string }>> => {
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     if (total > 1) {
@@ -129,11 +155,17 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       }
     }
     if (opts?.working) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
-    keyboard.push([
-      { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },
-      { text: "📂 Sessions", callback_data: "panel:sessions" },
-      { text: "🏠 Panel", callback_data: "panel:home" },
-    ]);
+    // "View full" escape hatch for long answers.
+    if (s.lastFinalText) keyboard.push([{ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` }]);
+    if (!opts?.unified) {
+      keyboard.push([
+        { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },
+        { text: "📂 Sessions", callback_data: "panel:sessions" },
+        { text: "🏠 Panel", callback_data: "panel:home" },
+      ]);
+    } else {
+      keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    }
     return keyboard;
   };
 
@@ -146,9 +178,9 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
   const publishNow = async (
     chatId: number,
     s: ChatSession,
-    opts?: { extraTop?: string; working?: boolean },
+    opts?: { extraTop?: string; extraBottom?: string; working?: boolean; showResources?: boolean; unified?: boolean },
   ): Promise<void> => {
-    const rendered = renderPage(s, opts?.extraTop);
+    const rendered = renderPage(s, { extraTop: opts?.extraTop, extraBottom: opts?.extraBottom, showResources: opts?.showResources });
     if (!rendered) return;
     const tgOpts = threadOptsFor(s);
     const keyboard = { inline_keyboard: cardKeyboard(s, rendered.page, rendered.total, opts) };
@@ -183,7 +215,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
   const publish = async (
     chatId: number,
     s: ChatSession,
-    opts?: { extraTop?: string; working?: boolean },
+    opts?: { extraTop?: string; extraBottom?: string; working?: boolean; showResources?: boolean; unified?: boolean },
   ): Promise<void> => {
     const key = s.sessionId;
     const previous = publishQueue.get(key) ?? Promise.resolve();

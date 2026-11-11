@@ -6,6 +6,7 @@ import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./setti
 import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
+import { splitMarkdown } from "./transcript.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 
@@ -38,6 +39,8 @@ const PREFIXES = [
   "filter:",
   "cmd:",
   "tpage:",
+  "profile:",
+  "viewfull:",
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -394,12 +397,26 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
     return;
   }
   let parsedValue: ChatSettings[keyof ChatSettings];
-  if (key === "previewLines") parsedValue = Number(value);
+  if (key === "previewLines" || key === "longAnswerThreshold") parsedValue = Number(value);
   else if (key === "diffStyle") parsedValue = value === "unified" ? "unified" : "simple";
   else if (key === "cardBehavior")
     parsedValue = value === "refloat_keep" ? "refloat_keep" : value === "refloat" ? "refloat" : "fixed";
+  else if (key === "displayMode") parsedValue = value === "unified" ? "unified" : "flexible";
+  else if (key === "longAnswerDelivery")
+    parsedValue = value === "message" ? "message" : value === "auto" ? "auto" : "card";
   else parsedValue = value === "true";
   const settings = deps.settings.set(chatId, key, parsedValue);
+
+  if (key === "displayMode") {
+    if (parsedValue === "unified") {
+      const s = deps.store.getActiveSession(chatId, threadId) ?? (await deps.sessions.restoreActiveSession(chatId, threadId).catch(() => undefined));
+      if (s) await deps.dashboard.ensure(chatId, threadId, s, { working: !!s.statusMessageId && !s.statusFinished }).catch(() => {});
+    } else {
+      const dash = deps.store.getDashboard(chatId, threadId);
+      if (dash) await deps.tg.unpinChatMessage(chatId, { message_id: dash.messageId }).catch(() => {});
+    }
+  }
+
   await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${String(parsedValue)}`).catch(() => {});
   if (messageId !== undefined) {
     await deps.tg
@@ -446,24 +463,52 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     }
     return;
   }
+  if (key === "longAnswerThreshold") {
+    const presets = [800, 1200, 1800, 2600, 3600];
+    const current = deps.settings.get(chatId).longAnswerThreshold;
+    const next = presets[(presets.indexOf(current) + 1) % presets.length] ?? presets[0];
+    const settings = deps.settings.set(chatId, "longAnswerThreshold", next);
+    await deps.tg.answerCallbackQuery(cq.id, `${LABELS.longAnswerThreshold} → ${next}`).catch(() => {});
+    if (messageId !== undefined) {
+      await deps.tg
+        .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+          ...threadOpts(threadId),
+          reply_markup: { inline_keyboard: settingsKeyboard(settings) },
+        })
+        .catch(() => {});
+    }
+    return;
+  }
   await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch(() => {});
 }
 
 async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
-  const { tg, panels, sessions, files, oc, store } = deps;
+  const { tg, panels, sessions, files, oc, store, settings } = deps;
+  // The pinned dashboard (M1) must not be replaced by panel views.
+  const dash = store.getDashboard(chatId, threadId);
+  const editId = dash && dash.messageId === messageId ? undefined : messageId;
   if (data === "panel:home" || data === "panel:help") {
     await tg.answerCallbackQuery(cq.id);
     await panels.sendPanel(chatId, threadId);
     return;
   }
+  if (data === "panel:settings") {
+    await tg.answerCallbackQuery(cq.id);
+    const s = settings.get(chatId);
+    await tg.sendRichMessage(chatId, renderSettings(chatId, s), {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: settingsKeyboard(s) },
+    });
+    return;
+  }
   if (data === "panel:status") {
     await tg.answerCallbackQuery(cq.id);
-    await panels.showStatus(chatId, threadId, cq.message?.message_id);
+    await panels.showStatus(chatId, threadId, editId);
     return;
   }
   if (data === "panel:sessions") {
     await tg.answerCallbackQuery(cq.id);
-    await panels.showSessions(chatId, 0, cq.message?.message_id, threadId);
+    await panels.showSessions(chatId, 0, editId, threadId);
     return;
   }
   if (data === "panel:new") {
@@ -488,7 +533,7 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   if (data === "panel:files") {
     await tg.answerCallbackQuery(cq.id);
     try {
-      await files.showListing(chatId, threadId, "", { messageId: cq.message?.message_id });
+      await files.showListing(chatId, threadId, "", { messageId: editId });
     } catch (err) {
       await tg.sendRichMessage(chatId, `❌ ${esc(fileErrorMessage(err))}`, threadOpts(threadId));
     }
@@ -496,13 +541,13 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   }
   if (data === "panel:models") {
     await tg.answerCallbackQuery(cq.id);
-    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, null, { userId: cq.from?.id });
+    await panels.showModels(chatId, 0, editId, threadId, undefined, null, { userId: cq.from?.id });
     return;
   }
   if (data.startsWith("panel:ms:")) {
     const targetSessionId = data.slice("panel:ms:".length).trim();
     await tg.answerCallbackQuery(cq.id);
-    await panels.showModels(chatId, 0, cq.message?.message_id, threadId, undefined, targetSessionId || null, { userId: cq.from?.id });
+    await panels.showModels(chatId, 0, editId, threadId, undefined, targetSessionId || null, { userId: cq.from?.id });
     return;
   }
   if (data === "panel:stop") {
@@ -613,6 +658,64 @@ async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   }
 }
 
+async function handleProfile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const name = data.slice("profile:".length);
+  let settings = deps.settings.get(chatId);
+  if (name === "unified") {
+    settings = deps.settings.set(chatId, "displayMode", "unified");
+    settings = deps.settings.set(chatId, "longAnswerDelivery", "auto");
+    settings = deps.settings.set(chatId, "cardBehavior", "refloat");
+  } else if (name === "unified_split") {
+    settings = deps.settings.set(chatId, "displayMode", "unified");
+    settings = deps.settings.set(chatId, "longAnswerDelivery", "message");
+    settings = deps.settings.set(chatId, "cardBehavior", "refloat_keep");
+  } else if (name === "flexible") {
+    settings = deps.settings.set(chatId, "displayMode", "flexible");
+    settings = deps.settings.set(chatId, "longAnswerDelivery", "auto");
+  } else {
+    await deps.tg.answerCallbackQuery(cq.id, "Perfil desconocido").catch(() => {});
+    return;
+  }
+  if (settings.displayMode === "unified") {
+    const s = deps.store.getActiveSession(chatId, threadId) ?? (await deps.sessions.restoreActiveSession(chatId, threadId).catch(() => undefined));
+    if (s) await deps.dashboard.ensure(chatId, threadId, s, { working: !!s.statusMessageId && !s.statusFinished }).catch(() => {});
+  } else {
+    const dash = deps.store.getDashboard(chatId, threadId);
+    if (dash) await deps.tg.unpinChatMessage(chatId, { message_id: dash.messageId }).catch(() => {});
+  }
+  await deps.tg.answerCallbackQuery(cq.id, `Perfil: ${name}`).catch(() => {});
+  if (messageId !== undefined) {
+    await deps.tg
+      .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: settingsKeyboard(settings) },
+      })
+      .catch(() => {});
+  }
+}
+
+async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const sessionId = data.slice("viewfull:".length);
+  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  const s = deps.store.findSessionById(sessionId);
+  const text = s?.lastFinalText;
+  if (!s || !text) {
+    await deps.tg.sendRichMessage(chatId, "No hay respuesta completa disponible.", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  const parts = splitMarkdown(text, 3200);
+  if (parts.length <= 1) {
+    await deps.tg.sendRichMessage(chatId, clampText(`${sessionHeader(s)}${markdownToHtml(text)}`, 3900), threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  for (let i = 0; i < parts.length; i++) {
+    const chunk = parts[i];
+    const prefix = `<i>(${i + 1}/${parts.length})</i>\n`;
+    const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(chunk)}`;
+    await deps.tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts(threadId)).catch(() => {});
+  }
+}
+
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "fs:": handleFs,
   "tpage:": handleTranscriptPage,
@@ -661,6 +764,8 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "sessions:": handleSessions,
   "filter:": handleFilter,
   "cmd:": handleCmd,
+  "profile:": handleProfile,
+  "viewfull:": handleViewFull,
 };
 
 export const callbackDispatch = CALLBACK_DISPATCH;

@@ -354,6 +354,14 @@ export class TelegramClient {
     return this.call<boolean>("sendChatAction", { chat_id: chatId, action, ...(messageThreadId ? { message_thread_id: messageThreadId } : {}) });
   }
 
+  pinChatMessage(chatId: number, messageId: number, opts: Record<string, unknown> = {}): Promise<boolean> {
+    return this.call<boolean>("pinChatMessage", { chat_id: chatId, message_id: messageId, disable_notification: true, ...opts }).catch(() => false);
+  }
+
+  unpinChatMessage(chatId: number, opts: Record<string, unknown> = {}): Promise<boolean> {
+    return this.call<boolean>("unpinChatMessage", { chat_id: chatId, ...opts }).catch(() => false);
+  }
+
   setMyCommands(commands: Array<{ command: string; description: string }>, scope?: Record<string, unknown>): Promise<boolean> {
     return this.call<boolean>("setMyCommands", { commands, ...(scope ? { scope } : {}) });
   }

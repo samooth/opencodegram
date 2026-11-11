@@ -5,6 +5,10 @@ import { esc } from "./util.js";
 export type DiffStyle = "simple" | "unified";
 /** Where the session card lives and whether its previous messages are preserved. */
 export type CardBehavior = "fixed" | "refloat" | "refloat_keep";
+/** High-level layout: unified dashboard+conversation (2 messages) or flexible. */
+export type DisplayMode = "unified" | "flexible";
+/** How long final answers are delivered. */
+export type LongAnswerDelivery = "card" | "message" | "auto";
 
 export type ChatSettings = {
   showThinking: boolean;
@@ -32,6 +36,12 @@ export type ChatSettings = {
   showSessionNameInStatus: boolean;
   /** Where the session card lives: edited in place, or re-sent at the bottom on each turn. */
   cardBehavior: CardBehavior;
+  /** Unified = pinned dashboard + one conversation message; flexible = current behavior. */
+  displayMode: DisplayMode;
+  /** Deliver long final answers in-card, as a separate message, or automatically by threshold. */
+  longAnswerDelivery: LongAnswerDelivery;
+  /** Character threshold used when longAnswerDelivery is "auto". */
+  longAnswerThreshold: number;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -59,6 +69,9 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   sessionNameInMessages: true,
   showSessionNameInStatus: true,
   cardBehavior: "fixed",
+  displayMode: "flexible",
+  longAnswerDelivery: "auto",
+  longAnswerThreshold: 1800,
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -77,6 +90,15 @@ export class SettingsStore {
     const merged = { ...DEFAULT_SETTINGS, ...(this.settings.get(chatId) ?? {}) };
     if (merged.cardBehavior !== "fixed" && merged.cardBehavior !== "refloat" && merged.cardBehavior !== "refloat_keep") {
       merged.cardBehavior = DEFAULT_SETTINGS.cardBehavior;
+    }
+    if (merged.displayMode !== "unified" && merged.displayMode !== "flexible") {
+      merged.displayMode = DEFAULT_SETTINGS.displayMode;
+    }
+    if (merged.longAnswerDelivery !== "card" && merged.longAnswerDelivery !== "message" && merged.longAnswerDelivery !== "auto") {
+      merged.longAnswerDelivery = DEFAULT_SETTINGS.longAnswerDelivery;
+    }
+    if (typeof merged.longAnswerThreshold !== "number" || !Number.isFinite(merged.longAnswerThreshold) || merged.longAnswerThreshold < 200) {
+      merged.longAnswerThreshold = DEFAULT_SETTINGS.longAnswerThreshold;
     }
     return merged;
   }
@@ -146,11 +168,15 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   sessionNameInMessages: "📌 Session name in messages",
   showSessionNameInStatus: "📌 Session name in status",
   cardBehavior: "📍 Ubicación tarjeta",
+  displayMode: "🧩 Modo",
+  longAnswerDelivery: "📤 Respuesta larga",
+  longAnswerThreshold: "📏 Umbral respuesta",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
   const sections: Array<{ title: string; emoji: string; keys: Array<keyof ChatSettings> }> = [
-    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle", "cardBehavior"] },
+    { title: "Modo y entrega", emoji: "🧩", keys: ["displayMode", "cardBehavior", "longAnswerDelivery", "longAnswerThreshold"] },
+    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle"] },
     { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded", "showToolInput"] },
     { title: "Archivos", emoji: "📁", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
     { title: "Voz", emoji: "🎤", keys: ["voiceTranscription"] },
@@ -181,6 +207,44 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
 
 export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: string; callback_data: string }>> {
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+
+  keyboard.push([
+    { text: "Perfil: Unificado", callback_data: "profile:unified" },
+    { text: "Perfil: Unificado+msg", callback_data: "profile:unified_split" },
+    { text: "Perfil: Flexible", callback_data: "profile:flexible" },
+  ]);
+
+  keyboard.push([
+    { text: `🧩 Modo: ${settings.displayMode === "unified" ? "unificado" : "flexible"}`, callback_data: `set:displayMode:${settings.displayMode === "unified" ? "flexible" : "unified"}` },
+  ]);
+
+  const deliveryLabels: Record<LongAnswerDelivery, string> = { card: "en tarjeta", message: "mensaje aparte", auto: "auto" };
+  const deliveryCycle: Record<LongAnswerDelivery, LongAnswerDelivery> = { card: "message", message: "auto", auto: "card" };
+  keyboard.push([
+    { text: `📤 Respuesta larga: ${deliveryLabels[settings.longAnswerDelivery]}`, callback_data: `set:longAnswerDelivery:${deliveryCycle[settings.longAnswerDelivery]}` },
+    { text: `📏 Umbral: ${settings.longAnswerThreshold}`, callback_data: "cycle:longAnswerThreshold" },
+  ]);
+
+  {
+    const cardLabels: Record<CardBehavior, string> = {
+      fixed: "fija",
+      refloat: "reflotar",
+      refloat_keep: "reflotar (conservar)",
+    };
+    const cardCycle: Record<CardBehavior, CardBehavior> = {
+      fixed: "refloat",
+      refloat: "refloat_keep",
+      refloat_keep: "fixed",
+    };
+    const behavior: CardBehavior = cardLabels[settings.cardBehavior] ? settings.cardBehavior : "fixed";
+    keyboard.push([
+      {
+        text: `📍 Tarjeta: ${cardLabels[behavior]}`,
+        callback_data: `set:cardBehavior:${cardCycle[behavior]}`,
+      },
+    ]);
+  }
+
   const booleanKeys: Array<keyof ChatSettings> = [
     "showThinking",
     "showTools",
@@ -216,25 +280,6 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     { text: `📈 History: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` },
   ]);
   keyboard.push([{ text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
-  {
-    const cardLabels: Record<CardBehavior, string> = {
-      fixed: "fija",
-      refloat: "reflotar",
-      refloat_keep: "reflotar (conservar)",
-    };
-    const cardCycle: Record<CardBehavior, CardBehavior> = {
-      fixed: "refloat",
-      refloat: "refloat_keep",
-      refloat_keep: "fixed",
-    };
-    const behavior: CardBehavior = cardLabels[settings.cardBehavior] ? settings.cardBehavior : "fixed";
-    keyboard.push([
-      {
-        text: `📍 Tarjeta: ${cardLabels[behavior]}`,
-        callback_data: `set:cardBehavior:${cardCycle[behavior]}`,
-      },
-    ]);
-  }
   keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
   return keyboard;
 }

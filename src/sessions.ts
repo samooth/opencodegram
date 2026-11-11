@@ -2,8 +2,10 @@ import { readdirSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Config } from "./config.js";
 import { getReposDirectory } from "./config.js";
+import type { DashboardManager } from "./dashboard.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
+import type { SettingsStore } from "./settings.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import { clampText, esc, projectEmoji, projectLabel, sessionHeader, threadOpts } from "./util.js";
@@ -14,6 +16,8 @@ export type SessionsDeps = {
   tg: TelegramClient;
   oc: OpenCodeBridge;
   store: SessionStore;
+  settings?: SettingsStore;
+  dashboard?: DashboardManager;
   topicsEnabled: boolean;
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
 };
@@ -46,7 +50,7 @@ export function resolveRepoDirectory(config: Config | Record<string, unknown>, n
   return full;
 }
 
-export function createSessionManager({ config, tg, oc, store, topicsEnabled, finishStatus }: SessionsDeps) {
+export function createSessionManager({ config, tg, oc, store, settings, dashboard, topicsEnabled, finishStatus }: SessionsDeps) {
   const {
     sessionsByChat,
     sessionsByThread,
@@ -372,6 +376,10 @@ export function createSessionManager({ config, tg, oc, store, topicsEnabled, fin
     store.rememberLastInteracted(chatId, targetThread, sessionId);
     // A running session keeps answering where its prompt was sent.
     if (!busy) store.rememberDelivery(sessionId, chatId, targetThread);
+    // In unified mode, keep the pinned dashboard (M1) aligned with the active session.
+    if (settings?.get(chatId).displayMode === "unified" && dashboard) {
+      await dashboard.ensure(chatId, targetThread, cs, { working: busy }).catch(() => {});
+    }
     if (!silent) {
       const lastPrompt = store.lastPromptBySession.get(sessionId);
       const cot = store.getCotBuffer(sessionId);

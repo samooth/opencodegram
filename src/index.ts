@@ -6,6 +6,7 @@ import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 import { SessionStore } from "./store.js";
 import { createStatusManager } from "./status.js";
 import { createTranscriptManager } from "./transcriptmanager.js";
+import { createDashboardManager } from "./dashboard.js";
 import { renderResourceBlock } from "./resources.js";
 import { SettingsStore } from "./settings.js";
 import { MetricsStore } from "./metrics.js";
@@ -65,8 +66,13 @@ async function main() {
     tg,
     store,
     threadOptsFor: (s) => store.threadOptsFor(s),
-    renderResources: (s) => renderResourceBlock(s),
+    renderResources: (s) => {
+      const chatId = store.resolveChatId(s.sessionId);
+      if (chatId !== undefined && settings.get(chatId).displayMode === "unified") return "";
+      return renderResourceBlock(s);
+    },
   });
+  const dashboard = createDashboardManager({ tg, store, settings, threadOptsFor: (s) => store.threadOptsFor(s) });
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),
@@ -77,12 +83,15 @@ async function main() {
     forgetStatusMessage: (sessionId) => store.forgetStatusMessage(sessionId),
     store,
     transcript,
+    dashboard,
   });
   const sessions = createSessionManager({
     config,
     tg,
     oc,
     store,
+    settings,
+    dashboard,
     topicsEnabled,
     finishStatus: status.finishStatus,
   });
@@ -175,6 +184,7 @@ async function main() {
     sessions,
     status,
     transcript,
+    dashboard,
     panels,
     files,
     settings,

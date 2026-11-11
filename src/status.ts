@@ -9,6 +9,7 @@ import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editut
 import { formatBytes } from "./files/index.js";
 import { clampText, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
+import type { DashboardManager } from "./dashboard.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
 
@@ -180,6 +181,8 @@ export type StatusDeps = {
   store?: SessionStore;
   /** Session card: one paginated message per session. */
   transcript?: TranscriptManager;
+  /** Pinned dashboard (M1) in unified mode. */
+  dashboard?: DashboardManager;
 };
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -288,7 +291,7 @@ function capDiff(diff: string, max: number): string {
   return lines.slice(0, max).join("\n") + `\n… (+${lines.length - max} more lines)`;
 }
 
-export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard }: StatusDeps) {
   const resolveSessionName = (s: ChatSession): string => {
     let name = (s.topicTitle || "").trim();
     if (!name && store) name = (store.topicTitleBySession.get(s.sessionId) || "").trim();
@@ -312,11 +315,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
   };
 
+  const renderThinkingBottom = (s: ChatSession, settings: ChatSettings): string => {
+    if (!settings.showThinking || !settings.showLatestThought || !s.reasoningBuffer.trim() || s.stopped) return "";
+    const tail = s.reasoningBuffer.trim().slice(-1600);
+    return `💭 <b>Pensando…</b>\n<blockquote expandable><mark>${markdownToHtml(tail)}</mark></blockquote>`;
+  };
+
   /**
-   * Compact live strip shown above the transcript while the session works:
-   * status, background note, latest tool and latest thought.
+   * Live strip for the session card. In flexible mode the thought is kept
+   * compact inside the top strip; in unified mode the thought is streamed at
+   * the bottom of M2 for readability (returned separately).
    */
-  const renderLiveStrip = (s: ChatSession, settings: ChatSettings): string => {
+  const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
     const lines: string[] = [];
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     lines.push(
@@ -327,11 +337,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (s.detached && !s.stopped) {
       lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
     }
-    if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
+    if (!unified && settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
       const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
       const last = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-      // Render the reasoning as markdown so code and emphasis keep their rich
-      // text instead of appearing as one flat wall of text.
       lines.push(`💭 <b>Último pensamiento</b>\n<blockquote expandable><mark>${markdownToHtml(clampText(last, 240))}</mark></blockquote>`);
     }
     if (settings.showTools && settings.showLatestTool && s.toolCallDetails.length) {
@@ -342,14 +350,19 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`${statusEmoji} <b>Última herramienta</b> ${toolIcon(lastTool.name)} <b>${esc(lastTool.name)}</b>${argPart}`);
     }
     if (settings.showPartialText && s.buffer.trim()) {
-      const tail = s.buffer.trim().slice(-400);
+      const tail = s.buffer.trim().slice(-(unified ? 600 : 400));
       lines.push(`<pre>${esc(tail)}</pre>`);
     }
-    if (settings.showCot && s.cotBuffer?.trim()) {
+    if (!unified && settings.showCot && s.cotBuffer?.trim()) {
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
-    return lines.join("\n\n");
+    return {
+      top: lines.join("\n\n"),
+      bottom: unified ? renderThinkingBottom(s, settings) : "",
+    };
   };
+
+  const renderLiveStrip = (s: ChatSession, settings: ChatSettings): string => renderLiveParts(s, settings, false).top;
 
   /** Summary shown once the turn is over. */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
@@ -367,18 +380,43 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   };
 
   /**
-   * Publish the session card with the right strip for the current state:
-   * live while working, "Done" when the turn finished.
+   * Publish the session card (M2). In unified mode the card carries the live
+   * content without resource indicators (those live in M1) and streams the
+   * latest thought at the bottom for readability.
    */
   const publishCard = async (chatId: number, s: ChatSession): Promise<void> => {
     if (!transcript) return;
     const settings = getSettings(chatId);
-    const strip = s.statusFinished ? renderDoneStrip(s, settings) : renderLiveStrip(s, settings);
-    await transcript.publish(chatId, s, { extraTop: strip, working: !s.statusFinished });
+    const unified = settings.displayMode === "unified";
+    if (s.statusFinished) {
+      await transcript.publish(chatId, s, {
+        extraTop: renderDoneStrip(s, settings),
+        working: false,
+        showResources: !unified,
+        unified,
+      });
+    } else {
+      const parts = renderLiveParts(s, settings, unified);
+      await transcript.publish(chatId, s, {
+        extraTop: parts.top,
+        extraBottom: parts.bottom,
+        working: true,
+        showResources: !unified,
+        unified,
+      });
+    }
+    if (unified && dashboard) {
+      const now = Date.now();
+      if (!s.dashboardLastUpdate || now - s.dashboardLastUpdate > 6000) {
+        s.dashboardLastUpdate = now;
+        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: !s.statusFinished }).catch(() => {});
+      }
+    }
   };
 
   const startStatus = async (chatId: number, s: ChatSession) => {
     const settings = getSettings(chatId);
+    const unified = settings.displayMode === "unified";
     s.statusFinished = false;
     s.statusEditPromise = undefined;
     s.statusEditing = false;
@@ -389,11 +427,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.stopped = false;
     s.statusLastUpdate = Date.now();
     try {
+      if (unified && dashboard) {
+        await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
+      }
       if (transcript) {
-        // In "refloat" modes the card is re-sent at the bottom on each turn so it
-        // stays close to the latest activity (editing never moves a message).
-        if (settings.cardBehavior !== "fixed") {
-          await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
+        // In unified mode M2 always follows the conversation at the bottom.
+        const shouldRefloat = unified || settings.cardBehavior !== "fixed";
+        const keep = !unified && settings.cardBehavior === "refloat_keep";
+        if (shouldRefloat) {
+          await transcript.refloat(chatId, s, { keep });
         }
         // One card per session: reuse it instead of sending a new message.
         await publishCard(chatId, s);
@@ -633,12 +675,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         }
       }
       s.transcriptFollow = true;
-      if (settings.cardBehavior === "refloat_keep") {
+      const unified = settings.displayMode === "unified";
+      if (!unified && settings.cardBehavior === "refloat_keep") {
         // Finalize the current card in place, then detach it so it is preserved as
         // history and the next turn creates a fresh card at the bottom.
         await publishCard(chatId, s);
-      } else if (settings.cardBehavior === "refloat") {
-        // Bring the finished card to the bottom as well.
+      } else if (unified || settings.cardBehavior === "refloat") {
+        // Bring the finished card to the bottom as well (M2 follows conversation).
         await transcript.refloat(chatId, s);
         await publishCard(chatId, s);
       } else {
@@ -646,12 +689,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
       // Capture the card id for the edits message before a keep-refloat detaches it.
       const finishedCardId = s.transcriptMessageId;
-      if (settings.cardBehavior === "refloat_keep") {
+      if (!unified && settings.cardBehavior === "refloat_keep") {
         await transcript.refloat(chatId, s, { keep: true });
       }
       // The card stays alive for pagination; only the live status ends.
       s.statusMessageId = undefined;
       forgetStatusMessage(s.sessionId);
+      if (unified && dashboard) {
+        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch(() => {});
+      }
       // Edits are offered in their own message so the session card keeps its
       // paginated content intact.
       if (editDetails.length && finishedCardId) {

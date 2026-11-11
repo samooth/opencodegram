@@ -53,6 +53,8 @@ export class SessionStore {
    * event, which keeps the chat readable without losing any output.
    */
   readonly transcriptBySession = new Map<string, TranscriptBlock[]>();
+  /** Pinned dashboard (M1) message for the active session of a route. */
+  readonly dashboardByRoute = new Map<string, { sessionId: string; chatId: number; threadId?: number; messageId: number }>();
 
   readonly dataDir: string;
   private readonly threadsFile: string;
@@ -69,6 +71,7 @@ export class SessionStore {
   private readonly lastInteractedFile: string;
   private readonly deliveryFile: string;
   private readonly transcriptsFile: string;
+  private readonly dashboardFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     this.dataDir = dataDir;
@@ -86,6 +89,7 @@ export class SessionStore {
     this.lastInteractedFile = join(dataDir, "lastInteracted.json");
     this.deliveryFile = join(dataDir, "delivery.json");
     this.transcriptsFile = join(dataDir, "transcripts.json");
+    this.dashboardFile = join(dataDir, "dashboard.json");
     this.load();
   }
 
@@ -390,6 +394,7 @@ export class SessionStore {
     this.cotBySession.delete(sessionId);
     this.deliveryBySession.delete(sessionId);
     this.transcriptBySession.delete(sessionId);
+    for (const [key, dash] of this.dashboardByRoute) if (dash.sessionId === sessionId) this.dashboardByRoute.delete(key);
     this.saveThreads();
     this.saveChats();
     this.saveActiveSessions();
@@ -402,6 +407,7 @@ export class SessionStore {
     this.savePendingEdits();
     this.saveLastInteracted();
     this.saveDelivery();
+    this.saveDashboard();
   };
 
   saveThreads = () => {
@@ -497,6 +503,30 @@ export class SessionStore {
       writeFileSync(this.deliveryFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[delivery] save failed", err);
+    }
+  };
+
+  // ---------- dashboard (M1) ----------
+
+  getDashboard = (chatId: number, threadId?: number) => this.dashboardByRoute.get(this.routeKey(chatId, threadId));
+
+  setDashboard = (chatId: number, threadId: number | undefined, sessionId: string, messageId: number) => {
+    this.dashboardByRoute.set(this.routeKey(chatId, threadId), { sessionId, chatId, threadId, messageId });
+    this.saveDashboard();
+  };
+
+  clearDashboard = (chatId: number, threadId?: number) => {
+    if (this.dashboardByRoute.delete(this.routeKey(chatId, threadId))) this.saveDashboard();
+  };
+
+  saveDashboard = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, { sessionId: string; chatId: number; threadId?: number; messageId: number }> = {};
+      for (const [key, value] of this.dashboardByRoute) obj[key] = value;
+      writeFileSync(this.dashboardFile, JSON.stringify(obj, null, 2));
+    } catch (err) {
+      console.error("[dashboard] save failed", err);
     }
   };
 
@@ -706,6 +736,23 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[transcripts] load failed", err);
+    }
+    try {
+      if (existsSync(this.dashboardFile)) {
+        const parsed = JSON.parse(readFileSync(this.dashboardFile, "utf8")) as Record<string, { sessionId?: string; chatId?: number; threadId?: number; messageId?: number }>;
+        for (const [key, value] of Object.entries(parsed)) {
+          if (key && value?.sessionId && Number.isFinite(value.chatId) && Number.isFinite(value.messageId)) {
+            this.dashboardByRoute.set(key, {
+              sessionId: value.sessionId,
+              chatId: Number(value.chatId),
+              threadId: Number.isFinite(value.threadId) ? Number(value.threadId) : undefined,
+              messageId: Number(value.messageId),
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[dashboard] load failed", err);
     }
 
     // Explicit tab bindings.

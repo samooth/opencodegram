@@ -1,5 +1,6 @@
 import type { ChatSession } from "./types.js";
 import type { Config } from "./config.js";
+import type { DashboardManager } from "./dashboard.js";
 import type { FileBrowser } from "./filebrowser.js";
 import type { MetricsStore } from "./metrics.js";
 import type { OpenCodeBridge } from "./opencode.js";
@@ -56,6 +57,8 @@ export type BotDeps = {
   status: StatusManager;
   /** Session card: one paginated message per session. */
   transcript: TranscriptManager;
+  /** Pinned dashboard (M1) in unified mode. */
+  dashboard: DashboardManager;
   panels: Panels;
   files: FileBrowser;
   settings: SettingsStore;
