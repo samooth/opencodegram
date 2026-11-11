@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChatSession } from "./types.js";
 import type { TranscriptBlock } from "./transcript.js";
@@ -583,15 +584,15 @@ export class SessionStore {
   };
 
   clearTranscript = (sessionId: string): void => {
-    if (this.transcriptBySession.delete(sessionId)) this.saveTranscripts();
+    if (this.transcriptBySession.delete(sessionId)) void this.saveTranscripts();
   };
 
-  saveTranscripts = () => {
+  saveTranscripts = async () => {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
+      await mkdir(this.dataDir, { recursive: true });
       const obj: Record<string, TranscriptBlock[]> = {};
       for (const [sid, blocks] of this.transcriptBySession) obj[sid] = blocks;
-      writeFileSync(this.transcriptsFile, JSON.stringify(obj));
+      await writeFile(this.transcriptsFile, JSON.stringify(obj), "utf8");
     } catch (err) {
       console.error("[transcripts] save failed", err);
     }
@@ -607,7 +608,7 @@ export class SessionStore {
     if (this.transcriptsSaveTimer) return;
     this.transcriptsSaveTimer = setTimeout(() => {
       this.transcriptsSaveTimer = undefined;
-      this.saveTranscripts();
+      void this.saveTranscripts();
     }, delayMs);
     // Do not keep the process alive just for the pending save.
     this.transcriptsSaveTimer.unref?.();

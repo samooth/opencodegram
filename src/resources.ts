@@ -1,5 +1,5 @@
 import os from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { ChatSession } from "./types.js";
 import { esc } from "./util.js";
@@ -18,51 +18,75 @@ export function progressBar(percent: number, width = 10): string {
 
 export type GpuInfo = { name: string; usedMB: number; totalMB: number; util: number; temperature: number | null };
 
-let gpuCache: { time: number; value: GpuInfo | null } | null = null;
+let gpuCache: { time: number; value: GpuInfo | null; refreshing: boolean } | null = null;
 const GPU_CACHE_TTL_MS = 5000;
+
+function refreshGpuCache(): void {
+  if (gpuCache?.refreshing) return;
+  if (!gpuCache) gpuCache = { time: 0, value: null, refreshing: true };
+  else gpuCache.refreshing = true;
+
+  execFile(
+    "nvidia-smi",
+    ["--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
+    { timeout: 1500, encoding: "utf8" },
+    (err, stdout) => {
+      let value: GpuInfo | null = null;
+      try {
+        if (!err && typeof stdout === "string") {
+          const out = stdout.trim().split("\n")[0] ?? "";
+          const parts = out.split(",").map((s) => s.trim());
+          if (parts.length >= 5) {
+            const name = parts[0] || "GPU";
+            const usedMB = Number(parts[1]);
+            const totalMB = Number(parts[2]);
+            const util = Number(parts[3]);
+            const temperature = Number(parts[4]);
+            if (Number.isFinite(usedMB) && Number.isFinite(totalMB) && totalMB > 0 && Number.isFinite(util)) {
+              value = { name, usedMB, totalMB, util, temperature: Number.isFinite(temperature) ? temperature : null };
+            }
+          }
+        }
+      } catch {
+        value = null;
+      }
+      gpuCache = { time: Date.now(), value, refreshing: false };
+    },
+  );
+}
 
 export function readGpuInfo(): GpuInfo | null {
   const now = Date.now();
   if (gpuCache && now - gpuCache.time < GPU_CACHE_TTL_MS) return gpuCache.value;
-  let value: GpuInfo | null = null;
-  try {
-    const out = execFileSync(
-      "nvidia-smi",
-      ["--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-      { timeout: 1500, encoding: "utf8" },
-    )
-      .trim()
-      .split("\n")[0];
-    const parts = out.split(",").map((s) => s.trim());
-    if (parts.length >= 5) {
-      const name = parts[0] || "GPU";
-      const usedMB = Number(parts[1]);
-      const totalMB = Number(parts[2]);
-      const util = Number(parts[3]);
-      const temperature = Number(parts[4]);
-      if (Number.isFinite(usedMB) && Number.isFinite(totalMB) && totalMB > 0 && Number.isFinite(util)) {
-        value = { name, usedMB, totalMB, util, temperature: Number.isFinite(temperature) ? temperature : null };
-      }
-    }
-  } catch {
-    // No GPU or nvidia-smi unavailable.
-  }
-  gpuCache = { time: now, value };
-  return value;
+  // Cache stale or missing: return the last known value immediately and refresh
+  // in the background so renders never block the event loop on nvidia-smi.
+  const stale = gpuCache?.value ?? null;
+  refreshGpuCache();
+  return stale;
 }
 
+let memCache: { time: number; value: number } | null = null;
+const MEM_CACHE_TTL_MS = 2000;
+
 export function readMemoryPercent(): number {
+  const now = Date.now();
+  if (memCache && now - memCache.time < MEM_CACHE_TTL_MS) return memCache.value;
+  let percent: number | undefined;
   try {
     const meminfo = readFileSync("/proc/meminfo", "utf8");
     const total = Number(meminfo.match(/MemTotal:\s+(\d+)/)?.[1]);
     const available = Number(meminfo.match(/MemAvailable:\s+(\d+)/)?.[1]);
     if (Number.isFinite(total) && total > 0 && Number.isFinite(available) && available >= 0) {
-      return Math.max(0, Math.min(100, Math.round((1 - available / total) * 100)));
+      percent = Math.max(0, Math.min(100, Math.round((1 - available / total) * 100)));
     }
   } catch {
     // Fall back to os.freemem() on non-Linux or permission errors.
   }
-  return Math.max(0, Math.min(100, Math.round((1 - os.freemem() / os.totalmem()) * 100)));
+  if (percent === undefined) {
+    percent = Math.max(0, Math.min(100, Math.round((1 - os.freemem() / os.totalmem()) * 100)));
+  }
+  memCache = { time: now, value: percent };
+  return percent;
 }
 
 /**
