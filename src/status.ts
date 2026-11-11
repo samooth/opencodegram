@@ -321,8 +321,31 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     return `💭 <b>Pensando…</b>\n<blockquote expandable><mark>${markdownToHtml(tail)}</mark></blockquote>`;
   };
 
+  const renderLatestToolBottom = (s: ChatSession, settings: ChatSettings): string => {
+    if (!settings.showTools || !settings.showLatestTool || !s.toolCallDetails.length) return "";
+    const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
+    const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
+    const shell = isShellTool(lastTool.name);
+    const summary = getToolSummary(lastTool.name, lastTool.input);
+    let displayName = shell ? "Shell" : (lastTool.name || "Herramienta");
+    if (shell || /^bash$/i.test(lastTool.name)) displayName = "Shell";
+
+    let commandText = "";
+    if (shell) {
+      commandText = parseShellCommand(lastTool.input ?? "") ?? (lastTool.input ?? "").trim() ?? lastTool.name;
+    } else {
+      commandText = (summary?.arg ?? (lastTool.input ?? "").trim() ?? lastTool.name).toString();
+    }
+    commandText = commandText.trim();
+    if (commandText.length > 1200) commandText = `${commandText.slice(0, 1200)}\n…`;
+
+    const header = `${statusEmoji} <b>Última herramienta:</b> ${esc(displayName)}`;
+    if (!commandText) return header;
+    return `${header}\n<pre><code>${esc(commandText)}</code></pre>`;
+  };
+
   /**
-   * Live strip for the session card. The latest thought is streamed at the
+   * Live strip for the session card. Latest tool and thought are shown at the
    * bottom of the message (above resource indicators) for readability.
    */
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
@@ -336,13 +359,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (s.detached && !s.stopped) {
       lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
     }
-    if (settings.showTools && settings.showLatestTool && s.toolCallDetails.length) {
-      const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
-      const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
-      const summary = getToolSummary(lastTool.name, lastTool.input);
-      const argPart = summary.arg ? ` <code>${esc(shortToolArg(summary.arg, 70))}</code>` : "";
-      lines.push(`${statusEmoji} <b>Última herramienta</b> ${toolIcon(lastTool.name)} <b>${esc(lastTool.name)}</b>${argPart}`);
-    }
     if (settings.showPartialText && s.buffer.trim()) {
       const tail = s.buffer.trim().slice(-(unified ? 600 : 400));
       lines.push(`<pre>${esc(tail)}</pre>`);
@@ -350,9 +366,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (!unified && settings.showCot && s.cotBuffer?.trim()) {
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})\n${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
+    const bottomParts = [renderLatestToolBottom(s, settings), renderThinkingBottom(s, settings)].filter(Boolean);
     return {
       top: lines.join("\n\n"),
-      bottom: renderThinkingBottom(s, settings),
+      bottom: bottomParts.join("\n\n"),
     };
   };
 
