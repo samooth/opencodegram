@@ -19,8 +19,12 @@
 
 ## Settings
 
-- `/settings` — show and toggle bot behavior: thinking, tools, partial text,
-  auto artifacts, voice transcription and compact final.
+- `/settings` — show and toggle bot behavior per chat (with quick profiles):
+  - **Mode & delivery**: `displayMode` (`unified` pinned dashboard M1 + conversation M2, or `flexible`), card behavior (`fija` / `reflotar` / `reflotar (conservar)`), long-answer delivery (`en tarjeta` / `mensaje aparte` / `auto`) and threshold.
+  - **Profiles**: `Unificado`, `Unificado+msg`, `Flexible`.
+  - **Visualization**: thinking/tools/COT/latest thought & tool, token speed, partial text, compact final, session name/topic options.
+  - **Shell, files, voice, resources**: shell/tool input, auto artifacts, preview lines, diff style, voice transcription, resource usage/history.
+  - In unified mode, M2 streams the latest thought at the bottom and long answers can be opened in full with **`📄 Ver completo`** (or delivered as separate rich-text messages).
 
 ## MCP
 
