@@ -192,6 +192,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       if (ok) {
         s.transcriptPage = rendered.page;
         s.statusMessageId = s.transcriptMessageId;
+        store.rememberMessageSession(chatId, s.transcriptMessageId, s.sessionId);
         return;
       }
       // The card is gone (deleted or too old): fall back to a new message.

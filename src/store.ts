@@ -200,17 +200,19 @@ export class SessionStore {
 
   rememberMessageSession = (chatId: number, messageId: number, sessionId: string) => {
     const key = `${chatId}:${messageId}`;
+    const existing = this.messageToSession.get(key);
     // Refresh insertion order so the oldest mapping can be pruned later.
     this.messageToSession.delete(key);
     this.messageToSession.set(key, sessionId);
-    // Keep the map bounded: it is persisted on every write, so an unbounded
-    // map makes every message a full-file rewrite.
+    // Keep the map bounded.
     while (this.messageToSession.size > MAX_MESSAGE_MAPPINGS) {
       const oldest = this.messageToSession.keys().next();
       if (oldest.done) break;
       this.messageToSession.delete(oldest.value);
     }
-    this.saveMessages();
+    // Persist only when the mapping is new/changed; refreshing LRU position in
+    // memory is enough to prevent eviction during runtime without disk churn.
+    if (existing !== sessionId) this.saveMessages();
   };
 
   rememberStatusMessage = (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => {

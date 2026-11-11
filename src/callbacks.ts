@@ -593,7 +593,8 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
         .catch(() => {});
       s.statusMessageId = undefined;
     }
-    await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => {});
+    const stoppedMsg = await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => undefined);
+    if (stoppedMsg?.message_id) store.rememberMessageSession(chatId, stoppedMsg.message_id, s.sessionId);
     return;
   }
 }
