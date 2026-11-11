@@ -207,10 +207,24 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     await publish(chatId, s);
   };
 
+  /**
+   * "Refloat" the session card: remove the current message so the next publish
+   * sends a fresh one at the bottom of the chat, keeping it visible near the
+   * latest activity. Call only at turn boundaries (never during streaming).
+   */
+  const refloat = async (chatId: number, s: ChatSession): Promise<void> => {
+    const messageId = s.transcriptMessageId;
+    if (!messageId) return;
+    // Clear first so a concurrent publish cannot edit the message we are about to remove.
+    s.transcriptMessageId = undefined;
+    if (s.statusMessageId === messageId) s.statusMessageId = undefined;
+    await tg.deleteMessage(chatId, messageId).catch(() => {});
+  };
+
   /** Total number of pages currently available. */
   const pageCount = (s: ChatSession): number => paginateTranscript(blocksOf(s)).length;
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pageCount, blocksOf };
+  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pageCount, blocksOf, refloat };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };

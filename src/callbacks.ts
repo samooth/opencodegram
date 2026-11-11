@@ -396,6 +396,7 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   let parsedValue: ChatSettings[keyof ChatSettings];
   if (key === "previewLines") parsedValue = Number(value);
   else if (key === "diffStyle") parsedValue = value === "unified" ? "unified" : "simple";
+  else if (key === "cardBehavior") parsedValue = value === "refloat" ? "refloat" : "fixed";
   else parsedValue = value === "true";
   const settings = deps.settings.set(chatId, key, parsedValue);
   await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${String(parsedValue)}`).catch(() => {});

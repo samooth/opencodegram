@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { esc } from "./util.js";
 
 export type DiffStyle = "simple" | "unified";
+export type CardBehavior = "fixed" | "refloat";
 
 export type ChatSettings = {
   showThinking: boolean;
@@ -28,6 +29,8 @@ export type ChatSettings = {
   autoTopicTitle: boolean;
   sessionNameInMessages: boolean;
   showSessionNameInStatus: boolean;
+  /** Where the session card lives: edited in place, or re-sent at the bottom on each turn. */
+  cardBehavior: CardBehavior;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -54,6 +57,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   autoTopicTitle: true,
   sessionNameInMessages: true,
   showSessionNameInStatus: true,
+  cardBehavior: "fixed",
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -136,11 +140,12 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   autoTopicTitle: "🏷 Auto topic title",
   sessionNameInMessages: "📌 Session name in messages",
   showSessionNameInStatus: "📌 Session name in status",
+  cardBehavior: "📍 Ubicación tarjeta",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
   const sections: Array<{ title: string; emoji: string; keys: Array<keyof ChatSettings> }> = [
-    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle"] },
+    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle", "cardBehavior"] },
     { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded", "showToolInput"] },
     { title: "Archivos", emoji: "📁", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
     { title: "Voz", emoji: "🎤", keys: ["voiceTranscription"] },
@@ -206,6 +211,7 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     { text: `📈 History: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` },
   ]);
   keyboard.push([{ text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
+  keyboard.push([{ text: `📍 Tarjeta: ${settings.cardBehavior === "refloat" ? "reflotar" : "fija"}`, callback_data: `set:cardBehavior:${settings.cardBehavior === "fixed" ? "refloat" : "fixed"}` }]);
   keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
   return keyboard;
 }

@@ -281,4 +281,71 @@ describe("transcript manager", () => {
       expect(order[i + 1]).toBe("end");
     }
   });
+
+  test("recovers by sending a new message when the card was deleted", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const sent: any[] = [];
+    let edits = 0;
+    const tg = {
+      sendRichMessage: async (...args: any[]) => {
+        sent.push(args);
+        return { message_id: 200 + sent.length };
+      },
+      editRichMessage: async (...args: any[]) => {
+        edits++;
+        // Simulate Telegram reporting that the message is gone.
+        throw new Error("Bad Request: message to edit not found");
+      },
+    } as any;
+    const transcript = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>hi</p>", "hi");
+    await transcript.publish(1, s);
+    expect(sent.length).toBe(1);
+    expect(s.transcriptMessageId).toBe(201);
+    // Next publish tries to edit the missing card, fails, and sends a fresh one.
+    transcript.addBlock(s, "answer", "<p>more</p>", "more");
+    await transcript.publish(1, s);
+    expect(edits).toBe(1);
+    expect(sent.length).toBe(2);
+    expect(s.transcriptMessageId).toBe(202);
+  });
+
+  test("refloat deletes the card and the next publish sends a fresh message", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const sent: any[] = [];
+    const deleted: any[] = [];
+    const edited: any[] = [];
+    const tg = {
+      sendRichMessage: async (...args: any[]) => {
+        sent.push(args);
+        return { message_id: 300 + sent.length };
+      },
+      editRichMessage: async (...args: any[]) => {
+        edited.push(args);
+        return { message_id: args[1] };
+      },
+      deleteMessage: async (...args: any[]) => {
+        deleted.push(args);
+        return true;
+      },
+    } as any;
+    const transcript = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>a</p>", "a");
+    await transcript.publish(1, s);
+    expect(sent.length).toBe(1);
+    expect(s.transcriptMessageId).toBe(301);
+
+    await transcript.refloat(1, s);
+    expect(deleted).toEqual([[1, 301]]);
+    expect(s.transcriptMessageId).toBeUndefined();
+
+    // The next publish sends a new message at the bottom instead of editing.
+    transcript.addBlock(s, "answer", "<p>b</p>", "b");
+    await transcript.publish(1, s);
+    expect(sent.length).toBe(2);
+    expect(edited.length).toBe(0);
+    expect(s.transcriptMessageId).toBe(302);
+  });
 });

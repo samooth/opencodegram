@@ -390,6 +390,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.statusLastUpdate = Date.now();
     try {
       if (transcript) {
+        // In "refloat" mode the card is re-sent at the bottom on each turn so
+        // it stays close to the latest activity (editing never moves a message).
+        if (settings.cardBehavior === "refloat") {
+          await transcript.refloat(chatId, s);
+        }
         // One card per session: reuse it instead of sending a new message.
         await publishCard(chatId, s);
         if (s.transcriptMessageId) {
@@ -628,6 +633,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         }
       }
       s.transcriptFollow = true;
+      // In "refloat" mode, bring the finished card to the bottom as well.
+      if (settings.cardBehavior === "refloat") {
+        await transcript.refloat(chatId, s);
+      }
       await publishCard(chatId, s);
       // The card stays alive for pagination; only the live status ends.
       s.statusMessageId = undefined;
