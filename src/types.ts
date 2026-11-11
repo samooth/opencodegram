@@ -59,6 +59,10 @@ export type ChatSession = {
   toolStats?: { total: number; success: number; failed: number };
   /** Last final answer text, kept for "view full" actions. */
   lastFinalText?: string;
+  /** promptStartTime of the turn whose final answer was already delivered (dedup). */
+  lastFinalDeliveredPromptStart?: number;
+  /** promptStartTime of the turn whose long answer was already sent separately (dedup). */
+  lastFinalSeparatedPromptStart?: number;
   /** Throttle timestamp for dashboard (M1) updates. */
   dashboardLastUpdate?: number;
 };

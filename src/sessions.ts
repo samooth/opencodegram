@@ -215,11 +215,14 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     rememberSessionChat(sessionId, chatId);
     rememberActiveRoute(chatId, targetThread, sessionId);
     if (!silent) {
-      await tg.sendRichMessage(
-        chatId,
-        `${projectEmoji(directory)} <b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`,
-        threadOpts(targetThread),
-      );
+      const sent = await tg
+        .sendRichMessage(
+          chatId,
+          `${projectEmoji(directory)} <b>New session created</b>\n<code>${esc(sessionId)}</code>\nmodel: ${esc(model?.providerID ?? "")}/${esc(model?.id ?? "")}${model?.variant ? " (" + esc(model.variant) + ")" : ""}\ndir: <code>${esc(directory)}</code>`,
+          threadOpts(targetThread),
+        )
+        .catch(() => undefined);
+      if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
     }
     return cs;
   }
@@ -386,18 +389,21 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       let text = `${sessionHeader(cs)}${projectEmoji(directory)} <b>Active session</b>\n<code>${esc(sessionId)}</code>\n${esc(title)}\nmodel: ${esc(model ? model.providerID + "/" + model.id : "default")}\ndir: <code>${esc(directory ?? "n/a")}</code>`;
       if (lastPrompt) text += `\n\n<b>Último prompt:</b> ${esc(clampText(lastPrompt, 200))}`;
       if (cot) text += `\n<b>COT:</b> ${esc(clampText(cot, 200))}`;
-      await tg.sendRichMessage(chatId, text, {
-        ...threadOpts(targetThread),
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
-              { text: "📊 Status", callback_data: "panel:status" },
-              { text: "🏠 Panel", callback_data: "panel:home" },
+      const sent = await tg
+        .sendRichMessage(chatId, text, {
+          ...threadOpts(targetThread),
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
+                { text: "📊 Status", callback_data: "panel:status" },
+                { text: "🏠 Panel", callback_data: "panel:home" },
+              ],
             ],
-          ],
-        },
-      }).catch(() => {});
+          },
+        })
+        .catch(() => undefined);
+      if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
     }
     return cs;
   }

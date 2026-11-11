@@ -565,6 +565,19 @@ export class SessionStore {
       this.scheduleSaveTranscripts();
       return;
     }
+    // Answers are unique in content: if the same answer is delivered again
+    // (duplicate/replayed event), replace the existing answer block instead of
+    // appending a copy even when other blocks (e.g. meta) were added after it.
+    if (block.kind === "answer" && block.text.trim()) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].kind === "answer" && list[i].text === block.text) {
+          list[i] = block;
+          this.transcriptBySession.set(sessionId, list);
+          this.scheduleSaveTranscripts();
+          return;
+        }
+      }
+    }
     list.push(block);
     // The model/speed line is a single block: replace the previous one instead
     // of stacking a copy per step.

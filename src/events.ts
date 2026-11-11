@@ -434,11 +434,20 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   const msgId = e.data?.assistantMessageID;
   if (s) {
     if (msgId && s.lastFinalMessageId === msgId) {
-      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, msgId });
+      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, msgId, reason: "msgId" });
       return;
     }
     if (!msgId && s.lastFinalSentAt && Date.now() - s.lastFinalSentAt < 3000) {
-      logger.breadcrumb("events", "text.ended.duplicate", { sessionId });
+      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, reason: "recent-no-msgId" });
+      return;
+    }
+    const candidateFinal = ((e.data?.text ?? "").toString().trim()) || s.buffer || "(empty response)";
+    if (
+      s.promptStartTime !== undefined &&
+      s.lastFinalDeliveredPromptStart === s.promptStartTime &&
+      s.lastFinalText === candidateFinal
+    ) {
+      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, reason: "same-turn-content" });
       return;
     }
   }
@@ -502,6 +511,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (s) {
       s.lastFinalMessageId = msgId ?? s.lastFinalMessageId; // OpenCode assistant msg id
       s.lastFinalSentAt = Date.now();
+      s.lastFinalDeliveredPromptStart = s.promptStartTime;
     }
     logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     deps.sessionTrace?.("turn.final", {
@@ -553,12 +563,15 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         st.longAnswerDelivery === "message" ||
         (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold);
       if (sendSeparately) {
-        const { splitMarkdown } = await import("./transcript.js");
-        const parts = splitMarkdown(finalText, 3200);
-        for (let i = 0; i < parts.length; i++) {
-          const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
-          const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(parts[i])}`;
-          await tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts2).catch(() => {});
+        if (s.lastFinalSeparatedPromptStart !== s.promptStartTime) {
+          s.lastFinalSeparatedPromptStart = s.promptStartTime;
+          const { splitMarkdown } = await import("./transcript.js");
+          const parts = splitMarkdown(finalText, 3200);
+          for (let i = 0; i < parts.length; i++) {
+            const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
+            const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(parts[i])}`;
+            await tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts2).catch(() => {});
+          }
         }
       }
     } else {
