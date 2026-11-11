@@ -1,6 +1,12 @@
 import { readFile } from "node:fs/promises";
+import { noteTelegramFailure, noteTelegramSuccess } from "./ratethrottle.js";
 
 const API = "https://api.telegram.org";
+
+/** Fatal chat-level errors: the chat cannot receive anything anymore. */
+function chatIsGone(description: string): boolean {
+  return /chat not found|chat not exists|chat was upgraded|bot was kicked|bot was blocked|kicked from the group chat/i.test(description);
+}
 
 export interface TelegramUser {
   id: number;
@@ -75,6 +81,11 @@ function stripDraftOnlyRichBlocks(html: string): string {
 export class TelegramClient {
   constructor(private readonly token: string) {}
   private editBackoff = new Map<number, number>();
+  /**
+   * Hook invoked when a request to a chat fails persistently (e.g. "chat not
+   * found"). Wired by the host to clean dead chat bindings.
+   */
+  onChatFailure?: (chatId: number, error: string) => void;
 
   private editBackoffActive(chatId: number): boolean {
     const until = this.editBackoff.get(chatId) ?? 0;
@@ -89,6 +100,7 @@ export class TelegramClient {
 
   private async call<T>(method: string, body?: unknown, attempt = 0): Promise<T> {
     const isEdit = method.toLowerCase().includes("edit");
+    const chatId = Number((body as { chat_id?: unknown } | undefined)?.chat_id);
     const res = await fetch(`${API}/bot${this.token}/${method}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -100,6 +112,10 @@ export class TelegramClient {
     }
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
+      if (Number.isFinite(chatId)) {
+        noteTelegramFailure(chatId, `${json.error_code ?? ""} ${json.description ?? ""}`);
+        if (chatIsGone(json.description ?? "")) this.onChatFailure?.(chatId, json.description ?? "");
+      }
       // Treat "message is not modified" as success for edit calls (no-op).
       if (json.error_code === 400 && /not modified/i.test(json.description ?? "") && method.toLowerCase().includes("edit")) {
         return (undefined as unknown) as T;
@@ -117,11 +133,13 @@ export class TelegramClient {
       }
       throw new Error(`Telegram ${method} failed: ${json.error_code ?? res.status} ${json.description ?? ""}`);
     }
+    if (Number.isFinite(chatId)) noteTelegramSuccess(chatId);
     return json.result as T;
   }
 
   /** Multipart upload endpoint (documents/photos), with the same retry policy. */
   private async callForm<T>(method: string, form: FormData, attempt = 0): Promise<T> {
+    const chatId = Number(form.get("chat_id"));
     const res = await fetch(`${API}/bot${this.token}/${method}`, { method: "POST", body: form });
     if (res.status >= 500 && attempt < 2) {
       await new Promise((r) => setTimeout(r, 1000));
@@ -129,6 +147,10 @@ export class TelegramClient {
     }
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
+      if (Number.isFinite(chatId)) {
+        noteTelegramFailure(chatId, `${json.error_code ?? ""} ${json.description ?? ""}`);
+        if (chatIsGone(json.description ?? "")) this.onChatFailure?.(chatId, json.description ?? "");
+      }
       if (json.error_code === 429 && attempt < 3) {
         const wait = (json.parameters?.retry_after ?? 1) * 1000;
         await new Promise((r) => setTimeout(r, wait));
@@ -136,6 +158,7 @@ export class TelegramClient {
       }
       throw new Error(`Telegram ${method} failed: ${json.error_code ?? res.status} ${json.description ?? ""}`);
     }
+    if (Number.isFinite(chatId)) noteTelegramSuccess(chatId);
     return json.result as T;
   }
 

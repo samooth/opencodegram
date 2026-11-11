@@ -25,6 +25,25 @@ async function main() {
   const config = loadConfig();
   if (config.DEBUG && !process.env.DEBUG) process.env.DEBUG = config.DEBUG;
   const tg = new TelegramClient(config.TELEGRAM_BOT_TOKEN);
+  // Dead-chat hygiene: when a chat is gone (deleted group, bot kicked), drop
+  // its bindings after repeated failures so the bot stops trying to edit
+  // unreachable cards ("chat not found" noise in logs).
+  const chatFailureCounts = new Map<number, { count: number; firstAt: number }>();
+  tg.onChatFailure = (chatId, error) => {
+    const entry = chatFailureCounts.get(chatId) ?? { count: 0, firstAt: Date.now() };
+    entry.count++;
+    if (Date.now() - entry.firstAt > 10 * 60_000) {
+      entry.count = 1;
+      entry.firstAt = Date.now();
+    }
+    chatFailureCounts.set(chatId, entry);
+    if (entry.count >= 3) {
+      chatFailureCounts.delete(chatId);
+      console.warn(`[telegram] chat ${chatId} unreachable (${error}); dropping bindings`);
+      store.forgetChatBindings(chatId);
+      metrics.inc("chats_dropped");
+    }
+  };
   const oc = new OpenCodeBridge(config.OPENCODE_BASE_URL, resolveServerPassword());
 
   const me = await tg.getMe();

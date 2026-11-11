@@ -104,3 +104,65 @@ describe("SessionStore routing", () => {
     expect(store.routeKey(100, 0)).toBe("100:0");
   });
 });
+
+describe("SessionStore reply-to routing", () => {
+  test("findSessionByAnyMessage resolves from the explicit map", () => {
+    const store = new SessionStore(dataDir);
+    store.sessionsById.set("ses_a", makeSession("ses_a"));
+    store.rememberMessageSession(100, 555, "ses_a");
+    expect(store.findSessionByAnyMessage(100, 555)).toBe("ses_a");
+    expect(store.findSessionByAnyMessage(100, 999)).toBeUndefined();
+    // A different chat is a different message id space.
+    expect(store.findSessionByAnyMessage(200, 555)).toBeUndefined();
+  });
+
+  test("findSessionByAnyMessage falls back to dashboard, status and card ids", () => {
+    const store = new SessionStore(dataDir);
+    // Dashboard (M1).
+    store.setDashboard(100, 10, "ses_dash", 111);
+    expect(store.findSessionByAnyMessage(100, 111)).toBe("ses_dash");
+    // Status registry.
+    store.rememberStatusMessage("ses_status", 100, 10, 222);
+    expect(store.findSessionByAnyMessage(100, 222)).toBe("ses_status");
+    // In-memory session card ids.
+    const s = makeSession("ses_card");
+    s.transcriptMessageId = 333;
+    s.lastFinalTelegramMessageId = 444;
+    store.sessionsById.set("ses_card", s);
+    expect(store.findSessionByAnyMessage(100, 333)).toBe("ses_card");
+    expect(store.findSessionByAnyMessage(100, 444)).toBe("ses_card");
+    // Another chat never matches an in-memory card of a different chat.
+    expect(store.findSessionByAnyMessage(300, 333)).toBeUndefined();
+  });
+
+  test("forgetChatBindings drops every table entry of a dead chat", () => {
+    const store = new SessionStore(dataDir);
+    const s = makeSession("ses_a");
+    s.transcriptMessageId = 333;
+    store.sessionsById.set("ses_a", s);
+    store.rememberSessionChat("ses_a", 100);
+    store.rememberActiveRoute(100, 10, "ses_a");
+    store.rememberLastInteracted(100, 10, "ses_a");
+    store.rememberMessageSession(100, 555, "ses_a");
+    store.setDashboard(100, 10, "ses_a", 111);
+    store.rememberStatusMessage("ses_a", 100, 10, 222);
+
+    store.forgetChatBindings(100);
+    expect(store.activeSessionByRoute.has("100:10")).toBe(false);
+    expect(store.messageToSession.has("100:555")).toBe(false);
+    expect(store.dashboardByRoute.has("100:10")).toBe(false);
+    expect(store.chatBySession.has("ses_a")).toBe(true); // chat memory is not a binding
+    // Rebinding after cleanup works normally.
+    store.rememberActiveRoute(100, 10, "ses_a");
+    expect(store.activeSessionByRoute.get("100:10")).toBe("ses_a");
+  });
+
+  test("forgetChatBindings keeps other chats untouched", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberMessageSession(100, 555, "ses_a");
+    store.rememberMessageSession(200, 555, "ses_b");
+    store.forgetChatBindings(100);
+    expect(store.messageToSession.has("100:555")).toBe(false);
+    expect(store.messageToSession.has("200:555")).toBe(true);
+  });
+});

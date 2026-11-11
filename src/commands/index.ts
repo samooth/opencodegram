@@ -27,12 +27,12 @@ const { cmd_forms, cmd_formreply } = formsCmds;
 const { cmd_mcp } = mcpCmds;
 const {
   cmd_start, cmd_commands, cmd_settings, cmd_models, cmd_agents, cmd_skills,
-  cmd_retry, cmd_buttons,
+  cmd_retry, cmd_buttons, cmd_ops,
 } = miscCmds;
 
 export const KNOWN_COMMANDS = new Set([
   "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort",
-  "commands", "settings", "file", "ls", "find", "read", "zip", "tree", "model", "models",
+  "commands", "settings", "ops", "file", "ls", "find", "read", "zip", "tree", "model", "models",
   "agent", "agents", "skill", "skills", "fork", "rename", "archive", "unarchive",
   "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry",
   "vcs", "mcp", "branches", "branch", "stage", "unstage", "commit", "worktrees",
@@ -59,6 +59,7 @@ COMMANDS.set("stop", cmd_stop);
 COMMANDS.set("abort", cmd_stop);
 COMMANDS.set("commands", cmd_commands);
 COMMANDS.set("settings", cmd_settings);
+COMMANDS.set("ops", cmd_ops);
 COMMANDS.set("file", cmd_file);
 COMMANDS.set("ls", cmd_ls);
 COMMANDS.set("find", cmd_find);

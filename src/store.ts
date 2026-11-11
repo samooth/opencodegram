@@ -215,6 +215,31 @@ export class SessionStore {
     if (existing !== sessionId) this.saveMessages();
   };
 
+  /**
+   * Resolve the session that owns a bot message, for reply-to routing.
+   * Checks the explicit message map first, then the pinned dashboard, the
+   * status registry and in-memory session card ids, so replying to any bot
+   * message (dashboard, panel, card, final answer) routes to its session.
+   */
+  findSessionByAnyMessage = (chatId: number, messageId: number): string | undefined => {
+    const key = `${chatId}:${messageId}`;
+    const mapped = this.messageToSession.get(key);
+    // Only trust the map when the session is still alive; a forgotten session
+    // must fall through to the other registries (or the default route).
+    if (mapped && this.sessionsById.has(mapped)) return mapped;
+    for (const info of this.dashboardByRoute.values()) {
+      if (info.chatId === chatId && info.messageId === messageId) return info.sessionId;
+    }
+    for (const [sid, info] of this.statusMessageBySession) {
+      if (info.chatId === chatId && info.messageId === messageId) return sid;
+    }
+    for (const [sid, s] of this.sessionsById) {
+      if ((s.targetChatId ?? this.chatBySession.get(sid)) !== chatId) continue;
+      if (s.statusMessageId === messageId || s.transcriptMessageId === messageId || s.lastFinalTelegramMessageId === messageId) return sid;
+    }
+    return undefined;
+  };
+
   rememberStatusMessage = (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => {
     this.statusMessageBySession.set(sessionId, { chatId, threadId, messageId });
     this.saveStatusMessages();
@@ -520,6 +545,38 @@ export class SessionStore {
 
   clearDashboard = (chatId: number, threadId?: number) => {
     if (this.dashboardByRoute.delete(this.routeKey(chatId, threadId))) this.saveDashboard();
+  };
+
+  /**
+   * Drop every binding that points at a chat the bot can no longer reach
+   * (deleted group, kicked bot): dashboards, status cards, message mappings
+   * and route bindings. Called when Telegram reports persistent chat failures.
+   */
+  forgetChatBindings = (chatId: number): void => {
+    let changed = false;
+    for (const [key, info] of this.dashboardByRoute) {
+      if (info.chatId === chatId) {
+        this.dashboardByRoute.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) this.saveDashboard();
+    for (const [sid, info] of this.statusMessageBySession) {
+      if (info.chatId === chatId) this.statusMessageBySession.delete(sid);
+    }
+    this.saveStatusMessages();
+    const prefix = `${chatId}:`;
+    for (const key of [...this.messageToSession.keys()]) {
+      if (key.startsWith(prefix)) this.messageToSession.delete(key);
+    }
+    this.saveMessages();
+    for (const key of [...this.activeSessionByRoute.keys()]) {
+      if (key.startsWith(prefix)) this.activeSessionByRoute.delete(key);
+    }
+    for (const key of [...this.lastInteractedSessionByRoute.keys()]) {
+      if (key.startsWith(prefix)) this.lastInteractedSessionByRoute.delete(key);
+    }
+    this.saveActiveSessions();
   };
 
   saveDashboard = () => {

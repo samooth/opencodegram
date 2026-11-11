@@ -21,6 +21,7 @@ export const BOT_COMMANDS = [
   { command: "formreply", description: "Reply to a form" },
   { command: "commands", description: "List OpenCode commands" },
   { command: "settings", description: "Bot settings and toggles" },
+  { command: "ops", description: "Admin: runtime health and metrics" },
   { command: "file", description: "Send a local file as a document" },
   { command: "ls", description: "Browse a directory with buttons" },
   { command: "find", description: "Search files in the session directory" },

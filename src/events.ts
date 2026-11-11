@@ -565,8 +565,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       if (sendSeparately) {
         if (s.lastFinalSeparatedPromptStart !== s.promptStartTime) {
           s.lastFinalSeparatedPromptStart = s.promptStartTime;
-          const { splitMarkdown } = await import("./transcript.js");
-          const parts = splitMarkdown(finalText, 3200);
+          // Prefer section-aware splitting: one part per markdown section
+          // (headings) so code blocks are never cut mid-way. Falls back to
+          // size-based splitting when there are no usable headings.
+          const { splitMarkdown, splitBySections } = await import("./transcript.js");
+          const sections = splitBySections(finalText, 3200);
+          const parts = sections.length ? sections : splitMarkdown(finalText, 3200);
           for (let i = 0; i < parts.length; i++) {
             const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
             const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(parts[i])}`;

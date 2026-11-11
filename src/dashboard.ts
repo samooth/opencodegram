@@ -99,6 +99,8 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
       });
     if (!sent?.message_id) return;
     store.setDashboard(chatId, threadId, s.sessionId, sent.message_id);
+    // Replying to the pinned dashboard must route to its session too.
+    store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
     // Best-effort pin.
     await tg.pinChatMessage(chatId, sent.message_id).catch(() => {});
   }

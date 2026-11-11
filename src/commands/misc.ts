@@ -26,8 +26,22 @@ export async function cmd_commands(deps: BotDeps, chatId: number, threadId: numb
   return false;
 }
 
-export async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
-  const C = ctx(deps);
+/**
+ * /ops — admin-only operations card: runtime health, Telegram rate-limit
+ * counters, adaptive throttle state and error summary. Admin-only.
+ */
+export async function cmd_ops(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  if (text !== "/ops") return false;
+  if (!deps.config.ADMIN_TELEGRAM_USER_ID || userId !== deps.config.ADMIN_TELEGRAM_USER_ID) {
+    await send("🩺 <b>/ops</b> es solo para el administrador del bot.");
+    return true;
+  }
+  const rendered = await deps.panels.renderOps();
+  await send(rendered.html, { reply_markup: { inline_keyboard: rendered.keyboard } });
+  return true;
+}
+
+export async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {  const C = ctx(deps);
   if (text === "/settings") {
     const settings = C.settings.get(chatId);
     await send(renderSettings(chatId, settings), { reply_markup: { inline_keyboard: settingsKeyboard(settings) } });

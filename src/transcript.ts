@@ -140,6 +140,66 @@ export function splitMarkdown(md: string, budget = TRANSCRIPT_BLOCK_BUDGET): str
   return chunks.filter((c) => c.trim());
 }
 
+/**
+ * Split markdown into parts that break at section boundaries first (headings
+ * outside code fences), so a long answer becomes one message per section
+ * instead of arbitrary size chunks. Returns [] when there are no usable
+ * headings (caller falls back to splitMarkdown).
+ */
+export function splitBySections(md: string, budget = 3200): string[] {
+  const source = md.replace(/\r\n/g, "\n");
+  if (!source.trim()) return [];
+  // Collect heading line indexes that are not inside a fenced code block.
+  const lines = source.split("\n");
+  const headingIdx: number[] = [];
+  let inFence = false;
+  lines.forEach((line, i) => {
+    if (/^\s*```/.test(line)) inFence = !inFence;
+    else if (!inFence && /^#{1,6}\s+\S/.test(line)) headingIdx.push(i);
+  });
+  if (headingIdx.length < 2) return [];
+  // Section = heading line through the line before the next heading.
+  const sections: string[] = [];
+  // Any preamble before the first heading is its own section.
+  if (headingIdx[0] > 0) {
+    const preamble = lines.slice(0, headingIdx[0]).join("\n").trim();
+    if (preamble) sections.push(preamble);
+  }
+  for (let i = 0; i < headingIdx.length; i++) {
+    const start = headingIdx[i];
+    const end = i + 1 < headingIdx.length ? headingIdx[i + 1] : lines.length;
+    const section = lines.slice(start, end).join("\n").trimEnd();
+    if (section) sections.push(section);
+  }
+  if (sections.length <= 1) return [];
+  // Merge undersized neighbours; oversized sections fall back to splitMarkdown.
+  const parts: string[] = [];
+  let current = "";
+  for (const section of sections) {
+    if (section.length > budget) {
+      if (current) {
+        parts.push(current.trimEnd());
+        current = "";
+      }
+      parts.push(...splitMarkdown(section, budget));
+      continue;
+    }
+    if (!current) {
+      current = section;
+      continue;
+    }
+    if (current.length + section.length + 2 <= budget) {
+      current += `\n\n${section}`;
+      continue;
+    }
+    parts.push(current.trimEnd());
+    current = section;
+  }
+  if (current) parts.push(current.trimEnd());
+  // Only worth it when it actually differs from one giant chunk.
+  return parts.length > 1 ? parts : [];
+}
+
 /** Group blocks into pages that respect the page budget. */
 export function paginateTranscript(
   blocks: TranscriptBlock[],

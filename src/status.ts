@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { formatBytes } from "./files/index.js";
 import { clampText, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
+import { throttleGap } from "./ratethrottle.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import type { DashboardManager } from "./dashboard.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
@@ -493,8 +494,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const now = Date.now();
     // A session that lost its route (another session took over the tab) keeps
     // updating its card, but at a slower cadence to avoid Telegram rate limits.
-    // Forced updates are throttled too in that case.
-    const minGap = s.detached ? STATUS_BACKGROUND_GAP_MS : STATUS_MIN_UPDATE_GAP_MS;
+    // Forced updates are throttled too in that case. The gap also scales up
+    // adaptively while Telegram is rate-limiting this chat (429s).
+    const baseGap = s.detached ? STATUS_BACKGROUND_GAP_MS : STATUS_MIN_UPDATE_GAP_MS;
+    const minGap = throttleGap(chatId, baseGap);
     if (s.statusLastUpdate && now - s.statusLastUpdate < minGap) {
       if (s.detached || !force) return;
     }

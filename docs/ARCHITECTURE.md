@@ -38,12 +38,34 @@
 | `mcp.ts` | MCP server/resource bridge |
 | `metrics.ts` | Counters and error recording |
 | `ops.ts` | Health endpoint, metrics, disk guard |
+| `ratethrottle.ts` | Adaptive per-chat edit throttle after Telegram 429s |
 | `transcribe.ts` | Local voice-note transcription |
 | `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
 | `types.ts` | Shared types (`ChatSession`, etc.) |
 | `vcs.ts` | VCS and worktree helpers |
 | `webhook.ts` | Optional webhook server |
 | `constants.ts` | Named intervals and limits |
+
+## Reply-to routing
+
+- Every bot message that belongs to a session is mapped with
+  `store.rememberMessageSession` (session cards, final answers, dashboards,
+  full-history exports).
+- When the user replies to a bot message, `store.findSessionByAnyMessage`
+  resolves the owning session from the map, falling back to the pinned
+  dashboard, the status registry and in-memory card ids. The prompt is routed
+  to that session (activating it in the route) instead of the tab's active
+  session.
+- When a chat becomes unreachable (deleted group, bot kicked), persistent
+  `chat not found` failures trigger `store.forgetChatBindings`, which drops
+  its dashboards, status cards, message mappings and route bindings.
+
+## Rate limiting
+
+- Edits are throttled per chat with base gaps (`STATUS_MIN_UPDATE_GAP_MS`,
+  `STATUS_BACKGROUND_GAP_MS`); `ratethrottle.ts` multiplies the gap
+  adaptively after Telegram 429 responses (×1…×4, decayed on success and
+  quiet time) and exposes counters for `/ops`.
 
 ## Polling and runtime state
 
@@ -130,5 +152,11 @@ Turn lifecycle (one card per turn):
    pagination.
 4. `session.text.ended` → final answer is added to the transcript (restoring
    the full paginated view); depending on settings/length it may also be sent
-   as separate rich-text message(s) and is available via **“Ver completo”**;
-   topic title sync runs.
+   as separate rich-text message(s) split at markdown section boundaries
+   (`splitBySections`: one part per heading, code fences kept intact) and is
+   available via **“Ver completo”**; topic title sync runs.
+
+The session card keyboard offers **◀ / N/M ⊞ / ▶** (the middle button opens a
+page picker grid that jumps to any page and closes itself), **⏭ Última**,
+**📄 Ver completo** and **📜 Historial** (exports the full transcript as an
+HTML document, including blocks trimmed from the card).

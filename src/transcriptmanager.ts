@@ -161,6 +161,71 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
   };
 
+  /** Kind label for the history export. */
+  const kindLabel: Record<TranscriptKind, string> = {
+    thinking: "💭 Pensamiento",
+    tools: "🔧 Herramienta",
+    answer: "💬 Respuesta",
+    meta: "ℹ️ Meta",
+  };
+
+  /**
+   * Full transcript as a standalone HTML document, for the 📜 Historial
+   * action. Includes every block (even those trimmed from the card pages).
+   */
+  const exportTranscriptHtml = (s: ChatSession): string => {
+    const blocks = blocksOf(s);
+    const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || s.sessionId;
+    const title = esc(name);
+    const rows = blocks
+      .map((b) => {
+        const at = new Date(b.at).toLocaleString("es-ES");
+        const kind = kindLabel[b.kind] ?? b.kind;
+        const body = b.text.trim() ? `<pre style="white-space:pre-wrap;font-family:inherit">${esc(b.text)}</pre>` : "<p>(vacío)</p>";
+        return `<section><h2>${kind} <small>· ${esc(at)}</small></h2>${body}</section>`;
+      })
+      .join("\n");
+    return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<title>${title} — historial</title>
+<style>
+body{max-width:56em;margin:2em auto;padding:0 1em;font-family:system-ui,sans-serif;color:#1a1a1a;line-height:1.5}
+h1{font-size:1.4em}h2{font-size:1.02em;margin:1.4em 0 .4em;color:#444}
+section{border-bottom:1px solid #eee;padding-bottom:.6em}
+pre{margin:.2em 0}small{font-weight:400;color:#888}
+</style></head>
+<body><h1>📜 ${title}</h1>
+<p><i>${esc(s.sessionId)} · ${blocks.length} bloques · exportado ${esc(new Date().toLocaleString("es-ES"))}</i></p>
+${rows || "<p>(sin bloques)</p>"}
+</body></html>`;
+  };
+
+  /**
+   * Page picker: a grid with one button per page (rows of 8, up to 56) so the
+   * user can jump to any page without pressing ◀ repeatedly. Buttons navigate
+   * the card AND close the picker (tpagep). Beyond the cap, intermediate pages
+   * collapse into a final "última" button.
+   */
+  const pagePickerKeyboard = (s: ChatSession, total: number): Array<Array<{ text: string; callback_data: string }>> => {
+    const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+    const maxButtons = 56;
+    const perRow = 8;
+    const count = Math.min(total, maxButtons);
+    for (let i = 0; i < count; i += perRow) {
+      const row: Array<{ text: string; callback_data: string }> = [];
+      for (let j = i; j < Math.min(i + perRow, count); j++) {
+        const pageIdx = count < total && j === count - 1 ? total - 1 : j;
+        row.push({ text: `${pageIdx + 1}`, callback_data: `tpagep:${s.sessionId}:${pageIdx}` });
+      }
+      rows.push(row);
+    }
+    if (total > maxButtons) {
+      rows.push([{ text: `⏭ Última (${total})`, callback_data: `tpagep:${s.sessionId}:${total - 1}` }]);
+    }
+    rows.push([{ text: "✕ Cerrar", callback_data: `tpick:close:${s.sessionId}` }]);
+    return rows;
+  };
+
   /** Keyboard for the session card. */
   const cardKeyboard = (
     s: ChatSession,
@@ -171,16 +236,21 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     if (total > 1) {
       const nav: Array<{ text: string; callback_data: string }> = [];
-      if (page > 0) nav.push({ text: "◀ Prev", callback_data: `tpage:${s.sessionId}:${page - 1}` });
-      if (page < total - 1) nav.push({ text: "Next ▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
-      if (nav.length) keyboard.push(nav);
+      if (page > 0) nav.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
+      // Middle button opens the page picker (jump to page N).
+      nav.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
+      if (page < total - 1) nav.push({ text: "▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
+      keyboard.push(nav);
       if (s.transcriptFollow === false && page < total - 1) {
-        keyboard.push([{ text: "⏭ Latest", callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
+        keyboard.push([{ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
       }
     }
     if (opts?.working) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
-    // "View full" escape hatch for long answers.
-    if (s.lastFinalText) keyboard.push([{ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` }]);
+    // "View full" escape hatch for long answers; history export always available.
+    const tools: Array<{ text: string; callback_data: string }> = [];
+    if (s.lastFinalText) tools.push({ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` });
+    tools.push({ text: "📜 Historial", callback_data: `hist:${s.sessionId}` });
+    keyboard.push(tools);
     if (!opts?.unified) {
       keyboard.push([
         { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },
@@ -285,7 +355,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
   /** Total number of pages currently available. */
   const pageCount = (s: ChatSession): number => paginateTranscript(blocksOf(s)).length;
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pageCount, blocksOf, refloat };
+  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, pageCount, blocksOf, refloat };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };

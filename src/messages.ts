@@ -279,7 +279,7 @@ async function startPrompt(
  * commands, or forward it to the session bound to this tab as a prompt.
  */
 export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promise<void> {
-  const { config, tg, oc, store, me, sessions, status, messageToSession } = deps;
+  const { config, tg, oc, store, me, sessions, status } = deps;
   const { rememberSessionChat, rememberActiveRoute, routeKey } = store;
   const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
   const { startStatus, updateStatus, finishStatus } = status;
@@ -303,7 +303,10 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
 
   const chatId = msg.chat.id;
   const replyThread = msg.message_thread_id;
-  const repliedSessionId = msg.reply_to_message?.message_id ? messageToSession.get(`${chatId}:${msg.reply_to_message.message_id}`) : undefined;
+  // Replying to any bot message routes the prompt to the session that produced
+  // it: explicit map first, then dashboard/status/in-memory card fallbacks.
+  const replyMessageId = msg.reply_to_message?.message_id;
+  const repliedSessionId = replyMessageId ? store.findSessionByAnyMessage(chatId, replyMessageId) : undefined;
   deps.metrics?.inc("messages");
   // Ignore commands explicitly addressed to another bot.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
@@ -404,7 +407,7 @@ export async function handleMediaMessage(
   const s = resolution.session;
   if (!s) {
     if (resolution.asked) return;
-    await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
+    await send("🤖 <b>No hay sesión activa en esta conversación.</b>\n<i>Crea una nueva o elige una existente para empezar.</i>", { reply_markup: { inline_keyboard: [[{ text: "➕ Nueva sesión aquí", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } } );
     return;
   }
   const text = voiceTranscript
@@ -455,7 +458,7 @@ export async function handleTextMessage(
   const s = resolution.session;
   if (!s) {
     if (resolution.asked) return;
-    await send("no active session. Use /sessions or /new to activate one.", { reply_markup: { inline_keyboard: [[{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]] } } );
+    await send("🤖 <b>No hay sesión activa en esta conversación.</b>\n<i>Crea una nueva o elige una existente para empezar.</i>", { reply_markup: { inline_keyboard: [[{ text: "➕ Nueva sesión aquí", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } } );
     return;
   }
 

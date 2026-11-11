@@ -7,6 +7,11 @@ export class MetricsStore {
     this.counters.set(name, (this.counters.get(name) ?? 0) + amount);
   }
 
+  /** Zero every counter (keeps uptime and last error). */
+  reset(): void {
+    this.counters.clear();
+  }
+
   recordError(message: string): void {
     this.lastError = { time: Date.now(), message: message.slice(0, 200) };
     this.inc("errors");

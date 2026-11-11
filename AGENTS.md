@@ -78,6 +78,7 @@ Main modules:
 | `files.ts` | Barrel re-export of `files/*` |
 | `files/*` | Safe path resolution, listing, search, text preview, documents, zip, summary, tree |
 | `autoretry.ts` | Bounded auto-retry state after rate limits |
+| `ratethrottle.ts` | Adaptive per-chat edit throttle after Telegram 429s |
 | `botcommands.ts` | Single source of `BOT_COMMANDS` |
 | `constants.ts` | Named intervals and limits |
 | `editutil.ts` | Edit detection and diff formatting |
@@ -117,14 +118,16 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (112 tests across 17 files):
+`bun test` covers (131 tests across 18 files):
 
-- `tests/store.test.ts` — route/tab isolation, persistence, retirement.
+- `tests/store.test.ts` — route/tab isolation, persistence, retirement,
+  reply-to message routing and dead-chat binding cleanup.
 - `tests/files.test.ts` — path confinement, symlinks, list/find/read, `/file`.
 - `tests/filebrowser.test.ts` — listing, navigation, preview, search, expiry, documents.
 - `tests/commands.test.ts` — command dispatch, usage, safe `/file`.
 - `tests/util.test.ts` — `:15` retry timing, mention normalization, parsing.
 - `tests/autoretry.test.ts` — bounded auto-retry, stale-prompt guard.
+- `tests/ratethrottle.test.ts` — adaptive edit throttle (429 penalties, decay).
 - `tests/callbacks.test.ts`, `tests/events.test.ts`, `tests/panels.test.ts`,
   `tests/sessions.test.ts`, `tests/status.test.ts`, `tests/updates.test.ts` —
   handlers, rendering and routing.

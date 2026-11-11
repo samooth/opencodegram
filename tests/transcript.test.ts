@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
 import { createTranscriptManager } from "../src/transcriptmanager.js";
-import { paginateTranscript, splitText, TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS, type TranscriptBlock } from "../src/transcript.js";
+import { paginateTranscript, splitText, splitBySections, TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS, type TranscriptBlock } from "../src/transcript.js";
 import { markdownToHtml } from "../src/util.js";
 import type { ChatSession } from "../src/types.js";
 
@@ -70,6 +70,43 @@ describe("transcript pagination", () => {
     expect(pages[0].blocks.map((b) => b.html)).toEqual(["old-1", "old-2"]);
     expect(pages[1].blocks.map((b) => b.html)).toEqual(["new-turn"]);
   });
+
+  test("splitBySections breaks at headings and keeps code fences intact", () => {
+    const md = [
+      "# Intro",
+      "Texto de la introducción. " + "x".repeat(500),
+      "",
+      "```python",
+      "print('hola')",
+      "# esto no es un encabezado",
+      "```",
+      "",
+      "# Setup",
+      "Pasos de instalación. " + "y".repeat(500),
+    ].join("\n");
+    const parts = splitBySections(md, 800);
+    expect(parts.length).toBeGreaterThanOrEqual(2);
+    // The fake heading inside the fence stays with its section.
+    const fencePart = parts.find((p) => p.includes("print('hola')"));
+    expect(fencePart).toBeDefined();
+    expect(fencePart!.includes("Setup")).toBe(false);
+    // Headings start their own section.
+    expect(parts.some((p) => p.startsWith("# Setup"))).toBe(true);
+  });
+
+  test("splitBySections merges small sections under the budget", () => {
+    const md = ["# A", "a".repeat(200), "# B", "b".repeat(200), "# C", "c".repeat(200)].join("\n");
+    const parts = splitBySections(md, 700);
+    // Everything fits in one merged part: the caller then falls back to
+    // size-based splitting, which would also produce a single chunk.
+    expect(parts.length).toBeLessThanOrEqual(1);
+  });
+
+  test("splitBySections falls back to [] without headings", () => {
+    expect(splitBySections("párrafo uno\n\npárrafo dos", 100)).toEqual([]);
+    expect(splitBySections("", 100)).toEqual([]);
+  });
+
 });
 
 describe("transcript manager", () => {
@@ -434,5 +471,42 @@ describe("transcript manager", () => {
     expect(sent.length).toBe(2);
     expect(edited.length).toBe(0);
     expect(s.transcriptMessageId).toBe(402);
+  });
+
+  test("the card keyboard offers page picker and history export", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    for (let i = 0; i < 8; i++) {
+      const big = `bloque ${i} ${"x".repeat(600)}`;
+      transcript.addBlock(s, "answer", `<p>${big}</p>`, big);
+    }
+    await transcript.publish(1, s);
+    const total = transcript.pageCount(s);
+    expect(total).toBeGreaterThan(1);
+    const kb = transcript.cardKeyboard(s, 0, total);
+    const flat = kb.flat();
+    // Middle button opens the page picker.
+    expect(flat.some((b) => b.callback_data === `tpick:${s.sessionId}`)).toBe(true);
+    // History export button is always available.
+    expect(flat.some((b) => b.callback_data === `hist:${s.sessionId}`)).toBe(true);
+    // The picker grid covers every page, navigates the card (tpagep) and closes.
+    const picker = transcript.pagePickerKeyboard(s, total);
+    const pickerPages = new Set(picker.flat().filter((b) => b.callback_data.startsWith(`tpagep:`)).map((b) => b.callback_data));
+    for (let p = 0; p < total; p++) expect(pickerPages.has(`tpagep:${s.sessionId}:${p}`)).toBe(true);
+    expect(picker.flat().some((b) => b.callback_data === `tpick:close:${s.sessionId}`)).toBe(true);
+  });
+
+  test("exportTranscriptHtml includes every block escaped", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.topicTitle = "Mi <repo>";
+    transcript.addBlock(s, "thinking", "<p>idea</p>", "idea secreta");
+    transcript.addBlock(s, "answer", "<p>hola</p>", "hola <mundo>");
+    const html = transcript.exportTranscriptHtml(s);
+    expect(html).toContain("idea secreta");
+    expect(html).toContain("hola &lt;mundo&gt;");
+    expect(html).toContain("Mi &lt;repo&gt;");
+    expect(html).toContain("Pensamiento");
+    expect(html).toContain("Respuesta");
   });
 });

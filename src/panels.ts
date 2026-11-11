@@ -1,12 +1,15 @@
 import os from "node:os";
+import { statfs } from "node:fs/promises";
 import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { MetricsStore } from "./metrics.js";
-import { esc, sessionHeader, threadOpts, projectLabel, truncate } from "./util.js";
+import { esc, sessionHeader, threadOpts, projectLabel, truncate, clampText } from "./util.js";
+import { formatBytes } from "./files/index.js";
 import { BOT_COMMANDS } from "./botcommands.js";
 import { readGpuInfo } from "./resources.js";
+import { describeThrottles, throttleTotals } from "./ratethrottle.js";
 
 export type PanelsDeps = {
   tg: TelegramClient;
@@ -450,5 +453,39 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
 
-  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, providerListByChat, selectedProviderByChat, modelTargetSessionByScope, modelPanels, userScope };
+  /**
+   * Admin operations card: runtime health, Telegram error counters, adaptive
+   * throttle state and dead-chat bindings. Shared by /ops and its callbacks.
+   */
+  async function renderOps(): Promise<{ html: string; keyboard: Array<Array<{ text: string; callback_data: string }>> }> {
+    const [ocInfo, disk] = await Promise.all([
+      oc.serverInfo().catch(() => null),
+      statfs(process.cwd()).catch(() => null),
+    ]);
+    const botUptimeSeconds = Math.max(1, Math.round((Date.now() - metrics.startedAt) / 1000));
+    const botUptime = `${Math.floor(botUptimeSeconds / 3600)}h ${Math.floor((botUptimeSeconds % 3600) / 60)}m`;
+    const mem = process.memoryUsage();
+    const diskFree = disk ? formatBytes(disk.bavail * disk.bsize) : "?";
+    const throttleTotalsInfo = throttleTotals();
+    const counters = Object.entries(metrics.snapshot()).sort((a, b) => b[1] - a[1]);
+    const countersHtml = counters.length
+      ? counters.slice(0, 14).map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td>${v.toLocaleString()}</td></tr>`).join("")
+      : `<tr><td colspan="2"><i>sin contadores</i></td></tr>`;
+    const throttleLines = describeThrottles();
+    const rows = [
+      `<tr><td><b>Bot</b></td><td>uptime ${botUptime} · pid ${process.pid} · rss ${(mem.rss / 1024 / 1024).toFixed(0)} MB</td></tr>`,
+      `<tr><td><b>Disco</b></td><td>libre ${esc(diskFree)}</td></tr>`,
+      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""}</td></tr>` : "",
+      `<tr><td><b>Telegram 429</b></td><td>${throttleTotalsInfo.failures} fallos · +${(throttleTotalsInfo.extraMs / 1000).toFixed(0)}s de espera acumulados</td></tr>`,
+      throttleLines.length ? `<tr><td><b>Throttles activos</b></td><td>${throttleLines.join("<br>")}</td></tr>` : "",
+      metrics.lastError ? `<tr><td><b>Último error</b></td><td>${esc(metrics.lastError.message)} (${new Date(metrics.lastError.time).toISOString().slice(11, 19)})</td></tr>` : "",
+    ].filter(Boolean).join("");
+    const text = `<h3>🩺 Ops</h3>\n\n<table compact striped bordered>${rows}</table>\n\n<h4>Contadores</h4>\n<table compact striped bordered>${countersHtml}</table>`;
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [
+      [{ text: "♻️ Reset métricas", callback_data: "ops:reset" }, { text: "🔄 Refrescar", callback_data: "ops:show" }],
+    ];
+    return { html: clampText(text, 3900), keyboard };
+  }
+
+  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, renderOps, providerListByChat, selectedProviderByChat, modelTargetSessionByScope, modelPanels, userScope };
 }

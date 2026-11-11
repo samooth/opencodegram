@@ -9,6 +9,9 @@ import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
+import { describeThrottles, throttleTotals } from "./ratethrottle.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 type CallbackHandler = (
   deps: BotDeps,
@@ -39,6 +42,10 @@ const PREFIXES = [
   "filter:",
   "cmd:",
   "tpage:",
+  "tpagep:",
+  "tpick:",
+  "hist:",
+  "ops:",
   "profile:",
   "viewfull:",
 ].sort((a, b) => b.length - a.length);
@@ -62,8 +69,116 @@ async function handleTranscriptPage(deps: BotDeps, cq: TelegramCallbackQuery, ch
   });
 }
 
-async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
-  const m = data.match(/^perm:(allow|always|reject|rejectreason):(.+)$/);
+/**
+ * /ops actions from the ops card: reset metrics or refresh the view (admin).
+ */
+async function handleOps(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  if (!deps.config.ADMIN_TELEGRAM_USER_ID || cq.from?.id !== deps.config.ADMIN_TELEGRAM_USER_ID) {
+    await deps.tg.answerCallbackQuery(cq.id, "Solo para el admin").catch(() => {});
+    return;
+  }
+  const action = data.slice("ops:".length);
+  if (action === "reset") {
+    deps.metrics?.reset();
+    await deps.tg.answerCallbackQuery(cq.id, "♻️ Métricas reiniciadas").catch(() => {});
+  } else {
+    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  }
+  if (messageId) {
+    const rendered = await deps.panels.renderOps();
+    await deps.tg.editRichMessage(chatId, messageId, rendered.html, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: rendered.keyboard },
+    }).catch(() => {});
+  }
+}
+
+/**
+ * 📜 Historial: export the full transcript of the session as an HTML document.
+ */
+async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const m = data.match(/^hist:(.+)$/);
+  if (!m) return;
+  const sessionId = m[1];
+  await deps.tg.answerCallbackQuery(cq.id, "Generando historial…").catch(() => {});
+  const s = deps.store.findSessionById(sessionId);
+  if (!s || !deps.transcript) {
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  try {
+    const html = deps.transcript.exportTranscriptHtml(s);
+    const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || sessionId;
+    const safeName = String(name).replace(/[^\w.-]+/g, "_").slice(0, 40) || sessionId.slice(0, 12);
+    const path = join("/tmp/opencode/exports", `historial-${safeName}-${sessionId.slice(0, 8)}.html`);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, html, "utf8");
+    const blocks = deps.transcript.blocksOf(s).length;
+    await deps.tg.sendDocument(chatId, path, `historial-${safeName}.html`, `📜 Historial de <b>${esc(name)}</b> · ${blocks} bloques`, {
+      ...(threadId ? { message_thread_id: threadId } : {}),
+    });
+    deps.metrics?.inc("history_exports");
+  } catch (err) {
+    console.error("[hist] export failed", err);
+    await deps.tg.sendRichMessage(chatId, `❌ No se pudo generar el historial: ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+  }
+}
+
+/**
+ * ⊞ Page picker: grid with one button per page for quick jumps.
+ */
+async function handlePagePicker(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const closeMatch = data.match(/^tpick:close:(.+)$/);
+  if (closeMatch) {
+    // Close: delete the picker message.
+    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+    if (cq.message?.message_id) await deps.tg.deleteMessage(chatId, cq.message.message_id).catch(() => {});
+    return;
+  }
+  const m = data.match(/^tpick:(.+)$/);
+  if (!m) return;
+  const sessionId = m[1];
+  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  const s = deps.store.findSessionById(sessionId);
+  if (!s || !deps.transcript) {
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  const total = deps.transcript.pageCount(s);
+  if (total <= 1) {
+    await deps.tg.answerCallbackQuery(cq.id, "Solo hay una página").catch(() => {});
+    return;
+  }
+  await deps.tg
+    .sendRichMessage(chatId, `⊞ <b>Ir a página</b> · <i>${total} páginas de ${esc((s.topicTitle || "").trim() || sessionId.slice(0, 12))}</i>`, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: deps.transcript.pagePickerKeyboard(s, total) },
+    })
+    .catch(() => {});
+}
+
+/**
+ * Picker navigation: jump to the chosen page on the session card and close
+ * the picker message so the chat does not fill with pickers.
+ */
+async function handlePickerJump(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const m = data.match(/^tpagep:(.+):(\d+)$/);
+  if (!m) return;
+  const sessionId = m[1];
+  const page = parseInt(m[2], 10);
+  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  if (cq.message?.message_id) await deps.tg.deleteMessage(chatId, cq.message.message_id).catch(() => {});
+  const s = deps.store.findSessionById(sessionId);
+  if (!s || !deps.transcript) {
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  await deps.transcript.goToPage(chatId, s, page).catch((err) => {
+    console.error("[tpagep] failed", err);
+  });
+}
+
+async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {  const m = data.match(/^perm:(allow|always|reject|rejectreason):(.+)$/);
   if (!m) return;
   const action = m[1];
   const requestId = m[2];
@@ -720,6 +835,10 @@ async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "fs:": handleFs,
   "tpage:": handleTranscriptPage,
+  "tpagep:": handlePickerJump,
+  "tpick:": handlePagePicker,
+  "hist:": handleHistory,
+  "ops:": handleOps,
   "panel:": handlePanel,
   "perm:": handlePerm,
   "use:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {

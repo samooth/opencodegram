@@ -24,7 +24,25 @@
   - **Profiles**: `Unificado`, `Unificado+msg`, `Flexible`.
   - **Visualization**: thinking/tools/COT/latest thought & tool, token speed, partial text, compact final, session name/topic options.
   - **Shell, files, voice, resources**: shell/tool input, auto artifacts, preview lines, diff style, voice transcription, resource usage/history.
-  - In unified mode, M2 streams the latest thought at the bottom and long answers can be opened in full with **`📄 Ver completo`** (or delivered as separate rich-text messages).
+  - In unified mode, M2 streams the latest thought at the bottom and long answers can be opened in full with **`📄 Ver completo`** (or delivered as separate rich-text messages, split at markdown section boundaries).
+
+## Operations
+
+- `/ops` — admin-only card with runtime health: uptime, memory, disk,
+  OpenCode version, Telegram 429 counters, active adaptive throttles, last
+  error and all metrics counters. Buttons: `♻️ Reset métricas`,
+  `🔄 Refrescar`.
+
+## Session card
+
+The session card (M2) keyboard offers:
+
+- **◀ / N/M ⊞ / ▶** — page navigation; `⊞` opens a page picker grid (jump to
+  any page; the picker closes itself after choosing).
+- **⏭ Última** — jump back to the live page after browsing.
+- **📄 Ver completo** — full final answer as message(s).
+- **📜 Historial** — export the complete transcript of the session as an HTML
+  document (includes content trimmed from the card pages).
 
 ## MCP
 
