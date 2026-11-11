@@ -51,18 +51,23 @@ export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Prom
 /** Telegram long-polling loop. Dispatches callbacks, messages and draft stops. */
 export async function startPolling(deps: BotDeps): Promise<void> {
   const { tg, metrics, store } = deps;
+  const botId = (deps as any).me?.id as number | undefined;
   const offsetFile = join(store.dataDir, "telegram_offset.json");
-  let offset = loadOffset(offsetFile);
+  let offset = loadOffset(offsetFile, botId);
   const seen = new Set<number>();
 
   const saveOffset = (value: number) => {
     try {
       mkdirSync(store.dataDir, { recursive: true });
-      writeFileSync(offsetFile, JSON.stringify({ offset: value }));
+      writeFileSync(offsetFile, JSON.stringify({ offset: value, botId }));
     } catch (err) {
       console.error("[poll] could not persist offset", err);
     }
   };
+
+  // Persist bot identity even when no updates arrive yet, so future bot changes
+  // can be detected reliably.
+  saveOffset(offset);
 
   while (true) {
     let updates: Awaited<ReturnType<typeof tg.getUpdates>> = [];
@@ -93,10 +98,15 @@ export async function startPolling(deps: BotDeps): Promise<void> {
   }
 }
 
-function loadOffset(file: string): number {
+function loadOffset(file: string, botId?: number): number {
   try {
     if (!existsSync(file)) return 0;
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as { offset?: unknown };
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { offset?: unknown; botId?: unknown };
+    const storedBotId = Number(parsed?.botId);
+    if (botId && Number.isFinite(storedBotId) && storedBotId > 0 && storedBotId !== botId) {
+      console.warn(`[poll] telegram bot changed (${storedBotId} -> ${botId}); resetting update offset`);
+      return 0;
+    }
     const value = Number(parsed?.offset);
     return Number.isFinite(value) && value > 0 ? value : 0;
   } catch {
