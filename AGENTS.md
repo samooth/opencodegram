@@ -79,6 +79,7 @@ Main modules:
 | `files/*` | Safe path resolution, listing, search, text preview, documents, zip, summary, tree |
 | `autoretry.ts` | Bounded auto-retry state after rate limits |
 | `ratethrottle.ts` | Adaptive per-chat edit throttle after Telegram 429s |
+| `syncview.ts` | Shared digest renderer for "Conectar" and `/sync` (header, recent messages, older timeline) |
 | `botcommands.ts` | Single source of `BOT_COMMANDS` |
 | `constants.ts` | Named intervals and limits |
 | `editutil.ts` | Edit detection and diff formatting |
@@ -133,6 +134,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
   handlers, rendering and routing.
 - `tests/edits.test.ts` — edit buttons and full diffs from persisted turn
   snapshots (work after restarts and new turns).
+- `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
 - `tests/transcribe.test.ts` — voice transcription config and execution.

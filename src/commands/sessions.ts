@@ -4,7 +4,8 @@ import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument, treeD
 import * as mcp from "../mcp.js";
 import { isSettingsKey, renderSettings, settingsKeyboard } from "../settings.js";
 import * as vcs from "../vcs.js";
-import { clampText, colorDiff, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "../util.js";
+import { clampText, colorDiff, esc, sessionHeader, threadOpts, truncate } from "../util.js";
+import { buildDigestParts } from "../syncview.js";
 import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
@@ -427,54 +428,13 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
     try {
       const ctxData = await C.oc.context(s.sessionId);
       const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
-      const meaningful = items
-        .filter((m: any) => {
-          const role = m.role ?? m.type;
-          return role === "user" || role === "assistant" || role === "compaction";
-        })
-        .slice(-40);
-      if (!meaningful.length) {
-        await send(sessionHeader(s) + "<i>No context to sync.</i>");
-        return true;
+      const parts = buildDigestParts(s, items, { title: "📜 Contenido de la sesión", sessionId: s.sessionId });
+      let lastMessageId: number | undefined;
+      for (const part of parts) {
+        const sent = await send(part.html, { reply_markup: { inline_keyboard: part.keyboard } }) as { message_id?: number } | undefined;
+        lastMessageId = sent?.message_id ?? lastMessageId;
       }
-      const renderItem = (m: any): string => {
-        const role = m.role ?? m.type ?? "msg";
-        if (role === "user") {
-          const t = m.text;
-          const body = typeof t === "string" ? t : t ? JSON.stringify(t) : "";
-          if (!body.trim()) return "";
-          return `👤 <b>Tú</b>\n<blockquote>${esc(body.trim().slice(0, 1400))}</blockquote>`;
-        }
-        if (role === "assistant") {
-          const parts = Array.isArray(m.content) ? m.content : [];
-          const texts = parts
-            .filter((p: any) => p.type === "text")
-            .map((p: any) => (typeof p.text === "string" ? p.text : p?.text ? JSON.stringify(p.text) : ""))
-            .join("\n\n")
-            .trim();
-          if (texts) return `🤖 <b>OpenCode</b>\n${markdownToHtml(texts.slice(0, 2200))}`;
-          const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool").slice(0, 6);
-          if (tools.length) return `🤖 <b>OpenCode</b>\n<blockquote expandable>🔧 ${esc(tools.join(", "))}</blockquote>`;
-          return "";
-        }
-        if (role === "compaction") {
-          const sum = (m.summary ?? "").toString().trim().slice(0, 500);
-          return sum ? `<blockquote expandable>📦 <b>Compaction</b>\n${esc(sum)}</blockquote>` : "";
-        }
-        return "";
-      };
-      const rendered = meaningful.map(renderItem).filter(Boolean);
-      const recentCount = Math.min(6, rendered.length);
-      const recent = rendered.slice(-recentCount);
-      const older = rendered.slice(0, Math.max(0, rendered.length - recentCount));
-      const header = sessionHeader(s) + `📜 <b>Contenido de la sesión</b> <i>(${rendered.length} mensajes)</i>`;
-      let html = header + "\n\n" + recent.join("\n\n");
-      if (older.length) {
-        const olderText = esc(older.join("\n\n---\n\n").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 6000));
-        html += `\n\n<blockquote expandable>📚 Transcripción anterior (${older.length} mensajes)\n${olderText}</blockquote>`;
-      }
-      const sent = await send(clampText(html, 3900)) as { message_id?: number } | undefined;
-      if (sent?.message_id) C.store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
+      if (lastMessageId) C.store.rememberMessageSession(chatId, lastMessageId, s.sessionId);
     } catch (err) {
       await send("❌ " + esc(String(err)));
     }

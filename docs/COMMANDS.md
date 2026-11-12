@@ -81,7 +81,10 @@ documents.
 ## Context and usage
 
 - `/context` — token window, usage and recent messages.
-- `/sync` — replay the last messages into Telegram.
+- `/sync` — show the session digest: metadata header (model, directory,
+  message/tool counts), the last 6 messages rendered in full with truncation
+  hints, and older messages as a compact one-line timeline; long digests are
+  split into several messages instead of being silently clamped.
 - `/compact` — compact session history.
 - `/usage` — global usage and cost.
 - `/vcs` — branch and changed-file count.
