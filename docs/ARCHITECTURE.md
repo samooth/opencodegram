@@ -60,6 +60,16 @@
   `chat not found` failures trigger `store.forgetChatBindings`, which drops
   its dashboards, status cards, message mappings and route bindings.
 
+## Edit buttons and turn diffs
+
+- When a turn finishes with file edits, a snapshot of the edit details is
+  persisted (`data/pendingEdits.json`) under both the "Edits" message id and
+  the session card id, so `✏️` file buttons, `📄 Full diffs` and the card's
+  **📝 Diff (N)** button keep working after new turns and restarts.
+- `showEditDiff` renders an edits-only view from the snapshot; the replied
+  Edits message is also mapped via `rememberMessageSession` so replying to it
+  routes to its session.
+
 ## Rate limiting
 
 - Edits are throttled per chat with base gaps (`STATUS_MIN_UPDATE_GAP_MS`,

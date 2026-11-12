@@ -24,7 +24,7 @@ export function extractEditFile(input: string | undefined): string | null {
   if (!input) return null;
   try {
     const parsed = JSON.parse(input) as Record<string, unknown>;
-    for (const key of ["filePath", "file", "path", "filename", "target"]) {
+    for (const key of ["filePath", "file_path", "file", "path", "filename", "target"]) {
       if (typeof parsed[key] === "string" && (parsed[key] as string).trim()) return (parsed[key] as string).trim();
     }
     return null;
@@ -50,7 +50,7 @@ export function formatEditDiff(input: string | undefined, style: DiffStyle = "si
   try {
     const parsed = JSON.parse(input) as Record<string, unknown>;
     let filePath = "file";
-    for (const key of ["filePath", "file", "path", "filename", "target"]) {
+    for (const key of ["filePath", "file_path", "file", "path", "filename", "target"]) {
       if (typeof parsed[key] === "string" && (parsed[key] as string).trim()) { filePath = (parsed[key] as string).trim(); break; }
     }
     if (baseDirectory && filePath.startsWith(baseDirectory + "/")) filePath = filePath.slice(baseDirectory.length + 1);

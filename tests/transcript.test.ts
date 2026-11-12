@@ -509,4 +509,27 @@ describe("transcript manager", () => {
     expect(html).toContain("Pensamiento");
     expect(html).toContain("Respuesta");
   });
+
+  test("the card shows a 📝 Diff button when the turn had edits", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>hola</p>", "hola");
+    await transcript.publish(1, s);
+    expect(s.transcriptMessageId).toBeDefined();
+    // No edits yet: no Diff button.
+    let kb = transcript.cardKeyboard(s, 0, 1).flat();
+    expect(kb.some((b) => b.text.startsWith("📝 Diff"))).toBe(false);
+    // Turn finished with edits: snapshot registered under the card id.
+    store.rememberPendingEdits(s.transcriptMessageId!, s.sessionId, [
+      { id: "t1", name: "edit", input: JSON.stringify({ filePath: "src/a.ts" }), status: "success" },
+    ]);
+    kb = transcript.cardKeyboard(s, 0, 1).flat();
+    const diffBtn = kb.find((b) => b.text.startsWith("📝 Diff"));
+    expect(diffBtn).toBeDefined();
+    expect(diffBtn!.text).toBe("📝 Diff (1)");
+    expect(diffBtn!.callback_data).toBe(`edits:full:${s.transcriptMessageId}`);
+    // While working, the button hides (the turn is producing new edits).
+    kb = transcript.cardKeyboard(s, 0, 1, { working: true }).flat();
+    expect(kb.some((b) => b.text.startsWith("📝 Diff"))).toBe(false);
+  });
 });

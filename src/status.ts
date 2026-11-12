@@ -365,6 +365,17 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (prompt?.trim()) {
       lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
     }
+    // Turn progress: tools executed this turn (with failures) and live token
+    // speed when usage has arrived. Elapsed time is already in the header.
+    const tools = s.toolCallDetails.length;
+    const failedTools = s.toolCallDetails.filter((detail) => detail.status === "failed").length;
+    const tokens = s.lastOutputTokens ?? 0;
+    const progressParts: string[] = [];
+    if (tools) progressParts.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
+    if (tokens && elapsed > 1 && settings.showTokenSpeed) {
+      progressParts.push(`⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`);
+    }
+    if (progressParts.length) lines.push(`<i>${esc(progressParts.join(" · "))}</i>`);
     if (settings.showPartialText && s.buffer.trim()) {
       const tail = s.buffer.trim().slice(-(unified ? 600 : 400));
       lines.push(`<pre>${esc(tail)}</pre>`);
@@ -709,7 +720,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch(() => {});
       }
       // Edits are offered in their own message so the session card keeps its
-      // paginated content intact.
+      // paginated content intact. A snapshot of this turn's edit details is
+      // persisted under BOTH message ids so the buttons and the 📝 Diff card
+      // button keep working after new turns and restarts.
       if (editDetails.length && finishedCardId) {
         const editMessageId = finishedCardId;
         const editLines: string[] = [];
@@ -724,10 +737,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
             ...threadOptsFor(s),
             reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, editMessageId) },
           });
+          const snapshot = editDetails.map((d) => ({ ...d }));
           if (sent?.message_id) {
             pendingEdits.set(sent.message_id, s);
-            store?.rememberPendingEdits(sent.message_id, s.sessionId);
+            store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
+            // Replying to the edits message must route to its session.
+            store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
           }
+          if (finishedCardId) store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
         } catch (err) {
           console.error("[status] edits message failed", err);
         }
@@ -741,7 +758,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       s.expandedEditIndex = undefined;
       if (editDetails.length) {
         pendingEdits.set(messageId, s);
-        store?.rememberPendingEdits(messageId, s.sessionId);
+        store?.rememberPendingEdits(messageId, s.sessionId, editDetails.map((d) => ({ ...d })));
       }
       const fullThinking = (!s.stopped && s.reasoningBuffer.trim()) ? s.reasoningBuffer.trim() : "";
       const text = clampText(renderFinished(s, undefined, settings, !fullThinking || !settings.showThinking));
@@ -853,47 +870,64 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     return file.split("/").pop() ?? file;
   };
 
+  /** Expanded-file toggle for edit messages, keyed by chatId:messageId. */
+  const editToggles = new Map<string, number | undefined>();
+
+  /**
+   * Resolve the edit snapshot for a message: the live session when available,
+   * otherwise the persisted snapshot (survives new turns and restarts).
+   */
+  const resolveEditsFor = (messageId: number): { s?: ChatSession; edits: Array<ChatSession["toolCallDetails"][number]>; directory?: string; header: string; threadId?: number; snapshotId?: string } | undefined => {
+    const snap = store?.getPendingEditsSnapshot(messageId);
+    if (!snap) return undefined;
+    let s = pendingEdits.get(messageId) ?? store?.findSessionById(snap.sessionId);
+    if (s) pendingEdits.set(messageId, s);
+    const edits = (snap.edits?.length ? snap.edits : s?.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input)) ?? []) as Array<ChatSession["toolCallDetails"][number]>;
+    if (!edits.length) return undefined;
+    const header = s ? sessionHeader(s).trimEnd() : `📌 <code>${esc(snap.sessionId.slice(0, 12))}</code>\n`;
+    return { s, edits, directory: s?.directory, header, threadId: s?.targetThreadId ?? s?.threadId, snapshotId: snap.sessionId };
+  };
+
   const showEditDiff = async (chatId: number, messageId: number, index: number): Promise<boolean> => {
-    let s = pendingEdits.get(messageId);
-    if (!s && store) {
-      const sid = store.getPendingEditsSession(messageId);
-      if (sid) s = store.sessionsById.get(sid);
-    }
-    if (!s) return false;
-    pendingEdits.set(messageId, s);
-    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
-    if (!editDetails[index]) return false;
-    if (s.expandedEditIndex === index) s.expandedEditIndex = undefined;
-    else s.expandedEditIndex = index;
+    const resolved = resolveEditsFor(messageId);
+    if (!resolved || !resolved.edits[index]) return false;
+    const toggleKey = `${chatId}:${messageId}`;
+    const next = editToggles.get(toggleKey) === index ? undefined : index;
+    editToggles.set(toggleKey, next);
+    if (resolved.s) resolved.s.expandedEditIndex = next;
     const settings = getSettings(chatId);
-    const text = clampText(renderFinished(s, s.expandedEditIndex, settings));
-    const keyboard = finishedKeyboard(editDetails, s.expandedEditIndex, s, messageId);
-    await tg.editRichMessage(chatId, messageId, text, {
-      ...threadOptsFor(s),
+    const lines: string[] = [resolved.header, `<b>Edits</b> (${resolved.edits.length})`];
+    resolved.edits.forEach((detail, i) => {
+      const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? `edit ${i + 1}`);
+      const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
+      const expanded = next === i;
+      lines.push(`✏️ <b>${esc(file)}</b>${expanded ? " ▾" : ""}`);
+      if (diff.trim()) {
+        // The expanded file shows the full diff; the rest stay capped.
+        lines.push(`<blockquote expandable><pre><code class="language-diff">${esc(expanded ? diff : capDiff(diff, 12))}</code></pre></blockquote>`);
+      }
+    });
+    const keyboard = finishedKeyboard(resolved.edits, next, (resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession)), messageId);
+    const opts = resolved.s ? threadOptsFor(resolved.s) : threadOpts(resolved.threadId);
+    await tg.editRichMessage(chatId, messageId, clampText(lines.join("\n"), 3900), {
+      ...opts,
       reply_markup: { inline_keyboard: keyboard },
     }).catch(() => {});
     return true;
   };
 
   const sendFullDiffs = async (chatId: number, messageId: number, threadId?: number): Promise<boolean> => {
-    let s = pendingEdits.get(messageId);
-    if (!s && store) {
-      const sid = store.getPendingEditsSession(messageId);
-      if (sid) s = store.sessionsById.get(sid);
-    }
-    if (!s) return false;
-    pendingEdits.set(messageId, s);
-    const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
-    if (!editDetails.length) return false;
+    const resolved = resolveEditsFor(messageId);
+    if (!resolved) return false;
     const settings = getSettings(chatId);
     const parts: string[] = [];
-    for (const detail of editDetails) {
-      const file = relativeEditPath(s, extractEditFile(detail.input) ?? "edit");
-      const diff = formatEditDiff(detail.input, settings.diffStyle, s.directory);
+    for (const detail of resolved.edits) {
+      const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? "edit");
+      const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
       parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote><pre><code class="language-diff">${esc(diff)}</code></pre></blockquote>`);
     }
-    const full = parts.join("\n\n");
-    const opts = threadOpts(threadId ?? s.targetThreadId ?? s.threadId);
+    const full = `${resolved.header}\n<b>Full diffs</b> (${resolved.edits.length})\n\n${parts.join("\n\n")}`;
+    const opts = threadOpts(threadId ?? resolved.threadId);
     if (full.length <= 3800) {
       await tg.sendRichMessage(chatId, full, opts).catch(() => {});
     } else {

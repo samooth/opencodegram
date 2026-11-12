@@ -118,7 +118,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (131 tests across 18 files):
+`bun test` covers (138 tests across 19 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -131,6 +131,8 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/callbacks.test.ts`, `tests/events.test.ts`, `tests/panels.test.ts`,
   `tests/sessions.test.ts`, `tests/status.test.ts`, `tests/updates.test.ts` —
   handlers, rendering and routing.
+- `tests/edits.test.ts` — edit buttons and full diffs from persisted turn
+  snapshots (work after restarts and new turns).
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
 - `tests/transcribe.test.ts` — voice transcription config and execution.

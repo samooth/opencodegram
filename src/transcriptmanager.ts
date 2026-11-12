@@ -251,6 +251,14 @@ ${rows || "<p>(sin bloques)</p>"}
     if (s.lastFinalText) tools.push({ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` });
     tools.push({ text: "📜 Historial", callback_data: `hist:${s.sessionId}` });
     keyboard.push(tools);
+    // 📝 Diff of this turn's edits: snapshot is registered on the card id when
+    // the turn finishes, so the button survives new turns and restarts.
+    if (!opts?.working && s.transcriptMessageId) {
+      const edits = store.getPendingEditsSnapshot(s.transcriptMessageId)?.edits?.length ?? 0;
+      if (edits > 0) {
+        keyboard.push([{ text: `📝 Diff (${edits})`, callback_data: `edits:full:${s.transcriptMessageId}` }]);
+      }
+    }
     if (!opts?.unified) {
       keyboard.push([
         { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },

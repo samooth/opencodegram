@@ -29,6 +29,16 @@ function toolStatsLine(s: ChatSession): string {
   return `🔧 <b>Tools (turno)</b>: ${parts.join(" · ")}${lastText}`;
 }
 
+/** Turn progress: elapsed time and live token speed while working. */
+function turnProgressLine(s: ChatSession): string {
+  if (!s.promptStartTime) return "";
+  const elapsed = Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000));
+  const elapsedText = elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
+  const tokens = s.lastOutputTokens ?? 0;
+  const speed = tokens && elapsed > 1 ? ` · ⚡ ${(tokens / elapsed).toFixed(1)} tok/s` : "";
+  return `⏳ <b>Progreso</b>: ${elapsedText}${speed}`;
+}
+
 export function createDashboardManager({ tg, store, settings, threadOptsFor }: DashboardDeps) {
   function render(s: ChatSession, chatId: number, opts?: { working?: boolean }): { html: string; keyboard: any[][] } {
     const st = settings.get(chatId);
@@ -50,6 +60,10 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
       "",
       toolStatsLine(s),
     ];
+    if (opts?.working) {
+      const progress = turnProgressLine(s);
+      if (progress) lines.push(progress);
+    }
     if (st.showResourceUsage) {
       lines.push("", renderResourceBlock(s));
     }

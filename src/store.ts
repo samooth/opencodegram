@@ -8,6 +8,9 @@ import { esc } from "./util.js";
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
 
+/** Serializable snapshot of a turn's tool call details (for edit buttons). */
+export type EditDetail = { id: string; name: string; input?: string; output?: string; status?: string };
+
 /**
  * Delivery target of a session: the chat/topic its current turn must be
  * answered in. A session can be referenced from several chats (e.g. a group
@@ -41,7 +44,7 @@ export class SessionStore {
   readonly cotBySession = new Map<string, { buffer: string; count: number }>();
   readonly sessionStatusBySession = new Map<string, string>();
   readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
-  readonly pendingEditsByMessage = new Map<number, string>();
+  readonly pendingEditsByMessage = new Map<number, { sessionId: string; edits?: EditDetail[] }>();
 
   readonly customButtonsByChat = new Map<number, Array<{ label: string; text: string }>>();
   /** Last session the user interacted with per route (for @tag / reply routing). */
@@ -223,10 +226,13 @@ export class SessionStore {
    */
   findSessionByAnyMessage = (chatId: number, messageId: number): string | undefined => {
     const key = `${chatId}:${messageId}`;
-    const mapped = this.messageToSession.get(key);
-    // Only trust the map when the session is still alive; a forgotten session
-    // must fall through to the other registries (or the default route).
-    if (mapped && this.sessionsById.has(mapped)) return mapped;
+    // The explicit map is authoritative: even when the session is not in
+    // memory (e.g. after a restart), reply routing can revive it via
+    // activateSession (which fetches it from the OpenCode server).
+    return this.messageToSession.get(key) ?? this.fallbackSessionByMessage(chatId, messageId);
+  };
+
+  private fallbackSessionByMessage = (chatId: number, messageId: number): string | undefined => {
     for (const info of this.dashboardByRoute.values()) {
       if (info.chatId === chatId && info.messageId === messageId) return info.sessionId;
     }
@@ -369,12 +375,22 @@ export class SessionStore {
     return true;
   };
 
-  rememberPendingEdits = (messageId: number, sessionId: string) => {
-    this.pendingEditsByMessage.set(messageId, sessionId);
+  /**
+   * Persisted snapshot for edit buttons: which session produced the edits and
+   * the edit details at that moment (they are per-turn and get cleared when
+   * the next turn starts, so the snapshot is required for the buttons to keep
+   * working after new turns and after restarts).
+   */
+  rememberPendingEdits = (messageId: number, sessionId: string, edits?: EditDetail[]) => {
+    this.pendingEditsByMessage.set(messageId, { sessionId, edits });
     this.savePendingEdits();
   };
 
   getPendingEditsSession = (messageId: number): string | undefined => {
+    return this.pendingEditsByMessage.get(messageId)?.sessionId;
+  };
+
+  getPendingEditsSnapshot = (messageId: number): { sessionId: string; edits?: EditDetail[] } | undefined => {
     return this.pendingEditsByMessage.get(messageId);
   };
 
@@ -397,8 +413,8 @@ export class SessionStore {
   savePendingEdits = () => {
     try {
       mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, string> = {};
-      for (const [mid, sid] of this.pendingEditsByMessage) obj[String(mid)] = sid;
+      const obj: Record<string, { sessionId: string; edits?: EditDetail[] }> = {};
+      for (const [mid, snap] of this.pendingEditsByMessage) obj[String(mid)] = snap;
       writeFileSync(this.pendingEditsFile, JSON.stringify(obj, null, 2));
     } catch (err) {
       console.error("[pendingEdits] save failed", err);
@@ -416,7 +432,7 @@ export class SessionStore {
     this.lastChatBySession.delete(sessionId);
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
-    for (const [mid, sid] of this.pendingEditsByMessage) if (sid === sessionId) this.pendingEditsByMessage.delete(mid);
+    for (const [mid, snap] of this.pendingEditsByMessage) if (snap.sessionId === sessionId) this.pendingEditsByMessage.delete(mid);
     this.statusMessageBySession.delete(sessionId);
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
@@ -864,13 +880,19 @@ export class SessionStore {
       console.error("[buttons] load failed", err);
     }
 
-    // Load persisted pending-edits mapping (messageId -> sessionId).
+    // Load persisted pending-edits snapshots (messageId -> {sessionId, edits}).
+    // Old installs stored a plain sessionId string; accept both.
     try {
       if (existsSync(this.pendingEditsFile)) {
-        const parsed = JSON.parse(readFileSync(this.pendingEditsFile, "utf8")) as Record<string, string>;
-        for (const [mid, sid] of Object.entries(parsed)) {
+        const parsed = JSON.parse(readFileSync(this.pendingEditsFile, "utf8")) as Record<string, string | { sessionId: string; edits?: EditDetail[] }>;
+        for (const [mid, value] of Object.entries(parsed)) {
           const id = Number(mid);
-          if (Number.isFinite(id) && sid) this.pendingEditsByMessage.set(id, sid);
+          if (!Number.isFinite(id)) continue;
+          if (typeof value === "string") {
+            if (value) this.pendingEditsByMessage.set(id, { sessionId: value });
+          } else if (value?.sessionId) {
+            this.pendingEditsByMessage.set(id, { sessionId: value.sessionId, edits: value.edits });
+          }
         }
       }
     } catch (err) {

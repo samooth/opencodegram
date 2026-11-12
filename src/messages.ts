@@ -152,6 +152,18 @@ async function resolveSessionForMessage(
     // Fallback to in-memory session if activation couldn't switch route cleanly.
     const inMem = store.findSessionById(repliedSessionId);
     if (inMem) return { session: inMem };
+    // The replied session is gone (deleted/archived): say so instead of
+    // pretending this is an ambiguous group message (which would show the
+    // "¿a qué sesión respondo?" picker and lose the reply context).
+    await tg
+      .sendRichMessage(
+        chatId,
+        `⚠️ <b>La sesión del mensaje contestado ya no está disponible</b> (<code>${esc(repliedSessionId.slice(0, 12))}</code>).\n<i>Puede estar archivada o borrada. Usa /sessions para ver las activas.</i>`,
+        { ...threadOpts(replyThread), reply_markup: { inline_keyboard: [[{ text: "📂 Sesiones", callback_data: "panel:sessions" }]] } },
+      )
+      .catch(() => {});
+    deps.sessionTrace?.("route.reply.missing", { chatId, threadId: replyThread, sessionId: repliedSessionId });
+    return { asked: true };
   }
 
   // 2) Active session for this exact route.

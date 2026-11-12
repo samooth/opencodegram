@@ -43,6 +43,8 @@ The session card (M2) keyboard offers:
 - **📄 Ver completo** — full final answer as message(s).
 - **📜 Historial** — export the complete transcript of the session as an HTML
   document (includes content trimmed from the card pages).
+- **📝 Diff (N)** — full diffs of the edits made during the turn (shown when
+  the turn touched files; survives new turns and restarts).
 
 ## MCP
 

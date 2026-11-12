@@ -116,6 +116,16 @@ describe("SessionStore reply-to routing", () => {
     expect(store.findSessionByAnyMessage(200, 555)).toBeUndefined();
   });
 
+  test("findSessionByAnyMessage trusts the persisted map after a restart (empty memory)", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberMessageSession(100, 555, "ses_a");
+    // Restart simulation: no session in memory, but the mapping is on disk.
+    const reloaded = new SessionStore(dataDir);
+    // Reply routing must still resolve the id so activateSession can revive
+    // the session from the OpenCode server.
+    expect(reloaded.findSessionByAnyMessage(100, 555)).toBe("ses_a");
+  });
+
   test("findSessionByAnyMessage falls back to dashboard, status and card ids", () => {
     const store = new SessionStore(dataDir);
     // Dashboard (M1).
@@ -164,5 +174,34 @@ describe("SessionStore reply-to routing", () => {
     store.forgetChatBindings(100);
     expect(store.messageToSession.has("100:555")).toBe(false);
     expect(store.messageToSession.has("200:555")).toBe(true);
+  });
+});
+
+describe("SessionStore pending-edit snapshots", () => {
+  test("snapshot round-trips through disk and survives restarts", () => {
+    const store = new SessionStore(dataDir);
+    const edits = [{ id: "t1", name: "edit", input: JSON.stringify({ filePath: "src/a.ts" }), status: "success" }];
+    store.rememberPendingEdits(777, "ses_x", edits);
+    expect(store.getPendingEditsSnapshot(777)?.sessionId).toBe("ses_x");
+    expect(store.getPendingEditsSnapshot(777)?.edits?.length).toBe(1);
+    expect(store.getPendingEditsSession(777)).toBe("ses_x");
+
+    const reloaded = new SessionStore(dataDir);
+    const snap = reloaded.getPendingEditsSnapshot(777);
+    expect(snap?.sessionId).toBe("ses_x");
+    expect(snap?.edits?.[0].name).toBe("edit");
+    expect(JSON.parse(snap?.edits?.[0].input ?? "{}").filePath).toBe("src/a.ts");
+  });
+
+  test("legacy plain-sessionId snapshots still load", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberPendingEdits(888, "ses_old");
+    // Re-read with a store that accepts both formats (handled on load).
+    const reloaded = new SessionStore(dataDir);
+    expect(reloaded.getPendingEditsSession(888)).toBe("ses_old");
+    // New format overwrites the legacy one cleanly.
+    reloaded.rememberPendingEdits(888, "ses_new", [{ id: "t", name: "edit" }]);
+    expect(reloaded.getPendingEditsSnapshot(888)?.sessionId).toBe("ses_new");
+    expect(reloaded.getPendingEditsSnapshot(888)?.edits?.length).toBe(1);
   });
 });
