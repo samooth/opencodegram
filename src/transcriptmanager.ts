@@ -352,15 +352,29 @@ ${rows || "<p>(sin bloques)</p>"}
   const refloat = async (chatId: number, s: ChatSession, opts?: { keep?: boolean }): Promise<void> => {
     const messageId = s.transcriptMessageId;
     if (!messageId) return;
-    // Clear first so a concurrent publish cannot edit the message we are about to detach/remove.
-    s.transcriptMessageId = undefined;
-    if (s.statusMessageId === messageId) s.statusMessageId = undefined;
-    if (!opts?.keep) {
-      // Collapse the previous card to a short marker first, so that even if
-      // deletion fails (e.g. message too old) the stale tail does not linger
-      // and confuse the user on the next turn/reply.
-      await tg.editRichMessage(chatId, messageId, "↩️ <i>Turno anterior (ver historial /export)</i>", { reply_markup: { inline_keyboard: [] } }).catch(() => {});
-      await tg.deleteMessage(chatId, messageId).catch(() => {});
+    if (opts?.keep) {
+      // Keep the previous card as history; detach from the live slot.
+      s.transcriptMessageId = undefined;
+      if (s.statusMessageId === messageId) s.statusMessageId = undefined;
+      return;
+    }
+    // Try to remove the previous card entirely.
+    let deleted = false;
+    try {
+      await tg.deleteMessage(chatId, messageId);
+      deleted = true;
+    } catch {
+      deleted = false;
+    }
+    if (deleted) {
+      s.transcriptMessageId = undefined;
+      if (s.statusMessageId === messageId) s.statusMessageId = undefined;
+    } else {
+      // Could not delete (e.g. message too old or rate-limited): reuse the
+      // same message in place for the new turn instead of leaving a duplicate
+      // response message. publishCard will overwrite its content.
+      // Clear any stale status link but keep the card id for editing.
+      if (s.statusMessageId === messageId) s.statusMessageId = undefined;
     }
   };
 
