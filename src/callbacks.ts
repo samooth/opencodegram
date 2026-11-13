@@ -1217,6 +1217,8 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
     }
     state.submitted = true;
     await deps.tg.answerCallbackQuery(cq.id, "Submitting…").catch(() => {});
+    // Route the form's follow-up responses to the tab where the form lives.
+    deps.store.rememberDelivery(state.sessionId, state.chatId, state.threadId);
     try {
       await deps.oc.replyForm(state.sessionId, state.formId, state.answers as Record<string, string | number | boolean | string[]>);
       await deps.tg

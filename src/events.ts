@@ -698,6 +698,9 @@ const handleFormCreated: EventHandler = async (event, deps) => {
   const chatId = resolveChatId(sessionId);
   if (chatId !== undefined && formId) {
     const threadId = resolveThreadId(sessionId);
+    // Make sure the form's follow-up responses are delivered back to the tab
+    // where the form was shown, not to a stale delivery target.
+    store.rememberDelivery(sessionId, chatId, threadId);
     const rawFields = Array.isArray(form.fields) ? form.fields : [];
     const fields: FormField[] = rawFields.map((field: any) => {
       const normalized: FormField = {
