@@ -131,6 +131,7 @@ async function resolveSessionForMessage(
   repliedSessionId: string | undefined,
   rawText: string,
   pending?: { text: string; files?: Array<{ uri: string; name: string }> },
+  isReplyToBot?: boolean,
 ): Promise<SessionResolution> {
   const { store, sessions, me, tg } = deps;
   const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
@@ -224,7 +225,9 @@ async function resolveSessionForMessage(
   }
 
   const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
-  if (chatId >= 0 || isMention) {
+  // A reply to a bot message must never silently spawn a new session,
+  // even if the user also mentioned the bot in their reply text.
+  if (chatId >= 0 || (isMention && !isReplyToBot)) {
     await createNewSession(chatId, true, replyThread);
     const s = await restoreActiveSession(chatId, replyThread);
     return { session: s };
@@ -431,6 +434,7 @@ export async function handleMediaMessage(
     repliedSessionId,
     (msg.text ?? msg.caption ?? "").trim(),
     { text: (msg.text ?? msg.caption ?? "").trim() || "Analiza este archivo", files: mediaToAttach },
+    chatId < 0 && !!msg.reply_to_message && msg.reply_to_message.from?.id === deps.me?.id,
   );
   const s = resolution.session;
   if (!s) {
@@ -482,7 +486,7 @@ export async function handleTextMessage(
 
   // Create or restore the session bound to this tab.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
-  const resolution = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, rawText, { text: rawText });
+  const resolution = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, rawText, { text: rawText }, chatId < 0 && !!msg.reply_to_message && msg.reply_to_message.from?.id === me.id);
   const s = resolution.session;
   if (!s) {
     if (resolution.asked) return;
