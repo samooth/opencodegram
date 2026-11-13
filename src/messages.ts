@@ -205,14 +205,25 @@ async function resolveSessionForMessage(
       const route = store.routeKey(chatId, replyThread);
       if (pending) deps.pendingGroupPrompts.set(route, { ...pending, at: Date.now() });
       deps.sessionTrace?.("route.picker", { chatId, threadId: replyThread, candidates: unique.length });
-      const keyboard = unique.slice(0, 8).map((sid) => {
+      const keyboard = await Promise.all(unique.slice(0, 8).map(async (sid) => {
         const cs = store.findSessionById(sid);
-        const title = (cs?.topicTitle ?? cs?.directory?.split("/").pop() ?? sid).slice(0, 28);
+        let title = cs?.topicTitle ?? cs?.directory?.split("/").pop();
+        let dir = cs?.directory?.split("/").filter(Boolean).pop();
+        // Recover title/directory from OpenCode if not in memory (e.g. after restart).
+        if (!title || !dir) {
+          try {
+            const sess = await deps.oc.client.session.get({ sessionID: sid }) as { title?: string; location?: { directory?: string }; directory?: string };
+            if (!title && sess?.title) title = sess.title;
+            const d = sess?.location?.directory ?? sess?.directory;
+            if (!dir && d) dir = d.split("/").filter(Boolean).pop();
+          } catch { /* ignore */ }
+        }
+        title = (title ?? sid.slice(0, 12)).slice(0, 24);
         const lastPrompt = store.lastPromptBySession.get(sid);
-        const snippet = lastPrompt ? ` — ${lastPrompt.trim().slice(0, 32)}` : "";
+        const snippet = lastPrompt ? ` — ${lastPrompt.trim().slice(0, 28)}` : (dir ? ` · ${dir}` : "");
         const label = `💬 ${title}${snippet}`.slice(0, 64);
         return [{ text: label, callback_data: `use:${sid}` }];
-      });
+      }));
       keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]);
       await tg
         .sendRichMessage(chatId, "🤖 <b>¿A qué sesión respondo?</b>\n<i>Este grupo tiene varias sesiones activas. Elige una para enviar tu mensaje.</i>", {
