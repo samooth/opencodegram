@@ -231,6 +231,8 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
   try {
     const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
+    // Route this session's responses to the tab where the user connected.
+    deps.store.rememberDelivery(sessionId, chatId, threadId);
     // Keep the Telegram tab (topic) named after the connected session.
     if (cs) await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {});
     // Also rename the tab the user is currently in, so it reflects the

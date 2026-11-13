@@ -258,7 +258,7 @@ async function startPrompt(
     store.rememberLastInteracted(chatId, replyThread, s.sessionId);
     // Events for this turn must be delivered here, even if the session is
     // also reachable from another chat/topic.
-    store.rememberDelivery(s.sessionId, chatId, replyThread);
+    deps.store.rememberDelivery(s.sessionId, chatId, replyThread);
     s.promptStartTime = Date.now();
     store.rememberLastChat(s.sessionId, chatId);
     store.rememberLastPrompt(s.sessionId, text);
@@ -524,6 +524,8 @@ export async function handleTextMessage(
       // If listing fails, fall through to runCommand.
     }
 
+    // Route the command's follow-up responses to the tab where it was sent.
+    deps.store.rememberDelivery(s.sessionId, chatId, replyThread);
     try {
       void oc.runCommand(s.sessionId, name, args)
         .then(() => { if (name !== "goal") send(`ran /${esc(name)}`); })
