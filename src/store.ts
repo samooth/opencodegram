@@ -317,31 +317,28 @@ export class SessionStore {
           // ignore
         }
       }
-      // Delete the stale status message (best-effort) and send a fresh,
-      // linear placeholder: separate messages guarantee visual separation
-      // even when the backend collapses "\n" in rich messages.
-      try { await tg.deleteMessage(info.chatId, info.messageId).catch(() => {}); } catch { /* ignore */ }
+      // Edit the stale status message in place (no new messages). The backend
+      // collapses "\n" in rich messages, so put everything inside a <pre>
+      // block (which preserves newlines) and append the resource block.
+      const dummy = { cpuHistory: [], memHistory: [] } as unknown as ChatSession;
+      const resources = renderResourceBlock(dummy);
+      const lines: string[] = [];
+      lines.push("🔄 Reiniciado");
+      if (title) lines.push(`📌 ${title}`);
+      if (model) lines.push(`🧠 ${model}`);
+      if (directory) lines.push(`📁 ${directory.split("/").filter(Boolean).pop() ?? directory}`);
+      lines.push(`Sesión: ${sessionId.slice(0, 16)}`);
+      if (lastPrompt) {
+        lines.push("");
+        lines.push("Última actividad:");
+        lines.push(lastPrompt.slice(0, 200));
+      }
+      const body = lines.join("\n");
+      const html = `<pre>${esc(body)}</pre>\n${resources}`;
       try {
-        const headerLines: string[] = [];
-        headerLines.push("🔄 <b>Reiniciado</b>");
-        if (title) headerLines.push(`📌 ${esc(title)}`);
-        if (model) headerLines.push(`🧠 ${esc(model)}`);
-        if (directory) headerLines.push(`📁 ${esc(directory.split("/").filter(Boolean).pop() ?? directory)}`);
-        headerLines.push(`Sesión: <code>${esc(sessionId.slice(0, 16))}</code>`);
-        await tg.sendRichMessage(info.chatId, headerLines.join(" · "), {
+        await tg.editRichMessage(info.chatId, info.messageId, html, {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
-        });
-        if (lastPrompt) {
-          await tg.sendRichMessage(info.chatId, `Última actividad: ${esc(lastPrompt.slice(0, 200))}`, {
-            ...(info.threadId ? { message_thread_id: info.threadId } : {}),
-          });
-        }
-        // Resource indicators (CPU/GPU/RAM/VRAM) as a separate message.
-        const dummy = { cpuHistory: [], memHistory: [] } as unknown as ChatSession;
-        const resources = renderResourceBlock(dummy);
-        await tg.sendRichMessage(info.chatId, resources, {
-          ...(info.threadId ? { message_thread_id: info.threadId } : {}),
         });
       } catch {
         // ignore
