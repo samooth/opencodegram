@@ -156,6 +156,32 @@ describe("SessionStore reply-to routing", () => {
     expect(store.findSessionByAnyMessage(200, 4242)).toBeUndefined();
   });
 
+  test("findSessionByAnyMessage uses threadBySession when message is unmapped", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberSessionChat("ses_topic", 100);
+    store.threadBySession.set("ses_topic", 42);
+    store.chatBySession.set("ses_topic", 100);
+    // No explicit message map, but the topic has a session binding.
+    expect(store.findSessionByAnyMessage(100, 9999, 42)).toBe("ses_topic");
+    // Different topic does not inherit it.
+    expect(store.findSessionByAnyMessage(100, 9999, 99)).toBeUndefined();
+  });
+
+  test("findSessionByAnyMessage recovers from dashboard/status/card ids", () => {
+    const store = new SessionStore(dataDir);
+    store.dashboardByRoute.set("r1", { sessionId: "ses_dash", chatId: 100, threadId: 5, messageId: 111 });
+    store.rememberStatusMessage("ses_status", 100, 5, 222);
+    const s = makeSession("ses_card");
+    s.statusMessageId = 333;
+    s.transcriptMessageId = 333;
+    store.sessionsById.set("ses_card", s);
+    store.rememberSessionChat("ses_card", 100);
+    expect(store.findSessionByAnyMessage(100, 111)).toBe("ses_dash");
+    expect(store.findSessionByAnyMessage(100, 222)).toBe("ses_status");
+    expect(store.findSessionByAnyMessage(100, 333)).toBe("ses_card");
+    expect(store.findSessionByAnyMessage(100, 444)).toBeUndefined();
+  });
+
   test("findSessionByAnyMessage falls back to dashboard, status and card ids", () => {
     const store = new SessionStore(dataDir);
     // Dashboard (M1).
