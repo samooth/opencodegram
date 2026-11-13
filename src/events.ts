@@ -559,11 +559,23 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       }
       // Optional: deliver the final answer as a separate rich-text message for readability.
       const st = settings.get(chatId);
-      // Linear mode (private chats): always deliver the final answer as a
-      // normal message, never inside a transcript card.
+      // Linear mode (private chats): try to turn the transient "Working…"
+      // message into the final answer so nothing disappears; fall back to a
+      // separate message (and drop the transient) only when it does not fit.
       const linear = chatId >= 0;
+      let linearEditedStatus = false;
+      if (linear && s.statusMessageId && finalText.length <= 3500) {
+        const finalHtml = sessionHeader(s) + markdownToHtml(finalText);
+        const ok = await tg.editRichMessage(chatId, s.statusMessageId, clampText(finalHtml, 3900), threadOpts2)
+          .then(() => true).catch(() => false);
+        if (ok) {
+          linearEditedStatus = true;
+          if (s) s.lastFinalTelegramMessageId = s.statusMessageId;
+          s.statusMessageId = undefined;
+        }
+      }
       const sendSeparately =
-        linear ||
+        (linear && !linearEditedStatus) ||
         st.longAnswerDelivery === "message" ||
         (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold);
       if (sendSeparately) {
@@ -635,6 +647,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         if (finalMessage?.message_id) store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
       }
       if (finalMessage?.message_id && s) s.lastFinalTelegramMessageId = finalMessage.message_id;
+    }
+    // Linear mode: drop the transient "Working…" message if it was not
+    // turned into the final answer (e.g. long answer sent separately).
+    if (chatId >= 0 && s?.statusMessageId) {
+      await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
+      s.statusMessageId = undefined;
     }
     if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
   }
