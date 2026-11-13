@@ -122,7 +122,7 @@ export class TelegramClient {
       }
       if (method === "editMessageText" && json.error_code !== 429) {
         // "message not found" is recovered by callers (resend); avoid spamming the log.
-        if (!/message to edit not found|message can't be edited/i.test(json.description ?? "")) {
+        if (!/message to edit not found|message can't be edited|message was deleted/i.test(json.description ?? "")) {
           console.error("[telegram] editMessageText error:", json.description, "method=", method);
         }
       }
@@ -314,13 +314,13 @@ export class TelegramClient {
       const msg = String(err);
       const m = msg.match(/retry after (\d+)/i);
       if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
-      if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg)) {
+      if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg) && !/message was deleted/i.test(msg)) {
         console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length);
       }
       // The message is gone: let callers recover (e.g. resend the card).
       // Other failures are swallowed to avoid breaking existing callers; the
       // rate-limit backoff above prevents tight retry loops on 429.
-      if (/message to edit not found|message can't be edited|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
+      if (/message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
         throw err;
       }
       return undefined;
@@ -343,10 +343,10 @@ export class TelegramClient {
       const msg = String(err);
       const m = msg.match(/retry after (\d+)/i);
       if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
-      if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg)) {
+      if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg) && !/message was deleted/i.test(msg)) {
         console.error("[telegram] editRichMessageMarkdown failed", chatId, messageId, "len=", safe.length);
       }
-      if (/message to edit not found|message can't be edited|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
+      if (/message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
         throw err;
       }
       return undefined;
