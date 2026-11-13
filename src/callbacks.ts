@@ -7,6 +7,7 @@ import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
+import { showSessionPicker } from "./messages.js";
 import { buildDigestParts } from "./syncview.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
@@ -28,6 +29,7 @@ const PREFIXES = [
   "panel:",
   "perm:",
   "use:",
+  "spick:",
   "del:",
   "delsessions:",
   "model:",
@@ -822,6 +824,14 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "ops:": handleOps,
   "panel:": handlePanel,
   "perm:": handlePerm,
+  "spick:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {
+    const m = data.match(/^spick:(\d+)$/);
+    if (!m) return;
+    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+    const page = parseInt(m[1], 10);
+    if (messageId !== undefined) await deps.tg.deleteMessage(chatId, messageId).catch(() => {});
+    await showSessionPicker(deps, chatId, threadId, page);
+  },
   "use:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {
     const m = data.match(/^use:(.+)$/);
     if (!m) return;

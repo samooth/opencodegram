@@ -124,6 +124,65 @@ export type SessionResolution = { session?: ChatSession; asked?: boolean };
  * Find, restore or create the session that should receive a message.
  * Returns undefined when the tab has no session and none can be created.
  */
+
+
+const PICKER_PAGE_SIZE = 8;
+
+export async function showSessionPicker(
+  deps: BotDeps,
+  chatId: number,
+  threadId: number | undefined,
+  page: number,
+): Promise<void> {
+  const { store, tg, oc } = deps;
+  const candidates = [...store.activeSessionByRoute.entries()]
+    .filter(([k]) => k.startsWith(`${chatId}:`))
+    .map(([, sid]) => sid);
+  const unique = [...new Set(candidates)].filter((sid) => store.findSessionById(sid));
+  if (!unique.length) {
+    await tg.sendRichMessage(chatId, "🤖 <b>No hay sesiones activas en este grupo.</b>", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  const total = unique.length;
+  const totalPages = Math.max(1, Math.ceil(total / PICKER_PAGE_SIZE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = unique.slice(p * PICKER_PAGE_SIZE, (p + 1) * PICKER_PAGE_SIZE);
+
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+  for (const sid of slice) {
+    const cs = store.findSessionById(sid);
+    let title = cs?.topicTitle ?? cs?.directory?.split("/").pop();
+    if (!title) {
+      try {
+        const sess = await oc.client.session.get({ sessionID: sid }) as { title?: string; location?: { directory?: string }; directory?: string };
+        if (sess?.title) title = sess.title;
+        if (!title) {
+          const d = sess?.location?.directory ?? sess?.directory;
+          if (d) title = d.split("/").filter(Boolean).pop();
+        }
+      } catch { /* ignore */ }
+    }
+    title = (title ?? sid.slice(0, 12)).slice(0, 40);
+    rows.push([{ text: title, callback_data: `use:${sid}` }]);
+  }
+
+  if (totalPages > 1) {
+    const nav: Array<{ text: string; callback_data: string }> = [];
+    if (p > 0) nav.push({ text: "◀", callback_data: `spick:${p - 1}` });
+    nav.push({ text: `${p + 1}/${totalPages}`, callback_data: `spick:${p}` });
+    if (p < totalPages - 1) nav.push({ text: "▶", callback_data: `spick:${p + 1}` });
+    rows.push(nav);
+  }
+  rows.push([{ text: "➕ Nueva sesión", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]);
+
+  await tg.sendRichMessage(
+    chatId,
+    `🤖 <b>¿A qué sesión respondo?</b>\n<i>${total} sesiones activas. Elige una.</i>`,
+    { ...threadOpts(threadId), reply_markup: { inline_keyboard: rows } },
+  ).catch(() => {});
+}
+
+
 async function resolveSessionForMessage(
   deps: BotDeps,
   chatId: number,
@@ -205,32 +264,7 @@ async function resolveSessionForMessage(
       const route = store.routeKey(chatId, replyThread);
       if (pending) deps.pendingGroupPrompts.set(route, { ...pending, at: Date.now() });
       deps.sessionTrace?.("route.picker", { chatId, threadId: replyThread, candidates: unique.length });
-      const keyboard = await Promise.all(unique.slice(0, 8).map(async (sid) => {
-        const cs = store.findSessionById(sid);
-        let title = cs?.topicTitle ?? cs?.directory?.split("/").pop();
-        let dir = cs?.directory?.split("/").filter(Boolean).pop();
-        // Recover title/directory from OpenCode if not in memory (e.g. after restart).
-        if (!title || !dir) {
-          try {
-            const sess = await deps.oc.client.session.get({ sessionID: sid }) as { title?: string; location?: { directory?: string }; directory?: string };
-            if (!title && sess?.title) title = sess.title;
-            const d = sess?.location?.directory ?? sess?.directory;
-            if (!dir && d) dir = d.split("/").filter(Boolean).pop();
-          } catch { /* ignore */ }
-        }
-        title = (title ?? sid.slice(0, 12)).slice(0, 24);
-        const lastPrompt = store.lastPromptBySession.get(sid);
-        const snippet = lastPrompt ? ` — ${lastPrompt.trim().slice(0, 28)}` : (dir ? ` · ${dir}` : "");
-        const label = `💬 ${title}${snippet}`.slice(0, 64);
-        return [{ text: label, callback_data: `use:${sid}` }];
-      }));
-      keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]);
-      await tg
-        .sendRichMessage(chatId, "🤖 <b>¿A qué sesión respondo?</b>\n<i>Este grupo tiene varias sesiones activas. Elige una para enviar tu mensaje.</i>", {
-          ...threadOpts(replyThread),
-          reply_markup: { inline_keyboard: keyboard },
-        })
-        .catch(() => {});
+      await showSessionPicker(deps, chatId, replyThread, 0);
       return { asked: true };
     }
   }

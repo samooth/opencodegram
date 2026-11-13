@@ -248,9 +248,13 @@ export class SessionStore {
     const chatRoutes = [...this.activeSessionByRoute.entries()].filter(([k]) => k.startsWith(`${chatId}:`));
     if (chatRoutes.length === 1) return chatRoutes[0][1];
     // If there are several sessions but exactly one is in memory and matches
-    // this chat, prefer it over the picker.
-    const inMem = [...this.sessionsById.keys()].filter((sid) => (this.chatBySession.get(sid) ?? this.findSessionById(sid)?.targetChatId) === chatId);
-    if (inMem.length === 1) return inMem[0];
+    // this chat AND we are in a specific topic, prefer it over the picker.
+    // (Avoid guessing in the main chat, where a single session would
+    // otherwise swallow every unmapped message id.)
+    if (threadId !== undefined) {
+      const inMem = [...this.sessionsById.keys()].filter((sid) => (this.chatBySession.get(sid) ?? this.findSessionById(sid)?.targetChatId) === chatId);
+      if (inMem.length === 1) return inMem[0];
+    }
     return undefined;
   };
 
