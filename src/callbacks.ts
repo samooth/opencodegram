@@ -230,9 +230,25 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const sessionId = m[1];
   await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
   try {
-    await deps.sessions.activateSession(chatId, sessionId, true, threadId);
+    const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
+    // Keep the Telegram tab (topic) named after the connected session.
+    if (cs) await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {});
+    // Also rename the tab the user is currently in, so it reflects the
+    // connected session even when it differs from the session's home topic.
+    if (threadId !== undefined) {
+      let title = cs?.topicTitle;
+      if (!title) {
+        try {
+          const sess = await deps.oc.client.session.get({ sessionID: sessionId }) as { title?: string };
+          title = (sess?.title || sessionId).slice(0, 120);
+        } catch {
+          title = sessionId.slice(0, 120);
+        }
+      }
+      if (title) await deps.tg.editForumTopic(chatId, threadId, title).catch(() => {});
+    }
     // Show session content like a normal message (digest), linked to session.
-    const cs = deps.store.findSessionById(sessionId);
+    const resolvedCs = cs ?? deps.store.findSessionById(sessionId);
     let items: Array<Record<string, unknown>> = [];
     let contextError: string | undefined;
     try {
@@ -241,7 +257,7 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     } catch (err) {
       contextError = String(err);
     }
-    const parts = buildDigestParts(cs ?? null, items, {
+    const parts = buildDigestParts(resolvedCs ?? null, items, {
       title: "📜 Contenido de la sesión",
       note: contextError ? `No se pudo cargar el contexto: ${contextError}` : "✅ Sesión conectada: los mensajes se envían a esta sesión",
       sessionId,
