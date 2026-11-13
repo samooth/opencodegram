@@ -21,7 +21,7 @@ export type GpuInfo = { name: string; usedMB: number; totalMB: number; util: num
 let gpuCache: { time: number; value: GpuInfo | null; refreshing: boolean } | null = null;
 const GPU_CACHE_TTL_MS = 5000;
 
-function refreshGpuCache(): void {
+export function refreshGpuCache(): void {
   if (gpuCache?.refreshing) return;
   if (!gpuCache) gpuCache = { time: 0, value: null, refreshing: true };
   else gpuCache.refreshing = true;
@@ -63,6 +63,18 @@ export function readGpuInfo(): GpuInfo | null {
   const stale = gpuCache?.value ?? null;
   refreshGpuCache();
   return stale;
+}
+
+
+/** Await the GPU cache being populated (best-effort, with timeout). */
+export async function ensureGpuCache(timeoutMs = 2000): Promise<void> {
+  refreshGpuCache();
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const c = gpuCache;
+    if (c && !c.refreshing && c.time > 0) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 let memCache: { time: number; value: number } | null = null;
