@@ -148,7 +148,7 @@ async function main() {
   const ops = createOpsServer({ config, oc, store, metrics, tg, adminChatId: config.ADMIN_TELEGRAM_USER_ID });
   console.log(`[opencodegram] ops: ${ops.url}`);
   // Clean up status messages left stale by a previous (crashed/restarted) process.
-  store.cleanupStaleStatusMessages(tg).catch(() => {});
+  store.cleanupStaleStatusMessages(tg, oc).catch(() => {});
   // Proactively restore persisted sessions so their status cards are refreshed
   // instead of staying on "Reconnecting…".
   (async () => {

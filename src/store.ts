@@ -288,7 +288,7 @@ export class SessionStore {
     }
   };
 
-  cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown>; sendRichMessage: (chatId: number, html: string, opts?: Record<string, unknown>) => Promise<{ message_id?: number }>; deleteMessage: (chatId: number, messageId: number) => Promise<boolean> }) => {
+  cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown>; sendRichMessage: (chatId: number, html: string, opts?: Record<string, unknown>) => Promise<{ message_id?: number }>; deleteMessage: (chatId: number, messageId: number) => Promise<boolean> }, oc?: { client: { session: { get: (args: { sessionID: string }) => Promise<unknown> } } }) => {
     const entries = [...this.statusMessageBySession.entries()];
     for (const [sessionId, info] of entries) {
       try {
@@ -302,23 +302,37 @@ export class SessionStore {
       // On restart, update the stale status message with the current session
       // and its last activity instead of offering a retry prompt.
       const lastPrompt = this.lastPromptBySession.get(sessionId);
-      const title = this.topicTitleBySession.get(sessionId);
-      // The backend collapses "\n" in rich messages, so send each logical
-      // block as its own message to guarantee visual separation (linear).
-      const header = title
-        ? `🔄 <b>Reiniciado</b> — ${esc(title)}\nSesión: <code>${esc(sessionId.slice(0, 16))}</code>`
-        : `🔄 <b>Reiniciado</b>\nSesión: <code>${esc(sessionId.slice(0, 16))}</code>`;
-      try { await tg.deleteMessage(info.chatId, info.messageId).catch(() => {}); } catch { /* ignore */ }
+      let title = this.topicTitleBySession.get(sessionId);
+      let model: string | undefined;
+      let directory: string | undefined;
+      // Fetch the session to recover title + model + directory after a restart.
+      if (oc) {
+        try {
+          const sess = await oc.client.session.get({ sessionID: sessionId }) as { title?: string; model?: { providerID?: string; id?: string; variant?: string }; location?: { directory?: string }; directory?: string };
+          if (!title && sess?.title) title = sess.title;
+          if (sess?.model?.id && sess?.model?.providerID) model = `${sess.model.providerID}/${sess.model.id}${sess.model.variant ? ` (${sess.model.variant})` : ""}`;
+          directory = sess?.location?.directory ?? sess?.directory;
+        } catch {
+          // ignore
+        }
+      }
+      const lines: string[] = [];
+      lines.push("🔄 <b>Reiniciado</b>");
+      if (title) lines.push(`📌 <b>${esc(title)}</b>`);
+      if (model) lines.push(`🧠 <code>${esc(model)}</code>`);
+      if (directory) lines.push(`📁 <code>${esc(directory.split("/").filter(Boolean).pop() ?? directory)}</code>`);
+      lines.push(`Sesión: <code>${esc(sessionId.slice(0, 16))}</code>`);
+      if (lastPrompt) {
+        lines.push("");
+        lines.push("<b>Última actividad:</b>");
+        lines.push(`<i>${esc(lastPrompt.slice(0, 200))}</i>`);
+      }
+      const html = lines.join("\n");
       try {
-        await tg.sendRichMessage(info.chatId, header, {
+        await tg.editRichMessage(info.chatId, info.messageId, html, {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
         });
-        if (lastPrompt) {
-          await tg.sendRichMessage(info.chatId, `Última actividad:\n<i>${esc(lastPrompt.slice(0, 200))}</i>`, {
-            ...(info.threadId ? { message_thread_id: info.threadId } : {}),
-          });
-        }
       } catch {
         // ignore
       }
