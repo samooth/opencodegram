@@ -356,6 +356,10 @@ ${rows || "<p>(sin bloques)</p>"}
     s.transcriptMessageId = undefined;
     if (s.statusMessageId === messageId) s.statusMessageId = undefined;
     if (!opts?.keep) {
+      // Collapse the previous card to a short marker first, so that even if
+      // deletion fails (e.g. message too old) the stale tail does not linger
+      // and confuse the user on the next turn/reply.
+      await tg.editRichMessage(chatId, messageId, "↩️ <i>Turno anterior (ver historial /export)</i>", { reply_markup: { inline_keyboard: [] } }).catch(() => {});
       await tg.deleteMessage(chatId, messageId).catch(() => {});
     }
   };
