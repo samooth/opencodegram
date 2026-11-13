@@ -565,7 +565,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       const linear = chatId >= 0;
       let linearEditedStatus = false;
       if (linear && s.statusMessageId && finalText.length <= 3500) {
-        const finalHtml = sessionHeader(s) + markdownToHtml(finalText);
+        const finalHtml = sessionHeader(s) + markdownToHtml(finalText) + `\n${renderResourceBlock(s)}`;
         const ok = await tg.editRichMessage(chatId, s.statusMessageId, clampText(finalHtml, 3900), threadOpts2)
           .then(() => true).catch(() => false);
         if (ok) {
@@ -589,7 +589,8 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           const parts = sections.length ? sections : splitMarkdown(finalText, 3200);
           for (let i = 0; i < parts.length; i++) {
             const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
-            const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(parts[i])}`;
+            const resourceSuffix = i === parts.length - 1 ? `\n${renderResourceBlock(s)}` : "";
+            const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(parts[i])}${resourceSuffix}`;
             await tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts2).catch(() => {});
           }
         }
