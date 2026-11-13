@@ -134,7 +134,7 @@ export function sessionHeader(session?: { sessionId?: string; topicTitle?: strin
   if (!name && session?.directory) name = session.directory.split("/").filter(Boolean).pop() || "";
   if (!name) name = sid.slice(0, 16);
   const short = sid.slice(0, 8);
-  return `📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>\n`;
+  return `📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>\n\n`;
 }
 
 export function toolIcon(name: string): string {
