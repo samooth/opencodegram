@@ -228,10 +228,15 @@ async function resolveSessionForMessage(
   }
 
   // 2) Active session for this exact route.
-  const ensured = await ensureActiveSession(chatId, replyThread);
-  if (ensured) {
-    deps.sessionTrace?.("route.active", { chatId, threadId: replyThread, sessionId: ensured.sessionId });
-    return { session: ensured };
+  // When replying to a bot message, do not auto-create a session if none is
+  // bound: the reply should route to the replied session (or show the picker),
+  // not silently spawn a new one.
+  if (!isReplyToBot) {
+    const ensured = await ensureActiveSession(chatId, replyThread);
+    if (ensured) {
+      deps.sessionTrace?.("route.active", { chatId, threadId: replyThread, sessionId: ensured.sessionId });
+      return { session: ensured };
+    }
   }
 
   // 3) In groups, prefer the last session the user interacted with.
@@ -273,7 +278,7 @@ async function resolveSessionForMessage(
   const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
   // A reply to a bot message must never silently spawn a new session,
   // even if the user also mentioned the bot in their reply text.
-  if (chatId >= 0 || (isMention && !isReplyToBot)) {
+  if (!isReplyToBot && (chatId >= 0 || isMention)) {
     await createNewSession(chatId, true, replyThread);
     const s = await restoreActiveSession(chatId, replyThread);
     return { session: s };
