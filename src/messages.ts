@@ -5,7 +5,7 @@ import type { Config } from "./config.js";
 import type { SettingsStore } from "./settings.js";
 import type { TelegramClient, TelegramMessage } from "./telegram.js";
 import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
-import { clampText, esc, normalizeCommandText, parseSlashCommand, threadOpts } from "./util.js";
+import { clampText, esc, normalizeCommandText, parseSlashCommand, sessionHeader, threadOpts } from "./util.js";
 import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
 import { notePromptSent } from "./autoretry.js";
@@ -331,7 +331,7 @@ async function startPrompt(
       const opts = isLimit
         ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
         : store.threadOptsFor(s);
-      const _em = await send(`❌ ${esc(errMsg)}`, opts) as any;
+      const _em = await send(`${sessionHeader(s)}❌ ${esc(errMsg)}`, opts) as any;
       if (_em?.message_id) store.rememberMessageSession(chatId, _em.message_id, s.sessionId);
     });
   } catch (err) {
@@ -346,7 +346,7 @@ async function startPrompt(
     const opts2 = isLimit2
       ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
       : store.threadOptsFor(s);
-    const _em2 = await send(`❌ ${esc(errMsg2)}`, opts2) as any;
+    const _em2 = await send(`${sessionHeader(s)}❌ ${esc(errMsg2)}`, opts2) as any;
     if (_em2?.message_id) store.rememberMessageSession(chatId, _em2.message_id, s.sessionId);
   }
 }
@@ -616,10 +616,10 @@ export async function handleTextMessage(
           const kb = isLimit
             ? [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]]
             : [[{ text: "⚡ Commands", callback_data: "panel:commands" }, { text: "🏠 Panel", callback_data: "panel:home" }]];
-          return send(`❌ ${esc(e)}\n\nUse /commands to see available commands.`, { reply_markup: { inline_keyboard: kb } });
+          return send(`${sessionHeader(s)}❌ ${esc(e)}\n\nUse /commands to see available commands.`, { reply_markup: { inline_keyboard: kb } });
         });
     } catch (err) {
-      await send(`❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, {
+      await send(`${sessionHeader(s)}❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, {
         reply_markup: {
           inline_keyboard: [
             [
