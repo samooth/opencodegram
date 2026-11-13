@@ -9,6 +9,7 @@ import { clampText, esc, normalizeCommandText, parseSlashCommand, sessionHeader,
 import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
 import { notePromptSent } from "./autoretry.js";
+import { STATUS_EDIT_INTERVAL_MS } from "./constants.js";
 
 /**
  * Result of downloading a Telegram message's attachments.
@@ -318,7 +319,7 @@ async function startPrompt(
     if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {
       updateStatus(chatId, s).catch(() => {});
-    }, 5000);
+    }, STATUS_EDIT_INTERVAL_MS);
     void oc.prompt(s.sessionId, text, files).catch(async (err) => {
       if (s.statusTimer) {
         clearInterval(s.statusTimer);
