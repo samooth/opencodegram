@@ -5,6 +5,7 @@ import type { ChatSession } from "./types.js";
 import type { TranscriptBlock } from "./transcript.js";
 import { TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS } from "./transcript.js";
 import { esc } from "./util.js";
+import { renderResourceBlock } from "./resources.js";
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
 
@@ -316,22 +317,31 @@ export class SessionStore {
           // ignore
         }
       }
-      const lines: string[] = [];
-      lines.push("🔄 <b>Reiniciado</b>");
-      if (title) lines.push(`📌 <b>${esc(title)}</b>`);
-      if (model) lines.push(`🧠 <code>${esc(model)}</code>`);
-      if (directory) lines.push(`📁 <code>${esc(directory.split("/").filter(Boolean).pop() ?? directory)}</code>`);
-      lines.push(`Sesión: <code>${esc(sessionId.slice(0, 16))}</code>`);
-      if (lastPrompt) {
-        lines.push("");
-        lines.push("<b>Última actividad:</b>");
-        lines.push(`<i>${esc(lastPrompt.slice(0, 200))}</i>`);
-      }
-      const html = lines.join("\n");
+      // Delete the stale status message (best-effort) and send a fresh,
+      // linear placeholder: separate messages guarantee visual separation
+      // even when the backend collapses "\n" in rich messages.
+      try { await tg.deleteMessage(info.chatId, info.messageId).catch(() => {}); } catch { /* ignore */ }
       try {
-        await tg.editRichMessage(info.chatId, info.messageId, html, {
+        const headerLines: string[] = [];
+        headerLines.push("🔄 <b>Reiniciado</b>");
+        if (title) headerLines.push(`📌 ${esc(title)}`);
+        if (model) headerLines.push(`🧠 ${esc(model)}`);
+        if (directory) headerLines.push(`📁 ${esc(directory.split("/").filter(Boolean).pop() ?? directory)}`);
+        headerLines.push(`Sesión: <code>${esc(sessionId.slice(0, 16))}</code>`);
+        await tg.sendRichMessage(info.chatId, headerLines.join(" · "), {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
+        });
+        if (lastPrompt) {
+          await tg.sendRichMessage(info.chatId, `Última actividad: ${esc(lastPrompt.slice(0, 200))}`, {
+            ...(info.threadId ? { message_thread_id: info.threadId } : {}),
+          });
+        }
+        // Resource indicators (CPU/GPU/RAM/VRAM) as a separate message.
+        const dummy = { cpuHistory: [], memHistory: [] } as unknown as ChatSession;
+        const resources = renderResourceBlock(dummy);
+        await tg.sendRichMessage(info.chatId, resources, {
+          ...(info.threadId ? { message_thread_id: info.threadId } : {}),
         });
       } catch {
         // ignore
