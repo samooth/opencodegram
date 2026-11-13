@@ -237,12 +237,20 @@ export class SessionStore {
     // specific bot message was never explicitly mapped.
     const bound = this.activeSessionByRoute.get(this.routeKey(chatId, threadId));
     if (bound) return bound;
-    // Private, single-session chats: if exactly one session is bound in the
-    // whole chat, use it rather than asking "which session?".
-    if (threadId === undefined) {
-      const chatRoutes = [...this.activeSessionByRoute.entries()].filter(([k]) => k.startsWith(`${chatId}:`));
-      if (chatRoutes.length === 1) return chatRoutes[0][1];
+    // If the reply is in a topic, any session bound to that topic (via
+    // threadBySession) is a strong candidate.
+    if (threadId !== undefined) {
+      for (const [sid, tid] of this.threadBySession) {
+        if (tid === threadId && (this.chatBySession.get(sid) ?? chatId) === chatId) return sid;
+      }
     }
+    // Single-session chats (private or a group with one session): use it.
+    const chatRoutes = [...this.activeSessionByRoute.entries()].filter(([k]) => k.startsWith(`${chatId}:`));
+    if (chatRoutes.length === 1) return chatRoutes[0][1];
+    // If there are several sessions but exactly one is in memory and matches
+    // this chat, prefer it over the picker.
+    const inMem = [...this.sessionsById.keys()].filter((sid) => (this.chatBySession.get(sid) ?? this.findSessionById(sid)?.targetChatId) === chatId);
+    if (inMem.length === 1) return inMem[0];
     return undefined;
   };
 
