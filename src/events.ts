@@ -648,10 +648,10 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       }
       if (finalMessage?.message_id && s) s.lastFinalTelegramMessageId = finalMessage.message_id;
     }
-    // Linear mode: drop the transient "Working…" message if it was not
-    // turned into the final answer (e.g. long answer sent separately).
+    // Linear mode: keep the transient "Working…" message (with the streamed
+    // partial) instead of deleting it, so nothing disappears; the final answer
+    // is appended below as a normal message. Only clear the reference.
     if (chatId >= 0 && s?.statusMessageId) {
-      await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
       s.statusMessageId = undefined;
     }
     if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
