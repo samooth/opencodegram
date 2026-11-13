@@ -227,10 +227,26 @@ export class SessionStore {
    */
   findSessionByAnyMessage = (chatId: number, messageId: number, threadId?: number): string | undefined => {
     const key = `${chatId}:${messageId}`;
-    // The explicit map is authoritative: even when the session is not in
-    // memory (e.g. after a restart), reply routing can revive it via
-    // activateSession (which fetches it from the OpenCode server).
-    let mapped = this.messageToSession.get(key) ?? this.fallbackSessionByMessage(chatId, messageId);
+    // 1) Explicit message->session map (persisted).
+    let mapped = this.messageToSession.get(key);
+    // 2) Dashboard / status-card / in-memory card ids (not persisted, but
+    //    cover messages sent in this process).
+    if (!mapped) {
+      for (const info of this.dashboardByRoute.values()) {
+        if (info.chatId === chatId && info.messageId === messageId) { mapped = info.sessionId; break; }
+      }
+    }
+    if (!mapped) {
+      for (const [sid, info] of this.statusMessageBySession) {
+        if (info.chatId === chatId && info.messageId === messageId) { mapped = sid; break; }
+      }
+    }
+    if (!mapped) {
+      for (const [sid, sess] of this.sessionsById) {
+        if ((sess.targetChatId ?? this.chatBySession.get(sid)) !== chatId) continue;
+        if (sess.statusMessageId === messageId || sess.transcriptMessageId === messageId || sess.lastFinalTelegramMessageId === messageId) { mapped = sid; break; }
+      }
+    }
     // Legacy fallback: very old installs stored keys without the chat prefix.
     if (!mapped) {
       const legacy = this.messageToSession.get(String(messageId));
@@ -265,20 +281,6 @@ export class SessionStore {
     if (threadId !== undefined) {
       const inMem = [...this.sessionsById.keys()].filter((sid) => (this.chatBySession.get(sid) ?? this.findSessionById(sid)?.targetChatId) === chatId);
       if (inMem.length === 1) return inMem[0];
-    }
-    return undefined;
-  };
-
-  private fallbackSessionByMessage = (chatId: number, messageId: number): string | undefined => {
-    for (const info of this.dashboardByRoute.values()) {
-      if (info.chatId === chatId && info.messageId === messageId) return info.sessionId;
-    }
-    for (const [sid, info] of this.statusMessageBySession) {
-      if (info.chatId === chatId && info.messageId === messageId) return sid;
-    }
-    for (const [sid, s] of this.sessionsById) {
-      if ((s.targetChatId ?? this.chatBySession.get(sid)) !== chatId) continue;
-      if (s.statusMessageId === messageId || s.transcriptMessageId === messageId || s.lastFinalTelegramMessageId === messageId) return sid;
     }
     return undefined;
   };
