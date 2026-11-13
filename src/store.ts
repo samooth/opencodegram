@@ -302,9 +302,16 @@ export class SessionStore {
       // On restart, update the stale status message with the current session
       // and its last activity instead of offering a retry prompt.
       const lastPrompt = this.lastPromptBySession.get(sessionId);
-      const activity = lastPrompt ? `\n<b>Última actividad:</b> ${esc(lastPrompt.slice(0, 200))}` : "";
+      const title = this.topicTitleBySession.get(sessionId);
+      const lines: string[] = [];
+      lines.push("🔄 <b>Reiniciado</b>");
+      if (title) lines.push(`📌 <b>${esc(title)}</b>`);
+      lines.push(`Sesión en curso: <code>${esc(sessionId.slice(0, 16))}</code>`);
+      if (lastPrompt) lines.push(`\n<b>Última actividad:</b>\n<i>${esc(lastPrompt.slice(0, 200))}</i>`);
+      lines.push("\nContinúa con tu próximo mensaje.");
+      const html = lines.join("\n");
       try {
-        await tg.editRichMessage(info.chatId, info.messageId, `🔄 <b>Reiniciado</b>\nSesión en curso: <code>${esc(sessionId)}</code>${activity}\nContinúa con tu próximo mensaje.`, {
+        await tg.editRichMessage(info.chatId, info.messageId, html, {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
         });
