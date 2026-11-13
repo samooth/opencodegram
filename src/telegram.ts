@@ -315,7 +315,7 @@ export class TelegramClient {
       const m = msg.match(/retry after (\d+)/i);
       if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
       if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg) && !/message was deleted/i.test(msg)) {
-        console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length);
+        console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length, "err=", msg);
       }
       // The message is gone: let callers recover (e.g. resend the card).
       // Other failures are swallowed to avoid breaking existing callers; the
@@ -344,7 +344,7 @@ export class TelegramClient {
       const m = msg.match(/retry after (\d+)/i);
       if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
       if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg) && !/message was deleted/i.test(msg)) {
-        console.error("[telegram] editRichMessageMarkdown failed", chatId, messageId, "len=", safe.length);
+        console.error("[telegram] editRichMessageMarkdown failed", chatId, messageId, "len=", safe.length, "err=", msg);
       }
       if (/message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
         throw err;
