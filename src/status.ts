@@ -574,7 +574,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // Streaming partial text (linear mode): show the response as it grows.
         if (settings.showPartialText && s.buffer?.trim()) {
           const txt = s.buffer.trim().slice(-Math.min(settings.partialTextLines ?? 500, 1200));
-          lines.push(markdownToHtml(txt));
+          lines.push(`<blockquote>${markdownToHtml(txt)}</blockquote>`);
         }
         const tools = s.toolCallDetails.length;
         const failedTools = s.toolCallDetails.filter((d) => d.status === "failed").length;

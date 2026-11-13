@@ -571,7 +571,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       const linear = chatId >= 0;
       let linearEditedStatus = false;
       if (linear && s.statusMessageId && finalText.length <= 3500) {
-        const finalHtml = sessionHeader(s) + markdownToHtml(finalText) + `\n${renderResourceBlock(s)}`;
+        const finalHtml = sessionHeader(s) + `<blockquote>${markdownToHtml(finalText)}</blockquote>` + `\n${renderResourceBlock(s)}`;
         const ok = await tg.editRichMessage(chatId, s.statusMessageId, clampText(finalHtml, 3900), threadOpts2)
           .then(() => true).catch(() => false);
         if (ok) {
@@ -596,7 +596,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           for (let i = 0; i < parts.length; i++) {
             const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
             const resourceSuffix = i === parts.length - 1 ? `\n${renderResourceBlock(s)}` : "";
-            const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(parts[i])}${resourceSuffix}`;
+            const piece = `${sessionHeader(s)}${prefix}<blockquote>${markdownToHtml(parts[i])}</blockquote>${resourceSuffix}`;
             await tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts2).catch(() => {});
           }
         }
@@ -638,7 +638,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           extraHtml += `\n\n<blockquote expandable>🔧 Tool calls (${otherDetails.length})\n${body}</blockquote>`;
         }
       }
-      const finalHtml = sessionHeader(s) + answerHtml + extraHtml + copyRow + `\n${renderResourceBlock(s)}`;
+      const finalHtml = sessionHeader(s) + `<blockquote>${answerHtml}</blockquote>` + extraHtml + copyRow + `\n${renderResourceBlock(s)}`;
       const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
       const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
       const rapidFinal = !!(s && !(chatId >= 0) && prevFinalTelegramMessageId && Date.now() - prevFinalSentAt < 12000);
