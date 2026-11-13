@@ -454,6 +454,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.toolCallDetails = [];
     s.stopped = false;
     s.statusLastUpdate = Date.now();
+    // Clean up the previous turn's leftover final-answer message (when it was
+    // delivered as a separate message) so its tail does not linger and confuse
+    // the user on the next turn/reply. Best-effort; the transcript keeps it.
+    const prevFinalMsg = s.lastFinalTelegramMessageId;
+    if (prevFinalMsg && prevFinalMsg !== s.transcriptMessageId) {
+      await tg.deleteMessage(chatId, prevFinalMsg).catch(() => {});
+    }
+    s.lastFinalTelegramMessageId = undefined;
+    s.lastFinalSentAt = undefined;
     try {
       if (unified && dashboard) {
         await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
