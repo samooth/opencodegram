@@ -268,6 +268,16 @@ ${rows || "<p>(sin bloques)</p>"}
     } else {
       keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     }
+    // Duplicate the pagination row at the bottom too, so long messages can be
+    // navigated without scrolling back to the top of the button block.
+    if (total > 1) {
+      const navBottom: Array<{ text: string; callback_data: string }> = [];
+      if (page > 0) navBottom.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
+      navBottom.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
+      if (page < total - 1) navBottom.push({ text: "▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
+      keyboard.push(navBottom);
+    }
+
     return keyboard;
   };
 
