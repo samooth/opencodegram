@@ -485,14 +485,15 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     try {
       const res = await oc.client.session.get({ sessionID: s.sessionId });
       const title = String((res as { title?: string })?.title ?? "").trim().slice(0, 120);
-      if (!title || title === s.topicTitle) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "same-or-empty" }); return; }
+      if (!title) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "empty-title" }); return; }
+      if (title === s.topicTitle) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "same" }); return; }
       const targetChat = s.targetChatId ?? chatId;
       await tg.editForumTopic(targetChat, threadId, title);
       s.topicTitle = title;
       store.rememberTopicTitle(s.sessionId, title);
       logger.breadcrumb("sessions", "syncTopicTitle.done", { sessionId: s.sessionId, threadId, title });
-    } catch {
-      // Cosmetic only: never fail a turn because a topic title could not be updated.
+    } catch (err) {
+      logger.warn("sessions", "syncTopicTitle.failed", { sessionId: s.sessionId, threadId, error: String(err) });
     }
   };
 
