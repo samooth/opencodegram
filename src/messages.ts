@@ -277,7 +277,13 @@ async function startPrompt(
         s.statusTimer = undefined;
       }
       await finishStatus(chatId, s).catch(() => {});
-      await send(`❌ ${esc(String(err))}`, store.threadOptsFor(s));
+      const errMsg = String(err);
+      const isLimit = /limit|usage|quota|provider|subscribe|free/i.test(errMsg);
+      const limitKb = [[{ text: "Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "Sesiones", callback_data: "panel:sessions" }]];
+      const opts = isLimit
+        ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
+        : store.threadOptsFor(s);
+      await send(`❌ ${esc(errMsg)}`, opts);
     });
   } catch (err) {
     if (s.statusTimer) {
@@ -285,7 +291,13 @@ async function startPrompt(
       s.statusTimer = undefined;
     }
     await finishStatus(chatId, s).catch(() => {});
-    await send(`❌ ${esc(String(err))}`, store.threadOptsFor(s));
+    const errMsg2 = String(err);
+    const isLimit2 = /limit|usage|quota|provider|subscribe|free/i.test(errMsg2);
+    const limitKb = [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]];
+    const opts2 = isLimit2
+      ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
+      : store.threadOptsFor(s);
+    await send(`❌ ${esc(errMsg2)}`, opts2);
   }
 }
 
@@ -532,16 +544,14 @@ export async function handleTextMessage(
     try {
       void oc.runCommand(s.sessionId, name, args)
         .then(() => { if (name !== "goal") send(`ran /${esc(name)}`); })
-        .catch((err) => send(`❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "⚡ Commands", callback_data: "panel:commands" },
-                { text: "🏠 Panel", callback_data: "panel:home" },
-              ],
-            ],
-          },
-        }));
+        .catch((err) => {
+          const e = String(err);
+          const isLimit = /limit|usage|quota|provider|subscribe|free/i.test(e);
+          const kb = isLimit
+            ? [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]]
+            : [[{ text: "⚡ Commands", callback_data: "panel:commands" }, { text: "🏠 Panel", callback_data: "panel:home" }]];
+          return send(`❌ ${esc(e)}\n\nUse /commands to see available commands.`, { reply_markup: { inline_keyboard: kb } });
+        });
     } catch (err) {
       await send(`❌ ${esc(String(err))}\n\nUse /commands to see available commands.`, {
         reply_markup: {
