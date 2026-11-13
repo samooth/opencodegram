@@ -602,7 +602,9 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   }
   if (data === "panel:sessions") {
     await tg.answerCallbackQuery(cq.id);
-    await panels.showSessions(chatId, 0, editId, threadId);
+    // Always send a fresh message (do not replace the clicked one) so the
+    // sessions list stays visible and does not overwrite the current view.
+    await panels.showSessions(chatId, 0, undefined, threadId);
     return;
   }
   if (data === "panel:new") {
