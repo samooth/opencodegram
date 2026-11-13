@@ -233,10 +233,15 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
   try {
     const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
-    // Route this session's responses to the tab where the user connected.
-    deps.store.rememberDelivery(sessionId, chatId, threadId);
     // Keep the Telegram tab (topic) named after the connected session.
-    if (cs) await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {});
+    if (cs) {
+      // Force a rename even if the cached topicTitle is stale.
+      cs.topicTitle = undefined;
+      await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {});
+    }
+    // Do NOT redirect delivery here: a busy (detached) session must keep
+    // answering in the tab where its turn started. Delivery is updated when
+    // the user actually sends a prompt (startPrompt) in this tab.
     // Also rename the tab the user is currently in, so it reflects the
     // connected session even when it differs from the session's home topic.
     if (threadId !== undefined) {
