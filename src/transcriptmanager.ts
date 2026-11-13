@@ -136,8 +136,8 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
 
     // When streaming a bottom section (e.g. live thought), protect it from being truncated.
     if (extraBottom) {
-      const tailParts = [indicator, extraBottom, resources].filter(Boolean);
-      const headParts = [header, extraTop].filter(Boolean);
+      const tailParts = [extraBottom, resources].filter(Boolean);
+      const headParts = [header, indicator, extraTop].filter(Boolean);
       const overhead = headParts.join("\n\n").length + (headParts.length ? 2 : 0) + tailParts.join("\n\n").length + (tailParts.length ? 2 : 0);
       let budget = 3900 - overhead - 2;
       let content = page.html;
@@ -157,7 +157,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
     }
 
-    const parts = [header, extraTop, page.html, indicator, resources].filter(Boolean);
+    const parts = [header, indicator, extraTop, page.html, resources].filter(Boolean);
     return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
   };
 
@@ -267,15 +267,6 @@ ${rows || "<p>(sin bloques)</p>"}
       ]);
     } else {
       keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    }
-    // Duplicate the pagination row at the bottom too, so long messages can be
-    // navigated without scrolling back to the top of the button block.
-    if (total > 1) {
-      const navBottom: Array<{ text: string; callback_data: string }> = [];
-      if (page > 0) navBottom.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
-      navBottom.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
-      if (page < total - 1) navBottom.push({ text: "▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
-      keyboard.push(navBottom);
     }
 
     return keyboard;
