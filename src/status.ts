@@ -565,6 +565,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`);
         const prompt = store?.lastPromptBySession.get(s.sessionId);
         if (prompt?.trim()) lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
+        // Streaming partial text (linear mode): show the response as it grows.
+        if (settings.showPartialText && s.buffer?.trim()) {
+          const txt = s.buffer.trim().slice(-Math.min(settings.partialTextLines ?? 500, 1200));
+          lines.push(markdownToHtml(txt));
+        }
         const tools = s.toolCallDetails.length;
         const failedTools = s.toolCallDetails.filter((d) => d.status === "failed").length;
         if (tools) lines.push(`<i>🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}</i>`);
