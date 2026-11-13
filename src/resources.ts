@@ -69,12 +69,9 @@ export function readGpuInfo(): GpuInfo | null {
 /** Await the GPU cache being populated (best-effort, with timeout). */
 export async function ensureGpuCache(timeoutMs = 2000): Promise<void> {
   refreshGpuCache();
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const c = gpuCache;
-    if (c && !c.refreshing && c.time > 0) return;
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  // Non-blocking: trigger refresh and return immediately. The cache will
+  // populate in the background; renders use the last known value.
+  return;
 }
 
 let memCache: { time: number; value: number } | null = null;
