@@ -364,7 +364,8 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
   const out = e.data?.tokens?.output;
   if (typeof out === "number") s.lastOutputTokens = out;
   const inp = e.data?.tokens?.input;
-  if (typeof inp === "number") s.lastContextTokens = inp;
+  const cacheRead = e.data?.tokens?.cache?.read ?? 0;
+  if (typeof inp === "number") s.lastContextTokens = inp + (typeof cacheRead === "number" ? cacheRead : 0);
   // "tool-calls" means the turn continues with another step; any other
   // finish reason (stop / length / error) is the real end of the turn.
   const finish = e.data?.finish ?? e.data?.rawFinish;
@@ -837,7 +838,7 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
       await tg.sendRichMessage(
         chatId,
         sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}\n\n⛔ Auto-retry limit reached (${decision.attempts}/${decision.maxAttempts}). Use /retry to try again manually.`,
-        threadOpts(threadId),
+        { ...threadOpts(threadId), reply_markup: { inline_keyboard: [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } },
       );
       retryMessageBySession.delete(sid);
       cancelAutoRetry(sid);
