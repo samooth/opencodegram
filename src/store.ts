@@ -224,12 +224,25 @@ export class SessionStore {
    * status registry and in-memory session card ids, so replying to any bot
    * message (dashboard, panel, card, final answer) routes to its session.
    */
-  findSessionByAnyMessage = (chatId: number, messageId: number): string | undefined => {
+  findSessionByAnyMessage = (chatId: number, messageId: number, threadId?: number): string | undefined => {
     const key = `${chatId}:${messageId}`;
     // The explicit map is authoritative: even when the session is not in
     // memory (e.g. after a restart), reply routing can revive it via
     // activateSession (which fetches it from the OpenCode server).
-    return this.messageToSession.get(key) ?? this.fallbackSessionByMessage(chatId, messageId);
+    const mapped = this.messageToSession.get(key) ?? this.fallbackSessionByMessage(chatId, messageId);
+    if (mapped) return mapped;
+    // Fall back to the session bound to the tab where the reply happened, so
+    // replies in private/threaded chats still route to a session even when the
+    // specific bot message was never explicitly mapped.
+    const bound = this.activeSessionByRoute.get(this.routeKey(chatId, threadId));
+    if (bound) return bound;
+    // Private, single-session chats: if exactly one session is bound in the
+    // whole chat, use it rather than asking "which session?".
+    if (threadId === undefined) {
+      const chatRoutes = [...this.activeSessionByRoute.entries()].filter(([k]) => k.startsWith(`${chatId}:`));
+      if (chatRoutes.length === 1) return chatRoutes[0][1];
+    }
+    return undefined;
   };
 
   private fallbackSessionByMessage = (chatId: number, messageId: number): string | undefined => {

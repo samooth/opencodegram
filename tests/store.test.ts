@@ -126,6 +126,36 @@ describe("SessionStore reply-to routing", () => {
     expect(reloaded.findSessionByAnyMessage(100, 555)).toBe("ses_a");
   });
 
+  test("threaded mode: each topic resolves to its own session after reload", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberSessionChat("ses_topic_10", 100);
+    store.rememberSessionChat("ses_topic_11", 100);
+    store.rememberActiveRoute(100, 10, "ses_topic_10");
+    store.rememberActiveRoute(100, 11, "ses_topic_11");
+
+    const reloaded = new SessionStore(dataDir);
+    // Each tab keeps its own persisted binding.
+    expect(reloaded.activeSessionByRoute.get("100:10")).toBe("ses_topic_10");
+    expect(reloaded.activeSessionByRoute.get("100:11")).toBe("ses_topic_11");
+    // Cross-tab isolation: a message id in one topic must not resolve to the
+    // other topic's session via the thread fallback.
+    expect(reloaded.findSessionByAnyMessage(100, 999, 10)).toBe("ses_topic_10");
+    expect(reloaded.findSessionByAnyMessage(100, 999, 11)).toBe("ses_topic_11");
+    // The main chat (no thread) is a distinct route and does not collide.
+    expect(reloaded.findSessionByAnyMessage(100, 999, undefined)).toBeUndefined();
+  });
+
+  test("private single-session chat: reply falls back to the tab's session", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberSessionChat("ses_private", 100);
+    store.rememberActiveRoute(100, undefined, "ses_private");
+    // A bot message that was never explicitly mapped still routes to the
+    // session bound to this (private, main) chat.
+    expect(store.findSessionByAnyMessage(100, 4242)).toBe("ses_private");
+    // A different chat does not inherit it.
+    expect(store.findSessionByAnyMessage(200, 4242)).toBeUndefined();
+  });
+
   test("findSessionByAnyMessage falls back to dashboard, status and card ids", () => {
     const store = new SessionStore(dataDir);
     // Dashboard (M1).
