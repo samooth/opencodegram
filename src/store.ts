@@ -288,7 +288,7 @@ export class SessionStore {
     }
   };
 
-  cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown>; sendRichMessage: (chatId: number, html: string, opts?: Record<string, unknown>) => Promise<{ message_id?: number }> }) => {
+  cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown>; sendRichMessage: (chatId: number, html: string, opts?: Record<string, unknown>) => Promise<{ message_id?: number }>; deleteMessage: (chatId: number, messageId: number) => Promise<boolean> }) => {
     const entries = [...this.statusMessageBySession.entries()];
     for (const [sessionId, info] of entries) {
       try {
@@ -307,11 +307,19 @@ export class SessionStore {
       lines.push("🔄 <b>Reiniciado</b>");
       if (title) lines.push(`📌 <b>${esc(title)}</b>`);
       lines.push(`Sesión en curso: <code>${esc(sessionId.slice(0, 16))}</code>`);
-      if (lastPrompt) lines.push(`\n<b>Última actividad:</b>\n<i>${esc(lastPrompt.slice(0, 200))}</i>`);
-      lines.push("\nContinúa con tu próximo mensaje.");
+      if (lastPrompt) {
+        lines.push("");
+        lines.push("<b>Última actividad:</b>");
+        lines.push(`<i>${esc(lastPrompt.slice(0, 200))}</i>`);
+      }
+      lines.push("");
+      lines.push("Continúa con tu próximo mensaje.");
       const html = lines.join("\n");
+      // Delete the stale message and send a fresh one: editing a stale rich
+      // message sometimes collapses newlines in the backend.
+      try { await tg.deleteMessage(info.chatId, info.messageId).catch(() => {}); } catch { /* ignore */ }
       try {
-        await tg.editRichMessage(info.chatId, info.messageId, html, {
+        await tg.sendRichMessage(info.chatId, html, {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
         });
