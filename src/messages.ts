@@ -388,11 +388,14 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // session instead of showing the "which session?" picker.
   if (!repliedSessionId && replyMessageId && msg.reply_to_message?.from?.id === me.id) {
     const repliedText = ((msg.reply_to_message as any)?.text ?? (msg.reply_to_message as any)?.caption ?? "").toString();
-    // Only treat it as a session-owned message if it looks like one (header).
-    if (/📌|Working…|Edits|Full diffs|Contenido de la sesión/.test(repliedText)) {
-      const m = repliedText.match(/ses_[A-Za-z0-9]+/);
-      if (m) repliedSessionId = m[0];
-    }
+    // Recover the session from a ses_ id embedded in the replied bot message
+    // (cards, digests, final answers and errors all include it in their
+    // header). This keeps replies routing to the right session even when the
+    // explicit message->session map missed this message.
+    const matches = repliedText.match(/ses_[A-Za-z0-9]+/g);
+    // Only recover when there is a single session id in the message (avoid
+    // mis-routing replies to session lists).
+    if (matches && matches.length === 1) repliedSessionId = matches[0];
   }
   deps.metrics?.inc("messages");
   // Ignore commands explicitly addressed to another bot.

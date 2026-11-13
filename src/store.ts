@@ -230,7 +230,18 @@ export class SessionStore {
     // The explicit map is authoritative: even when the session is not in
     // memory (e.g. after a restart), reply routing can revive it via
     // activateSession (which fetches it from the OpenCode server).
-    const mapped = this.messageToSession.get(key) ?? this.fallbackSessionByMessage(chatId, messageId);
+    let mapped = this.messageToSession.get(key) ?? this.fallbackSessionByMessage(chatId, messageId);
+    // Legacy fallback: very old installs stored keys without the chat prefix.
+    if (!mapped) {
+      const legacy = this.messageToSession.get(String(messageId));
+      if (legacy) mapped = legacy;
+    }
+    // Last resort: scan keys ending in ":<messageId>" for this chat.
+    if (!mapped) {
+      for (const [k, v] of this.messageToSession) {
+        if (k.endsWith(`:${messageId}`) && k.startsWith(`${chatId}:`)) { mapped = v; break; }
+      }
+    }
     if (mapped) return mapped;
     // Fall back to the session bound to the tab where the reply happened, so
     // replies in private/threaded chats still route to a session even when the
