@@ -413,6 +413,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    * latest thought at the bottom for readability.
    */
   const publishCard = async (chatId: number, s: ChatSession): Promise<void> => {
+    // Linear mode (private chats): no transcript card.
+    if (chatId >= 0) return;
     if (!transcript) return;
     const settings = getSettings(chatId);
     const unified = settings.displayMode === "unified";
@@ -461,6 +463,36 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     try {
       if (unified && dashboard) {
         await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
+      }
+      // Linear mode (private chats): no transcript card. Just a transient
+      // "Working…" message that is updated in place and removed at the end;
+      // the final answer is delivered as a normal message (events.ts).
+      const linear = chatId >= 0;
+      if (linear) {
+        const opts = threadOptsFor(s);
+        const lines: string[] = [];
+        lines.unshift(sessionHeader(s).trimEnd());
+        lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
+        const customBtns = store?.getCustomButtons?.(chatId) ?? [];
+        const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
+        const keyboard = [
+          [{ text: "⏹ Stop", callback_data: "panel:stop" }],
+          ...btnRows,
+        ];
+        const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
+          ...opts,
+          reply_markup: { inline_keyboard: keyboard },
+        });
+        s.statusMessageId = sent.message_id;
+        s.transcriptMessageId = undefined;
+        if (sent?.message_id) {
+          rememberStatusMessage(s.sessionId, chatId, s.targetThreadId ?? s.threadId, sent.message_id);
+          store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
+        }
+        if (unified && dashboard) {
+          await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
+        }
+        return;
       }
       if (transcript) {
         // Every turn gets its own card created immediately at the bottom, with
@@ -523,6 +555,27 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       void flushDraft(chatId, s);
     }
     try {
+      // Linear mode (private chats): update the transient "Working…" message.
+      if (chatId >= 0) {
+        const settings = getSettings(chatId);
+        const opts = threadOptsFor(s);
+        const lines: string[] = [];
+        lines.unshift(sessionHeader(s).trimEnd());
+        const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
+        lines.push(s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`);
+        const prompt = store?.lastPromptBySession.get(s.sessionId);
+        if (prompt?.trim()) lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
+        const tools = s.toolCallDetails.length;
+        const failedTools = s.toolCallDetails.filter((d) => d.status === "failed").length;
+        if (tools) lines.push(`<i>🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}</i>`);
+        const tokens = s.lastOutputTokens ?? 0;
+        if (tokens && elapsed > 1) lines.push(`<i>⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok</i>`);
+        await tg.editRichMessage(chatId, s.statusMessageId!, clampText(lines.join("\n"), 3900), {
+          ...opts,
+          reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
+        }).catch(() => {});
+        return;
+      }
       if (transcript) {
         await publishCard(chatId, s);
         return;
@@ -715,9 +768,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       // Keep the finished card attached: it holds the final answer and stays
       // navigable (pagination). The next turn start decides whether it is
       // replaced (única), preserved (conservar) or kept editing in place (fija).
+      const linear = chatId >= 0;
       const finishedCardId = s.transcriptMessageId;
-      await publishCard(chatId, s);
+      if (!linear) await publishCard(chatId, s);
       // The card stays alive for pagination; only the live status ends.
+      if (linear) {
+        // Linear mode: remove the transient "Working…" message; the final
+        // answer is delivered as a normal message by events.ts.
+        if (s.statusMessageId) await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
+      }
       s.statusMessageId = undefined;
       forgetStatusMessage(s.sessionId);
       if (unified && dashboard) {
@@ -727,8 +786,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       // paginated content intact. A snapshot of this turn's edit details is
       // persisted under BOTH message ids so the buttons and the 📝 Diff card
       // button keep working after new turns and restarts.
-      if (editDetails.length && finishedCardId) {
-        const editMessageId = finishedCardId;
+      if (editDetails.length && (finishedCardId || linear)) {
+        const editMessageId = finishedCardId ?? 0;
         const editLines: string[] = [];
         for (const detail of editDetails) {
           const file = relativeEditPath(s, extractEditFile(detail.input) ?? `edit ${editLines.length + 1}`);
@@ -737,18 +796,36 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>` : ""}`);
         }
         try {
-          const sent = await tg.sendRichMessage(chatId, `${sessionHeader(s)}<b>Edits</b> (${editDetails.length})\n${editLines.join("\n")}`, {
-            ...threadOptsFor(s),
-            reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, editMessageId) },
-          });
-          const snapshot = editDetails.map((d) => ({ ...d }));
-          if (sent?.message_id) {
-            pendingEdits.set(sent.message_id, s);
-            store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
-            // Replying to the edits message must route to its session.
-            store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
+          const linear = chatId >= 0;
+          const text = `${sessionHeader(s)}<b>Edits</b> (${editDetails.length})\n${editLines.join("\n")}`;
+          if (linear) {
+            // Standalone edits message: its own id is the reference for the
+            // ✏️/Full diffs buttons and the persisted snapshot.
+            const sent = await tg.sendRichMessage(chatId, text, { ...threadOptsFor(s) });
+            const snapshot = editDetails.map((d) => ({ ...d }));
+            if (sent?.message_id) {
+              pendingEdits.set(sent.message_id, s);
+              store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
+              store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
+              await tg.editRichMessage(chatId, sent.message_id, text, {
+                ...threadOptsFor(s),
+                reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, sent.message_id) },
+              }).catch(() => {});
+            }
+          } else {
+            const sent = await tg.sendRichMessage(chatId, text, {
+              ...threadOptsFor(s),
+              reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, editMessageId) },
+            });
+            const snapshot = editDetails.map((d) => ({ ...d }));
+            if (sent?.message_id) {
+              pendingEdits.set(sent.message_id, s);
+              store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
+              // Replying to the edits message must route to its session.
+              store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
+            }
+            if (finishedCardId) store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
           }
-          if (finishedCardId) store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
         } catch (err) {
           console.error("[status] edits message failed", err);
         }
