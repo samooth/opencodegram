@@ -565,6 +565,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push(s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`);
         const prompt = store?.lastPromptBySession.get(s.sessionId);
         if (prompt?.trim()) lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
+        // Streaming thinking (linear mode): show reasoning if configured.
+        if (settings.showThinking && s.reasoningBuffer?.trim()) {
+          const r = s.reasoningBuffer.trim().slice(-Math.min(settings.partialTextLines ?? 500, 800));
+          lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking\n${markdownToHtml(r)}</blockquote>`);
+        }
         // Streaming partial text (linear mode): show the response as it grows.
         if (settings.showPartialText && s.buffer?.trim()) {
           const txt = s.buffer.trim().slice(-Math.min(settings.partialTextLines ?? 500, 1200));
