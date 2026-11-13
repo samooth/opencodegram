@@ -347,7 +347,19 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // Replying to any bot message routes the prompt to the session that produced
   // it: explicit map first, then dashboard/status/in-memory card fallbacks.
   const replyMessageId = msg.reply_to_message?.message_id;
-  const repliedSessionId = replyMessageId ? store.findSessionByAnyMessage(chatId, replyMessageId, replyThread) : undefined;
+  let repliedSessionId = replyMessageId ? store.findSessionByAnyMessage(chatId, replyMessageId, replyThread) : undefined;
+  // Fallback: if the replied bot message was never mapped, try to recover
+  // the session from a session id embedded in its text (cards/digests include
+  // "ses_..." in their header). This keeps replies routing to the right
+  // session instead of showing the "which session?" picker.
+  if (!repliedSessionId && replyMessageId && msg.reply_to_message?.from?.id === me.id) {
+    const repliedText = ((msg.reply_to_message as any)?.text ?? (msg.reply_to_message as any)?.caption ?? "").toString();
+    // Only treat it as a session-owned message if it looks like one (header).
+    if (/📌|Working…|Edits|Full diffs|Contenido de la sesión/.test(repliedText)) {
+      const m = repliedText.match(/ses_[A-Za-z0-9]+/);
+      if (m) repliedSessionId = m[0];
+    }
+  }
   deps.metrics?.inc("messages");
   // Ignore commands explicitly addressed to another bot.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
