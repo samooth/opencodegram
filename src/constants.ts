@@ -1,5 +1,5 @@
-export const STATUS_EDIT_INTERVAL_MS = 5000;
-export const STATUS_MIN_UPDATE_GAP_MS = 5000;
+export const STATUS_EDIT_INTERVAL_MS = 3000;
+export const STATUS_MIN_UPDATE_GAP_MS = 3000;
 /**
  * Cadence used while a session runs in the background (its route was taken
  * over by another session). Slower updates avoid Telegram rate limits when
