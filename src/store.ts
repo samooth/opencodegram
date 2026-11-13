@@ -4,8 +4,8 @@ import { join } from "node:path";
 import type { ChatSession } from "./types.js";
 import type { TranscriptBlock } from "./transcript.js";
 import { TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS } from "./transcript.js";
-import { esc } from "./util.js";
-import { renderResourceBlock } from "./resources.js";
+import { esc, clampText } from "./util.js";
+import { renderResourceBlock, ensureGpuCache } from "./resources.js";
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
 
@@ -320,6 +320,7 @@ export class SessionStore {
       // Edit the stale status message in place (no new messages). The backend
       // collapses "\n" in rich messages, so put everything inside a <pre>
       // block (which preserves newlines) and append the resource block.
+      await ensureGpuCache(2000).catch(() => {});
       const dummy = { cpuHistory: [], memHistory: [] } as unknown as ChatSession;
       const resources = renderResourceBlock(dummy);
       const lines: string[] = [];
@@ -336,7 +337,7 @@ export class SessionStore {
       const body = lines.join("\n");
       const html = `<pre>${esc(body)}</pre>\n${resources}`;
       try {
-        await tg.editRichMessage(info.chatId, info.messageId, html, {
+        await tg.editRichMessage(info.chatId, info.messageId, clampText(html, 3900), {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
         });
