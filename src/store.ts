@@ -303,25 +303,24 @@ export class SessionStore {
       // and its last activity instead of offering a retry prompt.
       const lastPrompt = this.lastPromptBySession.get(sessionId);
       const title = this.topicTitleBySession.get(sessionId);
-      const lines: string[] = [];
-      lines.push("🔄 <b>Reiniciado</b>");
-      if (title) lines.push(`📌 <b>${esc(title)}</b>`);
-      lines.push(`Sesión en curso: <code>${esc(sessionId.slice(0, 16))}</code>`);
-      if (lastPrompt) {
-        lines.push("");
-        lines.push("<b>Última actividad:</b>");
-        lines.push(`<i>${esc(lastPrompt.slice(0, 200))}</i>`);
-      }
-      lines.push("");
-      lines.push("Continúa con tu próximo mensaje.");
-      const html = lines.join("\n");
-      // Delete the stale message and send a fresh one: editing a stale rich
-      // message sometimes collapses newlines in the backend.
+      // The backend collapses "\n" in rich messages, so send each logical
+      // block as its own message to guarantee visual separation (linear).
+      const header = title
+        ? `🔄 <b>Reiniciado</b> — ${esc(title)}\nSesión: <code>${esc(sessionId.slice(0, 16))}</code>`
+        : `🔄 <b>Reiniciado</b>\nSesión: <code>${esc(sessionId.slice(0, 16))}</code>`;
       try { await tg.deleteMessage(info.chatId, info.messageId).catch(() => {}); } catch { /* ignore */ }
       try {
-        await tg.sendRichMessage(info.chatId, html, {
+        await tg.sendRichMessage(info.chatId, header, {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
+        });
+        if (lastPrompt) {
+          await tg.sendRichMessage(info.chatId, `Última actividad:\n<i>${esc(lastPrompt.slice(0, 200))}</i>`, {
+            ...(info.threadId ? { message_thread_id: info.threadId } : {}),
+          });
+        }
+        await tg.sendRichMessage(info.chatId, "Continúa con tu próximo mensaje.", {
+          ...(info.threadId ? { message_thread_id: info.threadId } : {}),
         });
       } catch {
         // ignore
