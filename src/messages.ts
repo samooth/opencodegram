@@ -206,8 +206,11 @@ async function resolveSessionForMessage(
       deps.sessionTrace?.("route.picker", { chatId, threadId: replyThread, candidates: unique.length });
       const keyboard = unique.slice(0, 8).map((sid) => {
         const cs = store.findSessionById(sid);
-        const title = (cs?.topicTitle ?? cs?.directory?.split("/").pop() ?? sid).slice(0, 40);
-        return [{ text: `💬 ${title}`, callback_data: `use:${sid}` }];
+        const title = (cs?.topicTitle ?? cs?.directory?.split("/").pop() ?? sid).slice(0, 28);
+        const lastPrompt = store.lastPromptBySession.get(sid);
+        const snippet = lastPrompt ? ` — ${lastPrompt.trim().slice(0, 32)}` : "";
+        const label = `💬 ${title}${snippet}`.slice(0, 64);
+        return [{ text: label, callback_data: `use:${sid}` }];
       });
       keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "📂 Sessions", callback_data: "panel:sessions" }]);
       await tg

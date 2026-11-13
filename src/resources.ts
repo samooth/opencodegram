@@ -122,14 +122,17 @@ export function renderResourceBlock(s: ChatSession): string {
   const resourceLines: string[] = [];
   resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
   resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
+  if (typeof s.lastContextTokens === "number" && s.lastContextTokens > 0) {
+    resourceLines.push(`CTX ${s.lastContextTokens.toLocaleString()} tok`);
+  }
   const gpu = readGpuInfo();
   if (gpu) {
     const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
     const vramBar = progressBar(vramPercent);
-    const temp = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-    resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}`);
-    resourceLines.push(`VRAM ${vramBar} ${vramPercent}%${temp}`);
-    resourceLines.push(`Load ${progressBar(gpu.util)} ${gpu.util}%${temp}`);
+    const tempStr = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
+    resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}${tempStr}`);
+    resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
+    resourceLines.push(`Load ${progressBar(gpu.util)} ${gpu.util}%`);
   }
   return `<pre>${esc(resourceLines.join("\n"))}</pre>`;
 }

@@ -363,6 +363,8 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
   if (!s) return;
   const out = e.data?.tokens?.output;
   if (typeof out === "number") s.lastOutputTokens = out;
+  const inp = e.data?.tokens?.input;
+  if (typeof inp === "number") s.lastContextTokens = inp;
   // "tool-calls" means the turn continues with another step; any other
   // finish reason (stop / length / error) is the real end of the turn.
   const finish = e.data?.finish ?? e.data?.rawFinish;
