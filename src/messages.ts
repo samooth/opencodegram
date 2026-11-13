@@ -331,7 +331,8 @@ async function startPrompt(
       const opts = isLimit
         ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
         : store.threadOptsFor(s);
-      await send(`❌ ${esc(errMsg)}`, opts);
+      const _em = await send(`❌ ${esc(errMsg)}`, opts) as any;
+      if (_em?.message_id) store.rememberMessageSession(chatId, _em.message_id, s.sessionId);
     });
   } catch (err) {
     if (s.statusTimer) {
@@ -345,7 +346,8 @@ async function startPrompt(
     const opts2 = isLimit2
       ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
       : store.threadOptsFor(s);
-    await send(`❌ ${esc(errMsg2)}`, opts2);
+    const _em2 = await send(`❌ ${esc(errMsg2)}`, opts2) as any;
+    if (_em2?.message_id) store.rememberMessageSession(chatId, _em2.message_id, s.sessionId);
   }
 }
 
@@ -386,7 +388,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // the session from a session id embedded in its text (cards/digests include
   // "ses_..." in their header). This keeps replies routing to the right
   // session instead of showing the "which session?" picker.
-  if (!repliedSessionId && replyMessageId && msg.reply_to_message?.from?.id === me.id) {
+  if (!repliedSessionId && replyMessageId) {
     const repliedText = ((msg.reply_to_message as any)?.text ?? (msg.reply_to_message as any)?.caption ?? "").toString();
     // Recover the session from a ses_ id embedded in the replied bot message
     // (cards, digests, final answers and errors all include it in their

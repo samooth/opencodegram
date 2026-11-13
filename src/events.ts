@@ -221,11 +221,13 @@ const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
     if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
     else {
       const threadId = resolveThreadId(sessionId);
-      await tg.sendRichMessage(chatId, sessionHeader(s) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
+      const _cm = await tg.sendRichMessage(chatId, sessionHeader(s) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => undefined);
+      if (_cm?.message_id) store.rememberMessageSession(chatId, _cm.message_id, sessionId);
     }
   } else {
     const threadId = resolveThreadId(sessionId);
-    await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => {});
+    const _cm2 = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => undefined);
+    if (_cm2?.message_id) store.rememberMessageSession(chatId, _cm2.message_id, sessionId);
   }
 };
 
@@ -301,9 +303,10 @@ const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
     s.compacting = false;
     s.compactionError = msg;
     if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
-    else await tg.sendRichMessage(chatId, sessionHeader(s) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
+    else { const _cf = await tg.sendRichMessage(chatId, sessionHeader(s) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined); if (_cf?.message_id) store.rememberMessageSession(chatId, _cf.message_id, sessionId); }
   } else {
-    await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => {});
+    const _cf2 = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined);
+    if (_cf2?.message_id) store.rememberMessageSession(chatId, _cf2.message_id, sessionId);
   }
   logger.warn("events", "compaction.failed", { sessionId, chatId, threadId, error: msg });
 };
