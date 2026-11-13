@@ -319,9 +319,6 @@ export class SessionStore {
             ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           });
         }
-        await tg.sendRichMessage(info.chatId, "Continúa con tu próximo mensaje.", {
-          ...(info.threadId ? { message_thread_id: info.threadId } : {}),
-        });
       } catch {
         // ignore
       }
