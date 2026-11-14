@@ -350,7 +350,7 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
   const delta = e.data?.delta ?? e.data?.text ?? "";
   s.buffer += delta;
   if (!s.timer) {
-    s.timer = setTimeout(() => void flushDraft(chatId, s), 250);
+    s.timer = setTimeout(() => void flushDraft(chatId, s), 1000);
   }
 };
 
