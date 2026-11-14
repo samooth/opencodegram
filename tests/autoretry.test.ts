@@ -7,6 +7,7 @@ import {
   notePromptSent,
   noteTurnCompleted,
   resetAutoRetryForTests,
+  updateRetryPrompt,
 } from "../src/autoretry.js";
 import type { Config } from "../src/config.js";
 
@@ -23,6 +24,19 @@ describe("auto retry", () => {
   test("does not retry a stale prompt for the session", () => {
     notePromptSent("ses_1", "nuevo prompt");
     expect(decideRetry("ses_1", "prompt viejo", cfg())).toEqual({ action: "none" });
+  });
+
+  test("updateRetryPrompt syncs the tracked prompt without creating state", () => {
+    // No state yet: updateRetryPrompt must not create one (stale guard).
+    updateRetryPrompt("ses_unknown", "cualquier cosa");
+    expect(decideRetry("ses_unknown", "cualquier cosa", cfg())).toEqual({ action: "none" });
+  });
+
+  test("updateRetryPrompt makes retry use the latest prompt", () => {
+    notePromptSent("ses_1", "prompt antiguo");
+    updateRetryPrompt("ses_1", "prompt nuevo");
+    const decision = decideRetry("ses_1", "prompt nuevo", cfg({ RETRY_BACKOFF_BASE_MS: 1000 }));
+    expect(decision).toMatchObject({ action: "retry", attempt: 1 });
   });
 
   test("schedules the first retry with the base backoff", () => {

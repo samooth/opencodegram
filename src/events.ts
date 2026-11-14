@@ -50,7 +50,22 @@ export type EventsDeps = {
 
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 
-type EventHandler = (event: { type: string; data?: any }, deps: EventsDeps) => Promise<void>;
+type EventHandler = (event: { type: string; data?: unknown }, deps: EventsDeps) => Promise<void>;
+
+/** Loose shape of a form field as sent by OpenCode (validated at runtime). */
+type RawFormField = {
+  key?: unknown;
+  title?: unknown;
+  description?: unknown;
+  required?: unknown;
+  type?: unknown;
+  options?: unknown;
+};
+type RawFormOption = {
+  value?: unknown;
+  label?: unknown;
+  description?: unknown;
+};
 
 async function ensureLiveStatus(deps: EventsDeps, sessionId: string | undefined, chatId: number | undefined): Promise<ChatSession | undefined> {
   if (!sessionId || chatId === undefined) return undefined;
@@ -75,8 +90,8 @@ async function ensureLiveStatus(deps: EventsDeps, sessionId: string | undefined,
 const handleSessionTextStarted: EventHandler = async (event, deps) => {
   const { tg, store } = deps;
   const { resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID ?? e.data?.session?.id;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId === undefined) return;
   const s = await ensureLiveStatus(deps, sessionId, chatId);
@@ -94,11 +109,11 @@ const handleSessionTextStarted: EventHandler = async (event, deps) => {
 const handleSessionReasoningStarted: EventHandler = async (event, deps) => {
   const { store } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
   // Preserve earlier reasoning across multiple reasoning blocks in one turn.
@@ -108,44 +123,45 @@ const handleSessionReasoningStarted: EventHandler = async (event, deps) => {
 const handleSessionReasoningDelta: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
-  s.reasoningBuffer += e.data?.delta ?? "";
+  s.reasoningBuffer += String(e.data?.delta ?? "");
   updateStatus(chatId, s).catch(() => {});
 };
 
 const handleSessionToolInputStarted: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
-  if (e.data?.name) s.toolCalls.push(e.data.name);
-  const id = e.data?.id ?? String(s.toolCallDetails.length);
-  s.toolCallDetails.push({ id, name: e.data?.name ?? "tool", status: "running" });
+  const name = (e.data?.name as string | undefined) ?? "tool";
+  if (name) s.toolCalls.push(name);
+  const id = (e.data?.id as string | undefined) ?? String(s.toolCallDetails.length);
+  s.toolCallDetails.push({ id, name, status: "running" });
   updateStatus(chatId, s, true).catch(() => {});
 };
 
 const handleSessionToolCalled: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
-  const id = e.data?.id;
+  const id = e.data?.id as string | undefined;
   let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
   if (!detail && s.toolCallDetails.length) {
     // Fall back to the most recent running tool when the event omits an id.
@@ -162,21 +178,21 @@ const handleSessionToolCalled: EventHandler = async (event, deps) => {
 const handleSessionToolSuccess: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
-  const id = e.data?.id;
+  const id = e.data?.id as string | undefined;
   let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
   if (!detail && s.toolCallDetails.length) {
     detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
   }
   if (detail) {
     detail.status = "success";
-    const out = e.data?.content ?? e.data?.output;
+    const out = (e.data as { content?: unknown; output?: unknown } | undefined)?.content ?? (e.data as { output?: unknown } | undefined)?.output;
     detail.output = typeof out === "string" ? out.slice(0, 2000) : JSON.stringify(out ?? "").slice(0, 2000);
     if (id && detail.id !== id) detail.id = id;
   }
@@ -186,21 +202,21 @@ const handleSessionToolSuccess: EventHandler = async (event, deps) => {
 const handleSessionToolFailed: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
-  const id = e.data?.id;
+  const id = e.data?.id as string | undefined;
   let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
   if (!detail && s.toolCallDetails.length) {
     detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
   }
   if (detail) {
     detail.status = "failed";
-    detail.output = e.data?.error?.message ?? "failed";
+    detail.output = (e.data as { error?: { message?: string } } | undefined)?.error?.message ?? "failed";
     if (id && detail.id !== id) detail.id = id;
   }
   updateStatus(chatId, s, true).catch(() => {});
@@ -209,18 +225,18 @@ const handleSessionToolFailed: EventHandler = async (event, deps) => {
 const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
   const { tg, store, updateStatus } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   logger.info("events", "compaction.started", { sessionId, chatId, hasSession: !!_s0 });
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (s) {
     s.compacting = true;
     s.compactionError = undefined;
     s.compactionSummary = undefined;
-    if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
+    if (s && s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
     else {
       const threadId = resolveThreadId(sessionId);
       const _cm = await tg.sendRichMessage(chatId, sessionHeader(s) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => undefined);
@@ -236,14 +252,14 @@ const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
 const handleSessionCompactionDelta: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (s) {
-    s.compactionSummary = (s.compactionSummary ?? "") + (e.data?.text ?? "");
+    s.compactionSummary = (s.compactionSummary ?? "") + String(e.data?.text ?? "");
     if (s.statusMessageId) updateStatus(chatId, s).catch(() => {});
   }
 };
@@ -251,15 +267,15 @@ const handleSessionCompactionDelta: EventHandler = async (event, deps) => {
 const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
   const { tg, store, updateStatus } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
-  const threadId = resolveThreadId(sessionId);
-  const summary = (e.data?.text ?? "").trim();
-  const tokens = e.data?.tokens;
+  const threadId = resolveThreadId(sessionId) as number | undefined;
+  const summary = String(e.data?.text ?? "").trim();
+  const tokens = e.data?.tokens as { input?: number; output?: number } | undefined;
   const tokenText = tokens ? ` · ${((tokens.input ?? 0) + (tokens.output ?? 0)).toLocaleString()} tokens` : "";
   if (s) {
     s.compacting = false;
@@ -293,18 +309,18 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
 const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
   const { tg, store, updateStatus } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined) return;
+  if (chatId === undefined || !sessionId) return;
   const s = _s0;
-  const threadId = resolveThreadId(sessionId);
-  const msg = e.data?.error?.message ?? "compaction failed";
+  const threadId = resolveThreadId(sessionId) as number | undefined;
+  const msg = (e.data?.error as { message?: string } | undefined)?.message ?? "compaction failed";
   if (s) {
     s.compacting = false;
     s.compactionError = msg;
-    if (s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
+    if (s && s.statusMessageId) updateStatus(chatId, s, true).catch(() => {});
     else { const _cf = await tg.sendRichMessage(chatId, sessionHeader(s) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined); if (_cf?.message_id) store.rememberMessageSession(chatId, _cf.message_id, sessionId); }
   } else {
     const _cf2 = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined);
@@ -316,12 +332,14 @@ const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
 const handleMcpStatusChanged: EventHandler = async (event, deps) => {
   const { tg, store } = deps;
   const { resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const server = e.data?.server;
-  const chatId = resolveChatId(e.data?.sessionID);
-  if (chatId !== undefined && server) {
-    const threadId = resolveThreadId(e.data?.sessionID);
-    await tg.sendRichMessage(chatId, sessionHeader(store.findSessionById(e.data?.sessionID), e.data?.sessionID) + `🔌 MCP status changed: <b>${esc(server)}</b>\nUse /mcp to inspect.`, threadOpts(threadId)).catch(() => {});
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const d = (e.data ?? {}) as Record<string, unknown>;
+  const server = d.server as string | undefined;
+  const sid = d.sessionID as string | undefined;
+  const chatId = resolveChatId(sid);
+  if (chatId !== undefined && server && sid) {
+    const threadId = resolveThreadId(sid as string);
+    await tg.sendRichMessage(chatId, sessionHeader(store.findSessionById(sid), sid) + `🔌 MCP status changed: <b>${esc(server)}</b>\nUse /mcp to inspect.`, threadOpts(threadId)).catch(() => {});
   }
   return;
 };
@@ -330,11 +348,13 @@ const handleMcpResourcesChanged: EventHandler = async (event, deps) => {
   const { tg, store } = deps;
   const { resolveChatId, resolveThreadId } = store;
   const e = event;
-  const server = e.data?.server;
-  const chatId = resolveChatId(e.data?.sessionID);
-  if (chatId !== undefined && server) {
-    const threadId = resolveThreadId(e.data?.sessionID);
-    await tg.sendRichMessage(chatId, sessionHeader(store.findSessionById(e.data?.sessionID), e.data?.sessionID) + `📚 MCP resources changed: <b>${esc(server)}</b>\nUse /mcp resources.`, threadOpts(threadId)).catch(() => {});
+  const d = (e as { data?: Record<string, unknown> }).data ?? {};
+  const server = d.server as string | undefined;
+  const sid = d.sessionID as string | undefined;
+  const chatId = resolveChatId(sid);
+  if (chatId !== undefined && server && sid) {
+    const threadId = resolveThreadId(sid as string);
+    await tg.sendRichMessage(chatId, sessionHeader(store.findSessionById(sid), sid) + `📚 MCP resources changed: <b>${esc(server)}</b>\nUse /mcp resources.`, threadOpts(threadId)).catch(() => {});
   }
   return;
 };
@@ -342,14 +362,14 @@ const handleMcpResourcesChanged: EventHandler = async (event, deps) => {
 const handleSessionTextDelta: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId === undefined) return;
   const s = _s0;
   if (!s) return;
-  const delta = e.data?.delta ?? e.data?.text ?? "";
+  const delta = String(e.data?.delta ?? e.data?.text ?? "");
   s.buffer += delta;
   // Stream the partial answer into the card; updateStatus throttles edits
   // (STATUS_MIN_UPDATE_GAP_MS + adaptive 429 backoff).
@@ -359,21 +379,21 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
 const handleSessionStepEnded: EventHandler = async (event, deps) => {
   const { tg, store, settings, finishStatus } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId === undefined) return;
   const s = _s0;
   if (!s) return;
-  const out = e.data?.tokens?.output;
+  const out = (e.data?.tokens as { output?: number } | undefined)?.output;
   if (typeof out === "number") s.lastOutputTokens = out;
-  const inp = e.data?.tokens?.input;
-  const cacheRead = e.data?.tokens?.cache?.read ?? 0;
+  const inp = (e.data?.tokens as { input?: number } | undefined)?.input;
+  const cacheRead = ((e.data?.tokens as { cache?: { read?: number } } | undefined)?.cache?.read) ?? 0;
   if (typeof inp === "number") s.lastContextTokens = inp + (typeof cacheRead === "number" ? cacheRead : 0);
   // "tool-calls" means the turn continues with another step; any other
   // finish reason (stop / length / error) is the real end of the turn.
-  const finish = e.data?.finish ?? e.data?.rawFinish;
+  const finish = (e.data?.finish ?? e.data?.rawFinish) as string | undefined;
   if (finish && finish !== "tool-calls") {
     if (s.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
     try {
@@ -384,7 +404,7 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
     // Deliver files produced by the turn as Telegram documents.
     if (!s.stopped) {
       const settings2 = settings.get(chatId);
-      const artifacts = Array.isArray(e.data?.files) ? e.data.files : [];
+      const artifacts = Array.isArray(e.data?.files) ? (e.data.files as unknown[]) : [];
       // OpenCode sometimes reports the whole working-tree snapshot here; sending
       // hundreds of files floods Telegram. Only treat small, de-duplicated sets
       // as real turn artifacts.
@@ -414,16 +434,16 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
     }
   }
   // status tracking
-  const sid = e.data?.sessionID;
+  const sid = (e as { data?: Record<string, unknown> }).data?.sessionID as string | undefined;
   if (sid) store.setSessionStatus(sid, "idle");
 };
 
 const handleSessionTextEnded: EventHandler = async (event, deps) => {
   const { tg, oc, store, settings, finishStatus, syncTopicTitle, transcript, publishCard } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
-  let endedText = (e.data?.text ?? "").toString().trim();
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
+  let endedText = String((e as { data?: Record<string, unknown> }).data?.text ?? "").trim();
   if (sessionId) {
     // Any terminal text event closes the turn: clear retry state even when the
     // answer is empty, so stale prompts are never replayed.
@@ -442,7 +462,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
 
   if (chatId === undefined) return;
   let s = _s0;
-  const msgId = e.data?.assistantMessageID;
+  const msgId = (e as { data?: Record<string, unknown> }).data?.assistantMessageID as string | undefined;
   if (s) {
     if (msgId && s.lastFinalMessageId === msgId) {
       logger.breadcrumb("events", "text.ended.duplicate", { sessionId, msgId, reason: "msgId" });
@@ -464,10 +484,10 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   }
   if (!s) {
     // No in-memory session (e.g. after restart). Still deliver the final text if available.
-    const fallbackText = (e.data?.text ?? "").toString().trim();
+    const fallbackText = String((e as { data?: Record<string, unknown> }).data?.text ?? "").trim();
     if (fallbackText) {
-      const sent = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + markdownToHtml(fallbackText), threadOpts(resolveThreadId(sessionId))).catch((err) => { console.error("[send final]", err); return undefined; });
-      if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
+      const sent = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + markdownToHtml(fallbackText), threadOpts(resolveThreadId(sessionId as string))).catch((err) => { console.error("[send final]", err); return undefined; });
+      if (sent?.message_id && sessionId) store.rememberMessageSession(chatId, sent.message_id, sessionId);
     }
     return;
   }
@@ -482,12 +502,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
     }
-    endedText = (e.data?.text ?? "").toString().trim();
+    endedText = String(e.data?.text ?? "").trim();
     let finalText = endedText || s.buffer || "(empty response)";
     let elapsed = 0;
     let tokens = s.lastOutputTokens ?? 0;
     try {
-      const msgId = e.data?.assistantMessageID;
+      const msgId = (e as { data?: Record<string, unknown> }).data?.assistantMessageID as string | undefined;
       if (msgId) {
         const m = await oc.client.session.message.get({ sessionID: s.sessionId, messageID: msgId });
         const t = (m as { time?: { completed?: number; streamed?: number; created?: number } })?.time;
@@ -556,7 +576,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         if (chatId < 0) {
           const internalId = String(chatId).replace(/^-100/, "");
           const url = `https://t.me/c/${internalId}/${s.transcriptMessageId}`;
-          const kb: any[] = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s), { unified: settings.get(chatId).displayMode === "unified" }))];
+          const kb: Array<Array<Record<string, unknown>>> = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s), { unified: settings.get(chatId).displayMode === "unified" }))];
           kb.push([{ text: "🔗 Ver en chat", url }]);
           // Do not block the turn-end handler: let the card publish settle,
           // then add the deep-link button (fire-and-forget).
@@ -635,7 +655,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         s.lastFinalTelegramMessageId = finalMessage.message_id;
       }
     }
-    if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
+    if (s && (settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";
 };
@@ -643,15 +663,15 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
 const handlePermissionAsked: EventHandler = async (event, deps) => {
   const { tg, oc, store, pendingPermissions } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const p = e.data ?? {};
-  const requestId = p.id;
-  const sessionId = p.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const p = (e.data ?? {}) as Record<string, unknown>;
+  const requestId = p.id as string | undefined;
+  const sessionId = p.sessionID as string | undefined;
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId === undefined || !requestId || !sessionId) return;
-  const label = p.tool ?? p.action ?? "permission";
-  const resource = Array.isArray(p.resources) ? p.resources.join(", ") : (p.message ?? "");
+  const label = (p.tool ?? p.action ?? "permission") as string;
+  const resource = Array.isArray(p.resources) ? (p.resources as string[]).join(", ") : String(p.message ?? "");
   const threadId = resolveThreadId(sessionId);
   const sent = await tg.sendRichMessage(chatId, sessionHeader(_s0, sessionId) + `<b>Permission requested</b>\n<i>${esc(label)}</i>\n<code>${esc(resource)}</code>\n\n<i>Expires in 5 minutes</i>`, {
     ...threadOpts(threadId),
@@ -691,12 +711,12 @@ const handlePermissionAsked: EventHandler = async (event, deps) => {
 const handleFormCreated: EventHandler = async (event, deps) => {
   const { tg, store, pendingForms, pendingFormsById } = deps;
   const { resolveChatId, resolveThreadId } = store;
-  const e = event;
-  const p = e.data ?? {};
-  const form = p.form ?? p;
-  const sessionId = p.sessionID ?? form.sessionID;
-  const formId = form.id ?? form.formID ?? p.id ?? p.formID;
-  const title = form.title ?? p.title ?? "Form";
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const p = (e.data ?? {}) as Record<string, unknown>;
+  const form = (p.form ?? p) as Record<string, unknown>;
+  const sessionId = String(p.sessionID ?? form.sessionID ?? "");
+  const formId = String(form.id ?? form.formID ?? p.id ?? p.formID ?? "");
+  const title = String(form.title ?? p.title ?? "Form");
   const chatId = resolveChatId(sessionId);
   if (chatId !== undefined && formId) {
     const threadId = resolveThreadId(sessionId);
@@ -704,18 +724,19 @@ const handleFormCreated: EventHandler = async (event, deps) => {
     // where the form was shown, not to a stale delivery target.
     store.rememberDelivery(sessionId, chatId, threadId);
     const rawFields = Array.isArray(form.fields) ? form.fields : [];
-    const fields: FormField[] = rawFields.map((field: any) => {
+    const fields: FormField[] = rawFields.map((field: unknown) => {
+      const f = field as RawFormField;
       const normalized: FormField = {
-        key: field.key,
-        title: field.title,
-        description: field.description,
-        required: field.required,
-        type: field.type,
-        options: Array.isArray(field.options)
-          ? field.options.map((option: any) => ({
+        key: String(f.key ?? ""),
+        title: String(f.title ?? f.key ?? ""),
+        description: typeof f.description === "string" ? f.description : undefined,
+        required: f.required === true,
+        type: (f.type as FormField["type"]) ?? "text",
+        options: Array.isArray(f.options)
+          ? (f.options as RawFormOption[]).map((option) => ({
               value: String(option.value),
-              label: option.label ?? String(option.value),
-              description: option.description,
+              label: option.label != null ? String(option.label) : String(option.value),
+              description: typeof option.description === "string" ? option.description : undefined,
             }))
           : undefined,
       };
@@ -750,29 +771,29 @@ const handleFormCreated: EventHandler = async (event, deps) => {
 
 const handlePermissionReplied: EventHandler = async (event, deps) => {
   const { tg, pendingPermissions } = deps;
-  const e = event;
-  const p = e.data ?? {};
-  const requestId = p.requestID;
-  const info = requestId ? pendingPermissions.get(requestId) : undefined;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const p = (e.data ?? {}) as Record<string, unknown>;
+  const requestId = p.requestID as string | undefined;
+  const info = requestId ? pendingPermissions.get(requestId as string) : undefined;
   if (info && !info.decided) {
     info.decided = true;
-    const reply = p.reply ?? "replied";
+    const reply = (p.reply as string | undefined) ?? "replied";
     if (info.messageId) {
       await tg.editRichMessage(info.chatId, info.messageId, `<b>Permission ${reply} (via OpenCode)</b>\n<i>${esc(info.label)}</i>\n<code>${esc(info.resource)}</code>`).catch(() => {});
     }
-    pendingPermissions.delete(requestId);
+    if (requestId) pendingPermissions.delete(requestId);
   }
 };
 
 const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
   const { tg, oc, store, finishStatus, config } = deps;
   const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const s = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId !== undefined) {
-    const msg = e.data?.error?.message ?? "execution failed";
+    const msg = (e.data?.error as { message?: string } | undefined)?.message ?? "execution failed";
     const threadId = resolveThreadId(sessionId);
     const isRateLimit = /rate limit|quota/i.test(msg);
     const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
@@ -787,7 +808,7 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     // Retry only prompts sent by this process and only up to
     // AUTO_RETRY_MAX_ATTEMPTS. Stale prompts restored from disk are ignored.
     const decision = autoRetry && isRateLimit && sessionId && promptForRetry
-      ? decideRetry(sessionId, promptForRetry, config)
+      ? decideRetry(sessionId as string, promptForRetry as string, config)
       : ({ action: "none" } as const);
 
     if (decision.action === "retry") {
@@ -828,14 +849,14 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     // "wait": a retry is already pending for this prompt; avoid duplicate events.
   }
   // status tracking
-  const sid = e.data?.sessionID;
+  const sid = e.data?.sessionID as string | undefined;
   if (sid) store.setSessionStatus(sid, "idle");
 };
 
 const handleSessionStepStarted: EventHandler = async (event, deps) => {
   const { store } = deps;
-  const e = event;
-  const sid = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
   if (sid) {
     store.setSessionStatus(sid, "busy");
     logger.debug("events", "[step.started]", sid);
@@ -847,11 +868,11 @@ const handleSessionStepStarted: EventHandler = async (event, deps) => {
 const handleSessionIdle: EventHandler = async (event, deps) => {
   const { store, finishStatus } = deps;
   const { findSessionById, resolveChatId } = store;
-  const e = event;
-  const sessionId = e.data?.sessionID;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = e.data?.sessionID as string | undefined;
   const s = sessionId ? findSessionById(sessionId) : undefined;
   // status tracking (set idle) first, preserving original ordering
-  const sid = e.data?.sessionID;
+  const sid = e.data?.sessionID as string | undefined;
   if (sid) store.setSessionStatus(sid, "idle");
   if (s?.typingTimer) {
     clearInterval(s.typingTimer);
@@ -891,9 +912,9 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.idle", handleSessionIdle],
 ]);
 
-export async function handleEvent(event: { type: string; data?: any }, deps: EventsDeps): Promise<void> {
-  const e = event as { type: string; data?: any };
-  const sessionId = e.data?.sessionID ?? e.data?.session?.id;
+export async function handleEvent(event: { type: string; data?: unknown }, deps: EventsDeps): Promise<void> {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined;
   // Register sub-sessions (e.g. spawned by a goal) to their parent's chat so
   // their events are not dropped.
   if (sessionId && !deps.store.findSessionById(sessionId)) {
