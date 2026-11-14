@@ -73,7 +73,7 @@ describe("edit buttons from snapshots", () => {
     expect(chatId).toBe(7);
     expect(messageId).toBe(777);
     // The edits view renders from the snapshot: header + files list.
-    expect(String(html)).toContain("Edits</b> (1)");
+    expect(String(html)).toContain("Edits (1)</h4>");
     expect(String(html)).toContain("a.ts");
     // Second call on the same file collapses it again.
     const handled2 = await status.showEditDiff(7, 777, 0);

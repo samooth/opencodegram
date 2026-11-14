@@ -88,7 +88,7 @@ describe("session digest (Conectar //sync)", () => {
     const parts = buildDigestParts(makeSession(), items, { title: "📜 Contenido", sessionId: "ses_x" });
     const html = parts.map((p) => p.html).join("\n");
     // Timeline exists and shows previews of the older messages.
-    expect(html).toContain("Mensajes anteriores</b> (18)");
+    expect(html).toContain("Mensajes anteriores (18)</summary>");
     expect(html).toContain("👤 pregunta 0");
     // The 6 most recent messages are shown in full.
     expect(html).toContain("respuesta 11");

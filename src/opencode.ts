@@ -18,6 +18,7 @@ export class OpenCodeBridge {
   readonly client;
   private sessionListCache: { data: unknown[]; expires: number } | null = null;
   private commandCache = new Map<string, { data: unknown[]; expires: number }>();
+  private modelCache: { data: unknown[]; expires: number } | null = null;
 
   constructor(baseUrl: string, password?: string, username = "opencode") {
     const headers: Record<string, string> = {};
@@ -27,6 +28,25 @@ export class OpenCodeBridge {
 
   async serverInfo() {
     return this.client.server.info();
+  }
+
+  async modelListCached(): Promise<unknown[]> {
+    const now = Date.now();
+    if (this.modelCache && now < this.modelCache.expires) return this.modelCache.data;
+    try {
+      const res = await this.client.model.list();
+      const data = ((res as { data?: unknown[] })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+      this.modelCache = { data, expires: now + 60000 };
+      return data;
+    } catch {
+      return this.modelCache?.data ?? [];
+    }
+  }
+
+  async contextWindow(providerID: string, modelID: string): Promise<number | undefined> {
+    const list = await this.modelListCached();
+    const m = (list as Array<{ id?: string; modelID?: string; providerID?: string; limit?: { context?: number } }>).find((x) => (x.id === modelID || x.modelID === modelID) && x.providerID === providerID);
+    return m?.limit?.context;
   }
 
   async listSessions(): Promise<unknown> {

@@ -75,22 +75,22 @@ function renderItem(item: DigestItem): string {
     const raw = item.text;
     const text = typeof raw === "string" ? raw : raw ? JSON.stringify(raw) : "";
     if (!text.trim()) return "";
-    return `👤 <b>Tú</b>\n<blockquote>${esc(withHint(text.trim(), 1400))}</blockquote>`;
+    return `<h4>👤 Tú</h4>\n<blockquote>${esc(withHint(text.trim(), 1400))}</blockquote>`;
   }
   if (role === "assistant") {
     const text = assistantText(item);
-    if (text) return `🤖 <b>OpenCode</b>\n${markdownToHtml(withHint(text, 2200))}`;
+    if (text) return `<h4>🤖 OpenCode</h4>\n${markdownToHtml(withHint(text, 2200))}`;
     const tools = assistantTools(item);
     if (tools.length) {
       const line = tools.slice(0, 8).map((name) => `${toolIcon(name)} ${esc(name)}`).join(" · ");
       const more = tools.length > 8 ? ` … (+${tools.length - 8})` : "";
-      return `🤖 <b>OpenCode</b>\n<blockquote expandable>🔧 ${line}${more}</blockquote>`;
+      return `<h4>🤖 OpenCode</h4>\n<blockquote expandable>🔧 ${line}${more}</blockquote>`;
     }
     return "";
   }
   if (role === "compaction") {
     const sum = String(item.summary ?? "").trim();
-    return sum ? `<blockquote expandable>📦 <b>Compaction</b>\n${esc(withHint(sum, 500))}</blockquote>` : "";
+    return sum ? `<details><summary>📦 Compaction</summary><blockquote>${esc(withHint(sum, 500))}</blockquote></details>` : "";
   }
   return "";
 }
@@ -135,14 +135,13 @@ export function buildDigestParts(
   if (stats.compactions) metaParts.push(`📦 ${stats.compactions}`);
 
   const header = [
-    s ? "" : "",
-    `<b>${esc(opts.title)}</b>`,
-    `<i>${metaParts.join(" · ")}</i>`,
-    opts.note ? `<i>${esc(opts.note)}</i>` : "",
+    `<h3>${esc(opts.title)}</h3>`,
+    `<p><i>${metaParts.join(" · ")}</i></p>`,
+    opts.note ? `<p><i>${esc(opts.note)}</i></p>` : "",
   ].filter(Boolean).join("\n");
 
   if (!meaningful.length) {
-    return [{ html: `${header}\n\n<i>No hay contexto todavía: envía el primer mensaje.</i>`, keyboard }];
+    return [{ html: `${header}\n\n<p><i>No hay contexto todavía: envía el primer mensaje.</i></p>`, keyboard }];
   }
 
   const rendered = meaningful.map(renderItem).filter(Boolean);
@@ -164,9 +163,9 @@ export function buildDigestParts(
     current += `\n\n${block}`;
   }
   if (olderPreviews.length) {
-    const timeline = `<blockquote expandable>📚 <b>Mensajes anteriores</b> (${olderPreviews.length})\n${esc(
+    const timeline = `<details><summary>📚 Mensajes anteriores (${olderPreviews.length})</summary><blockquote>${esc(
       olderPreviews.slice(-120).join("\n"),
-    )}</blockquote>`;
+    )}</blockquote></details>`;
     if (current.length + timeline.length + 2 <= PART_BUDGET) {
       current += `\n\n${timeline}`;
     } else {

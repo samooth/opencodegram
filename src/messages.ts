@@ -178,7 +178,7 @@ export async function showSessionPicker(
 
   await tg.sendRichMessage(
     chatId,
-    `🤖 <b>¿A qué sesión respondo?</b>\n<i>${total} sesiones activas. Elige una.</i>`,
+    `🤖 <h3>¿A qué sesión respondo?</h3>\n<p><i>${total} sesiones activas. Elige una.</i></p>`,
     { ...threadOpts(threadId), reply_markup: { inline_keyboard: rows } },
   ).catch(() => {});
 }
@@ -514,7 +514,7 @@ export async function handleMediaMessage(
   const s = resolution.session;
   if (!s) {
     if (resolution.asked) return;
-    await send("🤖 <b>No hay sesión activa en esta conversación.</b>\n<i>Crea una nueva o elige una existente para empezar.</i>", { reply_markup: { inline_keyboard: [[{ text: "➕ Nueva sesión aquí", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } } );
+    await send("🤖 <h3>No hay sesión activa</h3>\n<p><i>Crea una nueva o elige una existente para empezar.</i></p>", { reply_markup: { inline_keyboard: [[{ text: "➕ Nueva sesión aquí", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } } );
     return;
   }
   const text = voiceTranscript
@@ -565,7 +565,7 @@ export async function handleTextMessage(
   const s = resolution.session;
   if (!s) {
     if (resolution.asked) return;
-    await send("🤖 <b>No hay sesión activa en esta conversación.</b>\n<i>Crea una nueva o elige una existente para empezar.</i>", { reply_markup: { inline_keyboard: [[{ text: "➕ Nueva sesión aquí", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } } );
+    await send("🤖 <h3>No hay sesión activa</h3>\n<p><i>Crea una nueva o elige una existente para empezar.</i></p>", { reply_markup: { inline_keyboard: [[{ text: "➕ Nueva sesión aquí", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } } );
     return;
   }
 
