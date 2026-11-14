@@ -413,11 +413,9 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // A new incoming message supersedes any pending auto-retry for sessions
   // bound to this chat: we do not want stale prompts (and their old answers)
   // to be replayed while the user is interacting.
-  for (const [sid, cs] of store.sessionsById) {
-    if (cs.targetChatId === chatId || store.lastChatBySession.get(sid) === chatId) {
-      cancelAutoRetry(sid);
-    }
-  }
+  // A new incoming message supersedes any pending auto-retry everywhere:
+  // we never want stale prompts (and their old answers) to be replayed.
+  for (const sid of store.sessionsById.keys()) cancelAutoRetry(sid);
   // Replying to any bot message routes the prompt to the session that produced
   // it: explicit map first, then dashboard/status/in-memory card fallbacks.
   const replyMessageId = msg.reply_to_message?.message_id;
