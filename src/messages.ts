@@ -446,11 +446,17 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // a group. Only treat it as a prompt when the bot is explicitly mentioned,
   // even if the message happens to reply to a bot message.
   const hasMedia = !!(msg.photo ?? msg.document ?? msg.audio ?? msg.voice ?? msg.video);
+  const isVoice = !!(msg.voice ?? msg.audio);
   // In groups, only respond to commands, mentions or replies to the bot.
+  // Media is more likely to be sent by accident: photos/documents require an
+  // explicit mention, but voice notes are intentional prompts and also work
+  // when replying to the bot (like text messages).
   if (chatId < 0) {
     const isCommand = rawText.startsWith("/");
-    if (hasMedia) {
+    if (hasMedia && !isVoice) {
       if (!isMention) return;
+    } else if (hasMedia && isVoice) {
+      if (!isMention && !isReplyToBot) return;
     } else if (!isCommand && !isMention && !isReplyToBot) {
       return;
     }
