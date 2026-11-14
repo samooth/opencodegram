@@ -101,11 +101,28 @@ export class TelegramClient {
   private async call<T>(method: string, body?: unknown, attempt = 0): Promise<T> {
     const isEdit = method.toLowerCase().includes("edit");
     const chatId = Number((body as { chat_id?: unknown } | undefined)?.chat_id);
-    const res = await fetch(`${API}/bot${this.token}/${method}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    // Timeout: long-poll (getUpdates) gets body.timeout + 10s; others 30s.
+    const bodyTimeout = Number((body as { timeout?: unknown } | undefined)?.timeout);
+    const timeoutMs = Number.isFinite(bodyTimeout) && bodyTimeout > 0 ? (bodyTimeout + 10) * 1000 : 30000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(`${API}/bot${this.token}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      if (attempt < 2 && !isEdit) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return this.call<T>(method, body, attempt + 1);
+      }
+      throw err;
+    }
+    clearTimeout(timer);
     if (res.status >= 500 && attempt < 2 && !isEdit) {
       await new Promise((r) => setTimeout(r, 1000));
       return this.call<T>(method, body, attempt + 1);
