@@ -736,6 +736,7 @@ ${markdownToHtml(chunk)}</blockquote>`;
             shellText,
             (chunk) => `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell
 <pre language=\'bash\'>${esc(chunk)}</pre></blockquote>`,
+            shellDetails.map((d) => ({ name: d.name, input: d.input, output: d.output, status: d.status })),
           );
         }
         if (otherDetails.length) {
@@ -747,6 +748,7 @@ ${markdownToHtml(chunk)}</blockquote>`;
             details,
             (chunk) => `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls
 ${chunk}</blockquote>`,
+            otherDetails.map((d) => ({ name: d.name, input: d.input, output: d.output, status: d.status })),
           );
         }
       }

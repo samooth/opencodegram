@@ -510,6 +510,28 @@ describe("transcript manager", () => {
     expect(html).toContain("Respuesta");
   });
 
+  test("exportTranscriptJsonLd includes turns, tool calls and training pairs", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.topicTitle = "demo";
+    s.turnSeq = 1;
+    store.lastPromptBySession.set(s.sessionId, "haz algo");
+    transcript.addBlock(s, "thinking", "<p>pienso</p>", "pienso");
+    transcript.addBlock(s, "tools", "<p>shell</p>", "$ ls", undefined, [
+      { name: "shell", input: JSON.stringify({ command: "ls" }), output: "a.ts", status: "success" },
+    ]);
+    transcript.addBlock(s, "answer", "<p>hecho</p>", "hecho");
+    const dataset = JSON.parse(transcript.exportTranscriptJsonLd(s));
+    expect(dataset["@type"]).toBe("Dataset");
+    expect(dataset.session.sessionId).toBe(s.sessionId);
+    expect(dataset.stats.turns).toBe(1);
+    expect(dataset.conversation[0].userPrompt).toBe("haz algo");
+    expect(dataset.conversation[0].toolCalls[0].name).toBe("shell");
+    expect(dataset.conversation[0].messages.some((m: any) => m.kind === "tools" && m.toolCalls?.length)).toBe(true);
+    expect(dataset.trainingPairs[0].messages[0].role).toBe("user");
+    expect(dataset.trainingPairs[0].toolCalls[0].output).toBe("a.ts");
+  });
+
   test("the card shows a 📝 Diff button when the turn had edits", async () => {
     const { store, transcript } = makeHarness();
     const s = makeSession();
