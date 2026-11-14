@@ -487,8 +487,8 @@ describe("transcript manager", () => {
     const flat = kb.flat();
     // Middle button opens the page picker.
     expect(flat.some((b) => b.callback_data === `tpick:${s.sessionId}`)).toBe(true);
-    // History export button is always available.
-    expect(flat.some((b) => b.callback_data === `hist:${s.sessionId}`)).toBe(true);
+    // Export picker button is always available.
+    expect(flat.some((b) => b.callback_data === `histfmt:${s.sessionId}`)).toBe(true);
     // The picker grid covers every page, navigates the card (tpagep) and closes.
     const picker = transcript.pagePickerKeyboard(s, total);
     const pickerPages = new Set(picker.flat().filter((b) => b.callback_data.startsWith(`tpagep:`)).map((b) => b.callback_data));

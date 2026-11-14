@@ -48,6 +48,7 @@ const PREFIXES = [
   "tpagep:",
   "tpick:",
   "hist:",
+  "histfmt:",
   "ops:",
   "profile:",
   "viewfull:",
@@ -100,9 +101,10 @@ async function handleOps(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
  * 📜 Historial: export the full transcript of the session as an HTML document.
  */
 async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
-  const m = data.match(/^hist:(.+)$/);
+  const m = data.match(/^hist:(.+?)(?::(html|md|jsonld))?$/);
   if (!m) return;
   const sessionId = m[1];
+  const format = (m[2] ?? "html") as "html" | "md" | "jsonld";
   await deps.tg.answerCallbackQuery(cq.id, "Generando historial…").catch(() => {});
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
@@ -110,14 +112,33 @@ async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     return;
   }
   try {
-    const html = deps.transcript.exportTranscriptHtml(s);
     const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || sessionId;
     const safeName = String(name).replace(/[^\w.-]+/g, "_").slice(0, 40) || sessionId.slice(0, 12);
-    const path = join("/tmp/opencode/exports", `historial-${safeName}-${sessionId.slice(0, 8)}.html`);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, html, "utf8");
     const blocks = deps.transcript.blocksOf(s).length;
-    await deps.tg.sendDocument(chatId, path, `historial-${safeName}.html`, `📜 Historial de <b>${esc(name)}</b> · ${blocks} bloques`, {
+    let content = "";
+    let ext = "html";
+    let mimeName = `historial-${safeName}.html`;
+    let caption = `📜 Historial (HTML) de <b>${esc(name)}</b> · ${blocks} bloques`;
+    if (format === "md") {
+      content = deps.transcript.exportTranscriptMarkdown(s);
+      ext = "md";
+      mimeName = `historial-${safeName}.md`;
+      caption = `📝 Historial (Markdown) de <b>${esc(name)}</b> · ${blocks} bloques`;
+    } else if (format === "jsonld") {
+      content = deps.transcript.exportTranscriptJsonLd(s);
+      ext = "jsonld";
+      mimeName = `dataset-${safeName}.jsonld`;
+      caption = `🧠 Dataset (JSON-LD) de <b>${esc(name)}</b> · ${blocks} bloques`;
+    } else {
+      content = deps.transcript.exportTranscriptHtml(s);
+      ext = "html";
+      mimeName = `historial-${safeName}.html`;
+      caption = `📜 Historial (HTML) de <b>${esc(name)}</b> · ${blocks} bloques`;
+    }
+    const path = join("/tmp/opencode/exports", `${mimeName.replace(/\.[^.]+$/, "")}-${sessionId.slice(0, 8)}.${ext}`);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content, "utf8");
+    await deps.tg.sendDocument(chatId, path, mimeName, caption, {
       ...(threadId ? { message_thread_id: threadId } : {}),
     });
     deps.metrics?.inc("history_exports");
@@ -128,8 +149,31 @@ async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
 }
 
 /**
- * ⊞ Page picker: grid with one button per page for quick jumps.
+ * 📥 Export format picker: offers HTML / Markdown / JSON-LD (dataset).
  */
+async function handleHistoryFormatPicker(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const m = data.match(/^histfmt:(.+)$/);
+  if (!m) return;
+  const sessionId = m[1];
+  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  const s = deps.store.findSessionById(sessionId);
+  if (!s) {
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    return;
+  }
+  const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || sessionId;
+  await deps.tg.sendRichMessage(chatId, `📥 <b>Exportar historial</b> · ${esc(name)}\nElige formato:`, {
+    ...threadOpts(threadId),
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📜 HTML", callback_data: `hist:${sessionId}:html` }, { text: "📝 Markdown", callback_data: `hist:${sessionId}:md` }],
+        [{ text: "🧠 Dataset (JSON-LD)", callback_data: `hist:${sessionId}:jsonld` }],
+      ],
+    },
+  }).catch(() => {});
+}
+
+
 async function handlePagePicker(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const closeMatch = data.match(/^tpick:close:(.+)$/);
   if (closeMatch) {
@@ -807,6 +851,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,
   "hist:": handleHistory,
+  "histfmt:": handleHistoryFormatPicker,
   "ops:": handleOps,
   "panel:": handlePanel,
   "perm:": handlePerm,
