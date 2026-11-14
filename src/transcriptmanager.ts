@@ -249,7 +249,7 @@ ${rows || "<p>(sin bloques)</p>"}
     // "View full" escape hatch for long answers; history export always available.
     const tools: Array<{ text: string; callback_data: string }> = [];
     if (s.lastFinalText) tools.push({ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` });
-    tools.push({ text: "📜 Historial", callback_data: `hist:${s.sessionId}` });
+    tools.push({ text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` });
     keyboard.push(tools);
     // 📝 Diff of this turn's edits: snapshot is registered on the card id when
     // the turn finishes, so the button survives new turns and restarts.
@@ -368,10 +368,136 @@ ${rows || "<p>(sin bloques)</p>"}
     await tg.deleteMessage(chatId, messageId).catch(() => {});
   };
 
+  /** Render the transcript as Markdown (for export/training). */
+  const exportTranscriptMarkdown = (s: ChatSession): string => {
+    const blocks = blocksOf(s);
+    const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || s.sessionId;
+    const lines: string[] = [];
+    lines.push(`# ${name}`);
+    lines.push("");
+    lines.push(`- **Session:** \`${s.sessionId}\``);
+    if (s.model) lines.push(`- **Model:** ${s.model.providerID}/${s.model.id}${s.model.variant ? ` (${s.model.variant})` : ""}`);
+    if (s.directory) lines.push(`- **Directory:** \`${s.directory}\``);
+    lines.push(`- **Blocks:** ${blocks.length}`);
+    lines.push(`- **Exported:** ${new Date().toISOString()}`);
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    // Group blocks by turn.
+    const byTurn = new Map<number, TranscriptBlock[]>();
+    const noTurn: TranscriptBlock[] = [];
+    for (const b of blocks) {
+      if (b.turn !== undefined) {
+        const arr = byTurn.get(b.turn) ?? [];
+        arr.push(b);
+        byTurn.set(b.turn, arr);
+      } else {
+        noTurn.push(b);
+      }
+    }
+    const turns = [...byTurn.keys()].sort((a, b) => a - b);
+    if (turns.length === 0 && noTurn.length) {
+      for (const b of noTurn) {
+        const label = b.kind === "thinking" ? "💭 Pensamiento" : b.kind === "tools" ? "🔧 Herramientas" : b.kind === "meta" ? "ℹ️ Meta" : "💬 Respuesta";
+        lines.push(`## ${label}`);
+        lines.push("");
+        lines.push(b.text.trim() || "(vacío)");
+        lines.push("");
+      }
+    } else {
+      for (const t of turns) {
+        lines.push(`## Turno ${t}`);
+        lines.push("");
+        for (const b of byTurn.get(t) ?? []) {
+          const label = b.kind === "thinking" ? "💭 Pensamiento" : b.kind === "tools" ? "🔧 Herramientas" : b.kind === "meta" ? "ℹ️ Meta" : "💬 Respuesta";
+          lines.push(`### ${label}`);
+          lines.push("");
+          lines.push(b.text.trim() || "(vacío)");
+          lines.push("");
+        }
+      }
+      if (noTurn.length) {
+        lines.push("## Sin turno");
+        lines.push("");
+        for (const b of noTurn) {
+          const label = b.kind === "thinking" ? "💭 Pensamiento" : b.kind === "tools" ? "🔧 Herramientas" : b.kind === "meta" ? "ℹ️ Meta" : "💬 Respuesta";
+          lines.push(`### ${label}`);
+          lines.push("");
+          lines.push(b.text.trim() || "(vacío)");
+          lines.push("");
+        }
+      }
+    }
+    return lines.join("\n").trimEnd() + "\n";
+  };
+
+  /** Render the transcript as JSON-LD dataset (for AI training). */
+  const exportTranscriptJsonLd = (s: ChatSession): string => {
+    const blocks = blocksOf(s);
+    const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || s.sessionId;
+    const byTurn = new Map<number, TranscriptBlock[]>();
+    const noTurn: TranscriptBlock[] = [];
+    for (const b of blocks) {
+      if (b.turn !== undefined) {
+        const arr = byTurn.get(b.turn) ?? [];
+        arr.push(b);
+        byTurn.set(b.turn, arr);
+      } else {
+        noTurn.push(b);
+      }
+    }
+    const turnKeys = [...byTurn.keys()].sort((a, b) => a - b);
+    const turns = turnKeys.map((t) => ({
+      "@type": "Conversation",
+      "turn": t,
+      "messages": (byTurn.get(t) ?? []).map((b, i) => ({
+        "@type": "Message",
+        "position": i + 1,
+        "role": "assistant",
+        "kind": b.kind,
+        "text": b.text,
+        "dateCreated": new Date(b.at).toISOString(),
+      })),
+    }));
+    if (noTurn.length) {
+      turns.push({
+        "@type": "Conversation",
+        "turn": 0,
+        "messages": noTurn.map((b, i) => ({
+          "@type": "Message",
+          "position": i + 1,
+          "role": "assistant",
+          "kind": b.kind,
+          "text": b.text,
+          "dateCreated": new Date(b.at).toISOString(),
+        })),
+      });
+    }
+    const dataset = {
+      "@context": "https://schema.org",
+      "@type": "Dataset",
+      "name": `${name} — transcript`,
+      "description": "Session transcript exported as a conversation dataset for AI training. Blocks are grouped by turn; each message carries its kind (answer/thinking/tools/meta).",
+      "identifier": s.sessionId,
+      "creator": { "@type": "SoftwareApplication", "name": "opencodegram" },
+      "dateCreated": new Date().toISOString(),
+      "keywords": ["conversation", "ai-training", "opencode", "transcript"],
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "variableMeasured": ["text", "kind", "turn"],
+      "distribution": {
+        "@type": "DataDownload",
+        "encodingFormat": "application/ld+json",
+        "contentUrl": `historial-${s.sessionId.slice(0, 8)}.jsonld`,
+      },
+      "conversation": turns,
+    };
+    return JSON.stringify(dataset, null, 2);
+  };
+
   /** Total number of pages currently available. */
   const pageCount = (s: ChatSession): number => paginateTranscript(blocksOf(s)).length;
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, pageCount, blocksOf, refloat };
+  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, pageCount, blocksOf, refloat };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };
