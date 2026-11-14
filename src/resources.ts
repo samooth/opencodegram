@@ -120,7 +120,12 @@ export function renderResourceBlock(s: ChatSession): string {
   resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
   resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
   if (typeof s.lastContextTokens === "number" && s.lastContextTokens > 0) {
-    resourceLines.push(`CTX ${s.lastContextTokens.toLocaleString()} tok`);
+    if (typeof s.contextWindow === "number" && s.contextWindow > 0) {
+      const pct = Math.min(100, Math.round((s.lastContextTokens / s.contextWindow) * 100));
+      resourceLines.push(`CTX ${pct}% (${s.lastContextTokens.toLocaleString()} / ${s.contextWindow.toLocaleString()} tok)`);
+    } else {
+      resourceLines.push(`CTX ${s.lastContextTokens.toLocaleString()} tok`);
+    }
   }
   const gpu = readGpuInfo();
   if (gpu) {

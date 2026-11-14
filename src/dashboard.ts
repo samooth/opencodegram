@@ -53,9 +53,9 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
         ? "⏳ <i>Trabajando…</i>"
         : "✅ <i>Lista</i>";
     const lines: string[] = [
-      "📌 <b>Dashboard de sesión</b>",
+      "📌 <h3>Dashboard de sesión</h3>",
       header,
-      `🧠 <b>Modelo</b>: ${model}${dir}`,
+      `<p>🧠 <b>Modelo</b>: ${model}${dir}</p>`,
       state,
       "",
       toolStatsLine(s),

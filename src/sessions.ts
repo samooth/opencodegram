@@ -328,6 +328,12 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     cs.sessionId = sessionId;
     cs.directory = directory;
     cs.model = model;
+    // Resolve context window for the active model (cached, best-effort).
+    if (model) {
+      void oc.contextWindow(model.providerID, model.id).then((cw) => {
+        if (cw) cs.contextWindow = cw;
+      }).catch(() => {});
+    }
     // A session with an open status card is still working: keep its buffers,
     // its target chat/topic and its "detached" flag so the card keeps
     // updating where the user started it.

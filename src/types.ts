@@ -48,6 +48,7 @@ export type ChatSession = {
   promptStartTime?: number;
   lastOutputTokens?: number;
   lastContextTokens?: number;
+  contextWindow?: number;
   /** Full transcript of the session, rendered as paginated pages. */
   transcript?: TranscriptBlock[];
   /** Telegram message that hosts the paginated transcript. */

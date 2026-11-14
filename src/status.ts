@@ -809,7 +809,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         }
         try {
           const linear = chatId >= 0;
-          const text = `${sessionHeader(s)}<b>Edits</b> (${editDetails.length})\n${editLines.join("\n")}`;
+          const text = `${sessionHeader(s)}<h4>Edits (${editDetails.length})</h4>\n${editLines.join("\n")}`;
           if (linear) {
             // Standalone edits message: its own id is the reference for the
             // ✏️/Full diffs buttons and the persisted snapshot.
@@ -989,7 +989,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     editToggles.set(toggleKey, next);
     if (resolved.s) resolved.s.expandedEditIndex = next;
     const settings = getSettings(chatId);
-    const lines: string[] = [resolved.header, `<b>Edits</b> (${resolved.edits.length})`];
+    const lines: string[] = [resolved.header, `<h4>Edits (${resolved.edits.length})</h4>`];
     resolved.edits.forEach((detail, i) => {
       const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? `edit ${i + 1}`);
       const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
