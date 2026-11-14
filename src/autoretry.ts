@@ -36,6 +36,17 @@ export function notePromptSent(sessionId: string, prompt: string): void {
   });
 }
 
+/** Keep the tracked prompt in sync with the latest prompt sent for a session. */
+export function updateRetryPrompt(sessionId: string, prompt: string): void {
+  const state = states.get(sessionId);
+  if (state) {
+    state.prompt = prompt;
+    state.lastActivityAt = Date.now();
+  } else {
+    states.set(sessionId, { prompt, attempts: 0, lastActivityAt: Date.now(), dispatched: false });
+  }
+}
+
 /** The turn produced a final answer: stop tracking retries for it. */
 export function noteTurnCompleted(sessionId: string): void {
   const state = states.get(sessionId);

@@ -13,7 +13,7 @@ import { logger } from "./logger.js";
 const MAX_ARTIFACT_CANDIDATES = 20;
 const MAX_ARTIFACTS = 5;
 import { formatBytes, MAX_DOCUMENT_BYTES, prepareDocument } from "./files/index.js";
-import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
+import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted, updateRetryPrompt } from "./autoretry.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
 
@@ -777,7 +777,9 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     const isRateLimit = /rate limit|quota/i.test(msg);
     const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
     const autoRetry = config?.AUTO_RETRY_ENABLED ?? true;
-    const promptForRetry = sessionId ? lastPromptBySession.get(sessionId) : undefined;
+    const latestPrompt = sessionId ? lastPromptBySession.get(sessionId) : undefined;
+    if (sessionId && latestPrompt) updateRetryPrompt(sessionId, latestPrompt);
+    const promptForRetry = latestPrompt;
     if (s?.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
     if (s) await finishStatus(chatId, s);
     if (sessionId && !isRateLimit) cancelAutoRetry(sessionId);
