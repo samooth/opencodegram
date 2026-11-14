@@ -152,23 +152,27 @@ async function main() {
   // Proactively restore persisted sessions so their status cards are refreshed
   // instead of staying on "Reconnecting…". Run in parallel with a per-session
   // timeout so one stuck session cannot block the whole startup (and polling).
-  // (async () => {
-  //   const tasks = [...store.activeSessionByRoute.keys()].map(async (key) => {
-  //     const [chatPart, threadPart] = key.split(":");
-  //     const chatId = Number(chatPart);
-  //     const threadId = Number(threadPart) || undefined;
-  //     if (!Number.isFinite(chatId) || chatId === 0) return;
-  //     try {
-  //       const restore = sessions.restoreActiveSession(chatId, threadId);
-  //       const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 8000));
-  //       const s = await Promise.race([restore, timeout]);
-  //       if (s?.statusMessageId) await status.updateStatus(chatId, s, true).catch(() => {});
-  //     } catch {
-  //       // ignore
-  //     }
-  //   });
-  //   await Promise.allSettled(tasks);
-  // })().catch(() => {});
+  (async () => {
+    const globalTimeout = new Promise<void>((resolve) => setTimeout(resolve, 30000));
+    const restoreAll = (async () => {
+      const tasks = [...store.activeSessionByRoute.keys()].map(async (key) => {
+        const [chatPart, threadPart] = key.split(":");
+        const chatId = Number(chatPart);
+        const threadId = Number(threadPart) || undefined;
+        if (!Number.isFinite(chatId) || chatId === 0) return;
+        try {
+          const restore = sessions.restoreActiveSession(chatId, threadId);
+          const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000));
+          const s = await Promise.race([restore, timeout]);
+          if (s?.statusMessageId) await status.updateStatus(chatId, s, true).catch(() => {});
+        } catch {
+          // ignore
+        }
+      });
+      await Promise.allSettled(tasks);
+    })();
+    await Promise.race([restoreAll, globalTimeout]);
+  })().catch(() => {});
   if (config.AUTO_CLEANUP_DAYS > 0) {
     sessions.cleanupStaleSessions(config.AUTO_CLEANUP_DAYS).catch(() => {});
   }
