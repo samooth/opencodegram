@@ -167,15 +167,12 @@ export function buildDigestParts(
   const parts: DigestPart[] = [];
   // First part: header + as many recent messages as fit.
   let current = header;
-  let firstBlock = true;
   for (const block of recent) {
     if (current.length + block.length + 2 > PART_BUDGET && current !== header) {
       parts.push({ html: current, keyboard });
       current = `<b>${esc(opts.title)}</b> <i>(continúa)</i>`;
-      firstBlock = false;
     }
-    current += `${firstBlock ? "\n\n<hr/>\n\n" : "\n\n"}${block}`;
-    firstBlock = false;
+    current += `\n\n<hr/>\n\n${block}`;
   }
   if (olderPreviews.length) {
     const timeline = `<hr/>\n<blockquote expandable>📚 <b>Mensajes anteriores</b> (${olderPreviews.length})\n${esc(
