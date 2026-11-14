@@ -38,12 +38,13 @@ export function notePromptSent(sessionId: string, prompt: string): void {
 
 /** Keep the tracked prompt in sync with the latest prompt sent for a session. */
 export function updateRetryPrompt(sessionId: string, prompt: string): void {
+  // Only sync an existing tracked prompt; never create state for a prompt that
+  // this process did not send (e.g. restored from disk), so stale prompts are
+  // still never retried.
   const state = states.get(sessionId);
   if (state) {
     state.prompt = prompt;
     state.lastActivityAt = Date.now();
-  } else {
-    states.set(sessionId, { prompt, attempts: 0, lastActivityAt: Date.now(), dispatched: false });
   }
 }
 
