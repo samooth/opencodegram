@@ -233,34 +233,38 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
   try {
     const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
-    // Show session content like a normal message (digest), linked to session.
     const resolvedCs = cs ?? deps.store.findSessionById(sessionId);
-    let items: Array<Record<string, unknown>> = [];
-    let contextError: string | undefined;
-    try {
-      const ctxData = await deps.oc.context(sessionId);
-      items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
-    } catch (err) {
-      contextError = String(err);
-    }
-    const parts = buildDigestParts(resolvedCs ?? null, items, {
-      title: "📜 Contenido de la sesión",
-      note: contextError ? `No se pudo cargar el contexto: ${contextError}` : "✅ Sesión conectada: los mensajes se envían a esta sesión",
-      sessionId,
-    });
-    // First part replaces the clicked message; extra parts are new messages.
-    const first = parts[0];
-    const firstKeyboard = { inline_keyboard: first.keyboard };
-    if (messageId) {
-      await deps.tg.editRichMessage(chatId, messageId, first.html, { ...threadOpts(threadId), reply_markup: firstKeyboard }).catch(() => {});
-      deps.store.rememberMessageSession(chatId, messageId, sessionId);
+    // Show the session like a normal turn: the card in groups, a normal
+    // message in private chats. No digest.
+    if (chatId < 0 && deps.transcript) {
+      // Group: publish the session card (current page = last answer if idle).
+      await deps.status.publishCard(chatId, resolvedCs!);
+      if (resolvedCs?.transcriptMessageId) {
+        deps.store.rememberMessageSession(chatId, resolvedCs.transcriptMessageId, sessionId);
+      }
+      if (messageId) deps.store.rememberMessageSession(chatId, messageId, sessionId);
     } else {
-      const sent = await deps.tg.sendRichMessage(chatId, first.html, { ...threadOpts(threadId), reply_markup: firstKeyboard }).catch(() => undefined);
-      if (sent?.message_id) deps.store.rememberMessageSession(chatId, sent.message_id, sessionId);
-    }
-    for (const part of parts.slice(1)) {
-      const sent = await deps.tg.sendRichMessage(chatId, part.html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: part.keyboard } }).catch(() => undefined);
-      if (sent?.message_id) deps.store.rememberMessageSession(chatId, sent.message_id, sessionId);
+      // Private: send a normal message with session info + last answer.
+      const s = resolvedCs;
+      const lines: string[] = [];
+      if (s) lines.push(sessionHeader(s).trimEnd());
+      lines.push("✅ <b>Sesión conectada</b>");
+      if (s?.model) lines.push(`🧠 ${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? ` (${esc(s.model.variant)})` : ""}`);
+      if (s?.directory) lines.push(`📁 <code>${esc(s.directory)}</code>`);
+      if (s?.lastFinalText) lines.push("", s.lastFinalText.slice(0, 3000));
+      const html = lines.join("\n");
+      const keyboard = [[
+        { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
+        { text: "📂 Sessions", callback_data: "panel:sessions" },
+        { text: "📊 Status", callback_data: "panel:status" },
+      ]];
+      if (messageId) {
+        await deps.tg.editRichMessage(chatId, messageId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => {});
+        deps.store.rememberMessageSession(chatId, messageId, sessionId);
+      } else {
+        const sent = await deps.tg.sendRichMessage(chatId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => undefined);
+        if (sent?.message_id) deps.store.rememberMessageSession(chatId, sent.message_id, sessionId);
+      }
     }
   } catch (err) {
     console.error("[connect] failed", sessionId, err);
