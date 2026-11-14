@@ -92,7 +92,7 @@ function renderItem(item: DigestItem): string {
   }
   if (role === "compaction") {
     const sum = String(item.summary ?? "").trim();
-    return sum ? `<details><summary>📦 Compaction</summary><blockquote>${esc(withHint(sum, 500))}</blockquote></details>` : "";
+    return sum ? `<blockquote expandable>📦 <b>Compaction</b>\n${esc(withHint(sum, 500))}</blockquote>` : "";
   }
   return "";
 }
@@ -178,9 +178,9 @@ export function buildDigestParts(
     firstBlock = false;
   }
   if (olderPreviews.length) {
-    const timeline = `<hr/>\n<details><summary>📚 Mensajes anteriores (${olderPreviews.length})</summary><blockquote>${esc(
+    const timeline = `<hr/>\n<blockquote expandable>📚 <b>Mensajes anteriores</b> (${olderPreviews.length})\n${esc(
       olderPreviews.slice(-120).join("\n"),
-    )}</blockquote></details>`;
+    )}</blockquote>`;
     if (current.length + timeline.length + 2 <= PART_BUDGET) {
       current += `\n\n${timeline}`;
     } else {
