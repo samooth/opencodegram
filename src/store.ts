@@ -371,7 +371,15 @@ export class SessionStore {
           reply_markup: { inline_keyboard: [] },
         });
       } catch {
-        // ignore
+        // Fallback: edit failed (e.g. message too old). Send a fresh message.
+        try {
+          await tg.sendRichMessage(info.chatId, clampText(html, 3900), {
+            ...(info.threadId ? { message_thread_id: info.threadId } : {}),
+            reply_markup: { inline_keyboard: [] },
+          });
+        } catch {
+          // ignore
+        }
       }
       this.statusMessageBySession.delete(sessionId);
       }));
