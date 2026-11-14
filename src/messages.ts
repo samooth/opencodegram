@@ -86,7 +86,6 @@ export async function downloadAttachments(
 
   let voiceTranscript: string | null = null;
   const voiceTranscriptionEnabled = settings ? settings.get(chatId).voiceTranscription : true;
-  console.log("[voice] attachments:", voiceAttachments.length, "transcriptionEnabled:", isTranscriptionEnabled(config), "settingEnabled:", voiceTranscriptionEnabled, "transcriber:", config.VOICE_TRANSCRIBER);
   if (voiceAttachments.length && isTranscriptionEnabled(config) && voiceTranscriptionEnabled) {
     await send("🎤 Transcribing voice note…");
     try {
