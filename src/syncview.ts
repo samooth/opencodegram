@@ -75,7 +75,9 @@ function renderItem(item: DigestItem): string {
     const raw = item.text;
     const text = typeof raw === "string" ? raw : raw ? JSON.stringify(raw) : "";
     if (!text.trim()) return "";
-    return `<h4>👤 Tú</h4>\n<blockquote>${esc(withHint(text.trim(), 1400))}</blockquote>`;
+    const repeat = (item as any)._repeat;
+    const repeatHint = repeat && repeat > 1 ? ` <i>(×${repeat})</i>` : "";
+    return `<h4>👤 Tú</h4>${repeatHint}\n<blockquote>${esc(withHint(text.trim(), 1400))}</blockquote>`;
   }
   if (role === "assistant") {
     const text = assistantText(item);
@@ -124,10 +126,20 @@ export function buildDigestParts(
   opts: { title: string; note?: string; sessionId: string },
 ): DigestPart[] {
   const keyboard = digestKeyboard(opts.sessionId);
-  const meaningful = items
-    .filter((item) => ["user", "assistant", "compaction"].includes(itemRole(item)))
-    .slice(-40);
-  const stats = digestStats(items);
+  // Collapse consecutive identical user prompts (e.g. manual retries) into a
+  // single entry with a count, so the digest stays readable.
+  const raw = items.filter((item) => ["user", "assistant", "compaction"].includes(itemRole(item)));
+  const meaningful: DigestItem[] = [];
+  for (const item of raw) {
+    const prev = meaningful[meaningful.length - 1];
+    if (itemRole(item) === "user" && prev && itemRole(prev) === "user" && item.text === prev.text) {
+      (prev as any)._repeat = ((prev as any)._repeat ?? 1) + 1;
+      continue;
+    }
+    meaningful.push(item);
+  }
+  const sliced = meaningful.slice(-40);
+  const stats = digestStats(items); // counts raw items
   const metaParts: string[] = [];
   if (s?.model) metaParts.push(`🧠 ${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? ` (${esc(s.model.variant)})` : ""}`);
   if (s?.directory) metaParts.push(`📁 ${esc(s.directory.split("/").filter(Boolean).pop() ?? s.directory)}`);
@@ -144,11 +156,11 @@ export function buildDigestParts(
     return [{ html: `${header}\n\n<p><i>No hay contexto todavía: envía el primer mensaje.</i></p>`, keyboard }];
   }
 
-  const rendered = meaningful.map(renderItem).filter(Boolean);
+  const rendered = sliced.map(renderItem).filter(Boolean);
   const recentCount = Math.min(6, rendered.length);
   const recent = rendered.slice(-recentCount);
   const older = rendered.slice(0, Math.max(0, rendered.length - recentCount));
-  const olderPreviews = meaningful.slice(0, Math.max(0, meaningful.length - recentCount))
+  const olderPreviews = sliced.slice(0, Math.max(0, sliced.length - recentCount))
     .map(previewOf)
     .filter((line) => line.trim());
 
