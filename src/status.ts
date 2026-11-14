@@ -586,7 +586,12 @@ ${markdownToHtml(r)}</blockquote>`);
         }
         const tools = s.toolCallDetails.length;
         const failedTools = s.toolCallDetails.filter((d) => d.status === "failed").length;
-        if (tools) lines.push(`<i>🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}</i>`);
+        if (tools) {
+          const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
+          const lastIcon = lastTool?.status === "success" ? "✅" : lastTool?.status === "failed" ? "❌" : "⏳";
+          const toolNames = s.toolCallDetails.slice(-3).map((d) => d.name).join(", ");
+          lines.push(`<i>🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""} — ${lastIcon} ${esc(toolNames)}</i>`);
+        }
         const tokens = s.lastOutputTokens ?? 0;
         if (tokens && elapsed > 1) lines.push(`<i>⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok</i>`);
         if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s));
