@@ -58,6 +58,7 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
       `<p>🧠 <b>Modelo</b>: ${model}${dir}</p>`,
       state,
       "",
+      "<hr/>",
       toolStatsLine(s),
     ];
     if (opts?.working) {
