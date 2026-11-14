@@ -457,7 +457,8 @@ ${rows || "<p>(sin bloques)</p>"}
       const toolsBlocks = msgs.filter((b) => b.kind === "tools");
       const metaBlocks = msgs.filter((b) => b.kind === "meta");
       const isLast = idx === turnKeys.length - 1;
-      const userPrompt = isLast ? (lastPrompt ?? null) : null;
+      const turnPrompt = store?.getTurnPrompt?.(s.sessionId, t) ?? null;
+      const userPrompt = turnPrompt ?? (isLast ? (lastPrompt ?? null) : null);
       const assistantText = answerBlocks.map((b) => b.text).join("\\n\\n").trim();
       const thinkingText = thinkingBlocks.map((b) => b.text).join("\\n\\n").trim();
       const toolsText = toolsBlocks.map((b) => b.text).join("\\n\\n").trim();

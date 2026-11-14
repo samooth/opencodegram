@@ -44,11 +44,6 @@ export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
-  stopped_message_generation?: {
-    chat: { id: number };
-    message_thread_id?: number;
-    draft_id: number;
-  };
 }
 
 function sanitizeUtf8(input: string): string {
@@ -187,7 +182,7 @@ export class TelegramClient {
     return this.call<TelegramUpdate[]>("getUpdates", {
       offset,
       timeout,
-      allowed_updates: ["message", "callback_query", "stopped_message_generation"],
+      allowed_updates: ["message", "callback_query"],
     });
   }
 
@@ -308,18 +303,6 @@ export class TelegramClient {
     });
   }
 
-  sendMessageDraft(chatId: number, draftId: number, text: string, opts: Record<string, unknown> = {}): Promise<boolean> {
-    return this.call<boolean>("sendMessageDraft", { chat_id: chatId, draft_id: draftId, text: sanitizeUtf8(text), ...opts });
-  }
-
-  sendRichMessageDraft(chatId: number, draftId: number, html: string, opts: Record<string, unknown> = {}): Promise<boolean> {
-    return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { html: sanitizeUtf8(html) }, ...opts });
-  }
-
-  sendRichMessageDraftMarkdown(chatId: number, draftId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<boolean> {
-    return this.call<boolean>("sendRichMessageDraft", { chat_id: chatId, draft_id: draftId, rich_message: { markdown: sanitizeUtf8(markdown) }, ...opts });
-  }
-
   editMessageText(chatId: number, messageId: number, text: string, opts: Record<string, unknown> = {}): Promise<unknown> {
     return this.call("editMessageText", { chat_id: chatId, message_id: messageId, text: sanitizeUtf8(text), ...opts });
   }
@@ -434,7 +417,7 @@ export class TelegramClient {
   }
 
   setWebhook(url: string, secretToken?: string): Promise<boolean> {
-    return this.call<boolean>("setWebhook", { url, secret_token: secretToken, allowed_updates: ["message", "callback_query", "stopped_message_generation"] });
+    return this.call<boolean>("setWebhook", { url, secret_token: secretToken, allowed_updates: ["message", "callback_query"] });
   }
 
   deleteWebhook(): Promise<boolean> {

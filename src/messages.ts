@@ -381,10 +381,8 @@ async function startPrompt(
  * commands, or forward it to the session bound to this tab as a prompt.
  */
 export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promise<void> {
-  const { config, tg, oc, store, me, sessions, status } = deps;
-  const { rememberSessionChat, rememberActiveRoute, routeKey } = store;
-  const { ensureActiveSession, createNewSession, restoreActiveSession, activateSession } = sessions;
-  const { startStatus, updateStatus, finishStatus } = status;
+  const { config, tg, oc, store, me } = deps;
+  const { routeKey } = store;
 
   const userId = msg.from?.id;
   // Ignore the bot's own messages and service-only updates (topic created,

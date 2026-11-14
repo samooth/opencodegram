@@ -19,7 +19,6 @@ afterEach(() => {
 function makeSession(sessionId: string, threadId?: number): ChatSession {
   return {
     sessionId,
-    draftId: 0,
     buffer: "",
     reasoningBuffer: "",
     toolCalls: [],

@@ -14,7 +14,6 @@ afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
   return {
     sessionId: "ses_x",
-    draftId: 0,
     buffer: "hello",
     reasoningBuffer: "",
     toolCalls: [],

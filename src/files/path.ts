@@ -1,9 +1,5 @@
-import { lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
-import type { Dirent } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { esc } from "../util.js";
+import { realpath } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export type FileEntryType = "file" | "directory" | "symlink";
 

@@ -2,6 +2,7 @@ import { OpenCode } from "@opencode/client";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { COMMAND_LIST_CACHE_TTL_MS, SESSION_LIST_CACHE_TTL_MS } from "./constants.js";
 
 export function resolveServerPassword(): string | undefined {
   if (process.env.OPENCODE_SERVER_PASSWORD) return process.env.OPENCODE_SERVER_PASSWORD;
@@ -53,7 +54,7 @@ export class OpenCodeBridge {
     return this.client.session.list();
   }
 
-  async listSessionsCached(ttlMs = 10_000): Promise<unknown[]> {
+  async listSessionsCached(ttlMs = SESSION_LIST_CACHE_TTL_MS): Promise<unknown[]> {
     const now = Date.now();
     if (this.sessionListCache && this.sessionListCache.expires > now) return this.sessionListCache.data;
     const res = await this.client.session.list({ limit: 100, order: "desc", archived: false });
@@ -102,7 +103,7 @@ export class OpenCodeBridge {
     }
   }
 
-  async listCommandsCached(directory?: string, ttlMs = 60_000): Promise<unknown[]> {
+  async listCommandsCached(directory?: string, ttlMs = COMMAND_LIST_CACHE_TTL_MS): Promise<unknown[]> {
     const key = directory ?? "__default__";
     const now = Date.now();
     const cached = this.commandCache.get(key);

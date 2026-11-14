@@ -4,12 +4,10 @@ export type ChatSession = {
   sessionId: string;
   directory?: string;
   model?: { id: string; providerID: string; variant?: string };
-  draftId: number;
   buffer: string;
   reasoningBuffer: string;
   toolCalls: string[];
   toolCallDetails: Array<{ id: string; name: string; input?: string; output?: string; status?: string }>;
-  timer?: ReturnType<typeof setTimeout>;
   typingTimer?: ReturnType<typeof setInterval>;
   statusTimer?: ReturnType<typeof setInterval>;
   stopped: boolean;

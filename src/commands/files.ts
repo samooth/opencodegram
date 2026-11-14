@@ -1,11 +1,7 @@
 import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "../context.js";
 import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument, treeDirectory } from "../files/index.js";
-import * as mcp from "../mcp.js";
-import { isSettingsKey, renderSettings, settingsKeyboard } from "../settings.js";
-import * as vcs from "../vcs.js";
-import { clampText, colorDiff, esc, threadOpts, truncate } from "../util.js";
-import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
+import { esc, threadOpts } from "../util.js";
 import { ctx } from "./shared.js";
 import { parseListArgs, parseFindArgs, parseReadArgs } from "./sessions.js";
 

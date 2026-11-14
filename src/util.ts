@@ -12,17 +12,6 @@ export function clampText(s: string, max = 3900): string {
   return s.slice(0, cut) + "\n…";
 }
 
-/** Defensive hygiene for rich message content sent as permanent/final messages. */
-export function sanitizeFinalRichHtml(html: string): string {
-  // <tg-thinking> is draft-only; never allow it in finals.
-  return html.replace(/<tg-thinking\b[^>]*>[\s\S]*?<\/tg-thinking>/gi, "").replace(/<tg-thinking\b[^>]*\/>/gi, "");
-}
-
-/** Clamp to a safe rich-message size (Bot API rich limit is larger, but 3900 is safe for edits/sends). */
-export function clampRichHtml(html: string, max = 3900): string {
-  return clampText(sanitizeFinalRichHtml(html), max);
-}
-
 export function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
@@ -107,9 +96,6 @@ export function stripRestatedPrompt(text: string, prompt?: string): string {
   return out;
 }
 
-export function detailsBlock(summary: string, body: string, open = false): string {
-  return `<blockquote${open ? "" : " expandable"}>${summary}\n<pre>${esc(body)}</pre></blockquote>`;
-}
 
 const PROJECT_EMOJIS = ["🔵", "🟢", "🟡", "🟠", "🔴", "🟣", "🟤", "⚪", "⬛", "🔷", "🔶", "⏹️", "⏹", "⏹", "⏹"];
 

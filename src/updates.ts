@@ -4,36 +4,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { handleCallback } from "./callbacks.js";
 import { handleMessage } from "./messages.js";
-import { threadOpts } from "./util.js";
-import { cancelAutoRetry } from "./autoretry.js";
+import { POLL_BACKOFF_MS } from "./constants.js";
 
 export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Promise<void> {
-  const { tg, oc, store, metrics } = deps;
+  const { metrics } = deps;
   try {
-    if (update.stopped_message_generation) {
-      const d = update.stopped_message_generation;
-      for (const s of store.sessionsById.values()) {
-        if (s.draftId !== d.draft_id) continue;
-        s.stopped = true;
-        if (s.timer) {
-          clearTimeout(s.timer);
-          s.timer = undefined;
-        }
-        if (s.typingTimer) {
-          clearInterval(s.typingTimer);
-          s.typingTimer = undefined;
-        }
-        cancelAutoRetry(s.sessionId);
-        const chatId = s.targetChatId ?? d.chat.id;
-        await oc.interrupt(s.sessionId).catch(() => {});
-        if (s.statusMessageId) {
-          await deps.status.updateStatus(chatId, s, true).catch(() => {});
-        }
-        break;
-      }
-      return;
-    }
-
     if (update.callback_query) {
       await handleCallback(deps, update.callback_query);
       return;
@@ -48,7 +23,7 @@ export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Prom
   }
 }
 
-/** Telegram long-polling loop. Dispatches callbacks, messages and draft stops. */
+/** Telegram long-polling loop. Dispatches callbacks and messages. */
 export async function startPolling(deps: BotDeps): Promise<void> {
   const { tg, metrics, store } = deps;
   const botId = (deps as any).me?.id as number | undefined;
@@ -76,7 +51,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
     } catch (err) {
       console.error("[poll]", err);
       metrics?.recordError(String(err));
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, POLL_BACKOFF_MS));
       continue;
     }
 

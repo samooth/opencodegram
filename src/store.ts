@@ -37,6 +37,8 @@ export class SessionStore {
   readonly sessionsById = new Map<string, ChatSession>();
   readonly lastChatBySession = new Map<string, number>();
   readonly lastPromptBySession = new Map<string, string>();
+  readonly turnPromptsBySession = new Map<string, Map<number, string>>();
+  readonly pendingTurnPromptBySession = new Map<string, string>();
   readonly activeSessionByRoute = new Map<string, string>();
   readonly threadBySession = new Map<string, number>();
   readonly chatBySession = new Map<string, number>();
@@ -70,6 +72,7 @@ export class SessionStore {
   private readonly cotFile: string;
   private readonly lastChatsFile: string;
   private readonly lastPromptsFile: string;
+  private readonly turnPromptsFile: string;
   private readonly statusMessagesFile: string;
   private readonly pendingEditsFile: string;
   private readonly buttonsFile: string;
@@ -88,6 +91,7 @@ export class SessionStore {
     this.cotFile = join(dataDir, "cot.json");
     this.lastChatsFile = join(dataDir, "lastChats.json");
     this.lastPromptsFile = join(dataDir, "lastPrompts.json");
+    this.turnPromptsFile = join(dataDir, "turnPrompts.json");
     this.statusMessagesFile = join(dataDir, "statusMessages.json");
     this.pendingEditsFile = join(dataDir, "pendingEdits.json");
     this.buttonsFile = join(dataDir, "buttons.json");
@@ -349,7 +353,7 @@ export class SessionStore {
       // Edit the stale status message in place (no new messages). The backend
       // collapses "\n" in rich messages, so put everything inside a <pre>
       // block (which preserves newlines) and append the resource block.
-      await ensureGpuCache(2000).catch(() => {});
+      ensureGpuCache();
       const dummy = { cpuHistory: [], memHistory: [] } as unknown as ChatSession;
       const resources = renderResourceBlock(dummy);
       const lines: string[] = [];
@@ -407,7 +411,38 @@ export class SessionStore {
 
   rememberLastPrompt = (sessionId: string, prompt: string) => {
     this.lastPromptBySession.set(sessionId, prompt);
+    // Stash the prompt so the next turn's startStatus can bind it to a turnSeq.
+    this.pendingTurnPromptBySession.set(sessionId, prompt);
     this.saveLastPrompts();
+  };
+
+  rememberTurnPrompt = (sessionId: string, turn: number, prompt?: string) => {
+    if (prompt === undefined || !prompt.trim()) return;
+    let map = this.turnPromptsBySession.get(sessionId);
+    if (!map) { map = new Map(); this.turnPromptsBySession.set(sessionId, map); }
+    map.set(turn, prompt);
+    if (map.size > 50) {
+      const oldest = [...map.keys()].sort((a,b)=>a-b)[0];
+      map.delete(oldest);
+    }
+    this.saveTurnPrompts();
+  };
+
+  getTurnPrompt = (sessionId: string, turn: number): string | undefined => this.turnPromptsBySession.get(sessionId)?.get(turn);
+
+  private saveTurnPrompts = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, Record<string, string>> = {};
+      for (const [sid, map] of this.turnPromptsBySession) {
+        const inner: Record<string, string> = {};
+        for (const [t, p] of map) inner[String(t)] = p;
+        obj[sid] = inner;
+      }
+      writeFileSync(this.turnPromptsFile, JSON.stringify(obj), "utf8");
+    } catch (err) {
+      console.error("[turnPrompts] save failed", err);
+    }
   };
 
   rememberLastInteracted = (chatId: number, threadId: number | undefined, sessionId: string) => {
