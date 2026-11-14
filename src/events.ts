@@ -568,7 +568,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       // Linear mode (private chats): always deliver the final answer as a
       // normal message (append). The transient "Working…" message is removed
       // by finishStatus, so nothing is edited in place.
-      const linear = chatId >= 0;
+      const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
       const sendSeparately =
         linear ||
         st.longAnswerDelivery === "message" ||

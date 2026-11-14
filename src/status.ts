@@ -474,7 +474,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       // Linear mode (private chats): no transcript card. Just a transient
       // "Working…" message that is updated in place and removed at the end;
       // the final answer is delivered as a normal message (events.ts).
-      const linear = chatId >= 0;
+      const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
       if (linear) {
         const opts = threadOptsFor(s);
         const lines: string[] = [];
@@ -804,7 +804,7 @@ ${chunk}</blockquote>`,
       // Keep the finished card attached: it holds the final answer and stays
       // navigable (pagination). The next turn start decides whether it is
       // replaced (única), preserved (conservar) or kept editing in place (fija).
-      const linear = chatId >= 0;
+      const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
       const finishedCardId = s.transcriptMessageId;
       if (!linear) await publishCard(chatId, s);
       // The card stays alive for pagination; only the live status ends.
@@ -835,7 +835,7 @@ ${chunk}</blockquote>`,
         }
         const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
         try {
-          const linear = chatId >= 0;
+          const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
           const text = `${sessionHeader(s)}<h4>Edits (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
           if (linear) {
             // Standalone edits message: its own id is the reference for the
