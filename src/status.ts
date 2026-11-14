@@ -796,11 +796,10 @@ ${chunk}</blockquote>`,
       if (!linear) await publishCard(chatId, s);
       // The card stays alive for pagination; only the live status ends.
       if (linear) {
-        // Linear mode: keep the transient message so events.ts can turn it
-        // into the final answer (no flicker / no "deleted" gap).
-      } else {
-        s.statusMessageId = undefined;
+        // Linear mode: keep the transient "Working…" message reference so
+        // events.ts can delete it AFTER sending the final answer (no gap).
       }
+      if (!linear) s.statusMessageId = undefined;
       forgetStatusMessage(s.sessionId);
       if (unified && dashboard) {
         await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch(() => {});
