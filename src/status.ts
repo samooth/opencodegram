@@ -801,15 +801,19 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (editDetails.length && (finishedCardId || linear)) {
         const editMessageId = finishedCardId ?? 0;
         const editLines: string[] = [];
+        const tableRows: string[] = [];
         for (const detail of editDetails) {
           const file = relativeEditPath(s, extractEditFile(detail.input) ?? `edit ${editLines.length + 1}`);
+          const { added, removed } = editStats(detail.input);
+          tableRows.push(`<tr><td><code>${esc(file)}</code></td><td>+${added}</td><td>-${removed}</td></tr>`);
           const diff = formatEditDiff(detail.input, settings.diffStyle, s.directory);
           const capped = capDiff(diff, 12);
           editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<details><summary>Diff</summary><blockquote><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote></details>` : ""}`);
         }
+        const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
         try {
           const linear = chatId >= 0;
-          const text = `${sessionHeader(s)}<h4>Edits (${editDetails.length})</h4>\n${editLines.join("\n")}`;
+          const text = `${sessionHeader(s)}<h4>Edits (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
           if (linear) {
             // Standalone edits message: its own id is the reference for the
             // ✏️/Full diffs buttons and the persisted snapshot.
