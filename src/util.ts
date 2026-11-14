@@ -127,13 +127,14 @@ export function projectLabel(directory?: string): string {
   return `${projectEmoji(directory)} ${name}`;
 }
 
-export function sessionHeader(session?: { sessionId?: string; topicTitle?: string; directory?: string } | null, fallbackId?: string): string {
+export function sessionHeader(session?: { sessionId?: string; topicTitle?: string; directory?: string } | null, fallbackId?: string, showName = true): string {
   const sid = (session?.sessionId ?? fallbackId ?? "").trim();
   if (!sid) return "";
+  const short = sid.slice(0, 8);
+  if (!showName) return `📌 <code>${esc(short)}</code>\n\n`;
   let name = (session?.topicTitle ?? "").trim();
   if (!name && session?.directory) name = session.directory.split("/").filter(Boolean).pop() || "";
   if (!name) name = sid.slice(0, 16);
-  const short = sid.slice(0, 8);
   return `📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>\n\n`;
 }
 

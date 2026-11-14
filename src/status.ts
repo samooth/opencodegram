@@ -522,7 +522,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const lines: string[] = [];
       lines.unshift(sessionHeader(s).trimEnd());
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
-      if (settings.showResourceUsage) lines.push(renderResourceBlock(s));
+      if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s));
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const keyboard = [

@@ -42,7 +42,7 @@ function turnProgressLine(s: ChatSession): string {
 export function createDashboardManager({ tg, store, settings, threadOptsFor }: DashboardDeps) {
   function render(s: ChatSession, chatId: number, opts?: { working?: boolean }): { html: string; keyboard: any[][] } {
     const st = settings.get(chatId);
-    const header = sessionHeader(s).trimEnd();
+    const header = sessionHeader(s, undefined, settings.get(chatId).showSessionNameInStatus).trimEnd();
     const model = s.model
       ? `<code>${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? ` (${esc(s.model.variant)})` : ""}</code>`
       : "<i>sin modelo</i>";
