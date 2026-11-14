@@ -114,22 +114,37 @@ async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || sessionId;
     const safeName = String(name).replace(/[^\w.-]+/g, "_").slice(0, 40) || sessionId.slice(0, 12);
     const blocks = deps.transcript.blocksOf(s).length;
+    // Backfill user prompts from OpenCode's message history so the exports
+    // (HTML/Markdown/JSON-LD) show the prompts that started each turn, even
+    // for sessions created before per-turn prompt persistence existed.
+    const userPrompts: string[] = [];
+    try {
+      const res = await deps.oc.client.session.context({ sessionID: s.sessionId });
+      const msgs = Array.isArray(res) ? res : (((res as { data?: unknown })?.data ?? (res as { messages?: unknown })?.messages) ?? []);
+      for (const m of (msgs as any[])) {
+        if (m?.type !== "user") continue;
+        const text = typeof m?.text === "string" ? m.text.trim() : "";
+        if (text) userPrompts.push(text);
+      }
+    } catch (err) {
+      console.error("[hist] could not load session context", err);
+    }
     let content = "";
     let ext = "html";
     let mimeName = `historial-${safeName}.html`;
     let caption = `📜 Historial (HTML) de <b>${esc(name)}</b> · ${blocks} bloques`;
     if (format === "md") {
-      content = deps.transcript.exportTranscriptMarkdown(s);
+      content = deps.transcript.exportTranscriptMarkdown(s, userPrompts);
       ext = "md";
       mimeName = `historial-${safeName}.md`;
       caption = `📝 Historial (Markdown) de <b>${esc(name)}</b> · ${blocks} bloques`;
     } else if (format === "jsonld") {
-      content = deps.transcript.exportTranscriptJsonLd(s);
+      content = deps.transcript.exportTranscriptJsonLd(s, userPrompts);
       ext = "jsonld";
       mimeName = `dataset-${safeName}.jsonld`;
       caption = `🧠 Dataset (JSON-LD) de <b>${esc(name)}</b> · ${blocks} bloques`;
     } else {
-      content = deps.transcript.exportTranscriptHtml(s);
+      content = deps.transcript.exportTranscriptHtml(s, userPrompts);
       ext = "html";
       mimeName = `historial-${safeName}.html`;
       caption = `📜 Historial (HTML) de <b>${esc(name)}</b> · ${blocks} bloques`;

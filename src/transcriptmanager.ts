@@ -1,7 +1,7 @@
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
-import { clampText, esc, sessionHeader } from "./util.js";
+import { clampText, esc, markdownToHtml, sessionHeader } from "./util.js";
 import {
   paginateTranscript,
   resolvePage,
@@ -173,32 +173,76 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
 
   /**
    * Full transcript as a standalone HTML document, for the 📜 Historial
-   * action. Includes every block (even those trimmed from the card pages).
+   * action. Includes every block (even those trimmed from the card pages) and,
+   * when available, the user prompt that started each turn. Markdown is
+   * rendered to HTML (code blocks stay escaped) so the document is readable
+   * in any browser.
    */
-  const exportTranscriptHtml = (s: ChatSession): string => {
+  const exportTranscriptHtml = (s: ChatSession, userPrompts: string[] = []): string => {
     const blocks = blocksOf(s);
     const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || s.sessionId;
     const title = esc(name);
-    const rows = blocks
-      .map((b) => {
-        const at = new Date(b.at).toLocaleString("es-ES");
+    // Group blocks by turn, mirroring the Markdown/JSON-LD exporters.
+    const byTurn = new Map<number, TranscriptBlock[]>();
+    const noTurn: TranscriptBlock[] = [];
+    for (const b of blocks) {
+      if (b.turn !== undefined) {
+        const arr = byTurn.get(b.turn) ?? [];
+        arr.push(b);
+        byTurn.set(b.turn, arr);
+      } else {
+        noTurn.push(b);
+      }
+    }
+    const turnKeys = [...byTurn.keys()].sort((a, b) => a - b);
+    const lastPrompt = store?.lastPromptBySession?.get?.(s.sessionId);
+    const kindLabel: Record<TranscriptKind, string> = { thinking: "💭 Pensamiento", tools: "🔧 Herramientas", answer: "💬 Respuesta", meta: "ℹ️ Meta" };
+    const renderBlocks = (bs: TranscriptBlock[]) =>
+      bs.map((b) => {
         const kind = kindLabel[b.kind] ?? b.kind;
-        const body = b.text.trim() ? `<pre style="white-space:pre-wrap;font-family:inherit">${esc(b.text)}</pre>` : "<p>(vacío)</p>";
-        return `<section><h2>${kind} <small>· ${esc(at)}</small></h2>${body}</section>`;
-      })
-      .join("\n");
+        const body = b.text.trim() ? markdownToHtml(b.text) : "<p><i>(vacío)</i></p>";
+        return `<section class="block"><h3>${esc(kind)}</h3>${body}</section>`;
+      }).join("\n");
+    const sections: string[] = [];
+    turnKeys.forEach((t, idx) => {
+      const bs = byTurn.get(t) ?? [];
+      const prompt = userPrompts[idx] ?? store?.getTurnPrompt?.(s.sessionId, t) ?? (idx === turnKeys.length - 1 ? lastPrompt : undefined);
+      const parts: string[] = [`<h2>Turno ${t}</h2>`];
+      if (prompt && prompt.trim()) {
+        parts.push(`<section class="prompt"><h3>👤 Usuario</h3>${markdownToHtml(prompt)}</section>`);
+      }
+      parts.push(renderBlocks(bs));
+      sections.push(parts.join("\n"));
+    });
+    if (noTurn.length) {
+      const parts: string[] = ["<h2>Sin turno</h2>"];
+      // Best-effort: a single leading prompt if available.
+      if (userPrompts.length && turnKeys.length === 0) {
+        parts.push(`<section class="prompt"><h3>👤 Usuario</h3>${markdownToHtml(userPrompts[0])}</section>`);
+      }
+      parts.push(renderBlocks(noTurn));
+      sections.push(parts.join("\n"));
+    }
+    const body = sections.join("\n<hr/>\n") || "<p>(sin bloques)</p>";
     return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <title>${title} — historial</title>
 <style>
-body{max-width:56em;margin:2em auto;padding:0 1em;font-family:system-ui,sans-serif;color:#1a1a1a;line-height:1.5}
-h1{font-size:1.4em}h2{font-size:1.02em;margin:1.4em 0 .4em;color:#444}
-section{border-bottom:1px solid #eee;padding-bottom:.6em}
-pre{margin:.2em 0}small{font-weight:400;color:#888}
+body{max-width:60em;margin:2em auto;padding:0 1em;font-family:system-ui,sans-serif;color:#1a1a1a;line-height:1.6}
+h1{font-size:1.5em}h2{font-size:1.2em;margin:1.6em 0 .4em;color:#222;border-bottom:1px solid #eee;padding-bottom:.2em}
+h3{font-size:1em;margin:1em 0 .3em;color:#555}
+section.block{margin:.6em 0 1em}
+section.prompt{background:#f4f7fb;border-left:3px solid #4a90d9;padding:.6em 1em;margin:.6em 0;border-radius:4px}
+pre,code{font-family:ui-monospace,monospace;font-size:.9em}
+pre{background:#f6f6f6;padding:.6em .8em;border-radius:4px;overflow-x:auto}
+blockquote{border-left:3px solid #ccc;padding:.2em .8em;color:#444;margin:.4em 0}
+table{border-collapse:collapse;margin:.4em 0}th,td{border:1px solid #ddd;padding:.3em .6em}
+hr{border:none;border-top:1px solid #eee;margin:1.2em 0}
+small{color:#888}
 </style></head>
 <body><h1>📜 ${title}</h1>
 <p><i>${esc(s.sessionId)} · ${blocks.length} bloques · exportado ${esc(new Date().toLocaleString("es-ES"))}</i></p>
-${rows || "<p>(sin bloques)</p>"}
+${body}
 </body></html>`;
   };
 
@@ -371,7 +415,7 @@ ${rows || "<p>(sin bloques)</p>"}
   };
 
   /** Render the transcript as Markdown (for export/training). */
-  const exportTranscriptMarkdown = (s: ChatSession): string => {
+  const exportTranscriptMarkdown = (s: ChatSession, userPrompts: string[] = []): string => {
     const blocks = blocksOf(s);
     const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || s.sessionId;
     const lines: string[] = [];
@@ -407,9 +451,16 @@ ${rows || "<p>(sin bloques)</p>"}
         lines.push("");
       }
     } else {
-      for (const t of turns) {
+      turns.forEach((t, idx) => {
         lines.push(`## Turno ${t}`);
         lines.push("");
+        const prompt = userPrompts[idx] ?? store?.getTurnPrompt?.(s.sessionId, t) ?? (idx === turns.length - 1 ? store?.lastPromptBySession?.get?.(s.sessionId) : undefined);
+        if (prompt && prompt.trim()) {
+          lines.push("### 👤 Usuario");
+          lines.push("");
+          lines.push(prompt.trim());
+          lines.push("");
+        }
         for (const b of byTurn.get(t) ?? []) {
           const label = b.kind === "thinking" ? "💭 Pensamiento" : b.kind === "tools" ? "🔧 Herramientas" : b.kind === "meta" ? "ℹ️ Meta" : "💬 Respuesta";
           lines.push(`### ${label}`);
@@ -417,10 +468,16 @@ ${rows || "<p>(sin bloques)</p>"}
           lines.push(b.text.trim() || "(vacío)");
           lines.push("");
         }
-      }
+      });
       if (noTurn.length) {
         lines.push("## Sin turno");
         lines.push("");
+        if (userPrompts.length && turns.length === 0) {
+          lines.push("### 👤 Usuario");
+          lines.push("");
+          lines.push(userPrompts[0].trim());
+          lines.push("");
+        }
         for (const b of noTurn) {
           const label = b.kind === "thinking" ? "💭 Pensamiento" : b.kind === "tools" ? "🔧 Herramientas" : b.kind === "meta" ? "ℹ️ Meta" : "💬 Respuesta";
           lines.push(`### ${label}`);
@@ -434,7 +491,7 @@ ${rows || "<p>(sin bloques)</p>"}
   };
 
   /** Render the transcript as JSON-LD dataset (for AI training). */
-  const exportTranscriptJsonLd = (s: ChatSession): string => {
+  const exportTranscriptJsonLd = (s: ChatSession, userPrompts: string[] = []): string => {
     const blocks = blocksOf(s);
     const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || s.sessionId;
     const byTurn = new Map<number, TranscriptBlock[]>();
@@ -457,7 +514,7 @@ ${rows || "<p>(sin bloques)</p>"}
       const toolsBlocks = msgs.filter((b) => b.kind === "tools");
       const metaBlocks = msgs.filter((b) => b.kind === "meta");
       const isLast = idx === turnKeys.length - 1;
-      const turnPrompt = store?.getTurnPrompt?.(s.sessionId, t) ?? null;
+      const turnPrompt = userPrompts[idx] ?? store?.getTurnPrompt?.(s.sessionId, t) ?? null;
       const userPrompt = turnPrompt ?? (isLast ? (lastPrompt ?? null) : null);
       const assistantText = answerBlocks.map((b) => b.text).join("\\n\\n").trim();
       const thinkingText = thinkingBlocks.map((b) => b.text).join("\\n\\n").trim();
@@ -488,7 +545,7 @@ ${rows || "<p>(sin bloques)</p>"}
       turns.push({
         "@type": "Conversation",
         "turn": 0,
-        "userPrompt": null,
+        "userPrompt": (userPrompts[0] ?? null),
         "assistantAnswer": noTurn.filter((b) => b.kind === "answer").map((b) => b.text).join("\\n\\n").trim() || null,
         "thinking": noTurn.filter((b) => b.kind === "thinking").map((b) => b.text).join("\\n\\n").trim() || null,
         "tools": noTurn.filter((b) => b.kind === "tools").map((b) => b.text).join("\\n\\n").trim() || null,
