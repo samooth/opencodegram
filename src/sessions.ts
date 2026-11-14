@@ -178,7 +178,8 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     let targetThread = threadId;
     if (targetThread === undefined && topicsEnabled && chatId > 0) {
       try {
-        const topic = await tg.createForumTopic(chatId, title.slice(0, 120));
+        const iconEmojiId = await tg.getDefaultTopicIconEmojiId().catch(() => undefined);
+        const topic = await tg.createForumTopic(chatId, title.slice(0, 120), iconEmojiId);
         targetThread = topic.message_thread_id;
       } catch {
         // Topic creation may fail in non-forum chats; fall back to general chat.
@@ -252,7 +253,8 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
         }
       }
       try {
-        const topic = await tg.createForumTopic(chatId, topicTitle);
+        const iconEmojiId = await tg.getDefaultTopicIconEmojiId().catch(() => undefined);
+        const topic = await tg.createForumTopic(chatId, topicTitle, iconEmojiId);
         targetThread = topic.message_thread_id;
       } catch {
         // Topic creation may fail in non-forum chats; fall back to general chat.
@@ -299,7 +301,8 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     } catch {
       if (threadId === undefined) {
         try {
-          const topic = await tg.createForumTopic(chatId, title);
+          const iconEmojiId = await tg.getDefaultTopicIconEmojiId().catch(() => undefined);
+          const topic = await tg.createForumTopic(chatId, title, iconEmojiId);
           const oldTarget = targetThread;
           if (oldTarget !== undefined) sessionsByThread.delete(store.routeKey(chatId, oldTarget));
           threadBySession.delete(cs.sessionId);

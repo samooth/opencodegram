@@ -384,6 +384,23 @@ export class TelegramClient {
     return this.call("createForumTopic", body);
   }
 
+  getForumTopicIconStickers(): Promise<Array<{ custom_emoji_id?: string }>> {
+    return this.call<Array<{ custom_emoji_id?: string }>>("getForumTopicIconStickers");
+  }
+
+  private topicIconCache: string[] | null = null;
+  async getDefaultTopicIconEmojiId(): Promise<string | undefined> {
+    if (this.topicIconCache === null) {
+      try {
+        const stickers = await this.getForumTopicIconStickers();
+        this.topicIconCache = (stickers ?? []).map((st: any) => st.custom_emoji_id).filter(Boolean) as string[];
+      } catch {
+        this.topicIconCache = [];
+      }
+    }
+    return this.topicIconCache?.[0];
+  }
+
   editForumTopic(chatId: number, messageThreadId: number, name: string): Promise<boolean> {
     return this.call<boolean>("editForumTopic", { chat_id: chatId, message_thread_id: messageThreadId, name });
   }

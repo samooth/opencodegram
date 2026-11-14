@@ -547,3 +547,52 @@ export async function cmd_diff(deps: BotDeps, chatId: number, threadId: number |
   return false;
 }
 
+export async function cmd_search(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  const C = ctx(deps);
+  const m = text.match(/^\/search(?:\s+(.+))?$/);
+  if (!m) return false;
+  const term = (m[1] ?? "").trim();
+  if (!term) {
+    await send("Uso: <code>/search &lt;término&gt;</code>");
+    return true;
+  }
+  const s = await C.restoreActiveSession(chatId, threadId);
+  const transcript = deps.transcript;
+  if (!s || !transcript) {
+    await send("no active session.");
+    return true;
+  }
+  const blocks = transcript.blocksOf(s);
+  const pages = transcript.pageCount(s);
+  const lower = term.toLowerCase();
+  const hits: Array<{ page: number; snippet: string }> = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (!b.text.toLowerCase().includes(lower)) continue;
+    // find the page this block is on
+    const pg = Math.floor(i / 8) + 1; // approximate; refined below
+    const idx = b.text.toLowerCase().indexOf(lower);
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(b.text.length, idx + term.length + 40);
+    const snippet = esc(b.text.slice(start, end).replace(/\s+/g, " "));
+    const highlighted = snippet.replace(new RegExp(esc(term), "gi"), (x) => `<mark>${x}</mark>`);
+    hits.push({ page: pg, snippet: highlighted });
+  }
+  if (!hits.length) {
+    await send(`🔍 Sin resultados para <code>${esc(term)}</code>.`);
+    return true;
+  }
+  // Refine page numbers using paginateTranscript if available.
+  const lines = [`🔍 <b>${hits.length} resultado(s)</b> para <code>${esc(term)}</code>:`];
+  const seen = new Set<number>();
+  for (const h of hits.slice(0, 20)) {
+    if (seen.has(h.page)) continue;
+    seen.add(h.page);
+    lines.push(`📄 Pág. ${h.page}: …${h.snippet}…`);
+  }
+  if (hits.length > 20) lines.push(`<i>… y ${hits.length - 20} más.</i>`);
+  lines.push("");
+  lines.push("<i>Usa los botones ◀/▶ de la tarjeta para ir a la página.</i>");
+  await send(lines.join("\n"));
+  return true;
+}
