@@ -581,7 +581,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         if (tools) lines.push(`<i>🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}</i>`);
         const tokens = s.lastOutputTokens ?? 0;
         if (tokens && elapsed > 1) lines.push(`<i>⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok</i>`);
-        if (settings.showResourceUsage) lines.push(renderResourceBlock(s));
+        if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s));
         await tg.editRichMessage(chatId, s.statusMessageId!, clampText(lines.join("\n"), 3900), {
           ...opts,
           reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
