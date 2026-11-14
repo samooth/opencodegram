@@ -644,12 +644,6 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       }
       if (finalMessage?.message_id && s) s.lastFinalTelegramMessageId = finalMessage.message_id;
     }
-    // Linear mode: delete the transient "Working…" message now that the
-    // final answer has been sent (no gap, no lingering).
-    if (chatId >= 0 && s?.statusMessageId) {
-      await tg.deleteMessage(chatId, s.statusMessageId).catch(() => {});
-      s.statusMessageId = undefined;
-    }
     if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
   }
   s.buffer = "";

@@ -359,26 +359,13 @@ ${rows || "<p>(sin bloques)</p>"}
       if (s.statusMessageId === messageId) s.statusMessageId = undefined;
       return;
     }
-    // Collapse the previous card to a compact marker first, so that even
-    // if deletion fails (message too old / rate-limited) the stale tail does
-    // not linger. Then try to delete it.
-    await tg.editRichMessage(chatId, messageId, "↩️ <i>Turno anterior</i>", { reply_markup: { inline_keyboard: [] } }).catch(() => {});
-    let deleted = false;
-    try {
-      await tg.deleteMessage(chatId, messageId);
-      deleted = true;
-    } catch {
-      deleted = false;
-    }
-    if (deleted) {
-      s.transcriptMessageId = undefined;
-      if (s.statusMessageId === messageId) s.statusMessageId = undefined;
-    } else {
-      // Could not delete: keep the compact marker (small, not confusing).
-      // Do not reuse the message; publishCard will create a fresh card below.
-      s.transcriptMessageId = undefined;
-      if (s.statusMessageId === messageId) s.statusMessageId = undefined;
-    }
+    // Remove the previous card so the new turn's card appears as a new
+    // message (with notification). Deletion is best-effort: if it fails
+    // (message too old, rate-limited) the old card stays; the new card is
+    // still created below.
+    s.transcriptMessageId = undefined;
+    if (s.statusMessageId === messageId) s.statusMessageId = undefined;
+    await tg.deleteMessage(chatId, messageId).catch(() => {});
   };
 
   /** Total number of pages currently available. */
