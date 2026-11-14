@@ -2,7 +2,6 @@ import { open, readFile, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import {
   resolveSafePath,
-  type SafePath,
   FileAccessError,
   MAX_READ_BYTES,
   MAX_DOCUMENT_BYTES,

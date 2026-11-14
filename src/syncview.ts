@@ -159,7 +159,6 @@ export function buildDigestParts(
   const rendered = sliced.map(renderItem).filter(Boolean);
   const recentCount = Math.min(6, rendered.length);
   const recent = rendered.slice(-recentCount);
-  const older = rendered.slice(0, Math.max(0, rendered.length - recentCount));
   const olderPreviews = sliced.slice(0, Math.max(0, sliced.length - recentCount))
     .map(previewOf)
     .filter((line) => line.trim());

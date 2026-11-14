@@ -6,9 +6,13 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { clampText, esc, markdownToHtml, rateLimitRetryAt, sessionHeader, threadOpts, toolIcon } from "./util.js";
+import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon } from "./util.js";
+import { splitBySections, splitMarkdown } from "./transcript.js";
 import { logger } from "./logger.js";
-import { formatBytes, prepareDocument } from "./files/index.js";
+
+const MAX_ARTIFACT_CANDIDATES = 20;
+const MAX_ARTIFACTS = 5;
+import { formatBytes, MAX_DOCUMENT_BYTES, prepareDocument } from "./files/index.js";
 import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted } from "./autoretry.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
@@ -32,7 +36,6 @@ export type EventsDeps = {
   pendingFormsById: Map<string, number>;
   messageToSession: Map<string, string>;
   settings: SettingsStore;
-  flushDraft: (chatId: number, s: ChatSession | undefined) => Promise<void>;
   startStatus: (chatId: number, s: ChatSession) => Promise<void>;
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
@@ -80,7 +83,6 @@ const handleSessionTextStarted: EventHandler = async (event, deps) => {
   if (!s) return;
   // Ensure per-block buffer/typing state is reset even when status already live.
   s.buffer = "";
-  if (!s.draftId) s.draftId = Math.floor(Math.random() * 2147483647) + 1;
   s.stopped = false;
   if (s.typingTimer) clearInterval(s.typingTimer);
   s.typingTimer = setInterval(() => {
@@ -338,7 +340,7 @@ const handleMcpResourcesChanged: EventHandler = async (event, deps) => {
 };
 
 const handleSessionTextDelta: EventHandler = async (event, deps) => {
-  const { store, flushDraft } = deps;
+  const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
   const e = event;
   const sessionId = e.data?.sessionID;
@@ -349,13 +351,13 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
   if (!s) return;
   const delta = e.data?.delta ?? e.data?.text ?? "";
   s.buffer += delta;
-  if (!s.timer) {
-    s.timer = setTimeout(() => void flushDraft(chatId, s), 1000);
-  }
+  // Stream the partial answer into the card; updateStatus throttles edits
+  // (STATUS_MIN_UPDATE_GAP_MS + adaptive 429 backoff).
+  updateStatus(chatId, s).catch(() => {});
 };
 
 const handleSessionStepEnded: EventHandler = async (event, deps) => {
-  const { tg, oc, store, settings, finishStatus, flushDraft } = deps;
+  const { tg, store, settings, finishStatus } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
   const e = event;
   const sessionId = e.data?.sessionID;
@@ -390,25 +392,24 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
       const unique = artifacts
         .map((p: unknown) => String(p))
         .filter((p: string) => !seen.has(p));
-      if (settings2.autoArtifacts && unique.length && unique.length <= 20) {
+      // A large set is a working-tree snapshot, not turn artifacts: skip it.
+      if (settings2.autoArtifacts && unique.length && unique.length <= MAX_ARTIFACT_CANDIDATES) {
         const artifactThread = s.targetThreadId ?? s.threadId ?? resolveThreadId(sessionId);
         const base = s.directory ?? process.cwd();
-        const maxArtifacts = 5;
-        for (const relativePath of unique.slice(0, maxArtifacts)) {
+        for (const relativePath of unique.slice(0, MAX_ARTIFACTS)) {
           seen.add(relativePath);
           try {
             const doc = await prepareDocument(base, relativePath);
-            if (doc.size <= 45 * 1024 * 1024) {
+            if (doc.size <= MAX_DOCUMENT_BYTES) {
               await tg.sendDocument(chatId, doc.absolute, doc.name, `<b>Artifact</b>\n<code>${esc(doc.relative || doc.name)}</code>\n${formatBytes(doc.size)}`, { ...threadOpts(artifactThread), parse_mode: "HTML" });
             }
           } catch (err) {
             console.error("[artifact]", err);
           }
         }
-        if (unique.length > maxArtifacts) {
-          await tg.sendRichMessage(chatId, sessionHeader(s, sessionId) + `📎 ${unique.length - maxArtifacts} more artifact(s) not sent (limit ${maxArtifacts}).`, threadOpts(artifactThread)).catch(() => {});
+        if (unique.length > MAX_ARTIFACTS) {
+          await tg.sendRichMessage(chatId, sessionHeader(s, sessionId) + `📎 ${unique.length - MAX_ARTIFACTS} more artifact(s) not sent (limit ${MAX_ARTIFACTS}).`, threadOpts(artifactThread)).catch(() => {});
         }
-      } else if (unique.length > 20) {
       }
     }
   }
@@ -418,8 +419,8 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
 };
 
 const handleSessionTextEnded: EventHandler = async (event, deps) => {
-  const { tg, oc, store, settings, flushDraft, updateStatus, finishStatus, syncTopicTitle, transcript, publishCard } = deps;
-  const { findSessionById, resolveChatId, resolveThreadId, lastPromptBySession } = store;
+  const { tg, oc, store, settings, finishStatus, syncTopicTitle, transcript, publishCard } = deps;
+  const { findSessionById, resolveChatId, resolveThreadId } = store;
   const e = event;
   const sessionId = e.data?.sessionID;
   let endedText = (e.data?.text ?? "").toString().trim();
@@ -468,16 +469,11 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   }
   // permanent breadcrumb for future debug
   logger.breadcrumb("events", "text.ended.process", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
-  if (s.timer) {
-    clearTimeout(s.timer);
-    s.timer = undefined;
-  }
   if (s.typingTimer) {
     clearInterval(s.typingTimer);
     s.typingTimer = undefined;
   }
   if (!s.stopped) {
-    await flushDraft(chatId, s);
     logger.breadcrumb("events", "text.ended.flush", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
@@ -558,19 +554,17 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           const url = `https://t.me/c/${internalId}/${s.transcriptMessageId}`;
           const kb: any[] = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s), { unified: settings.get(chatId).displayMode === "unified" }))];
           kb.push([{ text: "🔗 Ver en chat", url }]);
-          // The markup edit must not race with the card edits.
-          await new Promise((r) => setTimeout(r, 400));
-          await tg.editMessageReplyMarkup(chatId, s.transcriptMessageId, { inline_keyboard: kb }).catch(() => {});
+          // Do not block the turn-end handler: let the card publish settle,
+          // then add the deep-link button (fire-and-forget).
+          const cardId = s.transcriptMessageId;
+          setTimeout(() => {
+            void tg.editMessageReplyMarkup(chatId, cardId, { inline_keyboard: kb }).catch(() => {});
+          }, 400);
         }
       }
       // Optional: deliver the final answer as a separate rich-text message for readability.
       const st = settings.get(chatId);
-      // Linear mode (private chats): always deliver the final answer as a
-      // normal message (append). The transient "Working…" message is removed
-      // by finishStatus, so nothing is edited in place.
-      const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
       const sendSeparately =
-        linear ||
         st.longAnswerDelivery === "message" ||
         (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold);
       if (sendSeparately) {
@@ -579,7 +573,6 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           // Prefer section-aware splitting: one part per markdown section
           // (headings) so code blocks are never cut mid-way. Falls back to
           // size-based splitting when there are no usable headings.
-          const { splitMarkdown, splitBySections } = await import("./transcript.js");
           const sections = splitBySections(finalText, 3200);
           const parts = sections.length ? sections : splitMarkdown(finalText, 3200);
           for (let i = 0; i < parts.length; i++) {
@@ -628,21 +621,15 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         }
       }
       const finalHtml = sessionHeader(s, undefined, (settings.get(chatId).sessionNameInMessages ?? true)) + `<blockquote>${answerHtml}</blockquote>` + extraHtml + copyRow + `\n${renderResourceBlock(s)}`;
-      const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
-      const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
-      const rapidFinal = false; // disabled: editing previous final can confuse; always send a new message
-      let finalMessage: { message_id?: number } | undefined;
-      if (rapidFinal) {
-        await tg.editRichMessage(chatId, prevFinalTelegramMessageId!, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch(() => {});
-        finalMessage = { message_id: prevFinalTelegramMessageId };
-      } else {
-        finalMessage = await tg.sendRichMessage(chatId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
-          console.error("[send final]", err);
-          return undefined;
-        });
-        if (finalMessage?.message_id) store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
+      // Always send a new message: editing the previous final is confusing.
+      const finalMessage = await tg.sendRichMessage(chatId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
+        console.error("[send final]", err);
+        return undefined;
+      });
+      if (finalMessage?.message_id) {
+        store.rememberMessageSession(chatId, finalMessage.message_id, s.sessionId);
+        s.lastFinalTelegramMessageId = finalMessage.message_id;
       }
-      if (finalMessage?.message_id && s) s.lastFinalTelegramMessageId = finalMessage.message_id;
     }
     if ((settings.get(chatId).autoTopicTitle ?? true)) await syncTopicTitle(chatId, s).catch(() => {});
   }
@@ -699,14 +686,13 @@ const handlePermissionAsked: EventHandler = async (event, deps) => {
 
 const handleFormCreated: EventHandler = async (event, deps) => {
   const { tg, store, pendingForms, pendingFormsById } = deps;
-  const { findSessionById, resolveChatId, resolveThreadId } = store;
+  const { resolveChatId, resolveThreadId } = store;
   const e = event;
   const p = e.data ?? {};
   const form = p.form ?? p;
   const sessionId = p.sessionID ?? form.sessionID;
   const formId = form.id ?? form.formID ?? p.id ?? p.formID;
   const title = form.title ?? p.title ?? "Form";
-  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (chatId !== undefined && formId) {
     const threadId = resolveThreadId(sessionId);
@@ -759,7 +745,7 @@ const handleFormCreated: EventHandler = async (event, deps) => {
 };
 
 const handlePermissionReplied: EventHandler = async (event, deps) => {
-  const { tg, store, pendingPermissions } = deps;
+  const { tg, pendingPermissions } = deps;
   const e = event;
   const p = e.data ?? {};
   const requestId = p.requestID;
@@ -918,7 +904,6 @@ export async function handleEvent(event: { type: string; data?: any }, deps: Eve
           directory: (sess as { location?: { directory?: string }; directory?: string })?.location?.directory
             ?? (sess as { directory?: string })?.directory,
           model: undefined,
-          draftId: 0,
           buffer: "",
           reasoningBuffer: "",
           toolCalls: [],

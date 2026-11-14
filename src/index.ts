@@ -1,4 +1,4 @@
-import { mkdirSync, statSync, renameSync, accessSync, constants } from "node:fs";
+import { mkdirSync, accessSync, constants } from "node:fs";
 import { appendFile, mkdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
@@ -254,7 +254,6 @@ async function main() {
     pendingFormsById: deps.pendingFormsById,
     settings: deps.settings,
     messageToSession: deps.messageToSession,
-    flushDraft: status.flushDraft,
     startStatus: status.startStatus,
     updateStatus: status.updateStatus,
     finishStatus: status.finishStatus,

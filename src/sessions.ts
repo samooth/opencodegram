@@ -1,5 +1,5 @@
 import { readdirSync, statSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { resolve, sep } from "node:path";
 import type { Config } from "./config.js";
 import { getReposDirectory } from "./config.js";
 import type { DashboardManager } from "./dashboard.js";
@@ -8,7 +8,7 @@ import type { SessionStore } from "./store.js";
 import type { SettingsStore } from "./settings.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
-import { clampText, esc, projectEmoji, projectLabel, sessionHeader, threadOpts } from "./util.js";
+import { clampText, esc, projectEmoji, sessionHeader, threadOpts } from "./util.js";
 import { logger } from "./logger.js";
 
 export type SessionsDeps = {
@@ -85,10 +85,6 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       previous.detached = true;
     }
     if (forget || !live) {
-      if (previous.timer) {
-        clearTimeout(previous.timer);
-        previous.timer = undefined;
-      }
       if (previous.typingTimer) {
         clearInterval(previous.typingTimer);
         previous.typingTimer = undefined;
@@ -172,7 +168,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     const _s = session as { id?: string; sessionID?: string; data?: { id?: string } } | undefined;
     const sessionId = (_s?.id ?? _s?.sessionID ?? _s?.data?.id) as string;
     const title = (session as { title?: string })?.title ?? "Telegram session";
-    const cs: ChatSession = { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0 };
+    const cs: ChatSession = { sessionId, directory, model, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0 };
     cs.topicTitle = store.topicTitleBySession.get(sessionId);
 
     let targetThread = threadId;
@@ -332,7 +328,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     // Reuse the existing in-memory object when possible so tool details and
     // status state survive session restoration/switching.
     const existing = sessionsById.get(sessionId);
-    const cs: ChatSession = existing ?? { sessionId, directory, model, draftId: 0, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0, topicTitle: store.topicTitleBySession.get(sessionId) };
+    const cs: ChatSession = existing ?? { sessionId, directory, model, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0, topicTitle: store.topicTitleBySession.get(sessionId) };
     cs.sessionId = sessionId;
     cs.directory = directory;
     cs.model = model;
@@ -354,7 +350,6 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       cs.reasoningBuffer = "";
       cs.toolCalls = [];
       cs.toolCallDetails = [];
-      cs.draftId = 0;
       cs.sentArtifacts = new Set();
     }
     store.rememberSessionChat(sessionId, chatId);

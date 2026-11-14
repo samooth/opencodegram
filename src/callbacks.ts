@@ -8,7 +8,6 @@ import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
 import { showSessionPicker } from "./messages.js";
-import { buildDigestParts } from "./syncview.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { describeThrottles, throttleTotals } from "./ratethrottle.js";
@@ -916,15 +915,11 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "viewfull:": handleViewFull,
 };
 
-export const callbackDispatch = CALLBACK_DISPATCH;
-export const dispatch = CALLBACK_DISPATCH;
-export const handlers = CALLBACK_DISPATCH;
-
 export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): Promise<void> {
-  const { config, tg, oc, store, pendingPermissions, awaitingReason, panels, sessions, modelListByChat, pendingModelByChat } = deps;
-  const { routeKey, getActiveSession, threadOptsFor } = store;
-  const { showSessions, showDeleteSessions, showModels, showCommands, showStatus, sendPanel, providerListByChat, selectedProviderByChat } = panels;
-  const { activateSession, ensureActiveSession, createNewSession } = sessions;
+  const { config, tg, oc, store, panels, sessions, pendingModelByChat } = deps;
+  const { getActiveSession } = store;
+  const { showModels, sendPanel, providerListByChat, selectedProviderByChat } = panels;
+  const { createNewSession } = sessions;
 
   const userId = cq.from?.id;
   const allowedUsers = new Set<number>();
@@ -940,7 +935,6 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
 
-  const data = cq.data ?? "";
   const chatId = cq.message?.chat?.id ?? cq.from.id;
   const cbData = cq.data ?? "";
   const threadId = cq.message?.message_thread_id;

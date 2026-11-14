@@ -5,7 +5,7 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { MetricsStore } from "./metrics.js";
-import { esc, sessionHeader, threadOpts, projectLabel, truncate, clampText } from "./util.js";
+import { esc, sessionHeader, threadOpts, projectLabel, clampText } from "./util.js";
 import { formatBytes } from "./files/index.js";
 import { BOT_COMMANDS } from "./botcommands.js";
 import { readGpuInfo } from "./resources.js";
@@ -31,7 +31,7 @@ export type PanelsDeps = {
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, getLastCot, modelListByChat, routeKey, chatBySession, deliveryBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, modelListByChat, routeKey, chatBySession, deliveryBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
   /** Model lists depend on the project directory, so the cache is per directory. */
   const modelCache = new Map<string, { time: number; data: any[] }>();
   const MODEL_CACHE_TTL_MS = 15000;
@@ -61,7 +61,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     return sent?.message_id;
   }
 
-  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean, includeArchived?: boolean): Promise<void> {
+  async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean, _includeArchived?: boolean): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc", archived: false });
     let list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
@@ -69,7 +69,6 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       list = list.filter((s: any) => chatBySession.get(s.id) === filterChatId);
     }
     if (onlyRunning && getSessionStatus) {
-      const before = list.length;
       list = list.filter((s: any) => getSessionStatus(s.id) === "busy");
     }
     if (!list.length) {
@@ -110,7 +109,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     threadId?: number,
     filterChatId?: number,
     onlyRunning?: boolean,
-    opts?: { userId?: number },
+    _opts?: { userId?: number },
   ): Promise<void> {
     const pageSize = 8;
     const list = await oc.listSessionsCached();
@@ -151,20 +150,6 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const st = getSessionStatus ? getSessionStatus(id) : undefined;
       return st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
     };
-    const statusLabel = (id: string) => {
-      const st = getSessionStatus ? getSessionStatus(id) : undefined;
-      return st === "busy" ? "trabajando" : st === "retry" ? "reintentando" : st === "idle" ? "idle" : "—";
-    };
-    const rows = slice.map((s: any, i: number) => {
-      const title = esc(truncate(s.title ?? "(untitled)", 26));
-      const model = s.model ? esc(`${s.model.providerID}/${s.model.id}`) : "—";
-      const mark = activeId && activeId === s.id ? " ✅" : "";
-      const dirLabel = projectLabel(s.location?.directory ?? s.directory);
-      const lastPrompt = getLastPrompt ? getLastPrompt(s.id) : undefined;
-      const preview = lastPrompt ? `<br/><i>${esc(truncate(lastPrompt, 45))}</i>` : "";
-      const busy = statusIcon(s.id) === "🔴" ? " 🔴" : "";
-      return `<tr><td>${start + i + 1}</td><td>${statusIcon(s.id)} <b>${title}</b>${mark}${busy}${preview}</td><td><code>${esc(s.id)}</code></td><td>${model}<br/><i>${esc(dirLabel)}</i></td></tr>`;
-    });
     const keyboard: any[][] = slice.map((s: any) => {
       const title = (s.title ?? "(untitled)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
@@ -367,8 +352,6 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
 
     const botUptimeSeconds = Math.max(1, Math.round((Date.now() - metrics.startedAt) / 1000));
     const botUptime = `${Math.floor(botUptimeSeconds / 3600)}h ${Math.floor((botUptimeSeconds % 3600) / 60)}m`;
-    const lastError = metrics.lastError;
-
     let title = s?.sessionId ? "(loading…)" : "none";
     let modelLine = "—";
     let directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? "—";

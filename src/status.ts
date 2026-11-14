@@ -2,11 +2,7 @@ import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
-import os from "node:os";
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { formatBytes } from "./files/index.js";
 import { clampText, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
@@ -87,14 +83,6 @@ function parseToolOutput(output: string): string {
 function parseShellOutput(output: string): string | null {
   const text = parseToolOutput(output);
   return text || null;
-}
-
-function prettyJson(value: string): string {
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
 }
 
 function parseToolInput(input: string | undefined): Record<string, unknown> | null {
@@ -293,26 +281,6 @@ function capDiff(diff: string, max: number): string {
 }
 
 export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard }: StatusDeps) {
-  const resolveSessionName = (s: ChatSession): string => {
-    let name = (s.topicTitle || "").trim();
-    if (!name && store) name = (store.topicTitleBySession.get(s.sessionId) || "").trim();
-    if (!name && store) {
-      const prompt = store.lastPromptBySession.get(s.sessionId);
-      if (prompt) name = prompt.trim().slice(0, 40);
-    }
-    if (!name && s.directory) name = s.directory.split("/").filter(Boolean).pop() || "";
-    if (!name) name = s.sessionId.slice(0, 12);
-    return name;
-  };
-  const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
-    if (!s) return;
-    s.timer = undefined;
-    // Drafts disabled: the session card (edited in place) now streams the
-    // partial answer in every chat, including private ones. A separate draft
-    // preview only duplicated/confused the output.
-    return;
-  };
-
   const renderThinkingBottom = (s: ChatSession, settings: ChatSettings): string => {
     if (!settings.showThinking || !settings.showLatestThought || !s.reasoningBuffer.trim() || s.stopped) return "";
     const tail = s.reasoningBuffer.trim().slice(-1600);
@@ -388,7 +356,6 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     };
   };
 
-  const renderLiveStrip = (s: ChatSession, settings: ChatSettings): string => renderLiveParts(s, settings, false).top;
 
   /** Summary shown once the turn is over. */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
@@ -468,42 +435,19 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       if (unified && dashboard) {
         await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
       }
-      // Linear mode (private chats): no transcript card. Just a transient
-      // "Working…" message that is updated in place and removed at the end;
-      // the final answer is delivered as a normal message (events.ts).
-      const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
-      if (linear) {
-        const opts = threadOptsFor(s);
-        const lines: string[] = [];
-        lines.unshift(sessionHeader(s, undefined, settings.showSessionNameInStatus).trimEnd());
-        lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
-        const customBtns = store?.getCustomButtons?.(chatId) ?? [];
-        const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
-        const keyboard = [
-          [{ text: "⏹ Stop", callback_data: "panel:stop" }],
-          ...btnRows,
-        ];
-        const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
-          ...opts,
-          reply_markup: { inline_keyboard: keyboard },
-        });
-        s.statusMessageId = sent.message_id;
-        s.transcriptMessageId = undefined;
-        if (sent?.message_id) {
-          rememberStatusMessage(s.sessionId, chatId, s.targetThreadId ?? s.threadId, sent.message_id);
-          store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
-        }
-        if (unified && dashboard) {
-          await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
-        }
-        return;
-      }
       if (transcript) {
         // Every turn gets its own card created immediately at the bottom, with
         // live streaming while working. Unified and "única" (refloat) replace
         // the previous card (single message per session); "conservar" keeps the
         // finished card as history; "fija" keeps editing the same card in place.
         s.turnSeq = (s.turnSeq ?? 0) + 1;
+        // Bind the prompt that started this turn to its turnSeq so the dataset
+        // export (JSON-LD) can emit one training pair per turn.
+        const pendingPrompt = store?.pendingTurnPromptBySession?.get(s.sessionId);
+        if (pendingPrompt !== undefined) {
+          store?.rememberTurnPrompt(s.sessionId, s.turnSeq, pendingPrompt);
+          store?.pendingTurnPromptBySession?.delete(s.sessionId);
+        }
         s.transcriptFollow = true;
         if (unified || settings.cardBehavior !== "fixed") {
           await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
@@ -555,16 +499,11 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
     s.statusEditing = true;
     s.statusLastUpdate = now;
-    // Draft keep-alive: drafts expire ~30s; refresh while turn is active (private chats).
-    if (!s.stopped && s.draftId) {
-      void flushDraft(chatId, s);
-    }
     try {
       if (transcript) {
         await publishCard(chatId, s);
         return;
       }
-      const MAX = 3800;
       const header = sessionHeader(s).trimEnd();
       const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
       const statusLine = s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`;
@@ -757,15 +696,10 @@ ${chunk}</blockquote>`,
       // Keep the finished card attached: it holds the final answer and stays
       // navigable (pagination). The next turn start decides whether it is
       // replaced (única), preserved (conservar) or kept editing in place (fija).
-      const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
       const finishedCardId = s.transcriptMessageId;
-      if (!linear) await publishCard(chatId, s);
+      await publishCard(chatId, s);
       // The card stays alive for pagination; only the live status ends.
-      if (linear) {
-        // Linear mode: keep the transient "Working…" message reference so
-        // events.ts can delete it AFTER sending the final answer (no gap).
-      }
-      if (!linear) s.statusMessageId = undefined;
+      s.statusMessageId = undefined;
       forgetStatusMessage(s.sessionId);
       if (unified && dashboard) {
         await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch(() => {});
@@ -774,7 +708,7 @@ ${chunk}</blockquote>`,
       // paginated content intact. A snapshot of this turn's edit details is
       // persisted under BOTH message ids so the buttons and the 📝 Diff card
       // button keep working after new turns and restarts.
-      if (editDetails.length && (finishedCardId || linear)) {
+      if (editDetails.length && finishedCardId) {
         const editMessageId = finishedCardId ?? 0;
         const editLines: string[] = [];
         const tableRows: string[] = [];
@@ -788,36 +722,19 @@ ${chunk}</blockquote>`,
         }
         const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
         try {
-          const linear = false; // disabled: user prefers fixed (one card per turn, edited in place)
           const text = `${sessionHeader(s)}<h4>Edits (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
-          if (linear) {
-            // Standalone edits message: its own id is the reference for the
-            // ✏️/Full diffs buttons and the persisted snapshot.
-            const sent = await tg.sendRichMessage(chatId, text, { ...threadOptsFor(s) });
-            const snapshot = editDetails.map((d) => ({ ...d }));
-            if (sent?.message_id) {
-              pendingEdits.set(sent.message_id, s);
-              store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
-              store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
-              await tg.editRichMessage(chatId, sent.message_id, text, {
-                ...threadOptsFor(s),
-                reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, sent.message_id) },
-              }).catch(() => {});
-            }
-          } else {
-            const sent = await tg.sendRichMessage(chatId, text, {
-              ...threadOptsFor(s),
-              reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, editMessageId) },
-            });
-            const snapshot = editDetails.map((d) => ({ ...d }));
-            if (sent?.message_id) {
-              pendingEdits.set(sent.message_id, s);
-              store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
-              // Replying to the edits message must route to its session.
-              store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
-            }
-            if (finishedCardId) store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
+          const sent = await tg.sendRichMessage(chatId, text, {
+            ...threadOptsFor(s),
+            reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, editMessageId) },
+          });
+          const snapshot = editDetails.map((d) => ({ ...d }));
+          if (sent?.message_id) {
+            pendingEdits.set(sent.message_id, s);
+            store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
+            // Replying to the edits message must route to its session.
+            store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
           }
+          if (finishedCardId) store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
         } catch (err) {
           console.error("[status] edits message failed", err);
         }
@@ -834,7 +751,7 @@ ${chunk}</blockquote>`,
         store?.rememberPendingEdits(messageId, s.sessionId, editDetails.map((d) => ({ ...d })));
       }
       const fullThinking = (!s.stopped && s.reasoningBuffer.trim()) ? s.reasoningBuffer.trim() : "";
-      const text = clampText(renderFinished(s, undefined, settings, !fullThinking || !settings.showThinking));
+      const text = clampText(renderFinished(s, settings, !fullThinking || !settings.showThinking));
       const keyboard = finishedKeyboard(editDetails, undefined, s, messageId);
       await tg
         .editRichMessage(chatId, messageId, text, {
@@ -855,7 +772,7 @@ ${chunk}</blockquote>`,
     }
   };
 
-  const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings, inlineThinking = true): string => {
+  const renderFinished = (target: ChatSession, settings: ChatSettings, inlineThinking = true): string => {
     const previousCot = target.cotBuffer?.trim() ?? "";
     const lines: string[] = [];
     lines.unshift(sessionHeader(target, undefined, settings.showSessionNameInStatus).trimEnd());
@@ -1019,5 +936,5 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     return true;
   };
 
-  return { flushDraft, startStatus, updateStatus, finishStatus, publishCard, showEditDiff, sendFullDiffs };
+  return { startStatus, updateStatus, finishStatus, publishCard, showEditDiff, sendFullDiffs };
 }

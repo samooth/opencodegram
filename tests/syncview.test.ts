@@ -19,7 +19,6 @@ afterEach(() => {
 function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
   return {
     sessionId: "ses_x",
-    draftId: 0,
     buffer: "",
     reasoningBuffer: "",
     toolCalls: [],

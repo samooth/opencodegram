@@ -6,8 +6,6 @@ import {
   FileAccessError,
 } from "./path.js";
 
-export type TreeEntry = { path: string; depth: number; isDir: boolean };
-
 export async function treeDirectory(base: string, input = "", maxDepth = 3): Promise<{ base: string; relative: string; lines: string[] }> {
   const safe = await resolveSafePath(base, input);
   const st = await stat(safe.absolute).catch(() => null);
@@ -24,7 +22,7 @@ export async function treeDirectory(base: string, input = "", maxDepth = 3): Pro
       return;
     }
     const filtered = entries
-      .filter((e) => !e.name.startsWith(".") || false)
+      .filter((e) => !e.name.startsWith("."))
       .sort((a, b) => {
         if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
         return a.name.localeCompare(b.name);

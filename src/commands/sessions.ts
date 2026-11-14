@@ -1,12 +1,7 @@
-import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "../context.js";
-import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument, treeDirectory } from "../files/index.js";
-import * as mcp from "../mcp.js";
-import { isSettingsKey, renderSettings, settingsKeyboard } from "../settings.js";
-import * as vcs from "../vcs.js";
-import { clampText, colorDiff, esc, sessionHeader, threadOpts, truncate } from "../util.js";
+import { colorDiff, esc } from "../util.js";
 import { buildDigestParts } from "../syncview.js";
-import { cancelAutoRetry, notePromptSent } from "../autoretry.js";
+import { cancelAutoRetry } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
 export async function cmd_status(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
@@ -564,7 +559,6 @@ export async function cmd_search(deps: BotDeps, chatId: number, threadId: number
     return true;
   }
   const blocks = transcript.blocksOf(s);
-  const pages = transcript.pageCount(s);
   const lower = term.toLowerCase();
   const hits: Array<{ page: number; snippet: string }> = [];
   for (let i = 0; i < blocks.length; i++) {
