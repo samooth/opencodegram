@@ -360,7 +360,7 @@ export class SessionStore {
         lines.push(lastPrompt.slice(0, 200));
       }
       const body = lines.join("\n");
-      const html = `<pre>${esc(body)}</pre>\n${resources}`;
+      const html = `<pre>${esc(body)}</pre>\n<hr/>\n${resources}`;
       try {
         await tg.editRichMessage(info.chatId, info.messageId, clampText(html, 3900), {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),

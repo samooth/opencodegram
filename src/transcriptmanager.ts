@@ -107,7 +107,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
   ): { html: string; page: number; total: number } | undefined => {
     const all = blocksOf(s);
     const pages = paginateTranscript(all);
-    const header = sessionHeader(s).trimEnd();
+    const header = `<h3>${sessionHeader(s).trimEnd()}</h3>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = opts.showResources === false ? "" : renderResources ? renderResources(s) : "";
     const extraTop = opts.extraTop ?? "";
@@ -121,13 +121,13 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     if (s.transcriptFollow !== false && !s.statusFinished && s.turnSeq !== undefined) {
       const hasTurnBlocks = all.some((b) => b.turn === s.turnSeq);
       if (!hasTurnBlocks) {
-        const parts = [header, extraTop, extraBottom, resources].filter(Boolean);
+        const parts = [header, extraTop, extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
         return { html: clampText(parts.join("\n\n"), 3900), page: Math.max(0, pages.length - 1), total: pages.length };
       }
     }
 
     if (!pages.length) {
-      const parts = [header, extraTop, extraBottom, resources].filter(Boolean);
+      const parts = [header, extraTop, extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
       return { html: clampText(parts.join("\n\n"), 3900), page: 0, total: 0 };
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
@@ -136,7 +136,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
 
     // When streaming a bottom section (e.g. live thought), protect it from being truncated.
     if (extraBottom) {
-      const tailParts = [extraBottom, resources].filter(Boolean);
+      const tailParts = [extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
       const headParts = [header, indicator, extraTop].filter(Boolean);
       const overhead = headParts.join("\n\n").length + (headParts.length ? 2 : 0) + tailParts.join("\n\n").length + (tailParts.length ? 2 : 0);
       let budget = 3900 - overhead - 2;
@@ -157,7 +157,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
     }
 
-    const parts = [header, indicator, extraTop, page.html, resources].filter(Boolean);
+    const parts = [header, indicator, extraTop, page.html, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
     return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
   };
 
