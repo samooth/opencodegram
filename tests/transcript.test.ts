@@ -531,6 +531,54 @@ describe("transcript manager", () => {
     expect(dataset.trainingPairs[0].toolCalls[0].output).toBe("a.ts");
   });
 
+  test("exportTranscriptHtml renders markdown as HTML safely", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.topicTitle = "Mi <repo>";
+    transcript.addBlock(s, "answer", "<p>hola</p>", "**bold** and `code`\n<script>alert(1)</script>");
+    const html = transcript.exportTranscriptHtml(s);
+    // Markdown converted to HTML tags, not escaped as text.
+    expect(html).toContain("<b>bold</b>");
+    expect(html).toContain("<code>code</code>");
+    // Raw script tag must not survive (escaped by markdownToHtml).
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    // Title escaped.
+    expect(html).toContain("Mi &lt;repo&gt;");
+  });
+
+  test("exportTranscriptHtml includes user prompt when provided", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.turnSeq = 1;
+    transcript.addBlock(s, "answer", "<p>hecho</p>", "hecho");
+    const html = transcript.exportTranscriptHtml(s, ["haz algo importante"]);
+    expect(html).toContain("👤 Usuario");
+    expect(html).toContain("haz algo importante");
+  });
+
+  test("exportTranscriptMarkdown includes user prompt per turn", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.turnSeq = 1;
+    store.lastPromptBySession.set(s.sessionId, "prompt original");
+    transcript.addBlock(s, "answer", "<p>ok</p>", "ok");
+    const md = transcript.exportTranscriptMarkdown(s, ["prompt pasado"]);
+    expect(md).toContain("### 👤 Usuario");
+    expect(md).toContain("prompt pasado");
+  });
+
+  test("exportTranscriptJsonLd uses provided userPrompts over store", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.turnSeq = 1;
+    store.lastPromptBySession.set(s.sessionId, "viejo");
+    transcript.addBlock(s, "answer", "<p>ok</p>", "ok");
+    const dataset = JSON.parse(transcript.exportTranscriptJsonLd(s, ["nuevo prompt"]));
+    expect(dataset.conversation[0].userPrompt).toBe("nuevo prompt");
+    expect(dataset.trainingPairs[0].messages[0].content).toBe("nuevo prompt");
+  });
+
   test("the card shows a 📝 Diff button when the turn had edits", async () => {
     const { store, transcript } = makeHarness();
     const s = makeSession();
