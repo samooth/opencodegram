@@ -148,7 +148,9 @@ export class TelegramClient {
           errorCode >= 500 ||
           /bad gateway|service unavailable|gateway timeout|too many requests/i.test(desc));
       // getUpdates uses long-polling and must keep retrying through outages.
-      const maxAttempts = method === "getUpdates" ? 12 : 5;
+      // getUpdates is handled by the poll loop (with its own backoff); do not
+      // retry internally, otherwise a single outage stalls polling for minutes.
+      const maxAttempts = method === "getUpdates" ? 1 : 5;
       if (isRetryableTransient && attempt < maxAttempts) {
         const wait = Math.min(30000, 1000 * Math.pow(2, attempt));
         if (method !== "getUpdates") {
