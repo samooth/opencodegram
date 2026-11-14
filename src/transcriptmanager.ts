@@ -62,10 +62,12 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     html: string,
     text: string,
     render?: (chunk: string) => string,
+    toolCalls?: TranscriptBlock["toolCalls"],
   ): void => {
     // The store owns the block list; `s.transcript` is only a view of it.
     // Pushing to both would duplicate every block.
     const push = (piece: TranscriptBlock) => {
+      if (toolCalls?.length) piece.toolCalls = toolCalls.map((c) => ({ ...c }));
       store.appendTranscript(s.sessionId, piece);
     };
     // Tag blocks with the current turn and mark the first block of the turn so
@@ -447,49 +449,113 @@ ${rows || "<p>(sin bloques)</p>"}
       }
     }
     const turnKeys = [...byTurn.keys()].sort((a, b) => a - b);
-    const turns = turnKeys.map((t) => ({
-      "@type": "Conversation",
-      "turn": t,
-      "messages": (byTurn.get(t) ?? []).map((b, i) => ({
-        "@type": "Message",
-        "position": i + 1,
-        "role": "assistant",
-        "kind": b.kind,
-        "text": b.text,
-        "dateCreated": new Date(b.at).toISOString(),
-      })),
-    }));
+    const lastPrompt = store?.lastPromptBySession?.get?.(s.sessionId);
+    const turns = turnKeys.map((t, idx) => {
+      const msgs = byTurn.get(t) ?? [];
+      const answerBlocks = msgs.filter((b) => b.kind === "answer");
+      const thinkingBlocks = msgs.filter((b) => b.kind === "thinking");
+      const toolsBlocks = msgs.filter((b) => b.kind === "tools");
+      const metaBlocks = msgs.filter((b) => b.kind === "meta");
+      const isLast = idx === turnKeys.length - 1;
+      const userPrompt = isLast ? (lastPrompt ?? null) : null;
+      const assistantText = answerBlocks.map((b) => b.text).join("\\n\\n").trim();
+      const thinkingText = thinkingBlocks.map((b) => b.text).join("\\n\\n").trim();
+      const toolsText = toolsBlocks.map((b) => b.text).join("\\n\\n").trim();
+      const metaText = metaBlocks.map((b) => b.text).join("\\n\\n").trim();
+      const toolCalls = toolsBlocks.flatMap((b) => b.toolCalls ?? []);
+      return {
+        "@type": "Conversation",
+        "turn": t,
+        "userPrompt": userPrompt,
+        "assistantAnswer": assistantText || null,
+        "thinking": thinkingText || null,
+        "tools": toolsText || null,
+        "toolCalls": toolCalls.length ? toolCalls : undefined,
+        "meta": metaText || null,
+        "messages": msgs.map((b, i) => ({
+          "@type": "Message",
+          "position": i + 1,
+          "role": "assistant",
+          "kind": b.kind,
+          "text": b.text,
+          ...(b.toolCalls?.length ? { "toolCalls": b.toolCalls } : {}),
+          "dateCreated": new Date(b.at).toISOString(),
+        })),
+      };
+    });
     if (noTurn.length) {
       turns.push({
         "@type": "Conversation",
         "turn": 0,
+        "userPrompt": null,
+        "assistantAnswer": noTurn.filter((b) => b.kind === "answer").map((b) => b.text).join("\\n\\n").trim() || null,
+        "thinking": noTurn.filter((b) => b.kind === "thinking").map((b) => b.text).join("\\n\\n").trim() || null,
+        "tools": noTurn.filter((b) => b.kind === "tools").map((b) => b.text).join("\\n\\n").trim() || null,
+        "toolCalls": noTurn.flatMap((b) => b.toolCalls ?? []).length
+          ? noTurn.flatMap((b) => b.toolCalls ?? [])
+          : undefined,
+        "meta": noTurn.filter((b) => b.kind === "meta").map((b) => b.text).join("\\n\\n").trim() || null,
         "messages": noTurn.map((b, i) => ({
           "@type": "Message",
           "position": i + 1,
           "role": "assistant",
           "kind": b.kind,
           "text": b.text,
+          ...(b.toolCalls?.length ? { "toolCalls": b.toolCalls } : {}),
           "dateCreated": new Date(b.at).toISOString(),
         })),
       });
     }
+
+    // Training pairs in OpenAI chat format (only where a user prompt exists).
+    const trainingPairs = turns
+      .filter((t) => t.userPrompt)
+      .map((t) => ({
+        "turn": t.turn,
+        "messages": [
+          { "role": "user", "content": t.userPrompt },
+          ...(t.thinking ? [{ "role": "assistant", "content": `<think>\\n${t.thinking}\\n</think>` }] : []),
+          ...(t.assistantAnswer ? [{ "role": "assistant", "content": t.assistantAnswer }] : []),
+        ],
+        ...(t.toolCalls?.length ? { "toolCalls": t.toolCalls } : {}),
+      }));
+
     const dataset = {
       "@context": "https://schema.org",
       "@type": "Dataset",
       "name": `${name} — transcript`,
-      "description": "Session transcript exported as a conversation dataset for AI training. Blocks are grouped by turn; each message carries its kind (answer/thinking/tools/meta).",
+      "description": "Session transcript exported as a conversation dataset for AI training. Blocks are grouped by turn; each turn carries userPrompt (when available), assistantAnswer, thinking, tools and meta. Includes trainingPairs in OpenAI chat format.",
       "identifier": s.sessionId,
+      "session": {
+        "sessionId": s.sessionId,
+        "topicTitle": s.topicTitle ?? null,
+        "directory": s.directory ?? null,
+        "model": s.model
+          ? { "providerID": s.model.providerID, "id": s.model.id, "variant": s.model.variant ?? null }
+          : null,
+        "contextWindow": s.contextWindow ?? null,
+        "lastContextTokens": s.lastContextTokens ?? null,
+        "currentToolCalls": s.toolCallDetails.length
+          ? s.toolCallDetails.map((d) => ({ name: d.name, input: d.input ?? null, output: d.output ?? null, status: d.status ?? null }))
+          : null,
+      },
       "creator": { "@type": "SoftwareApplication", "name": "opencodegram" },
       "dateCreated": new Date().toISOString(),
-      "keywords": ["conversation", "ai-training", "opencode", "transcript"],
+      "keywords": ["conversation", "ai-training", "opencode", "transcript", "tool-calls", "reasoning"],
       "license": "https://creativecommons.org/licenses/by/4.0/",
-      "variableMeasured": ["text", "kind", "turn"],
+      "variableMeasured": ["text", "kind", "turn", "userPrompt", "assistantAnswer", "thinking", "tools"],
+      "stats": {
+        "blocks": blocks.length,
+        "turns": turnKeys.length,
+        "trainingPairs": trainingPairs.length,
+      },
       "distribution": {
         "@type": "DataDownload",
         "encodingFormat": "application/ld+json",
-        "contentUrl": `historial-${s.sessionId.slice(0, 8)}.jsonld`,
+        "contentUrl": `dataset-${s.sessionId.slice(0, 8)}.jsonld`,
       },
       "conversation": turns,
+      "trainingPairs": trainingPairs,
     };
     return JSON.stringify(dataset, null, 2);
   };

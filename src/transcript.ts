@@ -12,6 +12,14 @@ import type { ChatSession } from "./types.js";
 
 export type TranscriptKind = "answer" | "thinking" | "tools" | "meta";
 
+/** Structured tool call kept alongside a rendered tools block (for exports). */
+export type TranscriptToolCall = {
+  name: string;
+  input?: string;
+  output?: string;
+  status?: string;
+};
+
 export type TranscriptBlock = {
   kind: TranscriptKind;
   html: string;
@@ -21,6 +29,8 @@ export type TranscriptBlock = {
   turn?: number;
   /** Forces this block to start a new page (first block of a turn). */
   pageBreak?: boolean;
+  /** Structured tool calls (kind "tools"): full input/output for datasets. */
+  toolCalls?: TranscriptToolCall[];
 };
 
 export type TranscriptPage = {
