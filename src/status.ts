@@ -455,6 +455,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.toolCalls = [];
     s.toolCallDetails = [];
     s.stopped = false;
+    s.transcriptPage = undefined;
+    // Clear the previous turn's final answer so the new card does not
+    // carry the old response's tail (Ver completo button, etc.).
+    s.lastFinalText = undefined;
+    s.lastFinalMessageId = undefined;
+    s.lastFinalTelegramMessageId = undefined;
     s.statusLastUpdate = Date.now();
     // Keep the previous final-answer message id for rapid-final editing; do
     // not delete it here (deleting on new turn surprised users and removed
