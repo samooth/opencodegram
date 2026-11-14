@@ -499,7 +499,9 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     try {
       const res = await oc.client.session.get({ sessionID: s.sessionId });
       const title = String((res as { title?: string })?.title ?? "").trim().slice(0, 120);
-      if (!title || title === s.topicTitle) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "same-or-empty" }); return; }
+      if (!title) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "empty-title" }); return; }
+      // Always attempt the rename (idempotent on Telegram's side): the cached
+      // topicTitle may be stale (e.g. after testing or a bot switch).
       const targetChat = s.targetChatId ?? chatId;
       await tg.editForumTopic(targetChat, threadId, title);
       s.topicTitle = title;
