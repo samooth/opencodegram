@@ -478,7 +478,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       if (linear) {
         const opts = threadOptsFor(s);
         const lines: string[] = [];
-        lines.unshift(sessionHeader(s).trimEnd());
+        lines.unshift(sessionHeader(s, undefined, settings.showSessionNameInStatus).trimEnd());
         lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
         const customBtns = store?.getCustomButtons?.(chatId) ?? [];
         const btnRows = customBtns.map((b, i) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
@@ -893,7 +893,7 @@ ${chunk}</blockquote>`,
   const renderFinished = (target: ChatSession, expandedEditIndex: number | undefined, settings: ChatSettings, inlineThinking = true): string => {
     const previousCot = target.cotBuffer?.trim() ?? "";
     const lines: string[] = [];
-    lines.unshift(sessionHeader(target).trimEnd());
+    lines.unshift(sessionHeader(target, undefined, settings.showSessionNameInStatus).trimEnd());
     if (settings.showCot && previousCot) {
       const cot = previousCot.slice(-3500);
       lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})
