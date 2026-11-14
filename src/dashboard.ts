@@ -20,13 +20,13 @@ function toolStatsLine(s: ChatSession): string {
   const ok = details.filter((d) => d.status === "success").length;
   const fail = details.filter((d) => d.status === "failed").length;
   const run = details.filter((d) => d.status === "running" || !d.status).length;
-  const parts = [`${details.length} total`];
-  if (ok) parts.push(`✅ ${ok}`);
-  if (fail) parts.push(`❌ ${fail}`);
-  if (run) parts.push(`⏳ ${run}`);
   const last = details[details.length - 1];
-  const lastText = last ? `\n<i>Última:</i> ${toolIcon(last.name)} ${esc(truncate(last.name, 40))}` : "";
-  return `🔧 <b>Tools (turno)</b>: ${parts.join(" · ")}${lastText}`;
+  const lastText = last ? `${toolIcon(last.name)} ${esc(truncate(last.name, 40))}` : "—";
+  return [
+    "🔧 <b>Tools (turno)</b>",
+    `<table><tr><th>Total</th><th>✅</th><th>❌</th><th>⏳</th><th>Última</th></tr>`,
+    `<tr><td>${details.length}</td><td>${ok}</td><td>${fail}</td><td>${run}</td><td>${lastText}</td></tr></table>`,
+  ].join("\n");
 }
 
 /** Turn progress: elapsed time and live token speed while working. */
