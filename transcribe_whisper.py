@@ -23,7 +23,9 @@ def main() -> None:
         fail("usage: transcribe_whisper.py <audio_file> [language]", 2)
 
     audio_path = sys.argv[1]
-    language = sys.argv[2].strip() if len(sys.argv) > 2 and sys.argv[2].strip() else DEFAULT_LANGUAGE
+    raw_lang = sys.argv[2].strip() if len(sys.argv) > 2 else ""
+  # "auto" (or empty) lets Whisper detect the language automatically.
+    language = None if raw_lang.lower() in ("", "auto", "detect") else raw_lang
 
     path = Path(audio_path)
     if not path.is_file():
@@ -61,7 +63,9 @@ def main() -> None:
         inputs = processor(audio, sampling_rate=16000, return_tensors="pt")
         input_features = inputs["input_features"].to(device)
 
-        gen_kwargs = {"language": language, "task": "transcribe"}
+        gen_kwargs = {"task": "transcribe"}
+        if language:
+            gen_kwargs["language"] = language
 
         with torch.no_grad():
             predicted_ids = model.generate(input_features, **gen_kwargs)

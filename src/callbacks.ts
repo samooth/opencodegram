@@ -100,10 +100,10 @@ async function handleOps(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
  * 📜 Historial: export the full transcript of the session as an HTML document.
  */
 async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
-  const m = data.match(/^hist:(.+?)(?::(html|md|jsonld))?$/);
+  const m = data.match(/^hist:(.+?)(?::(html|md|jsonld|jsonl))?$/);
   if (!m) return;
   const sessionId = m[1];
-  const format = (m[2] ?? "html") as "html" | "md" | "jsonld";
+  const format = (m[2] ?? "html") as "html" | "md" | "jsonld" | "jsonl";
   await deps.tg.answerCallbackQuery(cq.id, "Generando historial…").catch(() => {});
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
@@ -143,6 +143,11 @@ async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
       ext = "jsonld";
       mimeName = `dataset-${safeName}.jsonld`;
       caption = `🧠 Dataset (JSON-LD) de <b>${esc(name)}</b> · ${blocks} bloques`;
+    } else if (format === "jsonl") {
+      content = deps.transcript.exportTranscriptJsonl(s, userPrompts);
+      ext = "jsonl";
+      mimeName = `dataset-${safeName}.jsonl`;
+      caption = `🧠 Dataset (JSONL) de <b>${esc(name)}</b> · ${blocks} bloques`;
     } else {
       content = deps.transcript.exportTranscriptHtml(s, userPrompts);
       ext = "html";
@@ -181,7 +186,7 @@ async function handleHistoryFormatPicker(deps: BotDeps, cq: TelegramCallbackQuer
     reply_markup: {
       inline_keyboard: [
         [{ text: "📜 HTML", callback_data: `hist:${sessionId}:html` }, { text: "📝 Markdown", callback_data: `hist:${sessionId}:md` }],
-        [{ text: "🧠 Dataset (JSON-LD)", callback_data: `hist:${sessionId}:jsonld` }],
+        [{ text: "🧠 Dataset (JSON-LD)", callback_data: `hist:${sessionId}:jsonld` }, { text: "🧠 Dataset (JSONL)", callback_data: `hist:${sessionId}:jsonl` }],
       ],
     },
   }).catch(() => {});

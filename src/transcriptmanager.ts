@@ -618,10 +618,60 @@ ${body}
     return JSON.stringify(dataset, null, 2);
   };
 
+  /** Render the transcript as JSONL (one JSON object per turn, OpenAI chat format). */
+  const exportTranscriptJsonl = (s: ChatSession, userPrompts: string[] = []): string => {
+    const blocks = blocksOf(s);
+    const byTurn = new Map<number, TranscriptBlock[]>();
+    const noTurn: TranscriptBlock[] = [];
+    for (const b of blocks) {
+      if (b.turn !== undefined) {
+        const arr = byTurn.get(b.turn) ?? [];
+        arr.push(b);
+        byTurn.set(b.turn, arr);
+      } else {
+        noTurn.push(b);
+      }
+    }
+    const turnKeys = [...byTurn.keys()].sort((a, b) => a - b);
+    const lastPrompt = store?.lastPromptBySession?.get?.(s.sessionId);
+    const lines: string[] = [];
+    turnKeys.forEach((t, idx) => {
+      const msgs = byTurn.get(t) ?? [];
+      const answerBlocks = msgs.filter((b) => b.kind === "answer");
+      const thinkingBlocks = msgs.filter((b) => b.kind === "thinking");
+      const toolsBlocks = msgs.filter((b) => b.kind === "tools");
+      const assistantText = answerBlocks.map((b) => b.text).join("\n\n").trim();
+      const thinkingText = thinkingBlocks.map((b) => b.text).join("\n\n").trim();
+      const toolCalls = toolsBlocks.flatMap((b) => b.toolCalls ?? []);
+      const userPrompt = userPrompts[idx] ?? store?.getTurnPrompt?.(s.sessionId, t) ?? (idx === turnKeys.length - 1 ? lastPrompt : undefined);
+      const messages: Array<{ role: string; content: string }> = [];
+      if (userPrompt && userPrompt.trim()) messages.push({ role: "user", content: userPrompt.trim() });
+      if (thinkingText) messages.push({ role: "assistant", content: `<think>\n${thinkingText}\n</think>` });
+      if (assistantText) messages.push({ role: "assistant", content: assistantText });
+      const entry: Record<string, unknown> = { messages };
+      if (toolCalls.length) entry.tool_calls = toolCalls;
+      if (entry.messages && (entry.messages as unknown[]).length) lines.push(JSON.stringify(entry));
+    });
+    if (noTurn.length) {
+      const answerText = noTurn.filter((b) => b.kind === "answer").map((b) => b.text).join("\n\n").trim();
+      const thinkingText = noTurn.filter((b) => b.kind === "thinking").map((b) => b.text).join("\n\n").trim();
+      const toolCalls = noTurn.flatMap((b) => b.toolCalls ?? []);
+      const messages: Array<{ role: string; content: string }> = [];
+      if (thinkingText) messages.push({ role: "assistant", content: `<think>\n${thinkingText}\n</think>` });
+      if (answerText) messages.push({ role: "assistant", content: answerText });
+      if (messages.length) {
+        const entry: Record<string, unknown> = { messages };
+        if (toolCalls.length) entry.tool_calls = toolCalls;
+        lines.push(JSON.stringify(entry));
+      }
+    }
+    return lines.join("\n") + (lines.length ? "\n" : "");
+  };
+
   /** Total number of pages currently available. */
   const pageCount = (s: ChatSession): number => paginateTranscript(blocksOf(s)).length;
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, pageCount, blocksOf, refloat };
+  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };

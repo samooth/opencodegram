@@ -67,7 +67,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) {
-      lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
+      lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
     }
     const tools = s.toolCallDetails.length;
     const failedTools = s.toolCallDetails.filter((detail) => detail.status === "failed").length;
@@ -98,6 +98,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
   /** Summary shown once the turn is over. */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
     const lines: string[] = ["✅ <b>Done</b>"];
+    const prompt = store?.lastPromptBySession.get(s.sessionId);
+    if (prompt?.trim()) lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
     if (s.detached) lines.push("<i>🔀 Esta sesión quedó en segundo plano.</i>");
     if (settings.showTools && s.toolCallDetails.length) {
       const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;
@@ -344,7 +346,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       if (s.statusPendingUpdate) {
         s.statusPendingUpdate = false;
         // Coalesce queued edits instead of dropping them.
-        void updateStatus(chatId, s, true).catch(() => {});
+        void updateStatus(chatId, s, true).catch((err) => console.warn("[status]", err?.message ?? err));
       }
     }
   };
@@ -365,7 +367,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
     s.statusFinished = true;
     if (s.statusEditPromise) {
-      await s.statusEditPromise.catch(() => {});
+      await s.statusEditPromise.catch((err) => console.warn("[status]", err?.message ?? err));
       s.statusEditPromise = undefined;
     }
     const settings = getSettings(chatId);
@@ -628,7 +630,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     await tg.editRichMessage(chatId, messageId, clampText(lines.join("\n"), 3900), {
       ...opts,
       reply_markup: { inline_keyboard: keyboard },
-    }).catch(() => {});
+    }).catch((err) => console.warn("[status]", err?.message ?? err));
     return true;
   };
 
@@ -645,16 +647,16 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     const full = `${resolved.header}\n<b>Full diffs</b> (${resolved.edits.length})\n\n${parts.join("\n\n")}`;
     const opts = threadOpts(threadId ?? resolved.threadId);
     if (full.length <= 3800) {
-      await tg.sendRichMessage(chatId, full, opts).catch(() => {});
+      await tg.sendRichMessage(chatId, full, opts).catch((err) => console.warn("[status]", err?.message ?? err));
     } else {
       let remaining = full;
       while (remaining.length > 3800) {
         let cut = remaining.lastIndexOf("\n", 3800);
         if (cut < 1900) cut = 3800;
-        await tg.sendRichMessage(chatId, remaining.slice(0, cut), opts).catch(() => {});
+        await tg.sendRichMessage(chatId, remaining.slice(0, cut), opts).catch((err) => console.warn("[status]", err?.message ?? err));
         remaining = remaining.slice(cut).trimStart();
       }
-      if (remaining) await tg.sendRichMessage(chatId, remaining, opts).catch(() => {});
+      if (remaining) await tg.sendRichMessage(chatId, remaining, opts).catch((err) => console.warn("[status]", err?.message ?? err));
     }
     return true;
   };
