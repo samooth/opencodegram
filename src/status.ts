@@ -591,6 +591,14 @@ ${markdownToHtml(r)}</blockquote>`);
           const lastIcon = lastTool?.status === "success" ? "✅" : lastTool?.status === "failed" ? "❌" : "⏳";
           const toolNames = s.toolCallDetails.slice(-3).map((d) => d.name).join(", ");
           lines.push(`<i>🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""} — ${lastIcon} ${esc(toolNames)}</i>`);
+          // Show last tool call details if configured.
+          if (settings.showLatestTool && lastTool) {
+            const summary = getToolSummary(lastTool.name, lastTool.input);
+            const cmd = lastTool.name.toLowerCase().includes("bash") || lastTool.name.toLowerCase().includes("shell")
+              ? (parseShellCommand(lastTool.input ?? "") ?? (lastTool.input ?? "").trim() ?? lastTool.name)
+              : (summary?.arg ?? (lastTool.input ?? "").trim() ?? lastTool.name).toString();
+            if (cmd) lines.push(`<pre><code>${esc(cmd.slice(0, 500))}</code></pre>`);
+          }
         }
         const tokens = s.lastOutputTokens ?? 0;
         if (tokens && elapsed > 1) lines.push(`<i>⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok</i>`);
