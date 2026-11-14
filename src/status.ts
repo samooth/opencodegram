@@ -315,8 +315,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    * bottom of the message (above resource indicators) for readability.
    */
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
-    const lines: string[] = [];
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
+    const lines: string[] = [];
+    // 1. Thought first.
+    const thinking = renderThinkingBottom(s, settings);
+    if (thinking) lines.push(thinking);
+    // 2. Shell below the thought.
+    const shell = renderLatestToolBottom(s, settings);
+    if (shell) lines.push(shell);
+    // 3. Compact status header + progress + prompt.
     lines.push(
       s.stopped
         ? "<h4>⏹ Stopped</h4>"
@@ -325,13 +332,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (s.detached && !s.stopped) {
       lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
     }
-    // Show the prompt being processed so the fresh card confirms what was sent.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) {
       lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
     }
-    // Turn progress: tools executed this turn (with failures) and live token
-    // speed when usage has arrived. Elapsed time is already in the header.
     const tools = s.toolCallDetails.length;
     const failedTools = s.toolCallDetails.filter((detail) => detail.status === "failed").length;
     const tokens = s.lastOutputTokens ?? 0;
@@ -349,10 +353,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})
 ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
-    const bottomParts = [renderThinkingBottom(s, settings), renderLatestToolBottom(s, settings)].filter(Boolean);
     return {
       top: lines.join("\n\n"),
-      bottom: bottomParts.join("\n\n"),
+      // Indicators (resources) and buttons are appended by publishCard below
+      // extraBottom, so they stay at the very bottom of the card.
+      bottom: "",
     };
   };
 
