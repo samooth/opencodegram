@@ -307,13 +307,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const flushDraft = async (chatId: number, s: ChatSession | undefined) => {
     if (!s) return;
     s.timer = undefined;
-    // Drafts are only available in private chats.
-    if (chatId < 0) return;
-    try {
-      await tg.sendRichMessageDraftMarkdown(chatId, s.draftId, s.buffer || "…", { can_stop: true, ...threadOptsFor(s) });
-    } catch (err) {
-      console.error("[draft]", err);
-    }
+    // Drafts disabled: the session card (edited in place) now streams the
+    // partial answer in every chat, including private ones. A separate draft
+    // preview only duplicated/confused the output.
+    return;
   };
 
   const renderThinkingBottom = (s: ChatSession, settings: ChatSettings): string => {
