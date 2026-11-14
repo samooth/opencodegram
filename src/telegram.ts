@@ -142,11 +142,13 @@ export class TelegramClient {
       }
       const errorCode = json.error_code ?? res.status;
       const desc = json.description ?? "";
+      // 429 is handled separately below (respecting retry_after). 5xx and
+      // network-style errors use exponential backoff.
       const isRetryableTransient =
         !isEdit &&
         (res.status >= 500 ||
           errorCode >= 500 ||
-          /bad gateway|service unavailable|gateway timeout|too many requests/i.test(desc));
+          /bad gateway|service unavailable|gateway timeout/i.test(desc));
       // getUpdates uses long-polling and must keep retrying through outages.
       // getUpdates is handled by the poll loop (with its own backoff); do not
       // retry internally, otherwise a single outage stalls polling for minutes.
