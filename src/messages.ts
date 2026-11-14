@@ -368,6 +368,13 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const { startStatus, updateStatus, finishStatus } = status;
 
   const userId = msg.from?.id;
+  // Ignore the bot's own messages and service-only updates (topic created,
+  // pinned, etc.) which have no text/caption/media and would otherwise be
+  // processed as prompts or rejected as "Not authorized".
+  if (userId !== undefined && me?.id !== undefined && userId === me.id) return;
+  const hasContent = !!(msg.text ?? msg.caption ?? msg.photo ?? msg.document ?? msg.audio ?? msg.voice ?? msg.video);
+  const isService = !!(msg as any).forum_topic_created || !!(msg as any).forum_topic_edited || !!(msg as any).forum_topic_closed || !!(msg as any).pinned_message;
+  if (isService && !hasContent) return;
   const allowedUsers = new Set<number>();
   if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);
   if (config.ALLOWED_TELEGRAM_USER_IDS) {
