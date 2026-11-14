@@ -153,11 +153,11 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
         content = (kept.length < page.blocks.length ? "<i>…</i>\n\n" : "") + kept.map((b) => b.html).join("\n\n");
       }
       if (content.length > budget) content = content.slice(0, Math.max(0, budget)) + "\n…";
-      const parts = [header, extraTop, content, ...tailParts].filter(Boolean);
+      const parts = [header, indicator, extraTop, content ? `<hr/>\n${content}` : "", ...tailParts].filter(Boolean);
       return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
     }
 
-    const parts = [header, indicator, extraTop, page.html, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
+    const parts = [header, indicator, extraTop, page.html ? `<hr/>\n${page.html}` : "", resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
     return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
   };
 
