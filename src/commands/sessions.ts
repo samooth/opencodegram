@@ -475,7 +475,8 @@ export async function cmd_use(deps: BotDeps, chatId: number, threadId: number | 
       return true;
     }
     try {
-      await C.activateSession(chatId, sessionId, true, threadId);
+      const cs = await C.activateSession(chatId, sessionId, true, threadId);
+      if (cs) { cs.topicTitle = undefined; await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {}); }
       await send(`✅ Switched to session\n<code>${esc(sessionId)}</code>`);
     } catch (err) {
       await send(`failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);

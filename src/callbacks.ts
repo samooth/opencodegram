@@ -820,7 +820,13 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
     const sessionId = m[1];
     await deps.tg.answerCallbackQuery(cq.id, "Connecting…");
     try {
-      await deps.sessions.activateSession(chatId, sessionId, true, threadId);
+      const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
+      // Rename the tab to the connected session (best-effort; works in
+      // private threaded chats, silently fails in groups without permission).
+      if (cs) {
+        cs.topicTitle = undefined;
+        await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {});
+      }
       // A message may have been waiting for the user to pick a session.
       const route = deps.store.routeKey(chatId, threadId);
       const pending = deps.pendingGroupPrompts.get(route);
