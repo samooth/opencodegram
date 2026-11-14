@@ -548,8 +548,8 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         transcript.addBlock(s, "meta", `<i>${esc(metaLine)}</i>`, metaLine);
       }
       s.transcriptFollow = true;
-      if (publishCard) await publishCard(chatId, s);
-      else await transcript.publish(chatId, s, { extraTop: "" });
+      if (publishCard) await publishCard(chatId, s).catch((err) => console.warn("[events] publishCard failed", err?.message ?? err));
+      else await transcript.publish(chatId, s, { extraTop: "" }).catch((err) => console.warn("[events] transcript.publish failed", err?.message ?? err));
       if (s.transcriptMessageId) {
         s.lastFinalTelegramMessageId = s.transcriptMessageId;
         // Deep link button to jump to this message in the chat.
@@ -562,7 +562,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           // then add the deep-link button (fire-and-forget).
           const cardId = s.transcriptMessageId;
           setTimeout(() => {
-            void tg.editMessageReplyMarkup(chatId, cardId, { inline_keyboard: kb }).catch(() => {});
+            void tg.editMessageReplyMarkup(chatId, cardId, { inline_keyboard: kb }).catch((err) => console.warn("[events] deep-link markup failed", err?.message ?? err));
           }, 400);
         }
       }

@@ -175,6 +175,7 @@ async function main() {
   })().catch(() => {});
   if (config.AUTO_CLEANUP_DAYS > 0) {
     sessions.cleanupStaleSessions(config.AUTO_CLEANUP_DAYS).catch(() => {});
+    sessions.cleanupStaleAttachments(1).catch(() => {});
   }
 
   const audit = (action: string, detail: string) => {

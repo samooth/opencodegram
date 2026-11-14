@@ -445,6 +445,16 @@ export class SessionStore {
     }
   };
 
+  beginTurn = (s: ChatSession): number => {
+    s.turnSeq = (s.turnSeq ?? 0) + 1;
+    const pending = this.pendingTurnPromptBySession.get(s.sessionId);
+    if (pending !== undefined) {
+      this.rememberTurnPrompt(s.sessionId, s.turnSeq, pending);
+      this.pendingTurnPromptBySession.delete(s.sessionId);
+    }
+    return s.turnSeq;
+  };
+
   rememberLastInteracted = (chatId: number, threadId: number | undefined, sessionId: string) => {
     const key = this.routeKey(chatId, threadId);
     const current = this.lastInteractedSessionByRoute.get(key);

@@ -215,6 +215,13 @@ export function paginateTranscript(
   blocks: TranscriptBlock[],
   budget = TRANSCRIPT_PAGE_BUDGET,
 ): TranscriptPage[] {
+  // Cache the paginated result on the (mutable) block array so repeated renders
+  // of the same transcript (e.g. every 3s during streaming) do not recompute.
+  const cacheKey = blocks as unknown as { __pageCache?: { len: number; lastAt: number; budget: number; pages: TranscriptPage[] } };
+  const lastAt = blocks.length ? blocks[blocks.length - 1].at : 0;
+  if (cacheKey.__pageCache && cacheKey.__pageCache.len === blocks.length && cacheKey.__pageCache.lastAt === lastAt && cacheKey.__pageCache.budget === budget) {
+    return cacheKey.__pageCache.pages;
+  }
   const pages: TranscriptPage[] = [];
   let current: TranscriptBlock[] = [];
   let size = 0;
@@ -239,7 +246,9 @@ export function paginateTranscript(
     size += len;
   }
   flush();
-  return pages.map((p, i) => ({ ...p, index: i, total: pages.length }));
+  const result = pages.map((p, i) => ({ ...p, index: i, total: pages.length }));
+  cacheKey.__pageCache = { len: blocks.length, lastAt, budget, pages: result };
+  return result;
 }
 
 /**

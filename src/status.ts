@@ -409,7 +409,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const now = Date.now();
       if (!s.dashboardLastUpdate || now - s.dashboardLastUpdate > 6000) {
         s.dashboardLastUpdate = now;
-        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: !s.statusFinished }).catch(() => {});
+        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: !s.statusFinished }).catch((err) => console.warn("[status] dashboard.update failed", err?.message ?? err));
       }
     }
   };
@@ -438,26 +438,19 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     // refloat + pageBreak, so the old tail does not linger in the live view.
     try {
       if (unified && dashboard) {
-        await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch(() => {});
+        await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch((err) => console.warn("[status] dashboard.ensure failed", err?.message ?? err));
       }
       if (transcript) {
         // Every turn gets its own card created immediately at the bottom, with
         // live streaming while working. Unified and "única" (refloat) replace
         // the previous card (single message per session); "conservar" keeps the
         // finished card as history; "fija" keeps editing the same card in place.
-        s.turnSeq = (s.turnSeq ?? 0) + 1;
-        // Bind the prompt that started this turn to its turnSeq so the dataset
-        // export (JSON-LD) can emit one training pair per turn.
-        const pendingPrompt = store?.pendingTurnPromptBySession?.get(s.sessionId);
-        if (pendingPrompt !== undefined) {
-          store?.rememberTurnPrompt(s.sessionId, s.turnSeq, pendingPrompt);
-          store?.pendingTurnPromptBySession?.delete(s.sessionId);
-        }
+        store?.beginTurn(s);
         s.transcriptFollow = true;
         if (unified || settings.cardBehavior !== "fixed") {
           await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
         }
-        await publishCard(chatId, s);
+        await publishCard(chatId, s).catch((err) => console.warn("[status] publishCard failed", err?.message ?? err));
         if (s.transcriptMessageId) {
           s.statusMessageId = s.transcriptMessageId;
           rememberStatusMessage(s.sessionId, chatId, s.targetThreadId ?? s.threadId, s.transcriptMessageId);
@@ -506,7 +499,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.statusLastUpdate = now;
     try {
       if (transcript) {
-        await publishCard(chatId, s);
+        await publishCard(chatId, s).catch((err) => console.warn("[status] publishCard failed", err?.message ?? err));
         return;
       }
       const header = sessionHeader(s).trimEnd();
@@ -702,12 +695,12 @@ ${chunk}</blockquote>`,
       // navigable (pagination). The next turn start decides whether it is
       // replaced (única), preserved (conservar) or kept editing in place (fija).
       const finishedCardId = s.transcriptMessageId;
-      await publishCard(chatId, s);
+      await publishCard(chatId, s).catch((err) => console.warn("[status] publishCard failed", err?.message ?? err));
       // The card stays alive for pagination; only the live status ends.
       s.statusMessageId = undefined;
       forgetStatusMessage(s.sessionId);
       if (unified && dashboard) {
-        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch(() => {});
+        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch((err) => console.warn("[status] dashboard.update failed", err?.message ?? err));
       }
       // Edits are offered in their own message so the session card keeps its
       // paginated content intact. A snapshot of this turn's edit details is

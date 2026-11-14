@@ -1,5 +1,5 @@
-import { readdirSync, statSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { readdirSync, rmSync, statSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import type { Config } from "./config.js";
 import { getReposDirectory } from "./config.js";
 import type { DashboardManager } from "./dashboard.js";
@@ -536,5 +536,27 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     }
   };
 
-  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions, resolveThread, bindTab, syncTitle, getReposDirectory: () => getReposDirectory(config), listRepoDirectories: listRepoDirectoriesForConfig };
+  const cleanupStaleAttachments = async (maxAgeDays = 1): Promise<void> => {
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    const root = "/tmp/opencode/attachments";
+    try {
+      const entries = readdirSync(root, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const dir = join(root, entry.name);
+        let files;
+        try { files = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+        for (const f of files) {
+          if (!f.isFile()) continue;
+          const fp = join(dir, f.name);
+          try {
+            const st = statSync(fp);
+            if (st.mtimeMs < cutoff) rmSync(fp, { force: true });
+          } catch { /* ignore */ }
+        }
+      }
+    } catch { /* root may not exist */ }
+  };
+
+  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions, cleanupStaleAttachments, resolveThread, bindTab, syncTitle, getReposDirectory: () => getReposDirectory(config), listRepoDirectories: listRepoDirectoriesForConfig };
 }

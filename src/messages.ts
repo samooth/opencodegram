@@ -106,6 +106,7 @@ export async function downloadAttachments(
         }
       }
     } catch (err) {
+      console.warn("[transcribe] failed", String(err));
       await send(`❌ Transcription failed: ${esc(String(err))}; sending audio as attachment.`);
     }
   }
