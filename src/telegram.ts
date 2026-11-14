@@ -378,12 +378,18 @@ export class TelegramClient {
     return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
   }
 
-  createForumTopic(chatId: number, name: string): Promise<{ message_thread_id: number; name: string }> {
-    return this.call("createForumTopic", { chat_id: chatId, name });
+  createForumTopic(chatId: number, name: string, iconEmojiId?: string): Promise<{ message_thread_id: number; name: string }> {
+    const body: Record<string, unknown> = { chat_id: chatId, name };
+    if (iconEmojiId) body.icon_custom_emoji_id = iconEmojiId;
+    return this.call("createForumTopic", body);
   }
 
   editForumTopic(chatId: number, messageThreadId: number, name: string): Promise<boolean> {
     return this.call<boolean>("editForumTopic", { chat_id: chatId, message_thread_id: messageThreadId, name });
+  }
+
+  closeForumTopic(chatId: number, messageThreadId: number): Promise<boolean> {
+    return this.call<boolean>("closeForumTopic", { chat_id: chatId, message_thread_id: messageThreadId });
   }
 
   setMessageReaction(chatId: number, messageId: number, emoji: string): Promise<boolean> {
