@@ -8,7 +8,7 @@ import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
 import { clampText, esc, normalizeCommandText, parseSlashCommand, sessionHeader, threadOpts } from "./util.js";
 import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
-import { notePromptSent } from "./autoretry.js";
+import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { STATUS_EDIT_INTERVAL_MS } from "./constants.js";
 
 /**
@@ -410,6 +410,14 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
 
   const chatId = msg.chat.id;
   const replyThread = msg.message_thread_id;
+  // A new incoming message supersedes any pending auto-retry for sessions
+  // bound to this chat: we do not want stale prompts (and their old answers)
+  // to be replayed while the user is interacting.
+  for (const [sid, cs] of store.sessionsById) {
+    if (cs.targetChatId === chatId || store.lastChatBySession.get(sid) === chatId) {
+      cancelAutoRetry(sid);
+    }
+  }
   // Replying to any bot message routes the prompt to the session that produced
   // it: explicit map first, then dashboard/status/in-memory card fallbacks.
   const replyMessageId = msg.reply_to_message?.message_id;

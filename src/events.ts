@@ -424,12 +424,16 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   const e = event;
   const sessionId = e.data?.sessionID;
   let endedText = (e.data?.text ?? "").toString().trim();
-  if (sessionId && endedText) {
+  if (sessionId) {
+    // Any terminal text event closes the turn: clear retry state even when the
+    // answer is empty, so stale prompts are never replayed.
     noteTurnCompleted(sessionId);
-    const retryNotice = retryMessageBySession.get(sessionId);
-    if (retryNotice) {
-      retryMessageBySession.delete(sessionId);
-      await tg.editRichMessage(retryNotice.chatId, retryNotice.messageId, "✅ Retry succeeded.").catch(() => {});
+    if (endedText) {
+      const retryNotice = retryMessageBySession.get(sessionId);
+      if (retryNotice) {
+        retryMessageBySession.delete(sessionId);
+        await tg.editRichMessage(retryNotice.chatId, retryNotice.messageId, "✅ Retry succeeded.").catch(() => {});
+      }
     }
   }
   const _s0 = sessionId ? findSessionById(sessionId) : undefined;
@@ -776,6 +780,7 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     const promptForRetry = sessionId ? lastPromptBySession.get(sessionId) : undefined;
     if (s?.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
     if (s) await finishStatus(chatId, s);
+    if (sessionId && !isRateLimit) cancelAutoRetry(sessionId);
 
     // Retry only prompts sent by this process and only up to
     // AUTO_RETRY_MAX_ATTEMPTS. Stale prompts restored from disk are ignored.
