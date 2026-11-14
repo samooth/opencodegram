@@ -641,7 +641,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       const finalHtml = sessionHeader(s) + `<blockquote>${answerHtml}</blockquote>` + extraHtml + copyRow + `\n${renderResourceBlock(s)}`;
       const prevFinalSentAt = s?.lastFinalSentAt ?? 0;
       const prevFinalTelegramMessageId = s?.lastFinalTelegramMessageId;
-      const rapidFinal = !!(s && !(chatId >= 0) && prevFinalTelegramMessageId && Date.now() - prevFinalSentAt < 12000);
+      const rapidFinal = false; // disabled: editing previous final can confuse; always send a new message
       let finalMessage: { message_id?: number } | undefined;
       if (rapidFinal) {
         await tg.editRichMessage(chatId, prevFinalTelegramMessageId!, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch(() => {});
