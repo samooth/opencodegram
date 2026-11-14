@@ -6,6 +6,9 @@ import { handleCallback } from "./callbacks.js";
 import { handleMessage } from "./messages.js";
 import { POLL_BACKOFF_MS } from "./constants.js";
 
+let stopRequested = false;
+export function requestStopPolling(): void { stopRequested = true; }
+
 export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Promise<void> {
   const { metrics } = deps;
   try {
@@ -45,7 +48,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
   saveOffset(offset);
 
   let consecutiveFailures = 0;
-  while (true) {
+  while (!stopRequested) {
     let updates: Awaited<ReturnType<typeof tg.getUpdates>> = [];
     try {
       updates = await tg.getUpdates(offset, 25);

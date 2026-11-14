@@ -16,7 +16,7 @@ import { createPanels } from "./panels.js";
 import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
 import { startEventLoop } from "./events.js";
-import { startPolling } from "./updates.js";
+import { startPolling, requestStopPolling } from "./updates.js";
 import { createWebhookServer } from "./webhook.js";
 import type { BotDeps } from "./context.js";
 import { BOT_COMMANDS } from "./botcommands.js";
@@ -286,17 +286,17 @@ async function main() {
   const stopAll = () => {
     try { ops.stop(); } catch {}
     try { webhookServer?.stop(); } catch {}
+    requestStopPolling();
   };
-  process.on("SIGINT", () => { stopAll(); shutdown("SIGINT"); });
-  process.on("SIGTERM", () => { stopAll(); shutdown("SIGTERM"); });
+  process.on("SIGINT", () => { stopAll(); });
+  process.on("SIGTERM", () => { stopAll(); });
+  // Wait for polling to unwind before exiting so the long-poll connection
+  // is released cleanly (avoids 409 Conflict on the next start).
+  await new Promise((r) => setTimeout(r, 1500));
+  console.log("[opencodegram] shutting down");
+  process.exit(0);
 }
 
-const shutdown = (signal: string) => {
-  console.log(`[opencodegram] ${signal} received, shutting down`);
-  process.exit(0);
-};
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("unhandledRejection", (err) => {
   console.error("[opencodegram] unhandled rejection", err);
 });
