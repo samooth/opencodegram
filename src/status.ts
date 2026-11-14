@@ -414,8 +414,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
    * latest thought at the bottom for readability.
    */
   const publishCard = async (chatId: number, s: ChatSession): Promise<void> => {
-    // Linear mode (private chats): no transcript card.
-    if (chatId >= 0) return;
+    // Cards are published for every chat now (linear mode disabled): one
+    // paginated message per session, edited in place, with header/buttons/resources.
     if (!transcript) return;
     const settings = getSettings(chatId);
     const unified = settings.displayMode === "unified";
@@ -563,52 +563,6 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       void flushDraft(chatId, s);
     }
     try {
-      // Linear mode (private chats): update the transient "Working…" message.
-      if (chatId >= 0) {
-        const settings = getSettings(chatId);
-        const opts = threadOptsFor(s);
-        const lines: string[] = [];
-        lines.unshift(sessionHeader(s).trimEnd());
-        const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
-        lines.push(s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`);
-        const prompt = store?.lastPromptBySession.get(s.sessionId);
-        if (prompt?.trim()) lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 160))}</i>`);
-        // Streaming thinking (linear mode): show reasoning if configured.
-        if (settings.showThinking && s.reasoningBuffer?.trim()) {
-          const r = s.reasoningBuffer.trim().slice(-Math.min(settings.partialTextLines ?? 500, 800));
-          lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking
-${markdownToHtml(r)}</blockquote>`);
-        }
-        // Streaming partial text (linear mode): show the response as it grows.
-        if (settings.showPartialText && s.buffer?.trim()) {
-          const txt = s.buffer.trim().slice(-Math.min(settings.partialTextLines ?? 500, 1200));
-          lines.push(`<blockquote>${markdownToHtml(txt)}</blockquote>`);
-        }
-        const tools = s.toolCallDetails.length;
-        const failedTools = s.toolCallDetails.filter((d) => d.status === "failed").length;
-        if (tools) {
-          const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
-          const lastIcon = lastTool?.status === "success" ? "✅" : lastTool?.status === "failed" ? "❌" : "⏳";
-          const toolNames = s.toolCallDetails.slice(-3).map((d) => d.name).join(", ");
-          lines.push(`<i>🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""} — ${lastIcon} ${esc(toolNames)}</i>`);
-          // Show last tool call details if configured.
-          if (settings.showLatestTool && lastTool) {
-            const summary = getToolSummary(lastTool.name, lastTool.input);
-            const cmd = lastTool.name.toLowerCase().includes("bash") || lastTool.name.toLowerCase().includes("shell")
-              ? (parseShellCommand(lastTool.input ?? "") ?? (lastTool.input ?? "").trim() ?? lastTool.name)
-              : (summary?.arg ?? (lastTool.input ?? "").trim() ?? lastTool.name).toString();
-            if (cmd) lines.push(`<pre><code>${esc(cmd.slice(0, 500))}</code></pre>`);
-          }
-        }
-        const tokens = s.lastOutputTokens ?? 0;
-        if (tokens && elapsed > 1) lines.push(`<i>⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok</i>`);
-        if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s));
-        await tg.editRichMessage(chatId, s.statusMessageId!, clampText(lines.join("\n"), 3900), {
-          ...opts,
-          reply_markup: { inline_keyboard: [[{ text: "⏹ Stop", callback_data: "panel:stop" }]] },
-        }).catch(() => {});
-        return;
-      }
       if (transcript) {
         await publishCard(chatId, s);
         return;
