@@ -127,7 +127,7 @@ export function projectLabel(directory?: string): string {
   return `${projectEmoji(directory)} ${name}`;
 }
 
-export function sessionHeader(session?: { sessionId?: string; topicTitle?: string; directory?: string } | null, fallbackId?: string, showName = true): string {
+export function sessionHeader(session?: { sessionId?: string; topicTitle?: string; directory?: string; model?: { id?: string; providerID?: string; variant?: string } } | null, fallbackId?: string, showName = true): string {
   const sid = (session?.sessionId ?? fallbackId ?? "").trim();
   if (!sid) return "";
   const short = sid.slice(0, 8);
@@ -135,7 +135,8 @@ export function sessionHeader(session?: { sessionId?: string; topicTitle?: strin
   let name = (session?.topicTitle ?? "").trim();
   if (!name && session?.directory) name = session.directory.split("/").filter(Boolean).pop() || "";
   if (!name) name = sid.slice(0, 16);
-  return `📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>\n\n`;
+  const model = session?.model?.id ? ` · 🧠 ${esc(session.model.providerID ?? "")}/${esc(session.model.id)}${session.model.variant ? ` (${esc(session.model.variant)})` : ""}` : "";
+  return `📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>${model}\n\n`;
 }
 
 export function toolIcon(name: string): string {
