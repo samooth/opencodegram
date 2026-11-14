@@ -241,7 +241,11 @@ async function resolveSessionForMessage(
 
   // 3) In groups, prefer the last session the user interacted with.
   if (chatId < 0) {
-    const last = store.getLastInteractedSession(chatId, replyThread);
+    // When replying to a bot message, prefer the most recent session across
+    // the whole chat (the user likely wants the session they just connected to)
+    // instead of only the current thread's binding.
+    const lastThread = isReplyToBot ? undefined : replyThread;
+    const last = store.getLastInteractedSession(chatId, lastThread);
     if (last) {
       try {
         await activateSession(chatId, last, true, replyThread);
@@ -255,6 +259,21 @@ async function resolveSessionForMessage(
       .filter(([k]) => k.startsWith(`${chatId}:`))
       .map(([, sid]) => sid);
     const unique = [...new Set(candidates)].filter((sid) => store.findSessionById(sid));
+    // When replying to a bot message, if there is only one session in the
+    // whole chat, use it directly instead of showing the picker.
+    if (isReplyToBot && unique.length > 1) {
+      // prefer the most recently interacted session across the chat
+      const recent = store.getLastInteractedSession(chatId, undefined);
+      if (recent && unique.includes(recent)) {
+        try {
+          await activateSession(chatId, recent, true, replyThread);
+          const s = await restoreActiveSession(chatId, replyThread);
+          if (s) return { session: s };
+        } catch (err) {
+          console.error("[reply] activate most-recent failed", recent, err);
+        }
+      }
+    }
     if (unique.length === 1) {
       try {
         await activateSession(chatId, unique[0], true, replyThread);
