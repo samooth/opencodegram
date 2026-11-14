@@ -118,11 +118,13 @@ export class TelegramClient {
       throw err;
     }
     clearTimeout(timer);
-    if (res.status >= 500 && attempt < 2 && !isEdit) {
-      await new Promise((r) => setTimeout(r, 1000));
-      return this.call<T>(method, body, attempt + 1);
+    let json: { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
+    try {
+      json = (await res.json()) as typeof json;
+    } catch {
+      // Telegram sometimes returns an HTML error page (502/503/504) instead of JSON.
+      json = { ok: false, error_code: res.status || 502, description: res.statusText || "Bad Gateway" };
     }
-    const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
       if (Number.isFinite(chatId)) {
         noteTelegramFailure(chatId, `${json.error_code ?? ""} ${json.description ?? ""}`);
@@ -137,6 +139,23 @@ export class TelegramClient {
         if (!/message to edit not found|message can't be edited|message was deleted/i.test(json.description ?? "")) {
           console.error("[telegram] editMessageText error:", json.description, "method=", method);
         }
+      }
+      const errorCode = json.error_code ?? res.status;
+      const desc = json.description ?? "";
+      const isRetryableTransient =
+        !isEdit &&
+        (res.status >= 500 ||
+          errorCode >= 500 ||
+          /bad gateway|service unavailable|gateway timeout|too many requests/i.test(desc));
+      // getUpdates uses long-polling and must keep retrying through outages.
+      const maxAttempts = method === "getUpdates" ? 12 : 5;
+      if (isRetryableTransient && attempt < maxAttempts) {
+        const wait = Math.min(30000, 1000 * Math.pow(2, attempt));
+        if (method !== "getUpdates") {
+          console.warn(`[telegram] ${method} transient error (${errorCode} ${desc}); retry in ${wait}ms`);
+        }
+        await new Promise((r) => setTimeout(r, wait));
+        return this.call<T>(method, body, attempt + 1);
       }
       if (json.error_code === 429 && attempt < 3 && !isEdit) {
         const wait = (json.parameters?.retry_after ?? 1) * 1000;

@@ -44,14 +44,19 @@ export async function startPolling(deps: BotDeps): Promise<void> {
   // can be detected reliably.
   saveOffset(offset);
 
+  let consecutiveFailures = 0;
   while (true) {
     let updates: Awaited<ReturnType<typeof tg.getUpdates>> = [];
     try {
       updates = await tg.getUpdates(offset, 25);
+      consecutiveFailures = 0;
     } catch (err) {
-      console.error("[poll]", err);
-      metrics?.recordError(String(err));
-      await new Promise((r) => setTimeout(r, POLL_BACKOFF_MS));
+      consecutiveFailures += 1;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[poll] getUpdates failed (${consecutiveFailures}): ${msg}`);
+      metrics?.recordError(msg);
+      const wait = Math.min(30000, POLL_BACKOFF_MS * Math.pow(2, Math.min(consecutiveFailures - 1, 4)));
+      await new Promise((r) => setTimeout(r, wait));
       continue;
     }
 
