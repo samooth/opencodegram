@@ -319,7 +319,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const renderThinkingBottom = (s: ChatSession, settings: ChatSettings): string => {
     if (!settings.showThinking || !settings.showLatestThought || !s.reasoningBuffer.trim() || s.stopped) return "";
     const tail = s.reasoningBuffer.trim().slice(-1600);
-    return `💭 <b>Pensando…</b>\n<details><summary>💭 Pensando…</summary><blockquote><mark>${markdownToHtml(tail)}</mark></blockquote></details>`;
+    return `💭 <b>Pensando…</b>\n<blockquote expandable><mark>${markdownToHtml(tail)}</mark></blockquote>`;
   };
 
   const renderLatestToolBottom = (s: ChatSession, settings: ChatSettings): string => {
@@ -381,7 +381,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`<pre>${esc(tail)}</pre>`);
     }
     if (!unified && settings.showCot && s.cotBuffer?.trim()) {
-      lines.push(`<details><summary>🧾 COT (${s.cotCount ?? 0})</summary><blockquote>${esc(s.cotBuffer.trim().slice(-800))}</blockquote></details>`);
+      lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})
+${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
     const bottomParts = [renderThinkingBottom(s, settings), renderLatestToolBottom(s, settings)].filter(Boolean);
     return {
@@ -575,7 +576,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // Streaming thinking (linear mode): show reasoning if configured.
         if (settings.showThinking && s.reasoningBuffer?.trim()) {
           const r = s.reasoningBuffer.trim().slice(-Math.min(settings.partialTextLines ?? 500, 800));
-          lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary><blockquote>${markdownToHtml(r)}</blockquote></details>`);
+          lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking
+${markdownToHtml(r)}</blockquote>`);
         }
         // Streaming partial text (linear mode): show the response as it grows.
         if (settings.showPartialText && s.buffer?.trim()) {
@@ -645,13 +647,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       let shellBlock = "";
       if (settings.showTools && settings.showShell && shellDetails.length) {
         const shellText = renderShell(shellDetails.slice(-5), 180);
-        shellBlock = `<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (${shellDetails.length})</summary><blockquote><pre language='bash'>${esc(shellText)}</pre></blockquote></details>`;
+        shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;
       }
 
       let toolsBlock = "";
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails.slice(-6), 180, settings.showToolInput);
-        toolsBlock = `<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (${otherDetails.length})</summary><blockquote>${details}</blockquote></details>`;
+        toolsBlock = `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`;
       } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
         toolsBlock = "🔧 " + esc(s.toolCalls.slice(-6).join(", "));
       }
@@ -743,7 +745,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // The reasoning is markdown: render it so code blocks and emphasis
         // keep their rich text inside the card.
         const renderThinking = (chunk: string) =>
-          `<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary><blockquote>${markdownToHtml(chunk)}</blockquote></details>`;
+          `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking
+${markdownToHtml(chunk)}</blockquote>`;
         // Models often restate the prompt inside their reasoning; showing it
         // again duplicates information the user already sent.
         const cleanThinking = stripRestatedPrompt(fullThinking, store?.lastPromptBySession.get(s.sessionId));
@@ -765,9 +768,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           transcript.addBlock(
             s,
             "tools",
-            `<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (${shellDetails.length})</summary><blockquote><pre language='bash'>${esc(shellText)}</pre></blockquote></details>`,
+            `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`,
             shellText,
-            (chunk) => `<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell</summary><blockquote><pre language='bash'>${esc(chunk)}</pre></blockquote></details>`,
+            (chunk) => `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell
+<pre language=\'bash\'>${esc(chunk)}</pre></blockquote>`,
           );
         }
         if (otherDetails.length) {
@@ -775,9 +779,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           transcript.addBlock(
             s,
             "tools",
-            `<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (${otherDetails.length})</summary><blockquote>${details}</blockquote></details>`,
+            `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`,
             details,
-            (chunk) => `<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls</summary><blockquote>${chunk}</blockquote></details>`,
+            (chunk) => `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls
+${chunk}</blockquote>`,
           );
         }
       }
@@ -814,7 +819,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           tableRows.push(`<tr><td><code>${esc(file)}</code></td><td>+${added}</td><td>-${removed}</td></tr>`);
           const diff = formatEditDiff(detail.input, settings.diffStyle, s.directory);
           const capped = capDiff(diff, 12);
-          editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<details><summary>Diff</summary><blockquote><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote></details>` : ""}`);
+          editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>` : ""}`);
         }
         const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
         try {
@@ -891,24 +896,26 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     lines.unshift(sessionHeader(target).trimEnd());
     if (settings.showCot && previousCot) {
       const cot = previousCot.slice(-3500);
-      lines.push(`<details><summary>🧾 COT (${target.cotCount ?? 0})</summary><blockquote>${esc(cot)}</blockquote></details>`);
+      lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})
+${esc(cot)}</blockquote>`);
     }
     lines.push("✅ <b>Done</b>");
     if (!settings.compactFinal) {
       if (inlineThinking && settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
         const r = target.reasoningBuffer.trim();
-        lines.push(`<details${settings.thinkingExpanded ? " open" : ""}><summary>🧠 Thinking</summary><blockquote>${esc(r)}</blockquote></details>`);
+        lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking
+${esc(r)}</blockquote>`);
       }
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
       const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (settings.showTools && settings.showShell && shellDetails.length) {
         const shellText = renderShell(shellDetails, 500);
-        lines.push(`<details${settings.shellExpanded ? " open" : ""}><summary>🖥 Shell (${shellDetails.length})</summary><blockquote><pre language='bash'>${esc(shellText)}</pre></blockquote></details>`);
+        lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
       }
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails, 500);
-        lines.push(`<details${settings.toolsExpanded ? " open" : ""}><summary>🔧 Tool calls (${otherDetails.length})</summary><blockquote>${details}</blockquote></details>`);
+        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`);
       }
       if (settings.showTools && editDetails.length) {
         const editLines = [`✏️ Edits: ${editDetails.length}`];
@@ -918,7 +925,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
           const capped = capDiff(diff, 15);
           editLines.push(`✏️ <b>${esc(file)}</b>`);
           if (diff.trim()) {
-            editLines.push(`<details><summary>Diff</summary><blockquote><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote></details>`);
+            editLines.push(`<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>`);
           }
         }
         lines.push(editLines.join("\n"));
@@ -930,7 +937,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`📦 <b>Compaction failed</b>\n<i>${esc(target.compactionError.trim().slice(0, 240))}</i>`);
     } else if (target.compactionSummary?.trim()) {
       const sum = target.compactionSummary.trim();
-      if (sum.length > 220) lines.push(`<details><summary>📦 Compaction</summary><blockquote>${esc(sum.slice(0, 2000))}</blockquote></details>`);
+      if (sum.length > 220) lines.push(`<blockquote expandable>📦 <b>Compaction</b>
+${esc(sum.slice(0, 2000))}</blockquote>`);
       else lines.push(`📦 <b>Compaction</b>: ${esc(sum)}`);
     }
     let resourceBlock = "";
@@ -1007,7 +1015,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`✏️ <b>${esc(file)}</b>${expanded ? " ▾" : ""}`);
       if (diff.trim()) {
         // The expanded file shows the full diff; the rest stay capped.
-        lines.push(`<details><summary>Diff</summary><blockquote><pre><code class="language-diff">${esc(expanded ? diff : capDiff(diff, 12))}</code></pre></blockquote></details>`);
+        lines.push(`<blockquote expandable><pre><code class="language-diff">${esc(expanded ? diff : capDiff(diff, 12))}</code></pre></blockquote>`);
       }
     });
     const keyboard = finishedKeyboard(resolved.edits, next, (resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession)), messageId);
