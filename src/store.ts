@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChatSession } from "./types.js";
 import type { TranscriptBlock } from "./transcript.js";
@@ -60,6 +60,7 @@ export class SessionStore {
    * event, which keeps the chat readable without losing any output.
    */
   readonly transcriptBySession = new Map<string, TranscriptBlock[]>();
+  private readonly dirtyTranscripts = new Set<string>();
   /** Pinned dashboard (M1) message for the active session of a route. */
   readonly dashboardByRoute = new Map<string, { sessionId: string; chatId: number; threadId?: number; messageId: number }>();
 
@@ -78,7 +79,7 @@ export class SessionStore {
   private readonly buttonsFile: string;
   private readonly lastInteractedFile: string;
   private readonly deliveryFile: string;
-  private readonly transcriptsFile: string;
+  private readonly transcriptsDir: string;
   private readonly dashboardFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
@@ -97,7 +98,7 @@ export class SessionStore {
     this.buttonsFile = join(dataDir, "buttons.json");
     this.lastInteractedFile = join(dataDir, "lastInteracted.json");
     this.deliveryFile = join(dataDir, "delivery.json");
-    this.transcriptsFile = join(dataDir, "transcripts.json");
+    this.transcriptsDir = join(dataDir, "transcripts");
     this.dashboardFile = join(dataDir, "dashboard.json");
     this.load();
   }
@@ -766,6 +767,7 @@ export class SessionStore {
       // Replace it so the newer timestamp wins without duplicating content.
       list[list.length - 1] = block;
       this.transcriptBySession.set(sessionId, list);
+      this.dirtyTranscripts.add(sessionId);
       this.scheduleSaveTranscripts();
       return;
     }
@@ -777,6 +779,7 @@ export class SessionStore {
         if (list[i].kind === "answer" && list[i].text === block.text) {
           list[i] = block;
           this.transcriptBySession.set(sessionId, list);
+          this.dirtyTranscripts.add(sessionId);
           this.scheduleSaveTranscripts();
           return;
         }
@@ -797,22 +800,38 @@ export class SessionStore {
     // part and are kept in full; thinking and tools are only useful for the
     // recent turns, so they are capped separately.
     this.transcriptBySession.set(sessionId, this.limitTranscript(list));
+    this.dirtyTranscripts.add(sessionId);
     this.scheduleSaveTranscripts();
   };
 
   clearTranscript = (sessionId: string): void => {
-    if (this.transcriptBySession.delete(sessionId)) void this.saveTranscripts();
+    if (this.transcriptBySession.delete(sessionId)) {
+      this.dirtyTranscripts.delete(sessionId);
+      void this.deleteTranscriptFile(sessionId);
+    }
   };
 
   saveTranscripts = async () => {
     try {
-      await mkdir(this.dataDir, { recursive: true });
-      const obj: Record<string, TranscriptBlock[]> = {};
-      for (const [sid, blocks] of this.transcriptBySession) obj[sid] = blocks;
-      await writeFile(this.transcriptsFile, JSON.stringify(obj), "utf8");
+      await mkdir(this.transcriptsDir, { recursive: true });
+      // Only rewrite sessions that changed since the last save.
+      const dirty = [...this.dirtyTranscripts];
+      this.dirtyTranscripts.clear();
+      for (const sid of dirty) {
+        const blocks = this.transcriptBySession.get(sid);
+        if (!blocks) continue;
+        const file = join(this.transcriptsDir, `${sid}.json`);
+        try { await writeFile(file, JSON.stringify(blocks), "utf8"); }
+        catch (err) { console.error("[transcripts] save failed", sid, err); this.dirtyTranscripts.add(sid); }
+      }
     } catch (err) {
       console.error("[transcripts] save failed", err);
     }
+  };
+
+  private deleteTranscriptFile = async (sessionId: string): Promise<void> => {
+    try { await rm(join(this.transcriptsDir, `${sessionId}.json`), { force: true }); }
+    catch (err) { console.error("[transcripts] delete failed", sessionId, err); }
   };
 
   /**
@@ -945,11 +964,38 @@ export class SessionStore {
     } catch (err) {
       console.error("[delivery] load failed", err);
     }
+    // Migrate legacy single-file transcripts.json into per-session files.
     try {
-      if (existsSync(this.transcriptsFile)) {
-        const parsed = JSON.parse(readFileSync(this.transcriptsFile, "utf8")) as Record<string, TranscriptBlock[]>;
+      const legacy = join(this.dataDir, "transcripts.json");
+      if (existsSync(legacy)) {
+        const parsed = JSON.parse(readFileSync(legacy, "utf8")) as Record<string, TranscriptBlock[]>;
+        mkdirSync(this.transcriptsDir, { recursive: true });
         for (const [sid, blocks] of Object.entries(parsed)) {
-          if (sid && Array.isArray(blocks)) this.transcriptBySession.set(sid, this.limitTranscript(blocks));
+          if (sid && Array.isArray(blocks)) {
+            const limited = this.limitTranscript(blocks);
+            this.transcriptBySession.set(sid, limited);
+            try { writeFileSync(join(this.transcriptsDir, `${sid}.json`), JSON.stringify(limited), "utf8"); }
+            catch (err) { console.error("[transcripts] migrate write failed", sid, err); }
+          }
+        }
+        // Rename legacy file so migration runs only once.
+        try { renameSync(legacy, `${legacy}.migrated`); } catch { /* ignore */ }
+      }
+    } catch (err) {
+      console.error("[transcripts] migrate failed", err);
+    }
+    // Load per-session files.
+    try {
+      mkdirSync(this.transcriptsDir, { recursive: true });
+      const files = readdirSync(this.transcriptsDir);
+      for (const f of files) {
+        if (!f.endsWith(".json")) continue;
+        const sid = f.slice(0, -5);
+        try {
+          const blocks = JSON.parse(readFileSync(join(this.transcriptsDir, f), "utf8")) as TranscriptBlock[];
+          if (Array.isArray(blocks)) this.transcriptBySession.set(sid, this.limitTranscript(blocks));
+        } catch (err) {
+          console.error("[transcripts] load failed", sid, err);
         }
       }
     } catch (err) {
