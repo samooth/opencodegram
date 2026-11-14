@@ -47,11 +47,15 @@ export async function startPolling(deps: BotDeps): Promise<void> {
   // can be detected reliably.
   saveOffset(offset);
 
+  // Let any stale long-poll connection from a previous process expire before
+  // we start polling (avoids 409 Conflict on restart).
+  await new Promise((r) => setTimeout(r, 3000));
+
   let consecutiveFailures = 0;
   while (!stopRequested) {
     let updates: Awaited<ReturnType<typeof tg.getUpdates>> = [];
     try {
-      updates = await tg.getUpdates(offset, 25);
+      updates = await tg.getUpdates(offset, 5);
       consecutiveFailures = 0;
     } catch (err) {
       consecutiveFailures += 1;
