@@ -108,6 +108,11 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
         .catch(() => {});
       previous.statusMessageId = undefined;
     }
+    // Close the topic when the session is permanently retired (best-effort).
+    if (forget && (previous.threadId ?? previous.targetThreadId)) {
+      const tid = (previous.threadId ?? previous.targetThreadId)!;
+      await tg.closeForumTopic(chatId, tid).catch(() => {});
+    }
     // Remove route bindings for this session in this chat context; keep in-memory
     // state for event handling unless explicitly forgotten.
     if (!forget) {
