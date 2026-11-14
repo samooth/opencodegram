@@ -436,10 +436,18 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   if (commandTarget && commandTarget.toLowerCase() !== (me.username ?? "").toLowerCase()) return;
   const isMention = chatId < 0 && !!me.username && rawText.toLowerCase().includes("@" + me.username.toLowerCase());
   const isReplyToBot = chatId < 0 && !!msg.reply_to_message && msg.reply_to_message.from?.id === me.id;
+  // Media (photos/documents/audio/...) is more likely to be sent by accident in
+  // a group. Only treat it as a prompt when the bot is explicitly mentioned,
+  // even if the message happens to reply to a bot message.
+  const hasMedia = !!(msg.photo ?? msg.document ?? msg.audio ?? msg.voice ?? msg.video);
   // In groups, only respond to commands, mentions or replies to the bot.
   if (chatId < 0) {
     const isCommand = rawText.startsWith("/");
-    if (!isCommand && !isMention && !isReplyToBot) return;
+    if (hasMedia) {
+      if (!isMention) return;
+    } else if (!isCommand && !isMention && !isReplyToBot) {
+      return;
+    }
   }
 
   const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(replyThread ? { message_thread_id: replyThread } : {}), ...opts });
