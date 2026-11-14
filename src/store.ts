@@ -316,7 +316,11 @@ export class SessionStore {
 
   cleanupStaleStatusMessages = async (tg: { editRichMessage: (chatId: number, messageId: number, html: string, opts?: Record<string, unknown>) => Promise<unknown>; sendRichMessage: (chatId: number, html: string, opts?: Record<string, unknown>) => Promise<{ message_id?: number }>; deleteMessage: (chatId: number, messageId: number) => Promise<boolean> }, oc?: { client: { session: { get: (args: { sessionID: string }) => Promise<unknown> } } }) => {
     const entries = [...this.statusMessageBySession.entries()];
-    for (const [sessionId, info] of entries) {
+    // Process in small batches to avoid overwhelming the Telegram API.
+    const BATCH = 5;
+    for (let i = 0; i < entries.length; i += BATCH) {
+      const batch = entries.slice(i, i + BATCH);
+      await Promise.allSettled(batch.map(async ([sessionId, info]) => {
       try {
         await tg.editRichMessage(info.chatId, info.messageId, "⏹ <b>Interrupted by restart</b>", {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
@@ -370,6 +374,7 @@ export class SessionStore {
         // ignore
       }
       this.statusMessageBySession.delete(sessionId);
+      }));
     }
     this.saveStatusMessages();
   };
