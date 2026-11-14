@@ -37,6 +37,7 @@ export const BOT_COMMANDS = [
   { command: "diff", description: "Show session diff" },
   { command: "context", description: "Show session context" },
   { command: "sync", description: "Show the session digest (context preview)" },
+  { command: "search", description: "Search in session history" },
   { command: "compact", description: "Compact session history" },
   { command: "retry", description: "Retry the last prompt (useful after rate limits)" },
   { command: "goal", description: "Keep working toward a session goal" },

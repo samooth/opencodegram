@@ -18,7 +18,7 @@ import * as miscCmds from "./misc.js";
 
 const {
   cmd_status, cmd_new, cmd_stop, cmd_fork, cmd_rename, cmd_archive, cmd_unarchive,
-  cmd_delete, cmd_compact, cmd_context, cmd_usage, cmd_sync, cmd_running_sessions,
+  cmd_delete, cmd_compact, cmd_context, cmd_usage, cmd_sync, cmd_running_sessions, cmd_search,
   cmd_use, cmd_diff,
 } = sessionsCmds;
 const { cmd_file, cmd_ls, cmd_find, cmd_zip, cmd_read, cmd_tree } = filesCmds;
@@ -31,7 +31,7 @@ const {
 } = miscCmds;
 
 export const KNOWN_COMMANDS = new Set([
-  "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort",
+  "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort", "search",
   "commands", "settings", "ops", "file", "ls", "find", "read", "zip", "tree", "model", "models",
   "agent", "agents", "skill", "skills", "fork", "rename", "archive", "unarchive",
   "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry",
@@ -92,6 +92,7 @@ COMMANDS.set("delete", cmd_delete);
 COMMANDS.set("deletesessions", cmd_delete);
 COMMANDS.set("diff", cmd_diff);
 COMMANDS.set("sync", cmd_sync);
+COMMANDS.set("search", cmd_search);
 COMMANDS.set("context", cmd_context);
 COMMANDS.set("compact", cmd_compact);
 COMMANDS.set("buttons", cmd_buttons);

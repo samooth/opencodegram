@@ -81,6 +81,7 @@ documents.
 ## Context and usage
 
 - `/context` — token window, usage and recent messages.
+- `/search <término>` — busca en el historial de la sesión y muestra resultados con página y highlight.
 - `/sync` — show the session digest: metadata header (model, directory,
   message/tool counts), the last 6 messages rendered in full with truncation
   hints, and older messages as a compact one-line timeline; long digests are
