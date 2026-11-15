@@ -61,10 +61,10 @@ async function handleTranscriptPage(deps: BotDeps, cq: TelegramCallbackQuery, ch
   if (!m) return;
   const sessionId = m[1];
   const page = parseInt(m[2], 10);
-  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
-    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   await deps.transcript.goToPage(chatId, s, page).catch((err) => {
@@ -77,22 +77,22 @@ async function handleTranscriptPage(deps: BotDeps, cq: TelegramCallbackQuery, ch
  */
 async function handleOps(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   if (!deps.config.ADMIN_TELEGRAM_USER_ID || cq.from?.id !== deps.config.ADMIN_TELEGRAM_USER_ID) {
-    await deps.tg.answerCallbackQuery(cq.id, "Solo para el admin").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Solo para el admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const action = data.slice("ops:".length);
   if (action === "reset") {
     deps.metrics?.reset();
-    await deps.tg.answerCallbackQuery(cq.id, "♻️ Métricas reiniciadas").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "♻️ Métricas reiniciadas").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   } else {
-    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
   if (messageId) {
     const rendered = await deps.panels.renderOps();
     await deps.tg.editRichMessage(chatId, messageId, rendered.html, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: rendered.keyboard },
-    }).catch(() => {});
+    }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
 }
 
@@ -104,10 +104,10 @@ async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   if (!m) return;
   const sessionId = m[1];
   const format = (m[2] ?? "html") as "html" | "md" | "jsonld" | "jsonl";
-  await deps.tg.answerCallbackQuery(cq.id, "Generando historial…").catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, "Generando historial…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
-    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   try {
@@ -159,11 +159,12 @@ async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     await writeFile(path, content, "utf8");
     await deps.tg.sendDocument(chatId, path, mimeName, caption, {
       ...(threadId ? { message_thread_id: threadId } : {}),
+      parse_mode: "HTML",
     });
     deps.metrics?.inc("history_exports");
   } catch (err) {
     console.error("[hist] export failed", err);
-    await deps.tg.sendRichMessage(chatId, `❌ No se pudo generar el historial: ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, `❌ No se pudo generar el historial: ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
 }
 
@@ -174,10 +175,10 @@ async function handleHistoryFormatPicker(deps: BotDeps, cq: TelegramCallbackQuer
   const m = data.match(/^histfmt:(.+)$/);
   if (!m) return;
   const sessionId = m[1];
-  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(sessionId);
   if (!s) {
-    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const name = (s.topicTitle || "").trim() || s.directory?.split("/").filter(Boolean).pop() || sessionId;
@@ -189,7 +190,7 @@ async function handleHistoryFormatPicker(deps: BotDeps, cq: TelegramCallbackQuer
         [{ text: "🧠 Dataset (JSON-LD)", callback_data: `hist:${sessionId}:jsonld` }, { text: "🧠 Dataset (JSONL)", callback_data: `hist:${sessionId}:jsonl` }],
       ],
     },
-  }).catch(() => {});
+  }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
 
@@ -197,22 +198,22 @@ async function handlePagePicker(deps: BotDeps, cq: TelegramCallbackQuery, chatId
   const closeMatch = data.match(/^tpick:close:(.+)$/);
   if (closeMatch) {
     // Close: delete the picker message.
-    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
-    if (cq.message?.message_id) await deps.tg.deleteMessage(chatId, cq.message.message_id).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    if (cq.message?.message_id) await deps.tg.deleteMessage(chatId, cq.message.message_id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const m = data.match(/^tpick:(.+)$/);
   if (!m) return;
   const sessionId = m[1];
-  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
-    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const total = deps.transcript.pageCount(s);
   if (total <= 1) {
-    await deps.tg.answerCallbackQuery(cq.id, "Solo hay una página").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Solo hay una página").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   await deps.tg
@@ -220,7 +221,7 @@ async function handlePagePicker(deps: BotDeps, cq: TelegramCallbackQuery, chatId
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: deps.transcript.pagePickerKeyboard(s, total) },
     })
-    .catch(() => {});
+    .catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
 /**
@@ -232,11 +233,11 @@ async function handlePickerJump(deps: BotDeps, cq: TelegramCallbackQuery, chatId
   if (!m) return;
   const sessionId = m[1];
   const page = parseInt(m[2], 10);
-  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
-  if (cq.message?.message_id) await deps.tg.deleteMessage(chatId, cq.message.message_id).catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  if (cq.message?.message_id) await deps.tg.deleteMessage(chatId, cq.message.message_id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
-    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   await deps.transcript.goToPage(chatId, s, page).catch((err) => {
@@ -265,7 +266,7 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
     }, 2 * 60 * 1000);
     await deps.tg.answerCallbackQuery(cq.id, "Send the reason as a message");
     if (info.messageId) {
-      await deps.tg.editRichMessage(info.chatId, info.messageId, `<b>Reject with reason</b>\nSend your reason in the next message.`).catch(() => {});
+      await deps.tg.editRichMessage(info.chatId, info.messageId, `<b>Reject with reason</b>\nSend your reason in the next message.`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
   }
@@ -284,7 +285,7 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   if (info.messageId) {
     await deps.tg
       .editRichMessage(info.chatId, info.messageId, `<b>Permission ${decision}</b>\n<i>${esc(info.label)}</i>\n<code>${esc(info.resource)}</code>`)
-      .catch(() => {});
+      .catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
   deps.pendingPermissions.delete(requestId);
 }
@@ -293,7 +294,7 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const m = data.match(/^connect:(.+)$/);
   if (!m) return;
   const sessionId = m[1];
-  await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
     const resolvedCs = cs ?? deps.store.findSessionById(sessionId);
@@ -322,7 +323,7 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
         { text: "📊 Status", callback_data: "panel:status" },
       ]];
       if (messageId) {
-        await deps.tg.editRichMessage(chatId, messageId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => {});
+        await deps.tg.editRichMessage(chatId, messageId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
         deps.store.rememberMessageSession(chatId, messageId, sessionId);
       } else {
         const sent = await deps.tg.sendRichMessage(chatId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => undefined);
@@ -339,7 +340,7 @@ async function handleQswitch(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const m = data.match(/^qswitch:(.+)$/);
   if (!m) return;
   const sessionId = m[1];
-  await deps.tg.answerCallbackQuery(cq.id, "Switching…").catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, "Switching…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     await deps.sessions.activateSession(chatId, sessionId, false, threadId);
   } catch (err) {
@@ -352,10 +353,10 @@ async function handleGoal(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   if (!m) return;
   const action = m[1];
   const sessionId = m[2];
-  await deps.tg.answerCallbackQuery(cq.id, action === "clear" ? "Clearing…" : "Working…").catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, action === "clear" ? "Clearing…" : "Working…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     void deps.oc.runCommand(sessionId, "goal", action).catch((err) => {
-      deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+      deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     });
   } catch (err) {
     await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
@@ -369,12 +370,12 @@ async function handleRuncmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   const pending = deps.pendingConfirmations.get(key);
   if (!pending || pending.expires < Date.now()) {
     deps.pendingConfirmations.delete(key);
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, "Confirmation expired.", threadOpts(threadId));
     return;
   }
   deps.pendingConfirmations.delete(key);
-  await deps.tg.answerCallbackQuery(cq.id, "Running…").catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, "Running…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     void deps.oc.runCommand(pending.sessionId, pending.name, pending.args)
       .then(() => { if (pending.name !== "goal") deps.tg.sendRichMessage(chatId, `ran /${esc(pending.name)}`, threadOpts(threadId)); })
@@ -428,7 +429,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     await deps.tg.sendRichMessage(chatId, targetId ? `Target session not found: <code>${esc(targetId)}</code>` : "No active session in this chat/topic. Activate or create one first.", {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
-    }).catch(() => {});
+    }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const pending = { id: model.id, providerID: model.providerID, variant: model.variant };
@@ -502,7 +503,7 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     await deps.tg.sendRichMessage(chatId, targetId ? `Target session not found: <code>${esc(targetId)}</code>` : "No active session in this chat/topic. Activate or create one first.", {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
-    }).catch(() => {});
+    }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const variant = variantId === "default" ? undefined : variantId;
@@ -538,7 +539,7 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   if (!data.startsWith("set:")) return;
   const [, key, value] = data.split(":");
   if (!key || !isSettingsKey(key)) {
-    await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   let parsedValue: ChatSettings[keyof ChatSettings];
@@ -555,21 +556,21 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   if (key === "displayMode") {
     if (parsedValue === "unified") {
       const s = deps.store.getActiveSession(chatId, threadId) ?? (await deps.sessions.restoreActiveSession(chatId, threadId).catch(() => undefined));
-      if (s) await deps.dashboard.ensure(chatId, threadId, s, { working: !!s.statusMessageId && !s.statusFinished }).catch(() => {});
+      if (s) await deps.dashboard.ensure(chatId, threadId, s, { working: !!s.statusMessageId && !s.statusFinished }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     } else {
       const dash = deps.store.getDashboard(chatId, threadId);
-      if (dash) await deps.tg.unpinChatMessage(chatId, { message_id: dash.messageId }).catch(() => {});
+      if (dash) await deps.tg.unpinChatMessage(chatId, { message_id: dash.messageId }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
   }
 
-  await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${String(parsedValue)}`).catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${String(parsedValue)}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId !== undefined) {
     await deps.tg
       .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: settingsKeyboard(settings) },
       })
-      .catch(() => {});
+      .catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
 }
 
@@ -581,14 +582,14 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     const current = deps.settings.get(chatId).previewLines;
     const next = presets[(presets.indexOf(current) + 1) % presets.length] ?? presets[0];
     const settings = deps.settings.set(chatId, "previewLines", next);
-    await deps.tg.answerCallbackQuery(cq.id, `${LABELS.previewLines} → ${next}`).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, `${LABELS.previewLines} → ${next}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (messageId !== undefined) {
       await deps.tg
         .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
           ...threadOpts(threadId),
           reply_markup: { inline_keyboard: settingsKeyboard(settings) },
         })
-        .catch(() => {});
+        .catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
   }
@@ -597,14 +598,14 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     const current = deps.settings.get(chatId).resourceHistory;
     const next = presets[(presets.indexOf(current) + 1) % presets.length] ?? presets[0];
     const settings = deps.settings.set(chatId, "resourceHistory", next);
-    await deps.tg.answerCallbackQuery(cq.id, `${LABELS.resourceHistory} → ${next}`).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, `${LABELS.resourceHistory} → ${next}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (messageId !== undefined) {
       await deps.tg
         .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
           ...threadOpts(threadId),
           reply_markup: { inline_keyboard: settingsKeyboard(settings) },
         })
-        .catch(() => {});
+        .catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
   }
@@ -613,18 +614,18 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     const current = deps.settings.get(chatId).longAnswerThreshold;
     const next = presets[(presets.indexOf(current) + 1) % presets.length] ?? presets[0];
     const settings = deps.settings.set(chatId, "longAnswerThreshold", next);
-    await deps.tg.answerCallbackQuery(cq.id, `${LABELS.longAnswerThreshold} → ${next}`).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, `${LABELS.longAnswerThreshold} → ${next}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (messageId !== undefined) {
       await deps.tg
         .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
           ...threadOpts(threadId),
           reply_markup: { inline_keyboard: settingsKeyboard(settings) },
         })
-        .catch(() => {});
+        .catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
   }
-  await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
 async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
@@ -725,11 +726,11 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
       s.statusTimer = undefined;
     }
     cancelAutoRetry(s.sessionId);
-    await oc.interrupt(s.sessionId).catch(() => {});
+    await oc.interrupt(s.sessionId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await tg.answerCallbackQuery(cq.id, "Stopped");
     if (s.transcriptMessageId) {
       // The session card keeps its paginated transcript; only the live part ends.
-      await deps.status.publishCard(chatId, s).catch(() => {});
+      await deps.status.publishCard(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       s.statusMessageId = undefined;
     } else if (s.statusMessageId) {
       await tg
@@ -737,7 +738,7 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
           ...store.threadOptsFor(s),
           reply_markup: { inline_keyboard: [] },
         })
-        .catch(() => {});
+        .catch((err) => console.warn("[callbacks]", err?.message ?? err));
       s.statusMessageId = undefined;
     }
     const stoppedMsg = await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => undefined);
@@ -754,7 +755,7 @@ async function handleSessions(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   const filterMatch = data.match(/^sessions:filter:(all|running|group)$/);
   if (filterMatch) {
     const mode = filterMatch[1];
-    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (mode === "running") await deps.panels.showSessions(chatId, 0, cq.message?.message_id, threadId, undefined, true);
     else if (mode === "group") await deps.panels.showSessions(chatId, 0, cq.message?.message_id, threadId, chatId);
     else await deps.panels.showSessions(chatId, 0, cq.message?.message_id, threadId);
@@ -821,46 +822,46 @@ async function handleProfile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     settings = deps.settings.set(chatId, "displayMode", "flexible");
     settings = deps.settings.set(chatId, "longAnswerDelivery", "auto");
   } else {
-    await deps.tg.answerCallbackQuery(cq.id, "Perfil desconocido").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Perfil desconocido").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   if (settings.displayMode === "unified") {
     const s = deps.store.getActiveSession(chatId, threadId) ?? (await deps.sessions.restoreActiveSession(chatId, threadId).catch(() => undefined));
-    if (s) await deps.dashboard.ensure(chatId, threadId, s, { working: !!s.statusMessageId && !s.statusFinished }).catch(() => {});
+    if (s) await deps.dashboard.ensure(chatId, threadId, s, { working: !!s.statusMessageId && !s.statusFinished }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   } else {
     const dash = deps.store.getDashboard(chatId, threadId);
-    if (dash) await deps.tg.unpinChatMessage(chatId, { message_id: dash.messageId }).catch(() => {});
+    if (dash) await deps.tg.unpinChatMessage(chatId, { message_id: dash.messageId }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
-  await deps.tg.answerCallbackQuery(cq.id, `Perfil: ${name}`).catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id, `Perfil: ${name}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId !== undefined) {
     await deps.tg
       .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: settingsKeyboard(settings) },
       })
-      .catch(() => {});
+      .catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
 }
 
 async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const sessionId = data.slice("viewfull:".length);
-  await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(sessionId);
   const text = s?.lastFinalText;
   if (!s || !text) {
-    await deps.tg.sendRichMessage(chatId, "No hay respuesta completa disponible.", threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, "No hay respuesta completa disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const parts = splitMarkdown(text, 3200);
   if (parts.length <= 1) {
-    await deps.tg.sendRichMessage(chatId, clampText(`${sessionHeader(s)}${markdownToHtml(text)}`, 3900), threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, clampText(`${sessionHeader(s)}${markdownToHtml(text)}`, 3900), threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   for (let i = 0; i < parts.length; i++) {
     const chunk = parts[i];
     const prefix = `<i>(${i + 1}/${parts.length})</i>\n`;
     const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(chunk)}`;
-    await deps.tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts(threadId)).catch(() => {});
+    await deps.tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
 }
 
@@ -877,9 +878,9 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "spick:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {
     const m = data.match(/^spick:(\d+)$/);
     if (!m) return;
-    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     const page = parseInt(m[1], 10);
-    if (messageId !== undefined) await deps.tg.deleteMessage(chatId, messageId).catch(() => {});
+    if (messageId !== undefined) await deps.tg.deleteMessage(chatId, messageId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await showSessionPicker(deps, chatId, threadId, page);
   },
   "use:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {
@@ -893,7 +894,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
       // private threaded chats, silently fails in groups without permission).
       if (cs) {
         cs.topicTitle = undefined;
-        await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {});
+        await deps.sessions.syncTopicTitle(chatId, cs).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       }
       // A message may have been waiting for the user to pick a session.
       const route = deps.store.routeKey(chatId, threadId);
@@ -906,7 +907,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
           s.targetThreadId = threadId;
           await deps.status.startStatus(chatId, s);
           void deps.oc.prompt(s.sessionId, pending.text, pending.files).catch((err) => {
-            deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+            deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
           });
           return;
         }
@@ -979,7 +980,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       await tg.answerCallbackQuery(cq.id, "Button expired");
       return;
     }
-    await tg.answerCallbackQuery(cq.id, btn.label).catch(() => {});
+    await tg.answerCallbackQuery(cq.id, btn.label).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     const s = deps.store.getActiveSession(chatId, threadId);
     if (!s) {
       await tg.sendRichMessage(chatId, "no active session.", threadOpts(threadId));
@@ -987,7 +988,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     }
     // Send the configured text as a prompt.
     const send = (html: string, opts: Record<string, unknown> = {}) => tg.sendRichMessage(chatId, html, { ...(threadId ? { message_thread_id: threadId } : {}), ...opts });
-    await deps.status.startStatus(chatId, s).catch(() => {});
+    await deps.status.startStatus(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     void deps.oc.prompt(s.sessionId, btn.text).catch(async (err) => {
       await send(`❌ ${esc(String(err))}`);
     });
@@ -997,7 +998,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const retryMatch = cbData.match(/^retry:(.+)$/);
   if (retryMatch) {
     const sessionId = retryMatch[1];
-    await tg.answerCallbackQuery(cq.id, "Retrying…").catch(() => {});
+    await tg.answerCallbackQuery(cq.id, "Retrying…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     const prompt = deps.store.lastPromptBySession.get(sessionId);
     if (!prompt) {
       await tg.sendRichMessage(chatId, "no previous prompt to retry.", threadOpts(threadId));
@@ -1018,14 +1019,14 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       await deps.status.startStatus(chatId, s);
       if (s.statusMessageId) deps.store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
       s.statusTimer = setInterval(() => {
-        deps.status.updateStatus(chatId, s).catch(() => {});
+        deps.status.updateStatus(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       }, 5000);
       await deps.oc.prompt(s.sessionId, prompt).catch(async (err) => {
         if (s.statusTimer) {
           clearInterval(s.statusTimer);
           s.statusTimer = undefined;
         }
-        await deps.status.finishStatus(chatId, s).catch(() => {});
+        await deps.status.finishStatus(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
         await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
       });
     } catch (err) {
@@ -1039,13 +1040,13 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const sessionId = deleteConfirmMatch[1];
     await tg.answerCallbackQuery(cq.id, "Deleting…");
     try {
-      await oc.interrupt(sessionId).catch(() => {});
+      await oc.interrupt(sessionId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       await oc.deleteSession(sessionId);
       store.forgetSession(sessionId);
       if (cq.message?.message_id !== undefined) {
         await tg.editRichMessage(chatId, cq.message.message_id, `✅ Deleted <code>${esc(sessionId)}</code>`, {
           reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]] },
-        }).catch(() => {});
+        }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       }
     } catch (err) {
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
@@ -1063,15 +1064,15 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     try {
       if (action === "connect" && name) {
         await deps.oc.client.mcp.connect({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.connect>[0]);
-        await deps.tg.answerCallbackQuery(cq.id, "Connected").catch(() => {});
+        await deps.tg.answerCallbackQuery(cq.id, "Connected").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       } else if (action === "disconnect" && name) {
         await deps.oc.client.mcp.disconnect({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.disconnect>[0]);
-        await deps.tg.answerCallbackQuery(cq.id, "Disconnected").catch(() => {});
+        await deps.tg.answerCallbackQuery(cq.id, "Disconnected").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       } else if (action === "remove" && name) {
         await deps.oc.client.mcp.remove({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.remove>[0]);
-        await deps.tg.answerCallbackQuery(cq.id, "Removed").catch(() => {});
+        await deps.tg.answerCallbackQuery(cq.id, "Removed").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       } else if (action === "resources") {
-        await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+        await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
         const { resources, templates } = await mcp.listMcpResources(deps.oc, directory);
         const all = [...resources, ...templates];
         if (!all.length) {
@@ -1082,18 +1083,18 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
         await deps.tg.sendRichMessage(chatId, `<b>MCP resources</b>\n${lines.join("\n\n")}\n\nUse /mcp read <uri>`, threadOpts(threadId));
         return;
       } else {
-        await deps.tg.answerCallbackQuery(cq.id, "Unknown MCP action").catch(() => {});
+        await deps.tg.answerCallbackQuery(cq.id, "Unknown MCP action").catch((err) => console.warn("[callbacks]", err?.message ?? err));
         return;
       }
       const { text, keyboard } = await mcp.renderMcpList(deps.oc, directory);
       if (messageId !== undefined) {
-        await deps.tg.editRichMessage(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => {});
+        await deps.tg.editRichMessage(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       } else {
         await deps.tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
       }
     } catch (err) {
-      await deps.tg.answerCallbackQuery(cq.id, "Failed").catch(() => {});
-      await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+      await deps.tg.answerCallbackQuery(cq.id, "Failed").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
   }
@@ -1104,7 +1105,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const fullEditsMatch = (cq.data ?? "").match(/^edits:full:(\d+)$/);
   if (fullEditsMatch && cq.message?.message_id !== undefined) {
     const handled = await deps.status.sendFullDiffs(chatId, Number(fullEditsMatch[1]), threadId);
-    await deps.tg.answerCallbackQuery(cq.id, handled ? "Sending diffs…" : "Edit expired").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, handled ? "Sending diffs…" : "Edit expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
 
@@ -1112,10 +1113,10 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   if (editMatch && cq.message?.message_id !== undefined) {
     const handled = await deps.status.showEditDiff(chatId, cq.message.message_id, Number(editMatch[1]));
     if (handled) {
-      await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+      await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
-    await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
 
@@ -1140,7 +1141,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const directory = resolveRepoDirectory(deps.config, repoName) ?? repoName;
     try {
       await sessions.createNewSession(chatId, false, threadId, directory);
-      await panels.sendPanel(chatId, threadId).catch(() => {});
+      await panels.sendPanel(chatId, threadId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     } catch (err) {
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
     }
@@ -1152,26 +1153,26 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const action = deleteMatch[1];
     const sessionId = deleteMatch[2];
     if (action === "cancel") {
-      await tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
+      await tg.answerCallbackQuery(cq.id, "Cancelled").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       if (messageId !== undefined) {
-        await tg.editRichMessage(chatId, messageId, "Deletion cancelled.", { reply_markup: { inline_keyboard: [] } }).catch(() => {});
+        await tg.editRichMessage(chatId, messageId, "Deletion cancelled.", { reply_markup: { inline_keyboard: [] } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       }
       return;
     }
     if (!sessionId) {
-      await tg.answerCallbackQuery(cq.id, "Missing session").catch(() => {});
+      await tg.answerCallbackQuery(cq.id, "Missing session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
-    await tg.answerCallbackQuery(cq.id, "Deleting…").catch(() => {});
+    await tg.answerCallbackQuery(cq.id, "Deleting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     try {
       await oc.deleteSession(sessionId);
       store.forgetSession(sessionId);
       if (messageId !== undefined) {
-        await tg.editRichMessage(chatId, messageId, `✅ Session deleted\n<code>${esc(sessionId)}</code>`, { reply_markup: { inline_keyboard: [] } }).catch(() => {});
+        await tg.editRichMessage(chatId, messageId, `✅ Session deleted\n<code>${esc(sessionId)}</code>`, { reply_markup: { inline_keyboard: [] } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       }
       await sendPanel(chatId, threadId);
     } catch (err) {
-      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+      await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
   }
@@ -1204,11 +1205,11 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     pendingModelByChat.delete(scope);
     deps.panels.modelTargetSessionByScope.delete(scope);
     if (messageId !== undefined) deps.panels.modelPanels.delete(messageId);
-    await tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
+    await tg.answerCallbackQuery(cq.id, "Cancelled").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (cq.message?.message_id) {
       await tg.editRichMessage(chatId, cq.message.message_id, "Model selection cancelled.", {
         reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] },
-      }).catch(() => {});
+      }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
   }
@@ -1249,22 +1250,22 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
   const threadId = cq.message?.message_thread_id;
   const messageId = cq.message?.message_id;
   if (messageId === undefined) {
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
   const state = deps.pendingForms.get(messageId);
   if (!state) {
-    await deps.tg.answerCallbackQuery(cq.id, "Form expired").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Form expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
 
   if (data === "forms:cancel") {
-    await deps.tg.answerCallbackQuery(cq.id, "Cancelled").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Cancelled").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg
       .editRichMessage(chatId, messageId, `<b>Form cancelled</b>\n<code>${esc(state.formId)}</code>`, {
         reply_markup: { inline_keyboard: [] },
       })
-      .catch(() => {});
+      .catch((err) => console.warn("[callbacks]", err?.message ?? err));
     deps.pendingForms.delete(messageId);
     deps.pendingFormsById.delete(state.formId);
     return true;
@@ -1272,16 +1273,16 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
 
   if (data === "forms:submit") {
     if (state.submitted) {
-      await deps.tg.answerCallbackQuery(cq.id, "Already submitted").catch(() => {});
+      await deps.tg.answerCallbackQuery(cq.id, "Already submitted").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return true;
     }
     const allRequired = state.fields.filter((field) => field.required).every((field) => state.answers[field.key] !== undefined);
     if (!allRequired) {
-      await deps.tg.answerCallbackQuery(cq.id, "Required fields missing").catch(() => {});
+      await deps.tg.answerCallbackQuery(cq.id, "Required fields missing").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return true;
     }
     state.submitted = true;
-    await deps.tg.answerCallbackQuery(cq.id, "Submitting…").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Submitting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     // Route the form's follow-up responses to the tab where the form lives.
     deps.store.rememberDelivery(state.sessionId, state.chatId, state.threadId);
     try {
@@ -1290,10 +1291,10 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
         .editRichMessage(chatId, messageId, `<b>Form submitted</b>\n<code>${esc(state.formId)}</code>`, {
           reply_markup: { inline_keyboard: [] },
         })
-        .catch(() => {});
+        .catch((err) => console.warn("[callbacks]", err?.message ?? err));
     } catch (err) {
       state.submitted = false;
-      await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch(() => {});
+      await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     deps.pendingForms.delete(messageId);
     deps.pendingFormsById.delete(state.formId);
@@ -1302,14 +1303,14 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
 
   const match = data.match(/^fq:(\d+):(-?\d+)$/);
   if (!match) {
-    await deps.tg.answerCallbackQuery(cq.id, "Unknown form action").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Unknown form action").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
   const fieldIndex = Number(match[1]);
   const optionIndex = Number(match[2]);
   const field = state.fields[fieldIndex];
   if (!field) {
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
   const multi = (() => {
@@ -1319,19 +1320,19 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
   })();
 
   if (optionIndex === -1) {
-    await deps.tg.answerCallbackQuery(cq.id, "Done").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Done").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg
       .editRichMessage(chatId, messageId, renderForm(state), {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: formKeyboard(state) },
       })
-      .catch(() => {});
+      .catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
 
   const option = field.options?.[optionIndex];
   if (!option) {
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
 
@@ -1341,16 +1342,16 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
     if (idx >= 0) current.splice(idx, 1);
     else current.push(option.value);
     state.answers[field.key] = current;
-    await deps.tg.answerCallbackQuery(cq.id, current.includes(option.value) ? `Added ${option.label}` : `Removed ${option.label}`).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, current.includes(option.value) ? `Added ${option.label}` : `Removed ${option.label}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   } else {
     state.answers[field.key] = option.value;
-    await deps.tg.answerCallbackQuery(cq.id, `Selected ${option.label}`).catch(() => {});
+    await deps.tg.answerCallbackQuery(cq.id, `Selected ${option.label}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
   await deps.tg
     .editRichMessage(chatId, messageId, renderForm(state), {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: formKeyboard(state) },
     })
-    .catch(() => {});
+    .catch((err) => console.warn("[callbacks]", err?.message ?? err));
   return true;
 }
