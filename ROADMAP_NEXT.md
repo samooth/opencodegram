@@ -26,16 +26,32 @@
 - Audit log (`data/audit.log`) and per-update error isolation.
 - Webhook mode (optional) with secret validation; long polling remains default.
 - Update offset persistence and update dedup to avoid replayed prompts.
-- Bounded auto-retry (max attempts, stale-prompt guard).
+- Bounded auto-retry (max attempts, stale-prompt guard); /retry falls back to
+  the most recent session in the chat.
+- Per-turn prompt persistence (`data/turnPrompts.json`) for dataset exports.
+- Export formats: HTML (safe Markdown rendering), Markdown, JSON-LD and JSONL.
+- Per-session transcript persistence (`data/transcripts/`), pagination cache and
+  attachment cleanup with TTL.
+- Voice transcription via a bundled HuggingFace Whisper wrapper with automatic
+  language detection.
+- Graceful handling of Telegram 429 (`retry_after`), 502 outages and 409
+  conflict on restart.
+- Group media policy: photos/documents require an explicit mention; voice notes
+  also work as a reply to the bot.
+- Adaptive per-chat throttle, enriched `/ops` health (throttles + GPU).
 
 ## Next
 
 1. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
 2. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
-3. **Operations** – health endpoint, metrics, log rotation, disk guard (shipped;
-   further hardening optional).
+3. **Whisper daemon** – keep the model loaded to cut voice latency (design
+   depends on the user's environment).
+4. **Automatic session summary** – generate a short topic title from the turn
+   result.
+5. **`/retry` with turn selection** – replay a specific past turn.
+6. **`/search` over user prompts** – currently only answer blocks are searched.
 
 ## Suggested order
 
-Tests, the file browser and artifacts are shipped. Next, voice notes or MCP
-status (still pending), then worktrees and VCS actions.
+The file browser, artifacts, voice notes, MCP status, worktrees and VCS actions
+are shipped. Next: Whisper daemon, automatic summaries and `/retry` turn picker.
