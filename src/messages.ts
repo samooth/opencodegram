@@ -15,7 +15,7 @@ import { STATUS_EDIT_INTERVAL_MS } from "./constants.js";
  * Result of downloading a Telegram message's attachments.
  */
 export type DownloadedAttachments = {
-  mediaToAttach: Array<{ uri: string; name: string }>;
+  mediaToAttach: Array<{ uri: string; name: string; source?: { type: string; uri: string } }>;
   voiceAttachments: Array<{ uri: string; name: string }>;
   voiceTranscript: string | null;
 };
@@ -38,7 +38,7 @@ export async function downloadAttachments(
     ((html: string, o: Record<string, unknown> = {}) =>
       tg.sendRichMessage(chatId, html, { ...(threadId ? { message_thread_id: threadId } : {}), ...o }));
 
-  let mediaToAttach: Array<{ uri: string; name: string }> = [];
+  let mediaToAttach: Array<{ uri: string; name: string; source?: { type: string; uri: string } }> = [];
   const voiceAttachments: Array<{ uri: string; name: string }> = [];
   const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
   const downloadOne = async (fileId: string, suggestedName: string) => {
@@ -60,7 +60,7 @@ export async function downloadAttachments(
     const name = basename(rawName).replace(/\0/g, "") || `${fileId}.bin`;
     const path = join(dir, name === "." || name === ".." ? `${fileId}.bin` : name);
     await writeFile(path, buf);
-    return { uri: `file://${path}`, name };
+    return { uri: `file://${path}`, name, source: { type: "uri", uri: `file://${path}` } };
   };
 
   if (Array.isArray(msg.photo) && msg.photo.length) {
@@ -523,7 +523,7 @@ export async function handleMediaMessage(
   const { config, tg, oc } = deps;
 
   // Resolve attachments (download if not provided).
-  let mediaToAttach: Array<{ uri: string; name: string }>;
+  let mediaToAttach: Array<{ uri: string; name: string; source?: { type: string; uri: string } }>;
   let voiceTranscript: string | null;
   if (attachments) {
     mediaToAttach = attachments.mediaToAttach;
@@ -554,6 +554,24 @@ export async function handleMediaMessage(
     if (resolution.asked) return;
     await send("🤖 <h3>No hay sesión activa</h3>\n<p><i>Crea una nueva o elige una existente para empezar.</i></p>", { reply_markup: { inline_keyboard: [[{ text: "➕ Nueva sesión aquí", callback_data: "panel:new" }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } } );
     return;
+  }
+  // Copy downloaded attachments into the session directory so OpenCode can read
+  // them (it only reads files under the session's working directory).
+  if (s.directory) {
+    const { copyFile, mkdir: mkdirAsync } = await import("node:fs/promises");
+    const { basename: bn, join: jn } = await import("node:path");
+    await mkdirAsync(s.directory, { recursive: true }).catch(() => {});
+    for (const att of mediaToAttach) {
+      const srcPath = att.uri.replace(/^file:\/\//, "");
+      const destPath = jn(s.directory, bn(srcPath));
+      try {
+        await copyFile(srcPath, destPath);
+        att.uri = `file://${destPath}`;
+        if ((att as any).source) (att as any).source.uri = `file://${destPath}`;
+      } catch (err) {
+        console.warn("[media] could not copy to session dir", err);
+      }
+    }
   }
   const text = voiceTranscript
     ? ((msg.caption ?? "").trim() ? `${(msg.caption ?? "").trim()}\n\n${voiceTranscript}` : voiceTranscript)
