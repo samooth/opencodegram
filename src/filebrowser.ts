@@ -159,7 +159,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     try {
       await tg.sendDocument(chatId, doc.absolute, doc.name, caption, { ...threadOpts(threadId), parse_mode: "HTML" });
     } finally {
-      await tg.deleteMessage(chatId, progress.message_id).catch(() => {});
+      await tg.deleteMessage(chatId, progress.message_id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
     }
   }
 
@@ -511,14 +511,14 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
   async function openEntry(view: BrowseView, index: number, messageId: number, callbackId: string): Promise<void> {
     const entry = view.entries[index];
     if (!entry) {
-      await tg.answerCallbackQuery(callbackId, "Listing expired; run /ls again").catch(() => {});
+      await tg.answerCallbackQuery(callbackId, "Listing expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
       return;
     }
     if (entry.external) {
-      await tg.answerCallbackQuery(callbackId, "This symlink points outside the session directory").catch(() => {});
+      await tg.answerCallbackQuery(callbackId, "This symlink points outside the session directory").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
       return;
     }
-    await tg.answerCallbackQuery(callbackId).catch(() => {});
+    await tg.answerCallbackQuery(callbackId).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
     if (entry.type === "directory") {
       await showListing(view.chatId, view.threadId, entry.path, {
         hidden: view.kind === "listing" ? view.hidden : false,
@@ -536,7 +536,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
 
     const chatId = cq.message?.chat?.id;
     if (!chatId) {
-      await tg.answerCallbackQuery(cq.id, "Missing chat").catch(() => {});
+      await tg.answerCallbackQuery(cq.id, "Missing chat").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
       return true;
     }
     const threadId = cq.message?.message_thread_id;
@@ -564,146 +564,146 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     const handlers: Record<string, FsHandler> = {
       "fs:cd:": async (view, chatId, threadId, messageId, cq, data) => {
         const target = data.slice(6);
-        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await showListing(chatId, threadId, target, { messageId, base: view?.base });
         return true;
       },
       "fs:r": async (view, chatId, threadId, messageId, cq) => {
-        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await showListing(chatId, threadId, "", { messageId, base: view?.base });
         return true;
       },
       "fs:send": async (view, chatId, threadId, _messageId, cq) => {
         if (!view || (view.kind !== "file" && view.kind !== "summary")) {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
-        await tg.answerCallbackQuery(cq.id, "Sending…").catch(() => {});
+        await tg.answerCallbackQuery(cq.id, "Sending…").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await sendAsDocument(chatId, threadId, view.base, view.path);
         return true;
       },
       "fs:preview": async (view, chatId, threadId, messageId, cq) => {
         if (!view || view.kind !== "summary") {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
-        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, maxLines: 160, forcePreview: true });
         return true;
       },
       "fs:peek:": async (view, chatId, threadId, messageId, cq, data) => {
         const peekMatch = data.match(/^fs:peek:(\d+)$/);
         if (!peekMatch) {
-          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (!view || view.kind !== "summary") {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         const line = parseInt(peekMatch[1], 10);
-        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await showFile(chatId, threadId, view.path, { messageId, back: view.back, base: view.base, startLine: line, maxLines: 40, forcePreview: true });
         return true;
       },
       "fs:u": async (view, chatId, threadId, messageId, cq) => {
         if (!view) {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (view.kind === "file" || view.kind === "summary") {
           if (!view.back) {
-            await tg.answerCallbackQuery(cq.id, "No previous listing").catch(() => {});
+            await tg.answerCallbackQuery(cq.id, "No previous listing").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
             return true;
           }
-          await tg.answerCallbackQuery(cq.id).catch(() => {});
+          await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           await render(view.back, messageId);
           return true;
         }
         if (view.kind === "search") {
           if (!view.back) {
-            await tg.answerCallbackQuery(cq.id, "No previous listing").catch(() => {});
+            await tg.answerCallbackQuery(cq.id, "No previous listing").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
             return true;
           }
-          await tg.answerCallbackQuery(cq.id).catch(() => {});
+          await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           await render(view.back, messageId);
           return true;
         }
         if (view.kind === "find") {
-          await tg.answerCallbackQuery(cq.id).catch(() => {});
+          await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           await showListing(chatId, threadId, "", { messageId, hidden: view.hidden, base: view.base });
           return true;
         }
         if (!view.dir) {
-          await tg.answerCallbackQuery(cq.id, "Already at the root").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Already at the root").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         const parent = parentPath(view.dir);
-        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await showListing(chatId, threadId, parent, { messageId, hidden: view.hidden, base: view.base });
         return true;
       },
       "fs:d:": async (view, chatId, threadId, _messageId, cq, data) => {
         const downloadMatch = data.match(/^fs:d:(\d+)$/);
         if (!downloadMatch) {
-          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         const entry = view.entries[parseInt(downloadMatch[1], 10)];
         if (!entry) {
-          await tg.answerCallbackQuery(cq.id, "Listing expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Listing expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (entry.external) {
-          await tg.answerCallbackQuery(cq.id, "This symlink points outside the session directory").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "This symlink points outside the session directory").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (entry.type !== "file") {
-          await tg.answerCallbackQuery(cq.id, "That entry is not a file").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "That entry is not a file").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
-        await tg.answerCallbackQuery(cq.id, "Sending…").catch(() => {});
+        await tg.answerCallbackQuery(cq.id, "Sending…").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await sendAsDocument(chatId, threadId, view.base, entry.path);
         return true;
       },
       "fs:p:": async (view, chatId, threadId, messageId, cq, data) => {
         const pageMatch = data.match(/^fs:p:(\d+)$/);
         if (!pageMatch) {
-          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         const page = clampPage(parseInt(pageMatch[1], 10), view.kind === "find" ? view.entries.length : view.total);
-        await tg.answerCallbackQuery(cq.id).catch(() => {});
+        await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         await render({ ...view, page }, messageId);
         return true;
       },
       "fs:e:": async (view, chatId, threadId, messageId, cq, data) => {
         const entryMatch = data.match(/^fs:e:(\d+)$/);
         if (!entryMatch) {
-          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (!view || view.kind === "file" || view.kind === "summary" || view.kind === "search") {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         if (messageId === undefined) {
-          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch(() => {});
+          await tg.answerCallbackQuery(cq.id, "Expired; run /ls again").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }
         await openEntry(view, parseInt(entryMatch[1], 10), messageId, cq.id);
         return true;
       },
       "fs:summary": async (_view, _chatId, _threadId, _messageId, cq) => {
-        await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+        await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
         return true;
       },
     };
@@ -714,12 +714,12 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       if (handler) {
         return await handler(view, chatId, threadId, messageId, cq, data);
       }
-      await tg.answerCallbackQuery(cq.id, "Unknown file action").catch(() => {});
+      await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
       return true;
     } catch (err) {
       console.error("[files] callback failed", err);
-      await tg.answerCallbackQuery(cq.id, truncateText(fileErrorMessage(err), 180)).catch(() => {});
-      await tg.sendRichMessage(chatId, `❌ ${esc(fileErrorMessage(err))}`, threadOpts(threadId)).catch(() => {});
+      await tg.answerCallbackQuery(cq.id, truncateText(fileErrorMessage(err), 180)).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
+      await tg.sendRichMessage(chatId, `❌ ${esc(fileErrorMessage(err))}`, threadOpts(threadId)).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
       return true;
     }
   }

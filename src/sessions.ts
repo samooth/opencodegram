@@ -474,6 +474,28 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
   // Used only when a prompt needs a session: reuse the tab binding or create a
   // dedicated session. Commands use restoreActiveSession so they never spawn
   // sessions as a side effect.
+  /**
+   * Resolve a session for /retry even when the current tab has no binding.
+   * Falls back to the most recently used session in this chat (any topic) that
+   * has a recorded prompt, so /retry works from the General topic too.
+   */
+  const resolveSessionForRetry = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
+    const direct = await restoreActiveSession(chatId, threadId);
+    if (direct) return direct;
+    const candidates = [...store.sessionsById.values()]
+      .filter((cs) => cs.targetChatId === chatId || store.lastChatBySession.get(cs.sessionId) === chatId)
+      .sort((a, b) => (b.promptStartTime ?? 0) - (a.promptStartTime ?? 0));
+    for (const cs of candidates) {
+      try {
+        const activated = await activateSession(chatId, cs.sessionId, true, threadId);
+        if (activated) return activated;
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    return undefined;
+  };
+
   const ensureActiveSession = async (chatId: number, threadId?: number): Promise<ChatSession | undefined> => {
     const restored = await restoreActiveSession(chatId, threadId);
     if (restored) return restored;
@@ -558,5 +580,5 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     } catch { /* root may not exist */ }
   };
 
-  return { createNewSession, activateSession, retireSession, restoreActiveSession, ensureActiveSession, syncTopicTitle, cleanupStaleSessions, cleanupStaleAttachments, resolveThread, bindTab, syncTitle, getReposDirectory: () => getReposDirectory(config), listRepoDirectories: listRepoDirectoriesForConfig };
+  return { createNewSession, activateSession, retireSession, restoreActiveSession, resolveSessionForRetry, ensureActiveSession, syncTopicTitle, cleanupStaleSessions, cleanupStaleAttachments, resolveThread, bindTab, syncTitle, getReposDirectory: () => getReposDirectory(config), listRepoDirectories: listRepoDirectoriesForConfig };
 }

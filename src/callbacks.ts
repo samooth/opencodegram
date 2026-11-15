@@ -1006,7 +1006,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     }
     try {
       await deps.sessions.activateSession(chatId, sessionId, true, threadId);
-      const s = await deps.sessions.restoreActiveSession(chatId, threadId);
+      const s = await deps.sessions.resolveSessionForRetry(chatId, threadId);
       if (!s) throw new Error("session not found");
       s.targetChatId = chatId;
       s.targetThreadId = threadId;

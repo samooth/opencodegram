@@ -122,7 +122,7 @@ export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number
 export async function cmd_retry(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/retry" || text.startsWith("/retry ")) {
-    const s = await C.restoreActiveSession(chatId, threadId);
+    const s = await C.resolveSessionForRetry(chatId, threadId);
     if (!s) {
       await send("no active session.");
       return true;
