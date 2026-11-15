@@ -65,6 +65,12 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     saveThreads,
   } = store;
 
+  /**
+   * Automatic topic renames are only allowed in private chats. In groups the
+   * topic name is owned by the humans, so we never rewrite it behind their back.
+   */
+  const canRenameTopic = (chatId: number): boolean => chatId >= 0;
+
   // A tab only ever shows one session. When its owner changes, detach the old
   // session from this route (finalize its status card here) but keep the
   // session tracked so background events and reply-to routing still work.
@@ -195,7 +201,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       threadBySession.set(sessionId, targetThread);
       saveThreads();
       cs.topicTitle = store.topicTitleBySession.get(sessionId);
-      if (cs.topicTitle !== title.slice(0, 120)) {
+      if (canRenameTopic(chatId) && cs.topicTitle !== title.slice(0, 120)) {
         try {
           await tg.editForumTopic(chatId, targetThread, title.slice(0, 120));
           cs.topicTitle = title.slice(0, 120);
@@ -290,6 +296,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     let targetThread = cs.targetThreadId ?? cs.threadId;
     if (targetThread === undefined) return targetThread;
     if (cs.topicTitle === title) return targetThread;
+    if (!canRenameTopic(chatId)) return targetThread;
     try {
       await tg.editForumTopic(chatId, targetThread, title);
       cs.topicTitle = title;
@@ -520,6 +527,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       // Always attempt the rename (idempotent on Telegram's side): the cached
       // topicTitle may be stale (e.g. after testing or a bot switch).
       const targetChat = s.targetChatId ?? chatId;
+      if (!canRenameTopic(targetChat)) return;
       await tg.editForumTopic(targetChat, threadId, title);
       s.topicTitle = title;
       store.rememberTopicTitle(s.sessionId, title);

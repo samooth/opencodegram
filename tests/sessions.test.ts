@@ -50,3 +50,25 @@ describe("sessions restoreActiveSession", () => {
     expect(res).toBeUndefined();
   });
 });
+
+describe("syncTopicTitle", () => {
+  test("does not rename group topics", async () => {
+    const { sessions, tg, store } = makeHarness();
+    const calls: any[] = [];
+    tg.editForumTopic = async (...args: any[]) => { calls.push(args); return true; };
+    const s = { sessionId: "ses_x", threadId: 123, targetThreadId: 123, targetChatId: -100, directory: "/tmp" } as any;
+    store.threadBySession.set("ses_x", 123);
+    await sessions.syncTopicTitle(-100, s);
+    expect(calls.length).toBe(0);
+  });
+
+  test("renames private topics", async () => {
+    const { sessions, tg, store } = makeHarness();
+    const calls: any[] = [];
+    tg.editForumTopic = async (...args: any[]) => { calls.push(args); return true; };
+    const s = { sessionId: "ses_x", threadId: 123, targetThreadId: 123, targetChatId: 150831158, directory: "/tmp" } as any;
+    store.threadBySession.set("ses_x", 123);
+    await sessions.syncTopicTitle(150831158, s);
+    expect(calls.length).toBe(1);
+  });
+});
