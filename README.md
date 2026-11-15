@@ -15,12 +15,14 @@ with per-topic isolation, rich status cards and inline keyboards.
   at the bottom.
 - **Status & transcript** — paginated session card with thinking, tool calls,
   shell output, edits, tok/s, Stop button and final answer; long answers can be
-  sent as separate rich-text messages with a “Ver completo” action.
+  sent as separate rich-text messages with a “Ver completo” action. Exports to
+  HTML, Markdown, JSON-LD and JSONL (fine-tuning) with per-turn user prompts.
 - **Models** — free models first, variant selection, agent picker.
 - **Files** — `/ls`, `/find`, `/read`, `/zip`, `/file`; safe path confinement;
   inline preview and document sends.
 - **Media** — photos, documents, audio, voice and video; voice transcription
-  when a Whisper-compatible CLI is configured.
+  via whisper.cpp or a bundled HuggingFace Whisper wrapper (auto language
+  detection).
 - **Forms & permissions** — interactive forms with option buttons, allow/reject,
   reject-with-reason.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
