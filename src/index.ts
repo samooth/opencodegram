@@ -207,8 +207,15 @@ async function main() {
       try {
         const dataDir = join(process.cwd(), "data");
         await mkdir(dataDir, { recursive: true });
+        const sessionsFile = join(dataDir, "sessions.log");
+        try {
+          const st = await stat(sessionsFile);
+          if (st.size > 1_000_000) await rename(sessionsFile, sessionsFile + ".1");
+        } catch {
+          // File does not exist yet.
+        }
         const line = `${new Date().toISOString()} ${event} ${JSON.stringify(fields)}\n`;
-        await appendFile(join(dataDir, "sessions.log"), line, "utf8");
+        await appendFile(sessionsFile, line, "utf8");
       } catch {
         // Tracing must never break the bot.
       }
