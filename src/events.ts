@@ -27,24 +27,37 @@ export type PermissionInfo = {
 };
 
 export type EventsDeps = {
+  /** Telegram client used to send/edit messages. */
   tg: TelegramClient;
+  /** Bridge to the local OpenCode HTTP server. */
   oc: OpenCodeBridge;
+  /** Runtime configuration (optional; defaults applied internally). */
   config?: Config;
+  /** In-memory route/session store with JSON persistence. */
   store: SessionStore;
+  /** Pending permission requests awaiting a user decision. */
   pendingPermissions: Map<string, PermissionInfo>;
+  /** Pending interactive forms shown in Telegram. */
   pendingForms: Map<number, FormState>;
+  /** Index from OpenCode form id to the Telegram message id that shows it. */
   pendingFormsById: Map<string, number>;
+  /** Map from Telegram message id to the session that produced it. */
   messageToSession: Map<string, string>;
+  /** Per-chat settings (display mode, toggles, profiles). */
   settings: SettingsStore;
+  /** Start the live status card for a turn. */
   startStatus: (chatId: number, s: ChatSession) => Promise<void>;
+  /** Throttled edit of the live status card. */
   updateStatus: (chatId: number, s: ChatSession, force?: boolean) => Promise<void>;
+  /** Freeze the status card when the turn ends. */
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
+  /** Sync the topic title with the session's latest activity. */
   syncTopicTitle: (chatId: number, s: ChatSession) => Promise<void>;
   /** Session card: one paginated message per session. */
   transcript?: TranscriptManager;
   /** Republish the session card (live strip or Done strip). */
   publishCard?: (chatId: number, s: ChatSession) => Promise<void>;
-  /** Structured per-session trace. */
+  /** Structured per-session trace (logging/metrics). */
   sessionTrace?: (event: string, fields: Record<string, unknown>) => void;
 };
 
