@@ -64,6 +64,7 @@ Main modules:
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
+| `todos.ts` | TODO checklist types and rich-HTML rendering |
 | `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
 | `transcript.ts` | Transcript blocks, splitting and pagination |
 | `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
@@ -142,6 +143,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/promptdedupe.test.ts` — stripping restated prompts from reasoning.
 - `tests/summary.test.ts` — file summaries, search and tree rendering.
 - `tests/editutil.test.ts` — edit detection, file extraction, stats and unified diffs (including `apply_patch`).
+- `tests/todos.test.ts` — per-session TODO persistence and checklist rendering.
 
 ## Conventions
 
@@ -175,7 +177,7 @@ Esquema rápido:
 bindings and mappings (`active.json`, `threads.json`, `chats.json`,
 `messages.json`, `delivery.json`, `last*`, `topicTitles.json`), Telegram polling
 offset/identity (`telegram_offset.json`), session data (`transcripts/` — one
-JSON file per session, `turnPrompts.json`, `statusMessages.json`,
+JSON file per session, `turnPrompts.json`, `todos.json`, `statusMessages.json`,
 `dashboard.json`, `cot.json`, `pendingEdits.json`, `buttons.json`), per-chat
 settings (`settings.json`) and logs (`audit.log`, `sessions.log`; both rotate at
 1 MB to `.1`).

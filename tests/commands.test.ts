@@ -36,9 +36,14 @@ function harness(activeSession: { directory: string } | undefined = undefined) {
       deleteMessage: async () => true,
     },
     oc: {},
-    store: { threadOptsFor: () => ({}) },
+    store: {
+      threadOptsFor: () => ({}),
+      getTodos: () => [{ content: "Tarea demo", status: "pending", priority: "medium" }],
+      lastPromptBySession: new Map(),
+    },
     sessions: {
       restoreActiveSession: async () => activeSession,
+      resolveSessionForRetry: async () => activeSession,
       activateSession: async () => undefined,
       createNewSession: async () => undefined,
     },
@@ -98,6 +103,13 @@ function harness(activeSession: { directory: string } | undefined = undefined) {
 }
 
 describe("handleCommand routing", () => {
+  test("routes /todos to the checklist", async () => {
+    const { deps, sends, send } = harness({ directory: base });
+    const handled = await handleCommand(deps, 1, undefined, "/todos", send, 1);
+    expect(handled).toBe(true);
+    expect(sends.some((m) => m.includes("Tarea demo"))).toBe(true);
+  });
+
   test("dispatches file browser commands", async () => {
     const h = harness();
     expect(await handleCommand(h.deps, 100, 10, "/ls", h.send)).toBe(true);

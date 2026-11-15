@@ -614,6 +614,7 @@ ${body}
       },
       "conversation": turns,
       "trainingPairs": trainingPairs,
+      ...(store?.getTodos?.(s.sessionId)?.length ? { "todos": store.getTodos(s.sessionId) } : {}),
     };
     return JSON.stringify(dataset, null, 2);
   };
@@ -650,6 +651,7 @@ ${body}
       if (assistantText) messages.push({ role: "assistant", content: assistantText });
       const entry: Record<string, unknown> = { messages };
       if (toolCalls.length) entry.tool_calls = toolCalls;
+      if (idx === 0 && store?.getTodos?.(s.sessionId)?.length) entry.todos = store.getTodos(s.sessionId);
       if (entry.messages && (entry.messages as unknown[]).length) lines.push(JSON.stringify(entry));
     });
     if (noTurn.length) {

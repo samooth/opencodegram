@@ -1,6 +1,7 @@
 import type { BotDeps, SendFn } from "../context.js";
 import { renderSettings, settingsKeyboard } from "../settings.js";
 import { esc, truncate } from "../util.js";
+import { renderTodos } from "../todos.js";
 import { notePromptSent } from "../autoretry.js";
 import { ctx } from "./shared.js";
 
@@ -163,6 +164,25 @@ export async function cmd_retry(deps: BotDeps, chatId: number, threadId: number 
       await deps.status.finishStatus(chatId, s).catch(() => {});
       await send(`❌ ${esc(String(err))}`, C.store.threadOptsFor(s));
     }
+    return true;
+  }
+  return false;
+}
+
+export async function cmd_todos(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  const C = ctx(deps);
+  if (text === "/todos" || text.startsWith("/todos ")) {
+    const s = await C.resolveSessionForRetry(chatId, threadId);
+    if (!s) {
+      await send("no active session.");
+      return true;
+    }
+    const todos = C.store.getTodos(s.sessionId);
+    if (!todos.length) {
+      await send("📋 No hay tareas registradas para esta sesión.");
+      return true;
+    }
+    await send(renderTodos(todos));
     return true;
   }
   return false;

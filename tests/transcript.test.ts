@@ -531,6 +531,34 @@ describe("transcript manager", () => {
     expect(dataset.trainingPairs[0].toolCalls[0].output).toBe("a.ts");
   });
 
+  test("exportTranscriptJsonLd includes todos when present", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.turnSeq = 1;
+    store.lastPromptBySession.set(s.sessionId, "haz algo");
+    store.rememberTodos(s.sessionId, [
+      { content: "Analizar", status: "completed", priority: "high" },
+      { content: "Implementar", status: "pending", priority: "medium" },
+    ]);
+    transcript.addBlock(s, "answer", "<p>ok</p>", "ok");
+    const dataset = JSON.parse(transcript.exportTranscriptJsonLd(s));
+    expect(dataset.todos.length).toBe(2);
+    expect(dataset.todos[0].content).toBe("Analizar");
+  });
+
+  test("exportTranscriptJsonl includes todos on the first turn", async () => {
+    const { store, transcript } = makeHarness();
+    const s = makeSession();
+    s.turnSeq = 1;
+    store.lastPromptBySession.set(s.sessionId, "haz algo");
+    store.rememberTodos(s.sessionId, [{ content: "Tarea", status: "pending", priority: "low" }]);
+    transcript.addBlock(s, "answer", "<p>ok</p>", "ok");
+    const jsonl = transcript.exportTranscriptJsonl(s);
+    const first = JSON.parse(jsonl.split("\n")[0]);
+    expect(first.todos.length).toBe(1);
+    expect(first.todos[0].content).toBe("Tarea");
+  });
+
   test("exportTranscriptHtml renders markdown as HTML safely", async () => {
     const { store, transcript } = makeHarness();
     const s = makeSession();

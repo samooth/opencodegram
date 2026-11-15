@@ -9,6 +9,7 @@ import { renderForm, formKeyboard } from "./formui.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon } from "./util.js";
 import { splitBySections, splitMarkdown } from "./transcript.js";
 import { logger } from "./logger.js";
+import type { TodoItem } from "./todos.js";
 
 const MAX_ARTIFACT_CANDIDATES = 20;
 const MAX_ARTIFACTS = 5;
@@ -866,6 +867,23 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
   if (sid) store.setSessionStatus(sid, "idle");
 };
 
+const handleTodoUpdated: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined;
+  const raw = Array.isArray(e.data?.todos) ? (e.data.todos as Array<Record<string, unknown>>) : [];
+  if (!sessionId) return;
+  const todos: TodoItem[] = raw.map((t) => ({
+    content: String(t.content ?? ""),
+    status: String(t.status ?? "pending"),
+    priority: String(t.priority ?? "medium"),
+  }));
+  store.rememberTodos(sessionId, todos);
+  const chatId = store.resolveChatId(sessionId);
+  const s = store.findSessionById(sessionId);
+  if (chatId !== undefined && s) updateStatus(chatId, s, true).catch(() => {});
+};
+
 const handleSessionStepStarted: EventHandler = async (event, deps) => {
   const { store } = deps;
   const e = event as { type: string; data?: Record<string, unknown> };
@@ -901,6 +919,8 @@ const handleSessionIdle: EventHandler = async (event, deps) => {
 export const defaultHandler: EventHandler = async () => {};
 
 export const eventHandlers = new Map<string, EventHandler>([
+  ["todo.updated", handleTodoUpdated],
+  ["session.todo.updated", handleTodoUpdated],
   ["session.text.started", handleSessionTextStarted],
   ["session.reasoning.started", handleSessionReasoningStarted],
   ["session.reasoning.delta", handleSessionReasoningDelta],

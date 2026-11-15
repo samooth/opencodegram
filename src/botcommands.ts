@@ -40,6 +40,7 @@ export const BOT_COMMANDS = [
   { command: "search", description: "Search in session history" },
   { command: "compact", description: "Compact session history" },
   { command: "retry", description: "Retry the last prompt (useful after rate limits)" },
+  { command: "todos", description: "Show the task list for the active session" },
   { command: "goal", description: "Keep working toward a session goal" },
   { command: "stop", description: "Stop the active turn" },
 ];;

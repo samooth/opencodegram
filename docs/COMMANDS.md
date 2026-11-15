@@ -7,6 +7,7 @@
 - `/use [session_id]` — switch by ID; without ID shows the list.
 - `/new` — create a session in a new topic (or the current topic).
 - `/stop`, `/abort` — stop the active turn.
+- `/todos` — show the task checklist for the active session (from OpenCode `todo.updated`).
 - `/retry` — re-run the last prompt (useful after rate limits). Works from any
   topic in the chat: if the current tab has no session it falls back to the most
   recently used session in that chat.

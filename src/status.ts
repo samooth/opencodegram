@@ -9,6 +9,7 @@ import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.
 import type { DashboardManager } from "./dashboard.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
+import { renderTodos } from "./todos.js";
 import { capDiff, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, shortToolArg, StatusDeps, truncateText } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
@@ -56,7 +57,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 2. Shell below the thought.
     const shell = renderLatestToolBottom(s, settings);
     if (shell) lines.push(shell);
-    // 3. Compact status header + progress + prompt.
+    // 3. TODO checklist for the session (from todo.updated events).
+    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
+    if (todosBlock) lines.push(todosBlock);
+    // 4. Compact status header + progress + prompt.
     lines.push(
       s.stopped
         ? "<h4>⏹ Stopped</h4>"
@@ -100,6 +104,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     const lines: string[] = ["✅ <b>Done</b>"];
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
+    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
+    if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<i>🔀 Esta sesión quedó en segundo plano.</i>");
     if (settings.showTools && s.toolCallDetails.length) {
       const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;

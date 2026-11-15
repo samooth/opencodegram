@@ -16,6 +16,7 @@
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
+| `todos.ts` | TODO checklist types and rich-HTML rendering |
 | `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
 | `transcript.ts` | Transcript blocks, splitting and pagination |
 | `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
@@ -130,6 +131,7 @@
 - `promptdedupe.test.ts` — stripping restated prompts from reasoning.
 - `summary.test.ts` — file summaries, search and tree rendering.
 - `editutil.test.ts` — edit detection, file extraction, stats and unified diffs (including `apply_patch`).
+- `todos.test.ts` — per-session TODO persistence and checklist rendering.
 
 `bun run typecheck` checks `src/` with `tsc --noEmit`.
 

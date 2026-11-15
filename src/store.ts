@@ -3,6 +3,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChatSession } from "./types.js";
 import type { TranscriptBlock } from "./transcript.js";
+import type { TodoItem } from "./todos.js";
 import { TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS } from "./transcript.js";
 import { esc, clampText } from "./util.js";
 import { renderResourceBlock, ensureGpuCache } from "./resources.js";
@@ -39,6 +40,7 @@ export class SessionStore {
   readonly lastPromptBySession = new Map<string, string>();
   readonly turnPromptsBySession = new Map<string, Map<number, string>>();
   readonly pendingTurnPromptBySession = new Map<string, string>();
+  readonly todosBySession = new Map<string, TodoItem[]>();
   readonly activeSessionByRoute = new Map<string, string>();
   readonly threadBySession = new Map<string, number>();
   readonly chatBySession = new Map<string, number>();
@@ -74,6 +76,7 @@ export class SessionStore {
   private readonly lastChatsFile: string;
   private readonly lastPromptsFile: string;
   private readonly turnPromptsFile: string;
+  private readonly todosFile: string;
   private readonly statusMessagesFile: string;
   private readonly pendingEditsFile: string;
   private readonly buttonsFile: string;
@@ -93,6 +96,7 @@ export class SessionStore {
     this.lastChatsFile = join(dataDir, "lastChats.json");
     this.lastPromptsFile = join(dataDir, "lastPrompts.json");
     this.turnPromptsFile = join(dataDir, "turnPrompts.json");
+    this.todosFile = join(dataDir, "todos.json");
     this.statusMessagesFile = join(dataDir, "statusMessages.json");
     this.pendingEditsFile = join(dataDir, "pendingEdits.json");
     this.buttonsFile = join(dataDir, "buttons.json");
@@ -430,6 +434,28 @@ export class SessionStore {
   };
 
   getTurnPrompt = (sessionId: string, turn: number): string | undefined => this.turnPromptsBySession.get(sessionId)?.get(turn);
+
+  rememberTodos = (sessionId: string, todos: TodoItem[]) => {
+    this.todosBySession.set(sessionId, todos);
+    this.saveTodos();
+  };
+
+  getTodos = (sessionId: string): TodoItem[] => this.todosBySession.get(sessionId) ?? [];
+
+  clearTodos = (sessionId: string): void => {
+    if (this.todosBySession.delete(sessionId)) this.saveTodos();
+  };
+
+  private saveTodos = () => {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, TodoItem[]> = {};
+      for (const [sid, todos] of this.todosBySession) obj[sid] = todos;
+      writeFileSync(this.todosFile, JSON.stringify(obj), "utf8");
+    } catch (err) {
+      console.error("[todos] save failed", err);
+    }
+  };
 
   private saveTurnPrompts = () => {
     try {
@@ -963,6 +989,16 @@ export class SessionStore {
       }
     } catch (err) {
       console.error("[delivery] load failed", err);
+    }
+    try {
+      if (existsSync(this.todosFile)) {
+        const parsed = JSON.parse(readFileSync(this.todosFile, "utf8")) as Record<string, TodoItem[]>;
+        for (const [sid, todos] of Object.entries(parsed)) {
+          if (sid && Array.isArray(todos)) this.todosBySession.set(sid, todos);
+        }
+      }
+    } catch (err) {
+      console.error("[todos] load failed", err);
     }
     // Migrate legacy single-file transcripts.json into per-session files.
     try {
