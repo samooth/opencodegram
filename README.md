@@ -26,7 +26,7 @@ with per-topic isolation, rich status cards and inline keyboards.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — profiles and toggles for display/delivery, thinking, tools,
   shell, previews, artifacts, voice and compact final.
-- **Tests** — 112 Bun tests + TypeScript typecheck.
+- **Tests** — 169 Bun tests + TypeScript typecheck.
 
 ## Quick start
 

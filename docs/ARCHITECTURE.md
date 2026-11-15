@@ -14,7 +14,8 @@
 | `context.ts` | `BotDeps` shared by update handlers |
 | `store.ts` | Route tables and JSON persistence (`data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
-| `status.ts` | Turn/status lifecycle, live strip, M2 publishing and mode behavior |
+| `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
+| `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
 | `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
 | `transcript.ts` | Transcript blocks, splitting and pagination |
 | `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
@@ -113,7 +114,7 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (112 tests across 17 files):
+`bun test` runs the Bun suite in `tests/` (169 tests across 21 files):
 
 - `store.test.ts` — route/tab isolation, persistence and retirement.
 - `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.
@@ -128,6 +129,7 @@
 - `transcribe.test.ts` — voice transcription config and execution.
 - `promptdedupe.test.ts` — stripping restated prompts from reasoning.
 - `summary.test.ts` — file summaries, search and tree rendering.
+- `editutil.test.ts` — edit detection, file extraction, stats and unified diffs (including `apply_patch`).
 
 `bun run typecheck` checks `src/` with `tsc --noEmit`.
 

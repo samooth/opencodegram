@@ -7,7 +7,9 @@
 - `/use [session_id]` — switch by ID; without ID shows the list.
 - `/new` — create a session in a new topic (or the current topic).
 - `/stop`, `/abort` — stop the active turn.
-- `/retry` — re-run the last prompt (useful after rate limits).
+- `/retry` — re-run the last prompt (useful after rate limits). Works from any
+  topic in the chat: if the current tab has no session it falls back to the most
+  recently used session in that chat.
 - `/buttons` — manage custom reply buttons (admin only): list, add, remove, clear.
 - `/fork`, `/rename <title>`, `/archive`, `/unarchive`, `/delete`,
   `/delete confirm`.
@@ -41,8 +43,10 @@ The session card (M2) keyboard offers:
   any page; the picker closes itself after choosing).
 - **⏭ Última** — jump back to the live page after browsing.
 - **📄 Ver completo** — full final answer as message(s).
-- **📜 Historial** — export the complete transcript of the session as an HTML
-  document (includes content trimmed from the card pages).
+- **📥 Exportar** — choose a format: HTML (styled document), Markdown,
+  JSON-LD (schema.org dataset with metadata + training pairs) or JSONL (one
+  OpenAI-style chat object per turn, ideal for fine-tuning). Exports include
+  user prompts per turn and render Markdown as safe HTML.
 - **📝 Diff (N)** — full diffs of the edits made during the turn (shown when
   the turn touched files; survives new turns and restarts).
 

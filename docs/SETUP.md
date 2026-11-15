@@ -69,7 +69,7 @@ pm2 set pm2-logrotate:retain 7
 pm2 set pm2-logrotate:compress true
 ```
 
-The app also rotates `data/audit.log` automatically when it exceeds 1 MB.
+The app also rotates `data/audit.log` and `data/sessions.log` automatically when they exceed 1 MB (kept as `.1`).
 
 ## Topics
 
@@ -78,16 +78,32 @@ groups, topics are handled per thread when the group is a forum.
 
 ## Voice notes
 
-Install `ffmpeg` and a Whisper-compatible CLI, then configure:
+Two supported setups:
+
+**A) Whisper-compatible CLI (whisper.cpp)** — install `ffmpeg` and the CLI:
 
 ```env
-VOICE_TRANSCRIBER=whisper-cli
-VOICE_TRANSCRIBER_ARGS=["-m","/models/ggml-base.bin","-f","{input}","-otxt","-of","{output}"]
+VOICE_TRANSCRIBER=/path/to/whisper.cpp/build/bin/whisper-cli
+VOICE_TRANSCRIBER_ARGS=["-m","/path/to/ggml-small.bin","-f","{input}","-otxt","-of","{output}"]
 VOICE_TRANSCRIPTION_LANGUAGE=es
 ```
 
+**B) HuggingFace model via the bundled Python wrapper** — install
+`torch`, `transformers` and `librosa`, then point at the model directory:
+
+```env
+VOICE_TRANSCRIBER=/path/to/opencodegram/transcribe_whisper.py
+VOICE_TRANSCRIPTION_LANGUAGE=auto
+VOICE_TRANSCRIPTION_TIMEOUT_MS=120000
+```
+
+The wrapper uses `/jardin/models/audio/whisper-small` by default; edit
+`MODEL_DIR` inside the script to change it. `auto` lets Whisper detect the
+language.
+
 If no transcriber is configured, voice notes fall back to being attached as
-audio.
+audio. In groups, voice notes are processed when they reply to the bot (or when
+the bot is mentioned); photos/documents require an explicit mention.
 
 ## Docker
 

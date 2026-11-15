@@ -62,7 +62,8 @@ Main modules:
 | `context.ts` | Shared `BotDeps` |
 | `store.ts` | Route tables and JSON persistence (`data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
-| `status.ts` | Turn/status lifecycle, live strip, M2 publishing and mode behavior |
+| `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
+| `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
 | `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
 | `transcript.ts` | Transcript blocks, splitting and pagination |
 | `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
@@ -119,7 +120,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (138 tests across 19 files):
+`bun test` covers (169 tests across 21 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -140,6 +141,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/transcribe.test.ts` — voice transcription config and execution.
 - `tests/promptdedupe.test.ts` — stripping restated prompts from reasoning.
 - `tests/summary.test.ts` — file summaries, search and tree rendering.
+- `tests/editutil.test.ts` — edit detection, file extraction, stats and unified diffs (including `apply_patch`).
 
 ## Conventions
 
@@ -172,10 +174,11 @@ Esquema rápido:
 `data/` is ignored by git and contains persisted runtime state, including route
 bindings and mappings (`active.json`, `threads.json`, `chats.json`,
 `messages.json`, `delivery.json`, `last*`, `topicTitles.json`), Telegram polling
-offset/identity (`telegram_offset.json`), session data (`transcripts.json`,
-`statusMessages.json`, `dashboard.json`, `cot.json`, `pendingEdits.json`,
-`buttons.json`), per-chat settings (`settings.json`) and logs (`audit.log`,
-`sessions.log`).
+offset/identity (`telegram_offset.json`), session data (`transcripts/` — one
+JSON file per session, `turnPrompts.json`, `statusMessages.json`,
+`dashboard.json`, `cot.json`, `pendingEdits.json`, `buttons.json`), per-chat
+settings (`settings.json`) and logs (`audit.log`, `sessions.log`; both rotate at
+1 MB to `.1`).
 
 `telegram_offset.json` stores the confirmed update offset and the bot `botId`;
 on startup the offset is reset if the bot identity changes, so switching bots
