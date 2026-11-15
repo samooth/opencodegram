@@ -4,6 +4,7 @@ import {
   FileAccessError,
 } from "./path.js";
 import { isProbablyBinary } from "./read.js";
+import { escapeRegExp } from "../util.js";
 
 export type SearchMatch = {
   line: number;
@@ -90,8 +91,4 @@ export async function searchTextFile(
     totalMatches: total,
     truncated: truncatedSize || total > maxMatches,
   };
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

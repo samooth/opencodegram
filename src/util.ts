@@ -45,7 +45,7 @@ export function parseSlashCommand(text: string): ParsedSlashCommand | null {
   return { name, args: (match[2] ?? "").trim() };
 }
 
-function escapeRegExp(value: string): string {
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
