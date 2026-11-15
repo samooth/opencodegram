@@ -141,6 +141,16 @@ export async function showSessionPicker(
     .filter(([k]) => k.startsWith(`${chatId}:`))
     .map(([, sid]) => sid);
   const unique = [...new Set(candidates)].filter((sid) => store.findSessionById(sid));
+  // Order by most recent interaction (newest first). Fall back to the session's
+  // prompt start time when the route has no recorded interaction.
+  const recency = (sid: string): number => {
+    let at = store.findSessionById(sid)?.promptStartTime ?? 0;
+    for (const [key, value] of store.lastInteractedSessionByRoute) {
+      if (key.startsWith(`${chatId}:`) && value.sessionId === sid && value.at > at) at = value.at;
+    }
+    return at;
+  };
+  unique.sort((a, b) => recency(b) - recency(a));
   if (!unique.length) {
     await tg.sendRichMessage(chatId, "🤖 <b>No hay sesiones activas en este grupo.</b>", threadOpts(threadId)).catch(() => {});
     return;
@@ -260,12 +270,12 @@ async function resolveSessionForMessage(
       .filter(([k]) => k.startsWith(`${chatId}:`))
       .map(([, sid]) => sid);
     const unique = [...new Set(candidates)].filter((sid) => store.findSessionById(sid));
-    // When replying to a bot message, if there is only one session in the
-    // whole chat, use it directly instead of showing the picker.
-    if (isReplyToBot && unique.length > 1) {
-      // prefer the most recently interacted session across the chat
+    // When replying to a bot message, prefer the most recently interacted
+    // session across the chat instead of showing the picker: the mapping for
+    // the replied card may be missing after a restart or message cleanup.
+    if (isReplyToBot) {
       const recent = store.getLastInteractedSession(chatId, undefined);
-      if (recent && unique.includes(recent)) {
+      if (recent) {
         try {
           await activateSession(chatId, recent, true, replyThread);
           const s = await restoreActiveSession(chatId, replyThread);
@@ -434,7 +444,18 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     const matches = repliedText.match(/ses_[A-Za-z0-9]+/g);
     // Only recover when there is a single session id in the message (avoid
     // mis-routing replies to session lists).
-    if (matches && matches.length === 1) repliedSessionId = matches[0];
+    if (matches && matches.length === 1) {
+      const partial = matches[0];
+      if (store.findSessionById(partial)) {
+        repliedSessionId = partial;
+      } else {
+        // Cards render only the first 8 chars of the id; resolve it by prefix
+        // when exactly one known session matches.
+        const known = new Set<string>([...store.sessionsById.keys(), ...store.activeSessionByRoute.values()]);
+        const prefixed = [...known].filter((sid) => sid.startsWith(partial));
+        if (prefixed.length === 1) repliedSessionId = prefixed[0];
+      }
+    }
   }
   deps.metrics?.inc("messages");
   // Ignore commands explicitly addressed to another bot.
