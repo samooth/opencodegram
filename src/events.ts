@@ -824,7 +824,7 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
         }
       });
       const existingRetryMsg = retryMessageBySession.get(sid);
-      const retryText = `⏳ Rate limited. Retrying in ${Math.round(decision.delay / 1000)}s (attempt ${decision.attempt}/${decision.maxAttempts})…`;
+      const retryText = `⏳ <b>Rate limited</b>\nRetrying in ${Math.round(decision.delay / 1000)}s (attempt ${decision.attempt}/${decision.maxAttempts})…`;
       let sent: { message_id?: number } | null = null;
       if (existingRetryMsg) {
         await tg.editRichMessage(existingRetryMsg.chatId, existingRetryMsg.messageId, retryText).catch((err) => console.warn("[events]", err?.message ?? err));
