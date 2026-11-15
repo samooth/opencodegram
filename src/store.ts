@@ -473,7 +473,13 @@ export class SessionStore {
   };
 
   beginTurn = (s: ChatSession): number => {
-    s.turnSeq = (s.turnSeq ?? 0) + 1;
+    // Keep turn numbers monotonic even after a restart: the in-memory turnSeq
+    // may be missing (new ChatSession object) while the persisted transcript
+    // already has later turns. Reusing an old number would break page breaks
+    // and mix the previous answer with the new one.
+    const blocks = this.transcriptBySession.get(s.sessionId) ?? [];
+    const maxTurn = blocks.reduce((m, b) => Math.max(m, b.turn ?? 0), 0);
+    s.turnSeq = Math.max((s.turnSeq ?? 0) + 1, maxTurn + 1);
     const pending = this.pendingTurnPromptBySession.get(s.sessionId);
     if (pending !== undefined) {
       this.rememberTurnPrompt(s.sessionId, s.turnSeq, pending);

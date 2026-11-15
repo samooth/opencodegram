@@ -260,3 +260,23 @@ describe("SessionStore pending-edit snapshots", () => {
     expect(reloaded.getPendingEditsSnapshot(888)?.edits?.length).toBe(1);
   });
 });
+
+describe("beginTurn", () => {
+  test("increments turnSeq normally", () => {
+    const store = new SessionStore(dataDir);
+    const s = makeSession("ses_turn");
+    expect(store.beginTurn(s)).toBe(1);
+    expect(store.beginTurn(s)).toBe(2);
+  });
+
+  test("keeps turn numbers monotonic after a restart (fresh ChatSession)", () => {
+    const store = new SessionStore(dataDir);
+    const s1 = makeSession("ses_turn");
+    store.beginTurn(s1); // 1
+    store.appendTranscript("ses_turn", { kind: "answer", html: "a", text: "a", at: 1, turn: 1 });
+    store.appendTranscript("ses_turn", { kind: "answer", html: "b", text: "b", at: 2, turn: 2 });
+    // Simulate a restart: new ChatSession object without turnSeq.
+    const s2 = makeSession("ses_turn");
+    expect(store.beginTurn(s2)).toBe(3);
+  });
+});
