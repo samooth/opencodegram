@@ -7,6 +7,8 @@ import type { MetricsStore } from "./metrics.js";
 import type { TelegramClient } from "./telegram.js";
 import { formatBytes } from "./files/index.js";
 import { esc } from "./util.js";
+import { describeThrottles, throttleTotals } from "./ratethrottle.js";
+import { readGpuInfo } from "./resources.js";
 
 export type OpsServer = {
   url: string;
@@ -63,6 +65,7 @@ export function createOpsServer(deps: {
       const ocInfo = await oc.serverInfo().catch(() => null);
       const disk = diskInfo();
       response.setHeader("Content-Type", "application/json");
+      const gpu = readGpuInfo();
       response.end(JSON.stringify({
         status: "ok",
         uptimeSeconds: Math.round(process.uptime()),
@@ -74,6 +77,11 @@ export function createOpsServer(deps: {
           totalBytes: disk.totalBytes,
           free: disk.freeBytes === null ? null : formatBytes(disk.freeBytes),
         },
+        telegram: {
+          throttles: describeThrottles(),
+          totals: throttleTotals(),
+        },
+        gpu: gpu ? { name: gpu.name, usedMB: gpu.usedMB, totalMB: gpu.totalMB, util: gpu.util, temperature: gpu.temperature } : null,
         metrics: metrics.snapshot(),
       }));
       return;
@@ -83,6 +91,8 @@ export function createOpsServer(deps: {
       response.end(JSON.stringify({
         uptimeSeconds: Math.round(process.uptime()),
         memory: process.memoryUsage(),
+        telegram: { throttles: describeThrottles(), totals: throttleTotals() },
+        gpu: readGpuInfo(),
         counters: metrics.snapshot(),
       }));
       return;
