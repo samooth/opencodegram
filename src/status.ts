@@ -161,9 +161,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.toolCallDetails = [];
     s.stopped = false;
     s.transcriptPage = undefined;
-    // Clear the previous turn's final answer so the new card does not
-    // carry the old response's tail (Ver completo button, etc.).
-    s.lastFinalText = undefined;
+    // Keep the previous turn's final answer reference so the "Ver completo"
+    // button stays available; the card content itself is reset via transcriptPage.
     s.lastFinalMessageId = undefined;
     s.lastFinalTelegramMessageId = undefined;
     s.statusLastUpdate = Date.now();
