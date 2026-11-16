@@ -40,6 +40,28 @@ bun run doctor
 bun run dev
 ```
 
+## Docker
+
+The repository ships a `docker-compose.yml` with two services: `opencode` (the
+OpenCode HTTP server) and `bot` (this Telegram bot).
+
+```bash
+cp .env.example .env
+# fill TELEGRAM_BOT_TOKEN, ADMIN_TELEGRAM_USER_ID, OPENCODE_SERVER_PASSWORD
+mkdir -p data && sudo chown -R 1000:1000 data
+docker compose up -d
+docker compose logs -f
+```
+
+After changing `.env`, recreate the bot container (restart alone is not enough):
+
+```bash
+docker compose up -d --force-recreate bot
+```
+
+See [docs/SETUP.md](docs/SETUP.md) for provider keys, voice notes, webhooks and
+troubleshooting.
+
 ## PM2
 
 ```bash
