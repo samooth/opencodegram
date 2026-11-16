@@ -186,6 +186,52 @@ the bot identity in `data/telegram_offset.json`). On older versions, delete
 `data/telegram_offset.json` and restart. Ensure only one instance polls the
 token and that no webhook is registered (`getWebhookInfo`).
 
+## OpenCode Browse (optional)
+
+[Browse](https://opencode.ai/product/browse) is an MCP server + Chromium
+extension that lets agents use your real browser (your tabs, logins and
+extensions) from Telegram. It is installed in the `opencode` Docker service.
+
+### Setup
+
+1. Install the Chromium extension from the
+   [Chrome Web Store](https://chromewebstore.google.com/detail/mfnicocicmmlkpjnaffgihfjhdgjkdjg)
+   (works in Chrome, Edge, Brave, Arc, Helium, Vivaldi, Opera and Chromium).
+2. Start the stack: `docker compose up -d --build`.
+3. Pair your browser with the relay running inside the container:
+   ```bash
+   docker compose exec opencode browse pair
+   ```
+   This prints a one-time code (`XXXX-XXXX`). In the extension, open
+   **Options → advanced → Pair with a code**, enter the code and click Connect.
+   The extension connects to the relay over WebSocket on ports 19988-19992
+   (published to `127.0.0.1` in `docker-compose.yml`).
+4. Restart the agent so it loads the browse MCP tools: `docker compose restart opencode`.
+
+Then ask the agent in Telegram: *"open news.ycombinator.com and tell me the top
+story"*. Agent tabs open in the background in collapsed groups; when a login or
+2FA is needed, the tab is handed back to you with a **Continue** button.
+
+### Handoff and safety
+
+- **Your tabs stay yours.** Agents only use tabs they opened or that you lend
+  with the toolbar button.
+- **Handoffs** show a card with the site origin; you do the human step and click
+  Continue.
+- The relay binds to `127.0.0.1` inside the container and is only exposed on
+  localhost of the host. Do not publish these ports to the open internet.
+- Set `OPENCODE_BROWSER_AUTO_UPDATE=off` (default in `.env.example`) to disable
+  automatic relay updates inside the container.
+- Browse never solves CAPTCHAs or bot challenges by itself.
+
+### Troubleshooting
+
+- `docker compose exec opencode browse status` shows the relay, extension,
+  pairing state and agent tabs.
+- If the extension cannot connect, confirm ports 19988-19992 are forwarded and
+  that the browser can reach `127.0.0.1` on the host.
+- If pairing fails, run `browse pair` again for a fresh code.
+
 ## Troubleshooting
 
 - **Bot does not respond (no activity in logs):** confirm a single poller is

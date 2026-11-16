@@ -51,6 +51,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g "@opencode/cli@${OPENCODE_VERSION}" \
     && npm cache clean --force
 
+# OpenCode Browse: MCP server + Chromium extension that lets agents use the
+# user's real browser (tabs, logins, clicks, screenshots) from Telegram.
+# The relay listens on 127.0.0.1:19988 (or next free 19990-19997); ports are
+# published in docker-compose so the extension on the host can connect.
+RUN npm install -g "@opencode/browse" \
+    && npm cache clean --force
+
 # Repositories are usually mounted from the host with a different owner.
 RUN git config --system --add safe.directory '*'
 
