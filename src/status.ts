@@ -51,28 +51,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
     const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     const lines: string[] = [];
-    // 1. Thought first.
-    const thinking = renderThinkingBottom(s, settings);
-    if (thinking) lines.push(thinking);
-    // 2. Shell below the thought.
-    const shell = renderLatestToolBottom(s, settings);
-    if (shell) lines.push(shell);
-    // 3. TODO checklist for the session (from todo.updated events).
-    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
-    if (todosBlock) lines.push(todosBlock);
-    // 4. Compact status header + progress + prompt.
+    // 1. State first — "still working" is the most important signal at a glance.
     lines.push(
       s.stopped
         ? "<h4>⏹ Stopped</h4>"
         : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`,
     );
-    if (s.detached && !s.stopped) {
-      lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
-    }
-    const prompt = store?.lastPromptBySession.get(s.sessionId);
-    if (prompt?.trim()) {
-      lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
-    }
+    // 2. Progress (tools + tok/s) right under the state.
     const tools = s.toolCallDetails.length;
     const failedTools = s.toolCallDetails.filter((detail) => detail.status === "failed").length;
     const tokens = s.lastOutputTokens ?? 0;
@@ -82,10 +67,29 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       progressParts.push(`⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`);
     }
     if (progressParts.length) lines.push(`<i>${esc(progressParts.join(" · "))}</i>`);
+    // 3. Prompt being answered — context before detail.
+    const prompt = store?.lastPromptBySession.get(s.sessionId);
+    if (prompt?.trim()) {
+      lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
+    }
+    if (s.detached && !s.stopped) {
+      lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
+    }
+    // 4. TODO checklist for the session (from todo.updated events).
+    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
+    if (todosBlock) lines.push(todosBlock);
+    // 5. Thought (reasoning).
+    const thinking = renderThinkingBottom(s, settings);
+    if (thinking) lines.push(thinking);
+    // 6. Shell / latest tool.
+    const shell = renderLatestToolBottom(s, settings);
+    if (shell) lines.push(shell);
+    // 7. Partial answer in a blockquote, clearly distinct from reasoning.
     if (settings.showPartialText && s.buffer.trim()) {
       const tail = s.buffer.trim().slice(-(unified ? 600 : 400));
-      lines.push(`<pre>${esc(tail)}</pre>`);
+      lines.push(`💬 <i>escribiendo…</i>\n<blockquote>${esc(tail)}</blockquote>`);
     }
+    // 8. COT last, collapsed.
     if (!unified && settings.showCot && s.cotBuffer?.trim()) {
       lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})
 ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
