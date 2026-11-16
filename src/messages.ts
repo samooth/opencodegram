@@ -393,6 +393,7 @@ async function startPrompt(
  */
 // Simple per-user rate limiter: max N messages per minute.
 const userMessageTimes = new Map<number, number[]>();
+let lastCleanup = 0;
 
 function isRateLimited(userId: number, limit: number): boolean {
   const now = Date.now();
@@ -417,6 +418,21 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // pinned, etc.) which have no text/caption/media and would otherwise be
   // processed as prompts or rejected as "Not authorized".
   if (userId !== undefined && me?.id !== undefined && userId === me.id) return;
+  // Periodic cleanup of in-memory pending stores (B5/B6/B7).
+  const now = Date.now();
+  if (now - lastCleanup > 60_000) {
+    lastCleanup = now;
+    for (const [k, v] of deps.pendingConfirmations ?? []) if (v.expires < now) deps.pendingConfirmations.delete(k);
+    for (const [k, v] of deps.pendingGroupPrompts ?? []) if (now - v.at > 10 * 60_000) deps.pendingGroupPrompts.delete(k);
+    if (userMessageTimes.size > 1000) {
+      const cutoff = now - 60_000;
+      for (const [uid, times] of userMessageTimes) {
+        const recent = times.filter((t) => t > cutoff);
+        if (!recent.length) userMessageTimes.delete(uid);
+        else userMessageTimes.set(uid, recent);
+      }
+    }
+  }
   // Per-user rate limit (opt-in via USER_RATE_LIMIT_ENABLED).
   if (config.USER_RATE_LIMIT_ENABLED && userId !== undefined && isRateLimited(userId, config.USER_RATE_LIMIT_PER_MINUTE)) {
     if (msg.chat.id < 0) return;

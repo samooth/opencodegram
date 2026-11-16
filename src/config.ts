@@ -40,6 +40,7 @@ const schema = z.object({
   VOICE_TRANSCRIPTION_LANGUAGE: z.string().optional(),
   VOICE_TRANSCRIPTION_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
   VOICE_ATTACH_AUDIO: z.string().optional().default("false").transform((v) => v === "true" || v === "1"),
+  WHISPER_DAEMON_URL: z.string().url().optional(),
   USER_RATE_LIMIT_ENABLED: z.string().optional().default("false").transform((v) => v === "true" || v === "1"),
   USER_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
 });

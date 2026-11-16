@@ -583,17 +583,33 @@ export class SessionStore {
     }
   };
 
+  /** Disconnect sessions from a chat without deleting their local data. */
   unlinkChat = (chatId: number): string[] => {
     const affected = new Set<string>();
+    const prefix = `${chatId}:`;
     for (const [key, sid] of this.activeSessionByRoute) {
-      if (key.startsWith(`${chatId}:`)) affected.add(sid);
+      if (key.startsWith(prefix)) { affected.add(sid); this.activeSessionByRoute.delete(key); }
     }
-    for (const [sid, cid] of this.lastChatBySession) {
-      if (cid === chatId) affected.add(sid);
+    for (const [key, cs] of this.sessionsByThread) {
+      if (key.startsWith(prefix)) { affected.add(cs.sessionId); this.sessionsByThread.delete(key); }
     }
-    for (const sid of affected) this.forgetSession(sid);
-    // Persist route bindings.
-    void this.saveThreads();
+    for (const [key, value] of this.lastInteractedSessionByRoute) {
+      if (key.startsWith(prefix)) this.lastInteractedSessionByRoute.delete(key);
+    }
+    this.sessionsByChat.delete(chatId);
+    for (const sid of affected) {
+      this.chatBySession.delete(sid);
+      this.lastChatBySession.delete(sid);
+      this.deliveryBySession.delete(sid);
+      // Detach delivery so events don't route back to this chat.
+      const cs = this.sessionsById.get(sid);
+      if (cs) { cs.targetChatId = undefined; cs.targetThreadId = undefined; }
+    }
+    this.saveThreads();
+    this.saveChats();
+    this.saveActiveSessions();
+    this.saveLastInteracted();
+    this.saveDelivery();
     return [...affected];
   };
 

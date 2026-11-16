@@ -725,6 +725,10 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
       clearInterval(s.statusTimer);
       s.statusTimer = undefined;
     }
+    if (s.deltaFlushTimer) {
+      clearTimeout(s.deltaFlushTimer);
+      s.deltaFlushTimer = undefined;
+    }
     cancelAutoRetry(s.sessionId);
     await oc.interrupt(s.sessionId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await tg.answerCallbackQuery(cq.id, "Stopped");

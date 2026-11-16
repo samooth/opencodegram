@@ -288,11 +288,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       if (nav.length) keyboard.push(nav);
       keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
       const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
-      const sentId = await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n${dirLabel}\n\n${table}`, {
+      const sentId = await sendOrEditRich(chatId, messageId, `${targetHeader}<i>🏠 Panel › 🧠 Modelos</i>\n<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n${dirLabel}\n\n${table}`, {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: keyboard },
       }, s?.sessionId ?? targetId);
-      if (sentId !== undefined) modelPanels.set(sentId, { list, scope, targetSessionId: s?.sessionId ?? targetId });
+      if (sentId !== undefined) { modelPanels.set(sentId, { list, scope, targetSessionId: s?.sessionId ?? targetId }); if (modelPanels.size > 100) { const k = modelPanels.keys().next().value; if (k !== undefined) modelPanels.delete(k); } }
       return;
     }
 
@@ -325,11 +325,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const targetHeader = s
       ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
       : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
-    const sentId = await sendOrEditRich(chatId, messageId, `${targetHeader}\n<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n${dirLabel}\n\n${table}`, {
+    const sentId = await sendOrEditRich(chatId, messageId, `${targetHeader}<i>🏠 Panel › 🧠 Modelos › ${esc(provider)}</i>\n<b>Models for ${esc(provider)}</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n${dirLabel}\n\n${table}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     }, s?.sessionId ?? targetId);
-    if (sentId !== undefined) modelPanels.set(sentId, { list, scope, targetSessionId: s?.sessionId ?? targetId, provider });
+    if (sentId !== undefined) { modelPanels.set(sentId, { list, scope, targetSessionId: s?.sessionId ?? targetId, provider }); if (modelPanels.size > 100) { const k = modelPanels.keys().next().value; if (k !== undefined) modelPanels.delete(k); } }
   }
 
   async function showStatus(chatId: number, threadId?: number, messageId?: number): Promise<void> {

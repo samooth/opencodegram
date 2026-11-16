@@ -619,6 +619,10 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     const toggleKey = `${chatId}:${messageId}`;
     const next = editToggles.get(toggleKey) === index ? undefined : index;
     editToggles.set(toggleKey, next);
+    if (editToggles.size > 200) {
+      const oldest = editToggles.keys().next().value;
+      if (oldest !== undefined) editToggles.delete(oldest);
+    }
     if (resolved.s) resolved.s.expandedEditIndex = next;
     const settings = getSettings(chatId);
     const lines: string[] = [resolved.header, `<h4>Edits (${resolved.edits.length})</h4>`];

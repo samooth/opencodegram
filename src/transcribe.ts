@@ -105,6 +105,26 @@ export async function transcribeFile(filePath: string, config: Config): Promise<
   if (!(await commandExists(command))) throw new Error(`Transcriber not found: ${command}`);
 
   const absoluteInput = resolve(filePath);
+
+  // Prefer the persistent daemon when configured (low latency).
+  const daemonUrl = config.WHISPER_DAEMON_URL;
+  if (daemonUrl) {
+    try {
+      const response = await fetch(`${daemonUrl.replace(/\/$/, "")}/transcribe`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: absoluteInput, language: transcriptionConfig.language ?? "auto" }),
+        signal: AbortSignal.timeout(transcriptionConfig.timeoutMs),
+      });
+      if (!response.ok) throw new Error(`daemon returned ${response.status}`);
+      const text = (await response.text()).trim();
+      if (!text) throw new Error("daemon produced no text");
+      return text;
+    } catch (err) {
+      console.warn("[transcribe] daemon failed, falling back to CLI", err instanceof Error ? err.message : String(err));
+    }
+  }
+
   const extension = extname(absoluteInput).toLowerCase();
   const needsConversion = /\.(ogg|opus|mp3|m4a|webm|mp4)$/i.test(absoluteInput) && isWhisperCpp(command);
 
