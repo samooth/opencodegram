@@ -626,30 +626,35 @@ export async function handleMediaMessage(
       // ignore
     }
   }
-  // Inline text attachments into the prompt: OpenCode cannot always read
-  // file:// URIs (especially for files outside the session directory), so
-  // small text files are appended as fenced code blocks instead.
+  // Text attachments: copy into the session directory and reference by
+  // relative path in the prompt, so OpenCode reads them with its own tools
+  // (more reliable than inlining, and avoids bloating the prompt).
   const TEXT_EXTS = new Set([".md", ".txt", ".json", ".ts", ".js", ".py", ".yaml", ".yml", ".toml", ".csv", ".xml", ".html", ".css", ".sh", ".log"]);
   const { extname: extOf, basename: bnOf } = await import("node:path");
-  const { readFile: rf } = await import("node:fs/promises");
-  const inlined: string[] = [];
+  const refPaths: string[] = [];
   const remaining: typeof mediaToAttach = [];
   for (const att of mediaToAttach) {
     const ext = extOf(att.uri.replace(/^file:\/\//, "")).toLowerCase();
-    if (TEXT_EXTS.has(ext)) {
+    if (TEXT_EXTS.has(ext) && s.directory) {
+      const srcPath = att.uri.replace(/^file:\/\//, "");
+      const destPath = (await import("node:path")).join(s.directory, bnOf(srcPath));
       try {
-        const content = await rf(att.uri.replace(/^file:\/\//, ""), "utf8");
-        if (content.length <= 50_000) {
-          inlined.push(`\n\n--- ${att.name} ---\n\`\`\`\n${content}\n\`\`\``);
-          continue;
-        }
+        const { copyFile, mkdir: mkdirAsync } = await import("node:fs/promises");
+        await mkdirAsync(s.directory, { recursive: true }).catch(() => {});
+        await copyFile(srcPath, destPath);
+        const rel = bnOf(srcPath);
+        refPaths.push(rel);
+        continue;
       } catch (err) {
-        console.warn("[media] could not inline text file", att.name, err);
+        console.warn("[media] could not copy text file to session dir", att.name, err);
       }
     }
     remaining.push(att);
   }
-  if (inlined.length) text = text + inlined.join("");
+  if (refPaths.length) {
+    const refs = refPaths.map((r) => `- ${r}`).join("\n");
+    text = text + `\n\nArchivos adjuntos (léelos con la herramienta read):\n${refs}`;
+  }
   mediaToAttach = remaining;
 
   await startPrompt(deps, chatId, replyThread, s, text, send, mediaToAttach);
