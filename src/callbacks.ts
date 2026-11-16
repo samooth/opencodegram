@@ -548,6 +548,8 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   else if (key === "cardBehavior")
     parsedValue = value === "refloat_keep" ? "refloat_keep" : value === "refloat" ? "refloat" : "fixed";
   else if (key === "displayMode") parsedValue = value === "unified" ? "unified" : "flexible";
+  else if (key === "cardTheme")
+    parsedValue = value === "light" ? "light" : value === "dark" ? "dark" : "auto";
   else if (key === "longAnswerDelivery")
     parsedValue = value === "message" ? "message" : value === "auto" ? "auto" : "card";
   else parsedValue = value === "true";

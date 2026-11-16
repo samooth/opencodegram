@@ -9,6 +9,8 @@ export type CardBehavior = "fixed" | "refloat" | "refloat_keep";
 export type DisplayMode = "unified" | "flexible";
 /** How long final answers are delivered. */
 export type LongAnswerDelivery = "card" | "message" | "auto";
+/** Card visual theme (auto uses neutral glyphs that work in both themes). */
+export type CardTheme = "auto" | "light" | "dark";
 
 export type ChatSettings = {
   showThinking: boolean;
@@ -42,6 +44,7 @@ export type ChatSettings = {
   longAnswerDelivery: LongAnswerDelivery;
   /** Character threshold used when longAnswerDelivery is "auto". */
   longAnswerThreshold: number;
+  cardTheme: CardTheme;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -72,6 +75,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   displayMode: "flexible",
   longAnswerDelivery: "auto",
   longAnswerThreshold: 1800,
+  cardTheme: "auto",
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -96,6 +100,9 @@ export class SettingsStore {
     }
     if (merged.longAnswerDelivery !== "card" && merged.longAnswerDelivery !== "message" && merged.longAnswerDelivery !== "auto") {
       merged.longAnswerDelivery = DEFAULT_SETTINGS.longAnswerDelivery;
+    }
+    if (merged.cardTheme !== "auto" && merged.cardTheme !== "light" && merged.cardTheme !== "dark") {
+      merged.cardTheme = DEFAULT_SETTINGS.cardTheme;
     }
     if (typeof merged.longAnswerThreshold !== "number" || !Number.isFinite(merged.longAnswerThreshold) || merged.longAnswerThreshold < 200) {
       merged.longAnswerThreshold = DEFAULT_SETTINGS.longAnswerThreshold;
@@ -171,6 +178,7 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   displayMode: "🧩 Modo",
   longAnswerDelivery: "📤 Respuesta larga",
   longAnswerThreshold: "📏 Umbral respuesta",
+  cardTheme: "🎨 Tema del card",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
@@ -242,6 +250,15 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
         text: `📍 Tarjeta: ${cardLabels[behavior]}`,
         callback_data: `set:cardBehavior:${cardCycle[behavior]}`,
       },
+    ]);
+  }
+
+  {
+    const themeLabels: Record<CardTheme, string> = { auto: "auto", light: "claro", dark: "oscuro" };
+    const themeCycle: Record<CardTheme, CardTheme> = { auto: "light", light: "dark", dark: "auto" };
+    const theme = themeLabels[settings.cardTheme] ? settings.cardTheme : "auto";
+    keyboard.push([
+      { text: `🎨 Tema: ${themeLabels[theme]}`, callback_data: `set:cardTheme:${themeCycle[theme]}` },
     ]);
   }
 

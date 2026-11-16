@@ -38,6 +38,9 @@ class Handler(BaseHTTPRequestHandler):
     device = None
 
     def do_POST(self):
+        if self.path == "/transcribe/stream":
+            self._handle_stream()
+            return
         if self.path != "/transcribe":
             self.send_error(404)
             return
@@ -71,6 +74,67 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(msg)))
             self.end_headers()
             self.wfile.write(msg)
+
+    def _handle_stream(self):
+        """SSE endpoint: transcribe audio in chunks, emitting partial text."""
+        import json, subprocess, os, tempfile
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length).decode("utf8"))
+            path = body.get("path", "")
+            language = body.get("language", "auto")
+            if not path:
+                self.send_error(400, "missing path")
+                return
+            import librosa
+            audio, sr = librosa.load(path, sr=16000)
+            duration = len(audio) / sr
+            # Split into ~10s chunks with 1s overlap for continuity.
+            chunk_len = int(10 * sr)
+            overlap = int(1 * sr)
+            step = chunk_len - overlap
+            accumulated = ""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            offset = 0
+            while offset < len(audio):
+                chunk = audio[offset:offset + chunk_len]
+                if len(chunk) < sr // 2:
+                    break
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                    import soundfile as sf
+                    sf.write(f.name, chunk, sr)
+                    tmp = f.name
+                try:
+                    inputs = self.processor(chunk, sampling_rate=sr, return_tensors="pt")
+                    features = inputs["input_features"].to(self.device)
+                    gen = {"task": "transcribe"}
+                    if language and language.lower() not in ("auto", "detect"):
+                        gen["language"] = language
+                    with self.torch.no_grad():
+                        ids = self.model.generate(features, **gen)
+                    text = self.processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+                    if text:
+                        accumulated = (accumulated + " " + text).strip()
+                        msg = accumulated.replace("\n", "\\n")
+                        self.wfile.write(f"data: {msg}\n\n".encode("utf8"))
+                        self.wfile.flush()
+                except Exception as ex:
+                    self.wfile.write(f"event: error\ndata: {str(ex)[:200]}\n\n".encode("utf8"))
+                    self.wfile.flush()
+                finally:
+                    os.unlink(tmp)
+                offset += step
+            self.wfile.write(b"event: done\ndata: {}\n\n")
+            self.wfile.flush()
+        except Exception as exc:
+            try:
+                self.wfile.write(f"event: error\ndata: {str(exc)[:200]}\n\n".encode("utf8"))
+                self.wfile.flush()
+            except Exception:
+                pass
 
     def log_message(self, fmt, *args):
         pass  # Quiet by default.

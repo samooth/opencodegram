@@ -565,6 +565,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     }
     let resourceBlock = "";
     if (settings.showResourceUsage) {
+      target.cardTheme = settings.cardTheme;
       resourceBlock = renderResourceBlock(target);
       lines.push(resourceBlock);
       const full = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();

@@ -27,6 +27,7 @@ export type ChatSession = {
   compactionSummary?: string;
   compactionError?: string;
   cpuHistory?: number[];
+  cardTheme?: "auto" | "light" | "dark";
   memHistory?: number[];
   targetChatId?: number;
   targetThreadId?: number;

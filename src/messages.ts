@@ -6,7 +6,7 @@ import type { SettingsStore } from "./settings.js";
 import type { TelegramClient, TelegramMessage } from "./telegram.js";
 import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
 import { clampText, esc, normalizeCommandText, parseSlashCommand, sessionHeader, threadOpts } from "./util.js";
-import { transcribeFile, isTranscriptionEnabled } from "./transcribe.js";
+import { transcribeFile, transcribeFileStreaming, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { STATUS_EDIT_INTERVAL_MS } from "./constants.js";
@@ -87,17 +87,26 @@ export async function downloadAttachments(
   let voiceTranscript: string | null = null;
   const voiceTranscriptionEnabled = settings ? settings.get(chatId).voiceTranscription : true;
   if (voiceAttachments.length && isTranscriptionEnabled(config) && voiceTranscriptionEnabled) {
-    await send("🎤 Transcribing voice note…");
+    const progressMsg = await send("🎤 Transcribing voice note…") as { message_id?: number } | undefined;
     try {
       const transcripts: string[] = [];
       for (const attachment of voiceAttachments) {
         const filePath = attachment.uri.replace(/^file:\/\//, "");
-        const transcript = await transcribeFile(filePath, config);
+        const transcript = await transcribeFileStreaming(filePath, config, async (partial) => {
+          if (progressMsg?.message_id) {
+            const text = `🎤 Transcribiendo…\n<blockquote>${esc(clampText(partial, 3500))}</blockquote>`;
+            await tg.editRichMessage(chatId, progressMsg.message_id, text, { parse_mode: "HTML" }).catch(() => {});
+          }
+        });
         if (transcript) transcripts.push(transcript);
       }
       if (transcripts.length) {
         voiceTranscript = transcripts.join("\n\n");
-        await send(`📝 Transcript:\n${clampText(voiceTranscript, 3500)}`);
+        if (progressMsg?.message_id) {
+          await tg.editRichMessage(chatId, progressMsg.message_id, `📝 Transcript:\n${clampText(voiceTranscript, 3500)}`, { parse_mode: "HTML" }).catch(() => {});
+        } else {
+          await send(`📝 Transcript:\n${clampText(voiceTranscript, 3500)}`);
+        }
         const voiceNames = new Set(voiceAttachments.map((attachment) => attachment.name));
         mediaToAttach = mediaToAttach.filter((attachment) => !voiceNames.has(attachment.name));
         if (!mediaToAttach.length) {

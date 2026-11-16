@@ -157,6 +157,59 @@ export async function transcribeFile(filePath: string, config: Config): Promise<
   }
 }
 
+/**
+ * Stream transcription: calls the daemon's SSE endpoint and emits accumulated
+ * text via `onPartial`. Falls back to a single transcribeFile call if no daemon.
+ */
+export async function transcribeFileStreaming(
+  filePath: string,
+  config: Config,
+  onPartial: (text: string) => void | Promise<void>,
+): Promise<string> {
+  const daemonUrl = config.WHISPER_DAEMON_URL;
+  const absoluteInput = resolve(filePath);
+  if (!daemonUrl) {
+    const text = await transcribeFile(filePath, config);
+    await onPartial(text);
+    return text;
+  }
+  const transcriptionConfig = loadTranscriptionConfig(config);
+  try {
+    const response = await fetch(`${daemonUrl.replace(/\/$/, "")}/transcribe/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: absoluteInput, language: transcriptionConfig.language ?? "auto" }),
+      signal: AbortSignal.timeout(transcriptionConfig.timeoutMs),
+    });
+    if (!response.ok || !response.body) throw new Error(`daemon stream returned ${response.status}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let last = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (payload && payload !== "{}" && payload !== last) {
+          last = payload;
+          await onPartial(payload);
+        }
+      }
+    }
+    return last;
+  } catch (err) {
+    console.warn("[transcribe] stream failed, falling back", err instanceof Error ? err.message : String(err));
+    const text = await transcribeFile(filePath, config);
+    await onPartial(text);
+    return text;
+  }
+}
+
 export function isTranscriptionEnabled(config: Config): boolean {
   const transcriptionConfig = loadTranscriptionConfig(config);
   return Boolean(transcriptionConfig.transcriber);

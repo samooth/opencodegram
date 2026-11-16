@@ -11,9 +11,12 @@ import { esc } from "./util.js";
  * sees the state of the machine right under the content.
  */
 
-export function progressBar(percent: number, width = 10): string {
+export function progressBar(percent: number, width = 10, theme: "auto" | "light" | "dark" = "auto"): string {
   const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)));
-  return "▓".repeat(filled) + "░".repeat(width - filled);
+  // "auto" uses medium-density glyphs that read well on both light and dark
+  // Telegram themes. Light uses solid shapes, dark uses outline-friendly ones.
+  const [full, empty] = theme === "light" ? ["▰", "▱"] : theme === "dark" ? ["●", "○"] : ["▓", "░"];
+  return full.repeat(filled) + empty.repeat(width - filled);
 }
 
 export type GpuInfo = { name: string; usedMB: number; totalMB: number; util: number; temperature: number | null };
@@ -115,9 +118,9 @@ export function renderResourceBlock(s: ChatSession): string {
   const limit = 12;
   while (s.cpuHistory.length > limit) s.cpuHistory.shift();
   while (s.memHistory.length > limit) s.memHistory.shift();
-  const cpuBar = progressBar(cpuPercent);
+  const cpuBar = progressBar(cpuPercent, 10, s.cardTheme ?? "auto");
   const cpuTrend = s.cpuHistory.length >= 2 ? (s.cpuHistory[s.cpuHistory.length - 2] > cpuPercent ? " ↓" : s.cpuHistory[s.cpuHistory.length - 2] < cpuPercent ? " ↑" : "") : "";
-  const memBar = progressBar(memPercent);
+  const memBar = progressBar(memPercent, 10, s.cardTheme ?? "auto");
   const memTrend = s.memHistory.length >= 2 ? (s.memHistory[s.memHistory.length - 2] > memPercent ? " ↓" : s.memHistory[s.memHistory.length - 2] < memPercent ? " ↑" : "") : "";
   const resourceLines: string[] = [];
   resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
@@ -133,11 +136,11 @@ export function renderResourceBlock(s: ChatSession): string {
   const gpu = gpuNow;
   if (gpu) {
     const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
-    const vramBar = progressBar(vramPercent);
+    const vramBar = progressBar(vramPercent, 10, s.cardTheme ?? "auto");
     const tempStr = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
     resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}${tempStr}`);
     resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
-    resourceLines.push(`Load ${progressBar(gpu.util)} ${gpu.util}%`);
+    resourceLines.push(`Load ${progressBar(gpu.util, 10, s.cardTheme ?? "auto")} ${gpu.util}%`);
   }
   const html = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
   resourceCache.set(s, { key, html });
