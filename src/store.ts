@@ -186,6 +186,17 @@ export class SessionStore {
 
   getSessionStatus = (sessionId: string): string | undefined => this.sessionStatusBySession.get(sessionId);
 
+  /** Count subagents (forks) of a parent that are still busy. */
+  getActiveSubagents = (parentId: string): { total: number; busy: number } => {
+    let total = 0, busy = 0;
+    for (const cs of this.sessionsById.values()) {
+      if (cs.parentId !== parentId) continue;
+      total++;
+      if (this.sessionStatusBySession.get(cs.sessionId) === "busy" || (!!cs.statusMessageId && !cs.statusFinished)) busy++;
+    }
+    return { total, busy };
+  };
+
   rememberActiveRoute = (chatId: number, threadId: number | undefined, sessionId: string) => {
     const key = this.routeKey(chatId, threadId);
     // Unbind previous session from this route without forgetting it: sessions can

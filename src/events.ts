@@ -995,6 +995,7 @@ export async function handleEvent(event: { type: string; data?: unknown }, deps:
           cotBuffer: "",
           cotCount: 0,
           topicTitle: (sess as { title?: string })?.title,
+          parentId,
         };
         deps.store.sessionsById.set(sessionId, cs);
       }

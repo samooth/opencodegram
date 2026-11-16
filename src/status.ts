@@ -72,6 +72,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (prompt?.trim()) {
       lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
     }
+    // Subagents (forks) running in background — new in OpenCode 2.3.0.
+    const subs = store?.getActiveSubagents?.(s.sessionId);
+    if (subs && subs.total > 0) {
+      const label = subs.busy > 0 ? `🤖 ${subs.busy}/${subs.total} subagentes activos` : `🤖 ${subs.total} subagentes`;
+      lines.push(`<i>${label}</i>`);
+    }
     if (s.detached && !s.stopped) {
       lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
     }

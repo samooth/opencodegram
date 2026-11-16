@@ -28,6 +28,8 @@ export type ChatSession = {
   compactionError?: string;
   cpuHistory?: number[];
   cardTheme?: "auto" | "light" | "dark";
+  /** Parent session id when this session is a fork/subagent. */
+  parentId?: string;
   memHistory?: number[];
   targetChatId?: number;
   targetThreadId?: number;
