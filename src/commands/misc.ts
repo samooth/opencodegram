@@ -128,7 +128,22 @@ export async function cmd_retry(deps: BotDeps, chatId: number, threadId: number 
       await send("no active session.");
       return true;
     }
-    const prompt = C.store.lastPromptBySession.get(s.sessionId);
+    // Allow an explicit prompt: /retry <text>. Otherwise reuse the session's
+    // last prompt, falling back to the most recent prompt in this chat so a
+    // stale/missing binding never replays an unrelated old prompt.
+    const argPrompt = text.slice("/retry".length).trim();
+    let prompt: string | undefined = argPrompt || undefined;
+    if (!prompt) prompt = C.store.lastPromptBySession.get(s.sessionId);
+    if (!prompt) {
+      // Fallback: most recent prompt across sessions bound to this chat.
+      const candidates = [...C.store.sessionsById.values()]
+        .filter((cs) => cs.targetChatId === chatId || C.store.lastChatBySession.get(cs.sessionId) === chatId)
+        .sort((a, b) => (b.promptStartTime ?? 0) - (a.promptStartTime ?? 0));
+      for (const cs of candidates) {
+        const p = C.store.lastPromptBySession.get(cs.sessionId);
+        if (p) { prompt = p; break; }
+      }
+    }
     if (!prompt) {
       await send("no previous prompt to retry.");
       return true;
