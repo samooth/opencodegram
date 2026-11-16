@@ -578,10 +578,20 @@ export async function handleMediaMessage(
   }
   // Copy downloaded attachments into the session directory so OpenCode can read
   // them (it only reads files under the session's working directory).
+  console.log("[media] session dir:", s.directory, "files:", mediaToAttach.map((a) => a.uri));
+  if (!s.directory) {
+    try {
+      const res = await oc.client.session.get({ sessionID: s.sessionId }) as { location?: { directory?: string }; directory?: string };
+      s.directory = res?.location?.directory ?? res?.directory;
+      console.log("[media] resolved session dir:", s.directory);
+    } catch (err) {
+      console.warn("[media] could not resolve session dir", err);
+    }
+  }
   if (s.directory) {
     const { copyFile, mkdir: mkdirAsync } = await import("node:fs/promises");
     const { basename: bn, join: jn } = await import("node:path");
-    await mkdirAsync(s.directory, { recursive: true }).catch(() => {});
+    await mkdirAsync(s.directory, { recursive: true }).catch((e) => console.warn("[media] mkdir failed", e));
     for (const att of mediaToAttach) {
       const srcPath = att.uri.replace(/^file:\/\//, "");
       const destPath = jn(s.directory, bn(srcPath));
@@ -589,11 +599,15 @@ export async function handleMediaMessage(
         await copyFile(srcPath, destPath);
         att.uri = `file://${destPath}`;
         if ((att as any).source) (att as any).source.uri = `file://${destPath}`;
+        console.log("[media] copied", srcPath, "->", destPath);
       } catch (err) {
-        console.warn("[media] could not copy to session dir", err);
+        console.warn("[media] could not copy to session dir", srcPath, err);
       }
     }
+  } else {
+    console.warn("[media] no session directory; sending original URIs");
   }
+  console.log("[media] final URIs:", mediaToAttach.map((a) => a.uri));
   const text = voiceTranscript
     ? ((msg.caption ?? "").trim() ? `${(msg.caption ?? "").trim()}\n\n${voiceTranscript}` : voiceTranscript)
     : ((msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file"));
