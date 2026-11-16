@@ -593,6 +593,7 @@ export async function handleMediaMessage(
     for (const att of mediaToAttach) {
       const srcPath = att.uri.replace(/^file:\/\//, "");
       const destPath = jn(s.directory, bn(srcPath));
+      if (srcPath === destPath) continue; // already in session dir
       try {
         await copyFile(srcPath, destPath);
         att.uri = `file://${destPath}`;
@@ -638,12 +639,16 @@ export async function handleMediaMessage(
     if (TEXT_EXTS.has(ext) && s.directory) {
       const srcPath = att.uri.replace(/^file:\/\//, "");
       const destPath = (await import("node:path")).join(s.directory, bnOf(srcPath));
+      if (srcPath === destPath) {
+        // Already in the session directory; just reference it.
+        refPaths.push(bnOf(srcPath));
+        continue;
+      }
       try {
         const { copyFile, mkdir: mkdirAsync } = await import("node:fs/promises");
         await mkdirAsync(s.directory, { recursive: true }).catch(() => {});
         await copyFile(srcPath, destPath);
-        const rel = bnOf(srcPath);
-        refPaths.push(rel);
+        refPaths.push(bnOf(srcPath));
         continue;
       } catch (err) {
         console.warn("[media] could not copy text file to session dir", att.name, err);
