@@ -227,6 +227,39 @@ export async function cmd_unlink(deps: BotDeps, chatId: number, threadId: number
   return false;
 }
 
+export async function cmd_cancel(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  const C = ctx(deps);
+  if (text === "/cancel") {
+    const reasonKey = C.store.routeKey(chatId, threadId);
+    // Cancel pending permission reason.
+    if (deps.awaitingReason.has(reasonKey)) {
+      const requestId = deps.awaitingReason.get(reasonKey)!;
+      deps.awaitingReason.delete(reasonKey);
+      const info = deps.pendingPermissions.get(requestId);
+      if (info && !info.decided) {
+        info.decided = true;
+        deps.pendingPermissions.delete(requestId);
+      }
+      await send("🚫 Cancelado.");
+      return true;
+    }
+    // Cancel any active turn.
+    for (const [sid, cs] of C.store.sessionsById) {
+      if (cs.targetChatId === chatId || C.store.lastChatBySession.get(sid) === chatId) {
+        if (cs.statusMessageId && !cs.statusFinished) {
+          cs.stopped = true;
+          if (cs.statusTimer) { clearInterval(cs.statusTimer); cs.statusTimer = undefined; }
+          if (cs.deltaFlushTimer) { clearTimeout(cs.deltaFlushTimer); cs.deltaFlushTimer = undefined; }
+          await deps.status.finishStatus(chatId, cs).catch(() => {});
+        }
+      }
+    }
+    await send("🚫 Cancelado.");
+    return true;
+  }
+  return false;
+}
+
 export async function cmd_buttons(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   const isAdmin = !!C.config.ADMIN_TELEGRAM_USER_ID && deps.me?.id === C.config.ADMIN_TELEGRAM_USER_ID;

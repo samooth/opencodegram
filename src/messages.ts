@@ -391,6 +391,24 @@ async function startPrompt(
  * A text/media message from Telegram: gate it, download attachments, handle
  * commands, or forward it to the session bound to this tab as a prompt.
  */
+// Simple per-user rate limiter: max N messages per minute.
+const USER_RATE_LIMIT = 30;
+const userMessageTimes = new Map<number, number[]>();
+
+function isRateLimited(userId: number): boolean {
+  const now = Date.now();
+  const windowMs = 60_000;
+  const times = userMessageTimes.get(userId) ?? [];
+  const recent = times.filter((t) => now - t < windowMs);
+  if (recent.length >= USER_RATE_LIMIT) {
+    userMessageTimes.set(userId, recent);
+    return true;
+  }
+  recent.push(now);
+  userMessageTimes.set(userId, recent);
+  return false;
+}
+
 export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promise<void> {
   const { config, tg, oc, store, me } = deps;
   const { routeKey } = store;
@@ -400,6 +418,12 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // pinned, etc.) which have no text/caption/media and would otherwise be
   // processed as prompts or rejected as "Not authorized".
   if (userId !== undefined && me?.id !== undefined && userId === me.id) return;
+  // Per-user rate limit: silently ignore in groups, notify in private.
+  if (userId !== undefined && isRateLimited(userId)) {
+    if (msg.chat.id < 0) return;
+    await tg.sendRichMessage(msg.chat.id, "⏳ Too many messages. Please slow down.");
+    return;
+  }
   const hasContent = !!(msg.text ?? msg.caption ?? msg.photo ?? msg.document ?? msg.audio ?? msg.voice ?? msg.video);
   const isService = !!(msg as any).forum_topic_created || !!(msg as any).forum_topic_edited || !!(msg as any).forum_topic_closed || !!(msg as any).pinned_message;
   if (isService && !hasContent) return;

@@ -42,6 +42,7 @@ export const BOT_COMMANDS = [
   { command: "retry", description: "Retry the last prompt (useful after rate limits)" },
   { command: "todos", description: "Show the task list for the active session" },
   { command: "unlink", description: "Disconnect all sessions from this group" },
+  { command: "cancel", description: "Cancel pending action or active turn" },
   { command: "goal", description: "Keep working toward a session goal" },
   { command: "stop", description: "Stop the active turn" },
 ];;
