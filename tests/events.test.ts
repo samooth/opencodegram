@@ -45,6 +45,24 @@ function makeDeps() {
 }
 
 describe("handleEvent", () => {
+  test("coalesces text deltas into a single updateStatus call", async () => {
+    const { deps, store } = makeDeps();
+    let updates = 0;
+    deps.updateStatus = async () => { updates++; };
+    const session = {
+      sessionId: "ses_delta", buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [],
+      stopped: false, targetChatId: 100,
+    } as any;
+    store.sessionsById.set("ses_delta", session);
+    store.chatBySession.set("ses_delta", 100);
+    for (let i = 0; i < 5; i++) {
+      await handleEvent({ type: "session.text.delta", data: { sessionID: "ses_delta", delta: "x" } }, deps);
+    }
+    await new Promise((r) => setTimeout(r, 650));
+    expect(session.buffer).toBe("xxxxx");
+    expect(updates).toBe(1);
+  });
+
   test("does not throw on session.text.started without in-memory session", async () => {
     const { deps } = makeDeps();
     await handleEvent({ type: "session.text.started", data: { sessionID: "ses_unknown" } }, deps);

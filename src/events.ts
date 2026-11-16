@@ -385,9 +385,14 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
   if (!s) return;
   const delta = String(e.data?.delta ?? e.data?.text ?? "");
   s.buffer += delta;
-  // Stream the partial answer into the card; updateStatus throttles edits
-  // (STATUS_MIN_UPDATE_GAP_MS + adaptive 429 backoff).
-  updateStatus(chatId, s).catch((err) => console.warn("[events]", err?.message ?? err));
+  // Coalesce a burst of deltas into a single card update (500ms). updateStatus
+  // still applies its own throttle and the adaptive 429 backoff.
+  if (!s.deltaFlushTimer) {
+    s.deltaFlushTimer = setTimeout(() => {
+      s.deltaFlushTimer = undefined;
+      updateStatus(chatId, s).catch((err) => console.warn("[events]", err?.message ?? err));
+    }, 500);
+  }
 };
 
 const handleSessionStepEnded: EventHandler = async (event, deps) => {
