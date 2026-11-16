@@ -188,6 +188,30 @@ export async function cmd_todos(deps: BotDeps, chatId: number, threadId: number 
   return false;
 }
 
+export async function cmd_unlink(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  const C = ctx(deps);
+  if (text === "/unlink" || text.startsWith("/unlink ")) {
+    if (chatId >= 0) {
+      await send("⚠️ <code>/unlink</code> solo tiene sentido en grupos (desvincula las sesiones del chat).");
+      return true;
+    }
+    const affected = C.store.unlinkChat(chatId);
+    // Retire (interrupt) each session that was bound to this chat.
+    for (const sid of affected) {
+      const cs = C.store.findSessionById(sid);
+      if (cs?.statusTimer) { clearInterval(cs.statusTimer); cs.statusTimer = undefined; }
+      if (cs?.sessionId) await C.oc.interrupt(cs.sessionId).catch(() => {});
+    }
+    await send(
+      affected.length
+        ? `✅ Desvinculadas ${affected.length} sesión(es) de este grupo.\n<i>Los topics quedan libres; las sesiones siguen existiendo en OpenCode.</i>`
+        : "ℹ️ No había sesiones vinculadas a este grupo.",
+    );
+    return true;
+  }
+  return false;
+}
+
 export async function cmd_buttons(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   const isAdmin = !!C.config.ADMIN_TELEGRAM_USER_ID && deps.me?.id === C.config.ADMIN_TELEGRAM_USER_ID;

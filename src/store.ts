@@ -583,6 +583,20 @@ export class SessionStore {
     }
   };
 
+  unlinkChat = (chatId: number): string[] => {
+    const affected = new Set<string>();
+    for (const [key, sid] of this.activeSessionByRoute) {
+      if (key.startsWith(`${chatId}:`)) affected.add(sid);
+    }
+    for (const [sid, cid] of this.lastChatBySession) {
+      if (cid === chatId) affected.add(sid);
+    }
+    for (const sid of affected) this.forgetSession(sid);
+    // Persist route bindings.
+    void this.saveThreads();
+    return [...affected];
+  };
+
   forgetSession = (sessionId: string) => {
     this.sessionsById.delete(sessionId);
     for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);

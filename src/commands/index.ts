@@ -27,14 +27,14 @@ const { cmd_forms, cmd_formreply } = formsCmds;
 const { cmd_mcp } = mcpCmds;
 const {
   cmd_start, cmd_commands, cmd_settings, cmd_models, cmd_agents, cmd_skills,
-  cmd_retry, cmd_buttons, cmd_ops, cmd_todos,
+  cmd_retry, cmd_buttons, cmd_ops, cmd_todos, cmd_unlink,
 } = miscCmds;
 
 export const KNOWN_COMMANDS = new Set([
   "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort", "search",
   "commands", "settings", "ops", "file", "ls", "find", "read", "zip", "tree", "model", "models",
   "agent", "agents", "skill", "skills", "fork", "rename", "archive", "unarchive",
-  "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry", "todos",
+  "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry", "todos", "unlink",
   "vcs", "mcp", "branches", "branch", "stage", "unstage", "commit", "worktrees",
   "worktree", "usage", "forms", "formreply", "sync", "use",
 ]);
@@ -98,6 +98,7 @@ COMMANDS.set("compact", cmd_compact);
 COMMANDS.set("buttons", cmd_buttons);
 COMMANDS.set("retry", cmd_retry);
 COMMANDS.set("todos", cmd_todos);
+COMMANDS.set("unlink", cmd_unlink);
 COMMANDS.set("running", cmd_running_sessions);
 COMMANDS.set("sessions", cmd_running_sessions);
 COMMANDS.set("use", cmd_use);

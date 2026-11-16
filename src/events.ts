@@ -847,7 +847,10 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
           retrySession.transcriptFollow = true;
           await deps.startStatus(chatId, retrySession).catch((err) => console.warn("[events] retry startStatus failed", err?.message ?? err));
         }
-        await oc.prompt(sid, prompt);
+        // Always use the latest prompt for this session, so a stale captured
+        // prompt is never replayed even if state was not cleared in time.
+        const latestPrompt = store.lastPromptBySession.get(sid) ?? prompt;
+        await oc.prompt(sid, latestPrompt);
         const existing = retryMessageBySession.get(sid);
         if (existing) {
           await tg
