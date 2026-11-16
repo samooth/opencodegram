@@ -469,15 +469,15 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // even if the message happens to reply to a bot message.
   const hasMedia = !!(msg.photo ?? msg.document ?? msg.audio ?? msg.voice ?? msg.video);
   const isVoice = !!(msg.voice ?? msg.audio);
+  const isPhoto = !!msg.photo;
   // In groups, only respond to commands, mentions or replies to the bot.
-  // Media is more likely to be sent by accident: photos/documents require an
-  // explicit mention, but voice notes are intentional prompts and also work
-  // when replying to the bot (like text messages).
+  // Photos require an explicit mention (they are often sent by accident);
+  // documents/audio/voice/video also work as a reply to the bot.
   if (chatId < 0) {
     const isCommand = rawText.startsWith("/");
-    if (hasMedia && !isVoice) {
+    if (hasMedia && isPhoto) {
       if (!isMention) return;
-    } else if (hasMedia && isVoice) {
+    } else if (hasMedia) {
       if (!isMention && !isReplyToBot) return;
     } else if (!isCommand && !isMention && !isReplyToBot) {
       return;
@@ -578,12 +578,10 @@ export async function handleMediaMessage(
   }
   // Copy downloaded attachments into the session directory so OpenCode can read
   // them (it only reads files under the session's working directory).
-  console.log("[media] session dir:", s.directory, "files:", mediaToAttach.map((a) => a.uri));
   if (!s.directory) {
     try {
       const res = await oc.client.session.get({ sessionID: s.sessionId }) as { location?: { directory?: string }; directory?: string };
       s.directory = res?.location?.directory ?? res?.directory;
-      console.log("[media] resolved session dir:", s.directory);
     } catch (err) {
       console.warn("[media] could not resolve session dir", err);
     }
@@ -599,7 +597,6 @@ export async function handleMediaMessage(
         await copyFile(srcPath, destPath);
         att.uri = `file://${destPath}`;
         if ((att as any).source) (att as any).source.uri = `file://${destPath}`;
-        console.log("[media] copied", srcPath, "->", destPath);
       } catch (err) {
         console.warn("[media] could not copy to session dir", srcPath, err);
       }
@@ -607,8 +604,7 @@ export async function handleMediaMessage(
   } else {
     console.warn("[media] no session directory; sending original URIs");
   }
-  console.log("[media] final URIs:", mediaToAttach.map((a) => a.uri));
-  const text = voiceTranscript
+  let text = voiceTranscript
     ? ((msg.caption ?? "").trim() ? `${(msg.caption ?? "").trim()}\n\n${voiceTranscript}` : voiceTranscript)
     : ((msg.caption ?? "").trim() || (msg.photo ? "What is in this image?" : "Analyze this file"));
   // Auto-switch to a vision-capable model if needed.
@@ -630,6 +626,32 @@ export async function handleMediaMessage(
       // ignore
     }
   }
+  // Inline text attachments into the prompt: OpenCode cannot always read
+  // file:// URIs (especially for files outside the session directory), so
+  // small text files are appended as fenced code blocks instead.
+  const TEXT_EXTS = new Set([".md", ".txt", ".json", ".ts", ".js", ".py", ".yaml", ".yml", ".toml", ".csv", ".xml", ".html", ".css", ".sh", ".log"]);
+  const { extname: extOf, basename: bnOf } = await import("node:path");
+  const { readFile: rf } = await import("node:fs/promises");
+  const inlined: string[] = [];
+  const remaining: typeof mediaToAttach = [];
+  for (const att of mediaToAttach) {
+    const ext = extOf(att.uri.replace(/^file:\/\//, "")).toLowerCase();
+    if (TEXT_EXTS.has(ext)) {
+      try {
+        const content = await rf(att.uri.replace(/^file:\/\//, ""), "utf8");
+        if (content.length <= 50_000) {
+          inlined.push(`\n\n--- ${att.name} ---\n\`\`\`\n${content}\n\`\`\``);
+          continue;
+        }
+      } catch (err) {
+        console.warn("[media] could not inline text file", att.name, err);
+      }
+    }
+    remaining.push(att);
+  }
+  if (inlined.length) text = text + inlined.join("");
+  mediaToAttach = remaining;
+
   await startPrompt(deps, chatId, replyThread, s, text, send, mediaToAttach);
 }
 
