@@ -190,7 +190,15 @@ token and that no webhook is registered (`getWebhookInfo`).
 
 [Browse](https://opencode.ai/product/browse) is an MCP server + Chromium
 extension that lets agents use your real browser (your tabs, logins and
-extensions) from Telegram. It is installed in the `opencode` Docker service.
+extensions) from Telegram. It is installed in the `opencode` Docker service
+alongside **Playwright MCP** (headless Chromium for deterministic web debugging:
+accessibility snapshots, console/network logs, screenshots). Both are configured
+in `docker/opencode-mcp.jsonc` and connected automatically when OpenCode starts.
+
+- **browse** — the user's real browser (needs the extension + pairing, see below).
+- **playwright** — isolated headless Chromium inside the container, no pairing
+  needed. Good for debugging a local web app: *"open localhost:3000, check the
+  console for errors and take a screenshot"*.
 
 ### Setup
 

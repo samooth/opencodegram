@@ -4,12 +4,14 @@ services:
       context: .
       dockerfile: Dockerfile.opencode
       args:
-        OPENCODE_VERSION: "2.2.7"
+        OPENCODE_VERSION: "2.3.0"
     container_name: opencode-server
     working_dir: /workspace
     volumes:
       - opencode-config:/root/.config/opencode
       - opencode-data:/root/.local/share/opencode
+      - playwright-profile:/root/.cache/ms-playwright
+      - ./docker/opencode-mcp.jsonc:/root/.config/opencode/opencode.jsonc:ro
       - ${OPENCODE_DIRECTORY:-/tmp}:/workspace
     env_file: ".env"
     environment:
@@ -62,3 +64,4 @@ services:
 volumes:
   opencode-config:
   opencode-data:
+  playwright-profile:

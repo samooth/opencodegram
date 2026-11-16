@@ -1,6 +1,6 @@
 FROM node:26-slim
 
-ARG OPENCODE_VERSION=2.2.7
+ARG OPENCODE_VERSION=2.3.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -56,6 +56,13 @@ RUN npm install -g "@opencode/cli@${OPENCODE_VERSION}" \
 # The relay listens on 127.0.0.1:19988 (or next free 19990-19997); ports are
 # published in docker-compose so the extension on the host can connect.
 RUN npm install -g "@opencode/browse" \
+    && npm cache clean --force
+
+# Playwright MCP: headless Chromium for deterministic web debugging
+# (accessibility snapshots, console/network logs, screenshots). Complements
+# Browse: Playwright is isolated; Browse uses the user's real logged-in tabs.
+RUN npm install -g "@playwright/mcp@0.0.85" \
+    && npx playwright install chromium --with-deps \
     && npm cache clean --force
 
 # Repositories are usually mounted from the host with a different owner.
