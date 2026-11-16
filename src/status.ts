@@ -161,6 +161,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.statusFinished = false;
     s.statusEditPromise = undefined;
     s.statusEditing = false;
+    if (s.deltaFlushTimer) { clearTimeout(s.deltaFlushTimer); s.deltaFlushTimer = undefined; }
     s.buffer = "";
     s.reasoningBuffer = "";
     s.toolCalls = [];
@@ -370,6 +371,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       clearInterval(s.statusTimer);
       s.statusTimer = undefined;
     }
+    if (s.deltaFlushTimer) { clearTimeout(s.deltaFlushTimer); s.deltaFlushTimer = undefined; }
     s.statusFinished = true;
     if (s.statusEditPromise) {
       await s.statusEditPromise.catch((err) => console.warn("[status]", err?.message ?? err));

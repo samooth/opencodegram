@@ -9,6 +9,8 @@ export type ChatSession = {
   toolCalls: string[];
   toolCallDetails: Array<{ id: string; name: string; input?: string; output?: string; status?: string }>;
   typingTimer?: ReturnType<typeof setInterval>;
+  /** Coalesces streaming text deltas into one card update. */
+  deltaFlushTimer?: ReturnType<typeof setTimeout>;
   statusTimer?: ReturnType<typeof setInterval>;
   stopped: boolean;
   /**

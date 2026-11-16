@@ -99,11 +99,17 @@ export function readMemoryPercent(): number {
  * Render the indicators block. Always returns a non-empty block so the
  * indicators are present at the bottom of every message.
  */
+const resourceCache = new WeakMap<ChatSession, { key: string; html: string }>();
+
 export function renderResourceBlock(s: ChatSession): string {
-  if (!s.cpuHistory) s.cpuHistory = [];
-  if (!s.memHistory) s.memHistory = [];
   const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
   const memPercent = readMemoryPercent();
+  const gpuNow = readGpuInfo();
+  const key = [cpuPercent, memPercent, s.lastContextTokens ?? 0, s.contextWindow ?? 0, gpuNow?.usedMB ?? 0, gpuNow?.totalMB ?? 0, gpuNow?.util ?? 0, gpuNow?.temperature ?? ""].join("|");
+  const cached = resourceCache.get(s);
+  if (cached?.key === key) return cached.html;
+  if (!s.cpuHistory) s.cpuHistory = [];
+  if (!s.memHistory) s.memHistory = [];
   s.cpuHistory.push(cpuPercent);
   s.memHistory.push(memPercent);
   const limit = 12;
@@ -124,7 +130,7 @@ export function renderResourceBlock(s: ChatSession): string {
       resourceLines.push(`CTX ${s.lastContextTokens.toLocaleString()} tok`);
     }
   }
-  const gpu = readGpuInfo();
+  const gpu = gpuNow;
   if (gpu) {
     const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
     const vramBar = progressBar(vramPercent);
@@ -133,5 +139,7 @@ export function renderResourceBlock(s: ChatSession): string {
     resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
     resourceLines.push(`Load ${progressBar(gpu.util)} ${gpu.util}%`);
   }
-  return `<pre>${esc(resourceLines.join("\n"))}</pre>`;
+  const html = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
+  resourceCache.set(s, { key, html });
+  return html;
 }
