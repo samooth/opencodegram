@@ -85,6 +85,7 @@ async function main() {
   }
   const settings = new SettingsStore();
   const pendingEdits = new Map();
+  const mcpEvents = new Map<string, Array<{ at: number; server: string; text: string }>>();
   const messageToSession = store.messageToSession;
   const metrics = new MetricsStore();
   const transcript = createTranscriptManager({
@@ -269,6 +270,7 @@ async function main() {
     transcript,
     publishCard: status.publishCard,
     sessionTrace,
+    mcpEvents,
   });
 
   let webhookServer: ReturnType<typeof createWebhookServer> | undefined;

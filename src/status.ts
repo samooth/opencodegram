@@ -14,7 +14,7 @@ import { capDiff, getToolSummary, isShellTool, parseShellCommand, parseToolInput
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
-export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard, mcpEvents }: StatusDeps) {
   const renderThinkingBottom = (s: ChatSession, settings: ChatSettings): string => {
     if (!settings.showThinking || !settings.showLatestThought || !s.reasoningBuffer.trim() || s.stopped) return "";
     const tail = s.reasoningBuffer.trim().slice(-1600);
@@ -77,6 +77,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (subs && subs.total > 0) {
       const label = subs.busy > 0 ? `🤖 ${subs.busy}/${subs.total} subagentes activos` : `🤖 ${subs.total} subagentes`;
       lines.push(`<i>${label}</i>`);
+    }
+    // Recent MCP events (experimental, 2.3.0).
+    const mcpEvts = mcpEvents?.get(s.sessionId);
+    if (mcpEvts?.length) {
+      const latest = mcpEvts[mcpEvts.length - 1];
+      lines.push(`<blockquote expandable>🔌 MCP · ${esc(latest.server)}\n${esc(latest.text)}</blockquote>`);
     }
     if (s.detached && !s.stopped) {
       lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");

@@ -60,6 +60,8 @@ export type EventsDeps = {
   publishCard?: (chatId: number, s: ChatSession) => Promise<void>;
   /** Structured per-session trace (logging/metrics). */
   sessionTrace?: (event: string, fields: Record<string, unknown>) => void;
+  /** Recent MCP events per session (experimental, 2.3.0). */
+  mcpEvents?: Map<string, Array<{ at: number; server: string; text: string }>>;
 };
 
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
@@ -815,7 +817,13 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     const msg = (e.data?.error as { message?: string } | undefined)?.message ?? "execution failed";
     const threadId = resolveThreadId(sessionId);
     const isRateLimit = /rate limit|quota/i.test(msg);
+    // OpenCode 2.3.0 retries exhausted rate limits internally (#59816). If the
+    // error already mentions a retry/backoff, don't stack our own notice.
+    const ocAlreadyRetrying = /retr(y|ying)|backoff|will retry|retrying in/i.test(msg);
     const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
+    if (ocAlreadyRetrying) {
+      logger.info("events", "execution.failed.oc_retrying", { sessionId, msg: msg.slice(0, 120) });
+    }
     const autoRetry = config?.AUTO_RETRY_ENABLED ?? true;
     const latestPrompt = sessionId ? lastPromptBySession.get(sessionId) : undefined;
     if (sessionId && latestPrompt) updateRetryPrompt(sessionId, latestPrompt);
@@ -826,7 +834,7 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
 
     // Retry only prompts sent by this process and only up to
     // AUTO_RETRY_MAX_ATTEMPTS. Stale prompts restored from disk are ignored.
-    const decision = autoRetry && isRateLimit && sessionId && promptForRetry
+    const decision = autoRetry && isRateLimit && !ocAlreadyRetrying && sessionId && promptForRetry
       ? decideRetry(sessionId as string, promptForRetry as string, config)
       : ({ action: "none" } as const);
 
@@ -905,6 +913,25 @@ const handleTodoUpdated: EventHandler = async (event, deps) => {
   if (chatId !== undefined && s) updateStatus(chatId, s, true).catch(() => {});
 };
 
+const handleMcpEvent: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined;
+  if (!sessionId) return;
+  const server = String(e.data?.server ?? e.data?.serverName ?? "mcp");
+  const text = String(e.data?.text ?? e.data?.message ?? JSON.stringify(e.data ?? {}).slice(0, 200)).slice(0, 300);
+  const events = deps.mcpEvents;
+  if (events) {
+    const list = events.get(sessionId) ?? [];
+    list.push({ at: Date.now(), server, text });
+    while (list.length > 5) list.shift();
+    events.set(sessionId, list);
+  }
+  const chatId = store.resolveChatId(sessionId);
+  const s = store.findSessionById(sessionId);
+  if (chatId !== undefined && s) updateStatus(chatId, s, true).catch(() => {});
+};
+
 const handleSessionStepStarted: EventHandler = async (event, deps) => {
   const { store } = deps;
   const e = event as { type: string; data?: Record<string, unknown> };
@@ -964,6 +991,7 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.execution.failed", handleSessionExecutionFailed],
   ["session.step.started", handleSessionStepStarted],
   ["session.idle", handleSessionIdle],
+  ["experimental.mcp.event", handleMcpEvent],
 ]);
 
 export async function handleEvent(event: { type: string; data?: unknown }, deps: EventsDeps): Promise<void> {

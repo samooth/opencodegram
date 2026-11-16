@@ -169,6 +169,8 @@ export type StatusDeps = {
   transcript?: TranscriptManager;
   /** Pinned dashboard (M1) in unified mode. */
   dashboard?: DashboardManager;
+  /** Recent MCP events per session (experimental, 2.3.0). */
+  mcpEvents?: Map<string, Array<{ at: number; server: string; text: string }>>;
 };
 
 
