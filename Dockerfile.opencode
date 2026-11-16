@@ -1,6 +1,9 @@
 FROM node:26-slim
 
 ARG OPENCODE_VERSION=2.3.0
+# Browse is optional (useful on a desktop, pointless on a headless VPS).
+# Build with --build-arg ENABLE_BROWSE=1 to include it; runtime toggle is in .env.
+ARG ENABLE_BROWSE=0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -51,12 +54,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g "@opencode/cli@${OPENCODE_VERSION}" \
     && npm cache clean --force
 
-# OpenCode Browse: MCP server + Chromium extension that lets agents use the
-# user's real browser (tabs, logins, clicks, screenshots) from Telegram.
-# The relay listens on 127.0.0.1:19988 (or next free 19990-19997); ports are
-# published in docker-compose so the extension on the host can connect.
-RUN npm install -g "@opencode/browse" \
-    && npm cache clean --force
+# OpenCode Browse (optional): MCP server + Chromium extension that lets agents
+# use the user's real browser (tabs, logins, clicks) from Telegram.
+RUN if [ "$ENABLE_BROWSE" = "1" ] || [ "$ENABLE_BROWSE" = "true" ]; then \
+      npm install -g "@opencode/browse" && npm cache clean --force; \
+    else \
+      echo "OpenCode Browse disabled at build time"; \
+    fi
 
 # Playwright MCP: headless Chromium for deterministic web debugging
 # (accessibility snapshots, console/network logs, screenshots). Complements
@@ -70,6 +74,10 @@ RUN git config --system --add safe.directory '*'
 
 WORKDIR /workspace
 
+COPY docker/entrypoint-opencode.sh /usr/local/bin/entrypoint-opencode.sh
+RUN chmod +x /usr/local/bin/entrypoint-opencode.sh
+
 EXPOSE 49374
 
+ENTRYPOINT ["/usr/local/bin/entrypoint-opencode.sh"]
 CMD ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "49374"]

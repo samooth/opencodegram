@@ -192,8 +192,9 @@ token and that no webhook is registered (`getWebhookInfo`).
 extension that lets agents use your real browser (your tabs, logins and
 extensions) from Telegram. It is installed in the `opencode` Docker service
 alongside **Playwright MCP** (headless Chromium for deterministic web debugging:
-accessibility snapshots, console/network logs, screenshots). Both are configured
-in `docker/opencode-mcp.jsonc` and connected automatically when OpenCode starts.
+accessibility snapshots, console/network logs, screenshots). Browse is **optional**;
+Playwright is always installed. MCP servers are generated at runtime by
+`docker/entrypoint-opencode.sh` and connect automatically when OpenCode starts.
 
 - **browse** — the user's real browser (needs the extension + pairing, see below).
 - **playwright** — isolated headless Chromium inside the container, no pairing
@@ -201,6 +202,19 @@ in `docker/opencode-mcp.jsonc` and connected automatically when OpenCode starts.
   console for errors and take a screenshot"*.
 
 ### Setup
+
+Browse is disabled by default (ideal for a headless VPS, where there is no
+browser to pair). Enable it on a desktop with:
+
+```bash
+ENABLE_BROWSE=true docker compose up -d --build
+```
+
+The build arg installs the `browse` CLI; the runtime env var (`ENABLE_BROWSE=1`
+in `.env`) makes the entrypoint register the `browse` MCP server. Playwright is
+unaffected. To use Browse from a VPS you also need a secure tunnel
+(Tailscale/WireGuard) and to bind the relay to `0.0.0.0` — the default compose
+publishes the relay ports on `127.0.0.1` only.
 
 1. Install the Chromium extension from the
    [Chrome Web Store](https://chromewebstore.google.com/detail/mfnicocicmmlkpjnaffgihfjhdgjkdjg)
