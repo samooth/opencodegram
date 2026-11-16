@@ -834,6 +834,19 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
       const sid = sessionId as string;
       const prompt = promptForRetry as string;
       dispatchRetry(sid, decision.delay, async () => {
+        // Start a fresh turn/card for the retry so the previous answer is not
+        // re-rendered on the same page and stale blocks do not accumulate.
+        const retrySession = store.findSessionById(sid);
+        if (retrySession && chatId !== undefined) {
+          retrySession.stopped = false;
+          retrySession.statusFinished = false;
+          retrySession.buffer = "";
+          retrySession.reasoningBuffer = "";
+          retrySession.toolCalls = [];
+          retrySession.toolCallDetails = [];
+          retrySession.transcriptFollow = true;
+          await deps.startStatus(chatId, retrySession).catch((err) => console.warn("[events] retry startStatus failed", err?.message ?? err));
+        }
         await oc.prompt(sid, prompt);
         const existing = retryMessageBySession.get(sid);
         if (existing) {
