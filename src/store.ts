@@ -666,92 +666,23 @@ export class SessionStore {
   };
 
   saveActiveSessions = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, { sessionId: string; updated: number }> = {};
-      for (const [k, v] of this.activeSessionByRoute) obj[k] = { sessionId: v, updated: Date.now() };
-      writeFileSync(this.activeFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[active] save failed", err);
-    }
+    const updated = Date.now();
+    this.saveJson(this.activeFile, Array.from(this.activeSessionByRoute, ([k, v]) => [k, { sessionId: v, updated }] as const), "[active]");
   };
 
-  saveMessages = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, string> = {};
-      for (const [mid, sid] of this.messageToSession) obj[mid] = sid;
-      writeFileSync(this.messagesFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[messages] save failed", err);
-    }
-  };
+  saveMessages = () => this.saveJson(this.messagesFile, this.messageToSession, "[messages]");
 
-  saveTopicTitles = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, string> = {};
-      for (const [sid, title] of this.topicTitleBySession) obj[sid] = title;
-      writeFileSync(this.topicTitlesFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[topicTitles] save failed", err);
-    }
-  };
+  saveTopicTitles = () => this.saveJson(this.topicTitlesFile, this.topicTitleBySession, "[topicTitles]");
 
-  saveCot = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, { buffer: string; count: number }> = {};
-      for (const [sid, value] of this.cotBySession) obj[sid] = value;
-      writeFileSync(this.cotFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[cot] save failed", err);
-    }
-  };
+  saveCot = () => this.saveJson(this.cotFile, this.cotBySession, "[cot]");
 
-  saveLastChats = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, number> = {};
-      for (const [sid, chatId] of this.lastChatBySession) obj[sid] = chatId;
-      writeFileSync(this.lastChatsFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[lastChats] save failed", err);
-    }
-  };
+  saveLastChats = () => this.saveJson(this.lastChatsFile, this.lastChatBySession, "[lastChats]");
 
-  saveLastPrompts = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, string> = {};
-      for (const [sid, prompt] of this.lastPromptBySession) obj[sid] = prompt;
-      writeFileSync(this.lastPromptsFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[lastPrompts] save failed", err);
-    }
-  };
+  saveLastPrompts = () => this.saveJson(this.lastPromptsFile, this.lastPromptBySession, "[lastPrompts]");
 
-  saveLastInteracted = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, { sessionId: string; at: number }> = {};
-      for (const [k, v] of this.lastInteractedSessionByRoute) obj[k] = v;
-      writeFileSync(this.lastInteractedFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[lastInteracted] save failed", err);
-    }
-  };
+  saveLastInteracted = () => this.saveJson(this.lastInteractedFile, this.lastInteractedSessionByRoute, "[lastInteracted]");
 
-  saveDelivery = () => {
-    try {
-      mkdirSync(this.dataDir, { recursive: true });
-      const obj: Record<string, DeliveryTarget> = {};
-      for (const [sid, target] of this.deliveryBySession) obj[sid] = target;
-      writeFileSync(this.deliveryFile, JSON.stringify(obj, null, 2));
-    } catch (err) {
-      console.error("[delivery] save failed", err);
-    }
-  };
+  saveDelivery = () => this.saveJson(this.deliveryFile, this.deliveryBySession, "[delivery]");
 
   // ---------- dashboard (M1) ----------
 
@@ -922,6 +853,18 @@ export class SessionStore {
     // Do not keep the process alive just for the pending save.
     this.transcriptsSaveTimer.unref?.();
   };
+
+  /** Generic JSON persistence: serialize entries, create dataDir, log on failure. */
+  private saveJson<T>(file: string, entries: Iterable<readonly [string, T]>, tag: string, pretty = true): void {
+    try {
+      mkdirSync(this.dataDir, { recursive: true });
+      const obj: Record<string, T> = {};
+      for (const [k, v] of entries) obj[k] = v;
+      writeFileSync(file, JSON.stringify(obj, null, pretty ? 2 : 0));
+    } catch (err) {
+      console.error(`${tag} save failed`, err);
+    }
+  }
 
   private saveNumberMap(file: string, map: Map<string, number>, tag: string) {
     try {
