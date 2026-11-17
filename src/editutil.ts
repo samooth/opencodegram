@@ -176,7 +176,7 @@ export function formatEditDiff(input: string | undefined, style: DiffStyle = "si
     if (baseDirectory && filePath.startsWith(baseDirectory + "/")) filePath = filePath.slice(baseDirectory.length + 1);
 
     const oldKeys = ["oldString", "old_string", "oldText", "old_text", "old", "original", "before"];
-    const newKeys = ["newString", "new_string", "newText", "new_text", "new", "updated", "after"];
+    const newKeys = ["newString", "new_string", "newText", "new_text", "new", "updated", "after", "content", "text", "body"];
     let oldString = "";
     let newString = "";
     for (const k of oldKeys) if (typeof parsed[k] === "string") { oldString = parsed[k] as string; break; }
@@ -199,8 +199,8 @@ export function formatEditDiff(input: string | undefined, style: DiffStyle = "si
     }
     if (style === "unified") return formatUnifiedDiff(filePath, oldString, newString);
     const lines = [`--- ${filePath}`, `+++ ${filePath}`];
-    for (const line of oldString.split("\n")) lines.push(`- ${line}`);
-    for (const line of newString.split("\n")) lines.push(`+ ${line}`);
+    if (oldString.trim()) for (const line of oldString.split("\n")) lines.push(`- ${line}`);
+    if (newString.trim()) for (const line of newString.split("\n")) lines.push(`+ ${line}`);
     return lines.join("\n");
   } catch {
     return input ?? "";

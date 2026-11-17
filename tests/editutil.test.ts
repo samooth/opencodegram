@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isEditTool, extractEditFile, editStats, formatEditDiff } from "../src/editutil.js";
+import { isEditTool, extractEditFile, editStats, formatEditDiff, describeToolInput } from "../src/editutil.js";
 
 describe("isEditTool", () => {
   test("detects edit by name", () => {
@@ -67,6 +67,17 @@ describe("formatEditDiff", () => {
     expect(diff).toContain("- old line");
     expect(diff).toContain("+ new line");
   });
+  test("write tool input with path and content renders as an added-file diff", () => {
+    const input = JSON.stringify({ path: "/repo/src/foo.ts", content: "linea uno\nlinea dos" });
+    const diff = formatEditDiff(input, "simple");
+    expect(diff).toContain("+++ /repo/src/foo.ts");
+    expect(diff).toContain("+ linea uno");
+    expect(diff).not.toContain('"content"');
+    const stats = editStats(input);
+    expect(stats.added).toBe(2);
+    expect(stats.removed).toBe(0);
+  });
+
   test("returns raw input for non-JSON non-patch", () => {
     expect(formatEditDiff("raw text")).toBe("raw text");
   });

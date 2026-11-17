@@ -15,17 +15,6 @@ function makeHarness() {
   const tg = {
     sendRichMessage: async (...args: any[]) => { sent.push(args); return { message_id: 9 }; },
   } as any;
-  const status = createStatusManager({
-    tg,
-    threadOptsFor: () => ({}),
-    getSettings: () => DEFAULT_SETTINGS,
-    pendingEdits: new Map(),
-    rememberCot: () => {},
-    rememberStatusMessage: () => {},
-    forgetStatusMessage: () => {},
-    store: undefined,
-    transcript,
-  } as any);
   const s = {
     sessionId: "ses_edits", buffer: "", reasoningBuffer: "", toolCalls: ["edit"],
     toolCallDetails: [{
@@ -35,7 +24,27 @@ function makeHarness() {
     stopped: false, targetChatId: 7, directory: "/workspace",
     transcriptMessageId: 77, activity: createTurnActivity(),
   } as ChatSession;
-  return { status, s, blocks, sent };
+  const snapshots = new Map<number, { sessionId: string; edits: any[] }>();
+  const store = {
+    getPendingEditsSnapshot: (id: number) => snapshots.get(id),
+    rememberPendingEdits: (id: number, sessionId: string, edits: any[]) => { snapshots.set(id, { sessionId, edits }); },
+    findSessionById: (id: string) => (id === s.sessionId ? s : undefined),
+    getTodos: () => [],
+    lastPromptBySession: new Map(),
+    rememberMessageSession: () => {},
+  } as any;
+  const status = createStatusManager({
+    tg,
+    threadOptsFor: () => ({}),
+    getSettings: () => DEFAULT_SETTINGS,
+    pendingEdits: new Map(),
+    rememberCot: () => {},
+    rememberStatusMessage: () => {},
+    forgetStatusMessage: () => {},
+    store,
+    transcript,
+  } as any);
+  return { status, s, blocks, sent, store };
 }
 
 describe("edits inside the session card", () => {
@@ -53,6 +62,19 @@ describe("edits inside the session card", () => {
     expect(html).toContain("<table");
     expect(html).toContain("<blockquote expandable>");
     expect(html).toContain("src/x.ts");
+  });
+
+  test("edit detail header shows added and removed line counts", async () => {
+    const { status, s, sent, store } = makeHarness();
+    await status.finishStatus(7, s);
+    s.toolCallDetails[0]!.input = JSON.stringify({ path: "/workspace/src/x.ts", content: "linea uno\nlinea dos" });
+    store.rememberPendingEdits(77, s.sessionId, s.toolCallDetails);
+    const sentBefore = sent.length;
+    const handled = await status.showEditDetail(7, 77, 0);
+    expect(handled).toBe(true);
+    const html = String(sent[sentBefore]?.[1] ?? "");
+    expect(html).toContain("+2/-0");
+    expect(html).not.toContain('"content"');
   });
 
   test("the diff uses colorDiff markup for additions and deletions", async () => {
