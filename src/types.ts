@@ -65,6 +65,8 @@ export type ChatSession = {
   transcript?: TranscriptBlock[];
   /** Telegram message that hosts the paginated transcript. */
   transcriptMessageId?: number;
+  /** Reusable drill-down message for diffs/files opened from the card. */
+  detailMessageId?: number;
   /** Page currently displayed in the transcript message. */
   transcriptPage?: number;
   /** True while the user has not navigated away from the latest page. */

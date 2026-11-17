@@ -54,4 +54,12 @@ describe("edits inside the session card", () => {
     expect(html).toContain("<blockquote expandable>");
     expect(html).toContain("src/x.ts");
   });
+
+  test("the diff uses colorDiff markup for additions and deletions", async () => {
+    const { status, s, blocks } = makeHarness();
+    await status.finishStatus(7, s);
+    const html = String(blocks.find((b) => b[1] === "tools")?.[2] ?? "");
+    expect(html).toContain("<s>- uno</s>");
+    expect(html).toContain("<b>+ dos</b>");
+  });
 });

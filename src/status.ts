@@ -3,7 +3,7 @@ import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { clampText, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
+import { clampText, colorDiff, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import type { DashboardManager } from "./dashboard.js";
@@ -496,7 +496,7 @@ ${chunk}</blockquote>`,
           tableRows.push(`<tr><td><code>${esc(file)}</code></td><td>+${added}</td><td>-${removed}</td></tr>`);
           const diff = formatEditDiff(detail.input, settings.diffStyle, s.directory);
           const capped = capDiff(diff, 12);
-          editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>` : ""}`);
+          editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<blockquote expandable><pre><code class="language-diff">${colorDiff(capped)}</code></pre></blockquote>` : ""}`);
           plainFiles.push(file);
         }
         const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
@@ -574,7 +574,7 @@ ${esc(r)}</blockquote>`);
           const capped = capDiff(diff, 15);
           editLines.push(`✏️ <b>${esc(file)}</b>`);
           if (diff.trim()) {
-            editLines.push(`<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>`);
+            editLines.push(`<blockquote expandable><pre><code class="language-diff">${colorDiff(capped)}</code></pre></blockquote>`);
           }
         }
         lines.push(editLines.join("\n"));
@@ -661,7 +661,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
       lines.push(`✏️ <b>${esc(file)}</b>${expanded ? " ▾" : ""}`);
       if (diff.trim()) {
         // The expanded file shows the full diff; the rest stay capped.
-        lines.push(`<blockquote expandable><pre><code class="language-diff">${esc(expanded ? diff : capDiff(diff, 12))}</code></pre></blockquote>`);
+        lines.push(`<blockquote expandable><pre><code class="language-diff">${colorDiff(expanded ? diff : capDiff(diff, 12))}</code></pre></blockquote>`);
       }
     });
     const keyboard = finishedKeyboard(resolved.edits, next, (resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession)), messageId);
@@ -681,7 +681,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     for (const detail of resolved.edits) {
       const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? "edit");
       const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
-      parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote><pre><code class="language-diff">${esc(diff)}</code></pre></blockquote>`);
+      parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`);
     }
     const full = `${resolved.header}\n<b>Full diffs</b> (${resolved.edits.length})\n\n${parts.join("\n\n")}`;
     const opts = threadOpts(threadId ?? resolved.threadId);
@@ -700,5 +700,35 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     return true;
   };
 
-  return { startStatus, updateStatus, finishStatus, publishCard, showEditDiff, sendFullDiffs };
+  /**
+   * Open a file's diff in a reusable drill-down message, leaving the session
+   * card untouched (the card is the single source of truth for the turn).
+   */
+  const showEditDetail = async (chatId: number, messageId: number, index: number): Promise<boolean> => {
+    const resolved = resolveEditsFor(messageId);
+    const detail = resolved?.edits[index];
+    if (!resolved || !detail) return false;
+    const settings = getSettings(chatId);
+    const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? `edit ${index + 1}`);
+    const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
+    const text = `${resolved.header}<h4>✏️ ${esc(file)}</h4>\n<blockquote><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`;
+    const target = resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession);
+    const keyboard = finishedKeyboard(resolved.edits, index, target, resolved.s?.detailMessageId ?? messageId);
+    const opts = resolved.s ? threadOptsFor(resolved.s) : threadOpts(resolved.threadId);
+    const html = clampText(text, 3900);
+    const markup = { reply_markup: { inline_keyboard: keyboard } };
+    if (resolved.s?.detailMessageId) {
+      await tg.editRichMessage(chatId, resolved.s.detailMessageId, html, { ...opts, ...markup }).catch((err) => console.warn("[status]", err?.message ?? err));
+    } else {
+      const sent = await tg.sendRichMessage(chatId, html, { ...opts, ...markup }).catch(() => undefined);
+      if (sent?.message_id && resolved.s) {
+        resolved.s.detailMessageId = sent.message_id;
+        store?.rememberMessageSession(chatId, sent.message_id, resolved.s.sessionId);
+        store?.rememberPendingEdits(sent.message_id, resolved.s.sessionId, resolved.edits);
+      }
+    }
+    return true;
+  };
+
+  return { startStatus, updateStatus, finishStatus, publishCard, showEditDiff, showEditDetail, sendFullDiffs };
 }

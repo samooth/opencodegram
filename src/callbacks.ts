@@ -54,6 +54,7 @@ const PREFIXES = [
   "viewfull:",
   "activity:",
   "editfile:",
+  "readfile:",
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -877,6 +878,15 @@ async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   }
 }
 
+/** Show what a read tool actually opened, in the file browser. */
+async function handleReadFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const m = data.match(/^readfile:(.+)$/);
+  if (!m) return;
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const s = deps.store.getActiveSession(chatId, threadId);
+  await deps.files.showFile(chatId, threadId, m[1], { base: s?.directory, forcePreview: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
 /** Open the file of an edited entry directly in the file browser. */
 async function handleEditFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const m = data.match(/^editfile:(\d+)$/);
@@ -911,6 +921,7 @@ async function handleActivityToggle(deps: BotDeps, cq: TelegramCallbackQuery, ch
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "activity:": handleActivityToggle,
   "editfile:": handleEditFile,
+  "readfile:": handleReadFile,
   "tpage:": handleTranscriptPage,
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,
@@ -1154,7 +1165,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   const editMatch = (cq.data ?? "").match(/^edit:(\d+)$/);
   if (editMatch && cq.message?.message_id !== undefined) {
-    const handled = await deps.status.showEditDiff(chatId, cq.message.message_id, Number(editMatch[1]));
+    const handled = await deps.status.showEditDetail(chatId, cq.message.message_id, Number(editMatch[1]));
     if (handled) {
       await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;

@@ -37,12 +37,13 @@ describe("activity summary in the session card", () => {
     const { status, s, published } = makeHarness();
     recordThought(s.activity!, "analizo el repo", { at: 1000 });
     recordTool(s.activity!, "read", "README.md", { at: 1100, toolId: "a" });
+    s.activityExpanded = true;
 
     await status.publishCard(7, s);
 
     const top = published[0]?.extraTop ?? "";
     expect(top).toContain("+1 thought · 1 read");
-    expect(top).toContain("<blockquote expandable>");
+    expect(top).toContain("<blockquote>");
     expect(top).toContain("analizo el repo");
   });
 
@@ -79,7 +80,7 @@ describe("activity summary in the session card", () => {
 
     const top = published[0]?.extraTop ?? "";
     expect(top).toContain("+1 thought");
-    expect(top).toContain("<blockquote expandable>");
+    expect(top).toContain("<blockquote>");
     expect(top).not.toContain("texto secreto");
   });
 

@@ -593,19 +593,6 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       else await transcript.publish(chatId, s, { extraTop: "" }).catch((err) => console.warn("[events] transcript.publish failed", err?.message ?? err));
       if (s.transcriptMessageId) {
         s.lastFinalTelegramMessageId = s.transcriptMessageId;
-        // Deep link button to jump to this message in the chat.
-        if (chatId < 0) {
-          const internalId = String(chatId).replace(/^-100/, "");
-          const url = `https://t.me/c/${internalId}/${s.transcriptMessageId}`;
-          const kb: Array<Array<Record<string, unknown>>> = [...(transcript.cardKeyboard(s, s.transcriptPage ?? 0, transcript.pageCount(s), { unified: settings.get(chatId).displayMode === "unified" }))];
-          kb.push([{ text: "🔗 Ver en chat", url }]);
-          // Do not block the turn-end handler: let the card publish settle,
-          // then add the deep-link button (fire-and-forget).
-          const cardId = s.transcriptMessageId;
-          setTimeout(() => {
-            void tg.editMessageReplyMarkup(chatId, cardId, { inline_keyboard: kb }).catch((err) => console.warn("[events] deep-link markup failed", err?.message ?? err));
-          }, 400);
-        }
       }
       // Optional: deliver the final answer as a separate rich-text message for readability.
       const st = settings.get(chatId);

@@ -236,9 +236,12 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   // One expandable block per row gives a native +/- affordance for each thought,
   // edit and tool — the OpenCode 2.3.0 transcript behavior. The global toggle
   // switches every row at once for clients without native expandables.
+  // Collapsed shows headers only: the global toggle reveals details inline, so
+  // pressing it always produces a visible change even on clients that ignore
+  // Telegram's native expandable blockquote.
   const renderBlock = (b: ActivityBlock): string => expanded
     ? `<blockquote>${b.head}${b.detail}</blockquote>`
-    : `<blockquote expandable>${b.head}${b.detail}</blockquote>`;
+    : `<blockquote>${b.head}</blockquote>`;
   const renderBody = (bs: ActivityBlock[]) => bs.map(renderBlock).join("\n");
   const budget = expanded ? 1800 : 1400;
   let kept = blocks;

@@ -305,6 +305,17 @@ ${body}
     if (s.lastFinalText) tools.push({ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` });
     tools.push({ text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` });
     keyboard.push(tools);
+    // 📖 Files read this turn: open the actual content instead of a bare name.
+    const readPaths = (s.activity?.entries ?? [])
+      .filter((e) => e.kind === "read" && e.detail.trim())
+      .slice(-6)
+      .map((e) => e.detail.trim().replace(/[\r\n]/g, " ").slice(0, 160));
+    const seenReads = new Set<string>();
+    for (const path of readPaths) {
+      if (seenReads.has(path)) continue;
+      seenReads.add(path);
+      keyboard.push([{ text: `📖 ${path.split("/").pop() ?? path}`.slice(0, 64), callback_data: `readfile:${path}` }]);
+    }
     // 📝 Edits are part of this card. The snapshot is registered on its message
     // id at turn end, so per-file buttons survive new turns and restarts.
     if (!opts?.working && s.transcriptMessageId) {

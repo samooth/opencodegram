@@ -93,6 +93,28 @@ describe("handleCallback", () => {
     expect(publishes).toBe(1);
   });
 
+  test("edit button opens a dedicated diff view without overwriting the card", async () => {
+    const deps = makeDeps();
+    deps.store.rememberPendingEdits(77, "ses_edit", [{
+      id: "e1", name: "edit", status: "success",
+      input: JSON.stringify({ filePath: "/workspace/src/x.ts", oldString: "a", newString: "b" }),
+    }]);
+    let detail = 0;
+    deps.status.showEditDetail = async () => { detail++; return true; };
+    const cq = { id: "7", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 77 }, data: "edit:0" } as any;
+    await handleCallback(deps, cq);
+    expect(detail).toBe(1);
+  });
+
+  test("readfile button opens what the tool read", async () => {
+    const deps = makeDeps();
+    const opened: string[] = [];
+    deps.files.showFile = async (_chat: number, _thread: unknown, path: string) => { opened.push(path); };
+    const cq = { id: "8", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "readfile:README.md" } as any;
+    await handleCallback(deps, cq);
+    expect(opened).toEqual(["README.md"]);
+  });
+
   test("editfile button opens the edited file in the file browser", async () => {
     const deps = makeDeps();
     const s = {

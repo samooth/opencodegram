@@ -66,7 +66,7 @@ describe("turn activity counters", () => {
     recordTool(a, "bash", "bun test", { at: 1000, toolId: "t1" });
     finishTool(a, "t1", true, { at: 1671 });
     const out = renderActivity(a, "high", true, 1700);
-    expect(out).toContain("<blockquote expandable>");
+    expect(out).toContain("<blockquote>");
     expect(out).toContain("Shell");
     expect(out).toContain("671ms");
     expect(out).toContain("✅");
@@ -84,7 +84,7 @@ describe("turn activity counters", () => {
     const a = createTurnActivity();
     recordTool(a, "read", ".", { at: 1000, toolId: "a" });
     recordTool(a, "glob", "README*", { at: 1100, toolId: "b" });
-    const out = renderActivity(a, "high", false, 1200);
+    const out = renderActivity(a, "high", false, 1200, true);
     expect(out).toContain("Explored: 1 read, 1 search");
     expect(out).toContain("Read");
     expect(out).toContain("Glob");
@@ -94,7 +94,7 @@ describe("turn activity counters", () => {
     const a = createTurnActivity();
     recordThought(a, "texto secreto del razonamiento", { at: 1000 });
     const low = renderActivity(a, "low", false, 1100);
-    const high = renderActivity(a, "high", false, 1100);
+    const high = renderActivity(a, "high", false, 1100, true);
     expect(low).not.toContain("texto secreto");
     expect(high).toContain("texto secreto");
   });
@@ -102,7 +102,7 @@ describe("turn activity counters", () => {
   test("escapes HTML from recorded details", () => {
     const a = createTurnActivity();
     recordThought(a, "<script>alert(1)</script>", { at: 1000 });
-    const out = renderActivity(a, "high", false, 1100);
+    const out = renderActivity(a, "high", false, 1100, true);
     expect(out).not.toContain("<script>");
     expect(out).toContain("&lt;script&gt;");
   });
@@ -120,7 +120,7 @@ describe("turn activity counters", () => {
     const a = createTurnActivity();
     recordThoughtDelta(a, "delta inicial", { at: 1000 });
     expect(a.thoughts).toBe(1);
-    const out = renderActivity(a, "high", false, 1100);
+    const out = renderActivity(a, "high", false, 1100, true);
     expect(out).toContain("delta inicial");
   });
 
@@ -133,11 +133,11 @@ describe("turn activity counters", () => {
     expect(out).not.toContain("<blockquote expandable>");
   });
 
-  test("collapsed mode keeps the native expandable quote", () => {
+  test("collapsed mode keeps one block per row", () => {
     const a = createTurnActivity();
     recordThought(a, "oculto", { at: 1000 });
     const out = renderActivity(a, "high", false, 1100, false);
-    expect(out).toContain("<blockquote expandable>");
+    expect(out).toContain("<blockquote>");
   });
 
   test("keeps the detail block within a character budget so HTML is never cut mid-tag", () => {
@@ -154,11 +154,20 @@ describe("turn activity counters", () => {
     finishTool(a, "a", true, { at: 1100 });
     recordTool(a, "bash", "git status", { at: 1200, toolId: "b" });
     finishTool(a, "b", true, { at: 1300 });
-    const out = renderActivity(a, "high", false, 1400, false);
+    const out = renderActivity(a, "high", false, 1400, true);
     expect(out).toContain("Shell (2)");
     expect(out).toContain("$ bun test");
     expect(out).toContain("$ git status");
-    expect(out.match(/<blockquote expandable>/g)).toHaveLength(1);
+    expect(out.match(/<blockquote>/g)).toHaveLength(1);
+  });
+
+  test("collapsed mode shows headers only so the toggle has a visible effect", () => {
+    const a = createTurnActivity();
+    recordThought(a, "texto del pensamiento", { at: 1000 });
+    const collapsed = renderActivity(a, "high", false, 1100, false);
+    const expanded = renderActivity(a, "high", false, 1100, true);
+    expect(collapsed).not.toContain("texto del pensamiento");
+    expect(expanded).toContain("texto del pensamiento");
   });
 
   test("collapsed mode shows only the last few entries", () => {
@@ -184,7 +193,7 @@ describe("turn activity counters", () => {
     closeOpen(a, 2500);
     recordTool(a, "read", "README.md", { at: 3000, toolId: "a" });
     const out = renderActivity(a, "high", false, 3500, false);
-    expect(out.match(/<blockquote expandable>/g)).toHaveLength(3);
+    expect(out.match(/<blockquote>/g)).toHaveLength(3);
     expect(out).toContain("Thought</b> · 500ms");
   });
 });

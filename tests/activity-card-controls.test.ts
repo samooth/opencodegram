@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createTranscriptManager } from "../src/transcriptmanager.js";
 import { SessionStore } from "../src/store.js";
-import { createTurnActivity, recordThought } from "../src/activity.js";
+import { createTurnActivity, recordThought, recordTool } from "../src/activity.js";
 import type { ChatSession } from "../src/types.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -52,6 +52,16 @@ describe("activity card controls", () => {
     await tm.refloat(7, s, { keep: true });
     expect(cleared).toContain(42);
     expect(s.transcriptMessageId).toBeUndefined();
+  });
+
+  test("card keyboard adds a button for files read this turn", () => {
+    const { s } = makeHarness();
+    const store = new SessionStore(join(root, "data"));
+    recordThought(s.activity!, "check", { at: 1000 });
+    recordTool(s.activity!, "read", "README.md", { at: 1100, toolId: "r1" });
+    const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
+    const flat = tm.cardKeyboard(s, 0, 0, {}).flat();
+    expect(flat.some((b) => b.callback_data === "readfile:README.md")).toBe(true);
   });
 
   test("card keyboard exposes per-file diff and open-file buttons", () => {
