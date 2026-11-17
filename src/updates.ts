@@ -29,7 +29,7 @@ export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Prom
 /** Telegram long-polling loop. Dispatches callbacks and messages. */
 export async function startPolling(deps: BotDeps): Promise<void> {
   const { tg, metrics, store } = deps;
-  const botId = (deps as any).me?.id as number | undefined;
+  const botId = deps.me?.id as number | undefined;
   const offsetFile = join(store.dataDir, "telegram_offset.json");
   let offset = loadOffset(offsetFile, botId);
   const seen = new Set<number>();

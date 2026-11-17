@@ -399,7 +399,7 @@ export class TelegramClient {
     if (this.topicIconCache === null) {
       try {
         const stickers = await this.getForumTopicIconStickers();
-        this.topicIconCache = (stickers ?? []).map((st: any) => st.custom_emoji_id).filter(Boolean) as string[];
+        this.topicIconCache = (stickers ?? []).map((st: { custom_emoji_id?: string }) => st.custom_emoji_id).filter(Boolean) as string[];
       } catch {
         this.topicIconCache = [];
       }

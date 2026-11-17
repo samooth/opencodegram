@@ -1028,7 +1028,7 @@ export function startEventLoop(deps: EventsDeps): void {
     while (true) {
       try {
         for await (const event of deps.oc.events()) {
-          await handleEvent(event as { type: string; data?: any }, deps);
+          await handleEvent(event as { type: string; data?: Record<string, unknown> }, deps);
         }
       } catch (err) {
         console.error("[events] stream ended", err);

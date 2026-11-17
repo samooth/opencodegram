@@ -164,7 +164,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     try {
       const sessions = await oc.client.session.list();
       const list = (((sessions as { data?: unknown })?.data ?? (Array.isArray(sessions) ? sessions : [])) as unknown[]) as Array<{ model?: { id?: string; providerID?: string; variant?: string }; time?: { updated?: number } }>;
-      const latest = [...list].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0))[0];
+      const latest = [...list].sort((a: { time?: { updated?: number } }, b: { time?: { updated?: number } }) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0))[0];
       if (latest?.model?.id && latest?.model?.providerID) model = { id: latest.model.id as string, providerID: latest.model.providerID as string, variant: latest.model.variant };
     } catch {
       // ignore

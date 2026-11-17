@@ -19,7 +19,7 @@ export async function cmd_forms(deps: BotDeps, chatId: number, threadId: number 
       for (const f of forms) {
         const fields = Array.isArray(f.fields) ? f.fields : [];
         const fieldLines = fields.map(
-          (fld: any) => `• <b>${esc(fld.key)}</b> (${esc(fld.type)})${fld.required ? " *" : ""}${fld.description ? " — " + esc(fld.description) : ""}`,
+          (fld: { key: string; type: string; required?: boolean; description?: string }) => `• <b>${esc(fld.key)}</b> (${esc(fld.type)})${fld.required ? " *" : ""}${fld.description ? " — " + esc(fld.description) : ""}`,
         );
         await send(
           `<b>Form: ${esc(f.title)}</b>\nID: <code>${esc(f.id)}</code>\n\n${fieldLines.join("\n")}\n\nReply with <code>/formreply ${esc(f.id)} {"key":"value"}</code>`,

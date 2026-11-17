@@ -55,7 +55,7 @@ async function main() {
   await tg.setMyCommands(BOT_COMMANDS, { type: "all_private_chats" }).catch(() => {});
   await tg.setMyCommands(BOT_COMMANDS, { type: "all_group_chats" }).catch(() => {});
   // Wait for the OpenCode server to be ready; PM2 may start us before it.
-  let info: any;
+  let info: Awaited<ReturnType<typeof oc.serverInfo>> | undefined;
   for (let attempt = 1; attempt <= 30; attempt++) {
     try {
       info = await oc.serverInfo();

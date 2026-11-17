@@ -79,8 +79,9 @@ export class OpenCodeBridge {
   async latestSessionDirectory(): Promise<string | undefined> {
     try {
       const res = await this.client.session.list();
-      const sessions = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
-      const sorted = [...sessions].sort((a: any, b: any) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0));
+      type Timed = { time?: { updated?: number } };
+      const sessions = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as Timed[];
+      const sorted = [...sessions].sort((a, b) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0));
       // Prefer a real project directory over the home directory.
       for (const _s of sorted) {
         const s = _s as { location?: { directory?: string }; directory?: string };
@@ -127,7 +128,7 @@ export class OpenCodeBridge {
       const res = await this.client.model.default(directory ? { location: { directory } } : undefined);
       const data = (res as { data?: { id?: string; providerID?: string; variants?: Array<{ id?: string }> } })?.data ?? res as { id?: string; providerID?: string; variants?: Array<{ id?: string }> };
       if (data?.id && data?.providerID) {
-        return { id: data.id, providerID: data.providerID, variant: data.variants?.find((v: any) => v.id === "max")?.id };
+        return { id: data.id, providerID: data.providerID, variant: data.variants?.find((v: { id?: string }) => v.id === "max")?.id };
       }
     } catch {
       // ignore
@@ -228,7 +229,7 @@ export class OpenCodeBridge {
     const target = directory ?? process.cwd();
     const res = await this.client.project.list();
     const projects = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as Array<{ id?: string; canonical?: string; directory?: string }>;
-    const match = projects.find((project: any) => project.canonical === target || project.directory === target);
+    const match = projects.find((project: { canonical?: string; directory?: string }) => project.canonical === target || project.directory === target);
     return match?.id;
   }
 
