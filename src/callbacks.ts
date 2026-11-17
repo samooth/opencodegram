@@ -257,6 +257,10 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
     return;
   }
   if (action === "rejectreason") {
+    // A reason is pending: clear the auto-reject timer so it does not fire
+    // while the user types. handleMessage will finish the decision by calling
+    // replyPermission("reject") with the reason text.
+    if (info.timeoutHandle) clearTimeout(info.timeoutHandle);
     const reasonKey = deps.store.routeKey(info.chatId, cq.message?.message_thread_id);
     deps.awaitingReason.set(reasonKey, requestId);
     setTimeout(() => {
@@ -279,6 +283,8 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   }
   info.decided = true;
   if (info.timeoutHandle) clearTimeout(info.timeoutHandle);
+  // A pending "reject with reason" must not consume the next user message.
+  deps.awaitingReason.delete(deps.store.routeKey(info.chatId, cq.message?.message_thread_id));
   await deps.oc.replyPermission(info.sessionId, requestId, decision);
   await deps.tg.answerCallbackQuery(cq.id, decision === "once" ? "Allowed" : decision === "always" ? "Always allowed" : "Rejected").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (info.messageId) {
