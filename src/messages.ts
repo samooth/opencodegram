@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { isDangerousCommand } from "./dangerous.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
@@ -330,6 +331,27 @@ async function resolveSessionForMessage(
  * Mark the session busy, start the status card and dispatch the prompt.
  * Errors are reported in the same tab without rejecting the caller.
  */
+/** Report a prompt/turn error with a model-switch button when it looks like a limit. */
+async function reportPromptError(
+  deps: BotDeps,
+  chatId: number,
+  s: ChatSession,
+  text: string,
+  send: SendFn,
+): Promise<void> {
+  const errMsg = String(text);
+  const isLimit = /limit|usage|quota|provider|subscribe|free/i.test(errMsg);
+  const keyboard: Array<Array<{ text: string; callback_data: string }>> = [[
+    { text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` },
+    { text: "📂 Sesiones", callback_data: "panel:sessions" },
+  ]];
+  const opts = isLimit
+    ? { ...deps.store.threadOptsFor(s), reply_markup: { inline_keyboard: keyboard } }
+    : deps.store.threadOptsFor(s);
+  const sent = await send(`${sessionHeader(s)}❌ ${esc(errMsg)}`, opts) as { message_id?: number } | undefined;
+  if (sent?.message_id) deps.store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
+}
+
 async function startPrompt(
   deps: BotDeps,
   chatId: number,
@@ -371,14 +393,7 @@ async function startPrompt(
         s.statusTimer = undefined;
       }
       await finishStatus(chatId, s).catch((err) => logger.warn("messages", "finishStatus failed", String(err)));
-      const errMsg = String(err);
-      const isLimit = /limit|usage|quota|provider|subscribe|free/i.test(errMsg);
-      const limitKb = [[{ text: "Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "Sesiones", callback_data: "panel:sessions" }]];
-      const opts = isLimit
-        ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
-        : store.threadOptsFor(s);
-      const _em = await send(`${sessionHeader(s)}❌ ${esc(errMsg)}`, opts) as any;
-      if (_em?.message_id) store.rememberMessageSession(chatId, _em.message_id, s.sessionId);
+      await reportPromptError(deps, chatId, s, String(err), send);
     });
   } catch (err) {
     if (s.statusTimer) {
@@ -386,14 +401,7 @@ async function startPrompt(
       s.statusTimer = undefined;
     }
     await finishStatus(chatId, s).catch((err) => logger.warn("messages", "finishStatus failed", String(err)));
-    const errMsg2 = String(err);
-    const isLimit2 = /limit|usage|quota|provider|subscribe|free/i.test(errMsg2);
-    const limitKb = [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]];
-    const opts2 = isLimit2
-      ? { ...store.threadOptsFor(s), reply_markup: { inline_keyboard: limitKb } }
-      : store.threadOptsFor(s);
-    const _em2 = await send(`${sessionHeader(s)}❌ ${esc(errMsg2)}`, opts2) as any;
-    if (_em2?.message_id) store.rememberMessageSession(chatId, _em2.message_id, s.sessionId);
+    await reportPromptError(deps, chatId, s, String(err), send);
   }
 }
 
@@ -747,8 +755,7 @@ export async function handleTextMessage(
     const args = slash.args;
 
     // Dangerous commands require confirmation.
-    const dangerous = new Set(["delete", "remove", "reset", "drop", "clear", "wipe", "destroy"]);
-    if (dangerous.has(name.toLowerCase())) {
+    if (isDangerousCommand(name)) {
       const confirmKey = `runcmd:${s.sessionId}:${name}:${args}`;
       deps.pendingConfirmations = deps.pendingConfirmations ?? new Map();
       deps.pendingConfirmations.set(confirmKey, { sessionId: s.sessionId, name, args, expires: Date.now() + 30_000 });

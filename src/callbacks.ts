@@ -1,3 +1,4 @@
+import { isDangerousCommand } from "./dangerous.js";
 import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files/index.js";
 import { renderForm, formKeyboard } from "./formui.js";
@@ -786,8 +787,7 @@ async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   const m = data.match(/^cmd:(.+)$/);
   if (!m) return;
   const name = m[1];
-  const dangerous = new Set(["delete", "remove", "reset", "drop", "clear", "wipe", "destroy"]);
-  if (dangerous.has(name.toLowerCase())) {
+  if (isDangerousCommand(name)) {
     await deps.tg.answerCallbackQuery(cq.id, "Type the command manually").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, "⚠️ For safety, run this command by typing it.", threadOpts(threadId));
     return;
