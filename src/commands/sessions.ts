@@ -275,7 +275,7 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
         try {
           const res = await C.oc.client.model.list();
           const list = (((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[]) as Array<Record<string, unknown>>;
-          return list.find((m: any) => m.id === session.model?.id && m.providerID === session.model?.providerID);
+          return list.find((m: Record<string, unknown>) => m.id === session.model?.id && m.providerID === session.model?.providerID);
         } catch {
           return null;
         }
@@ -288,20 +288,20 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
       const cacheRead = tokens.cache?.read ?? 0;
       const ctxData = await C.oc.context(s.sessionId);
       const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
-      const meaningful = items.filter((m: any) => {
+      const meaningful = items.filter((m: Record<string, unknown>) => {
         const role = m.role ?? m.type;
         if (role === "idle") return false;
         if (role === "assistant") {
           const parts = Array.isArray(m.content) ? m.content : [];
-          const hasText = parts.some((p: any) => p.type === "text" && p.text);
-          const hasTool = parts.some((p: any) => p.type === "tool");
+          const hasText = parts.some((p: Record<string, unknown>) => p.type === "text" && p.text);
+          const hasTool = parts.some((p: Record<string, unknown>) => p.type === "tool");
           return hasText || hasTool;
         }
         return role === "user" || role === "compaction";
       });
       const sliced = meaningful.slice(-6);
       const summaries = sliced
-        .map((m: any) => {
+        .map((m: Record<string, unknown>) => {
           const role = m.role ?? m.type ?? "msg";
           let body = "";
           if (role === "user") {
@@ -310,12 +310,12 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
           } else if (role === "assistant") {
             const parts = Array.isArray(m.content) ? m.content : [];
             const texts = parts
-              .filter((p: any) => p.type === "text")
-              .map((p: any) => {
+              .filter((p: Record<string, unknown>) => p.type === "text")
+              .map((p: Record<string, unknown>) => {
                 const t = p.text;
                 return typeof t === "string" ? t : t ? JSON.stringify(t) : "";
               });
-            const tools = parts.filter((p: any) => p.type === "tool").map((p: any) => p.name ?? p.tool ?? "tool");
+            const tools = parts.filter((p: Record<string, unknown>) => p.type === "tool").map((p: Record<string, unknown>) => p.name ?? p.tool ?? "tool");
             body = texts.join(" ").trim();
             if (!body && tools.length) body = "🔧 " + tools.join(", ");
           } else if (role === "compaction") {
@@ -326,14 +326,14 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
           return icon + " <b>" + esc(String(role)) + "</b>: " + esc(body || "(no text)");
         })
         .filter(Boolean);
-      const lastUser = [...items].reverse().find((m: any) => (m.role ?? m.type) === "user");
-      const lastAssistant = [...items].reverse().find((m: any) => (m.role ?? m.type) === "assistant");
+      const lastUser = [...items].reverse().find((m: Record<string, unknown>) => (m.role ?? m.type) === "user");
+      const lastAssistant = [...items].reverse().find((m: Record<string, unknown>) => (m.role ?? m.type) === "assistant");
       const lastUserText = lastUser ? (typeof lastUser.text === "string" ? lastUser.text : JSON.stringify(lastUser.text ?? "")).slice(0, 200) : "";
       const lastAssistantText = lastAssistant
         ? (Array.isArray(lastAssistant.content)
             ? lastAssistant.content
-                .filter((p: any) => p.type === "text")
-                .map((p: any) => (typeof p.text === "string" ? p.text : JSON.stringify(p.text ?? "")))
+                .filter((p: Record<string, unknown>) => p.type === "text")
+                .map((p: Record<string, unknown>) => (typeof p.text === "string" ? p.text : JSON.stringify(p.text ?? "")))
                 .join(" ")
             : ""
           )
@@ -526,7 +526,7 @@ export async function cmd_diff(deps: BotDeps, chatId: number, threadId: number |
         return true;
       }
       const rows = diffs
-        .map((d: any) => `<tr><td><code>${esc(d.file ?? "")}</code></td><td>+${d.additions ?? 0}/-${d.deletions ?? 0}</td><td>${esc(d.status ?? "")}</td></tr>`)
+        .map((d: { file?: string; additions?: number; deletions?: number; status?: string }) => `<tr><td><code>${esc(d.file ?? "")}</code></td><td>+${d.additions ?? 0}/-${d.deletions ?? 0}</td><td>${esc(d.status ?? "")}</td></tr>`)
         .join("");
       await send(`<b>Diff summary</b>\n<table><tr><th>File</th><th>Changes</th><th>Status</th></tr>${rows}</table>`);
       for (const d of diffs) {
