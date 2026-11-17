@@ -24,7 +24,6 @@ type CallbackHandler = (
 ) => Promise<void>;
 
 const PREFIXES = [
-  "fs:",
   "panel:",
   "perm:",
   "use:",
@@ -41,7 +40,6 @@ const PREFIXES = [
   "runcmd:",
   "connect:",
   "sessions:",
-  "filter:",
   "cmd:",
   "tpage:",
   "tpagep:",
@@ -755,10 +753,6 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   }
 }
 
-async function handleFs(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
-  await deps.files.handleCallback(cq);
-}
-
 async function handleSessions(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const filterMatch = data.match(/^sessions:filter:(all|running|group)$/);
   if (filterMatch) {
@@ -779,10 +773,6 @@ async function handleSessions(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
     else await deps.panels.showSessions(chatId, page, cq.message?.message_id, threadId);
     return;
   }
-}
-
-async function handleFilter(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
-  return;
 }
 
 async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
@@ -874,7 +864,6 @@ async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
 }
 
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
-  "fs:": handleFs,
   "tpage:": handleTranscriptPage,
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,
@@ -938,7 +927,6 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "runcmd:": handleRuncmd,
   "connect:": handleConnect,
   "sessions:": handleSessions,
-  "filter:": handleFilter,
   "cmd:": handleCmd,
   "profile:": handleProfile,
   "viewfull:": handleViewFull,
