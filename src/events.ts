@@ -259,6 +259,11 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
   const s = _s0;
   const threadId = resolveThreadId(sessionId) as number | undefined;
   const summary = String(e.data?.text ?? "").trim();
+  const shortSummary = summary.slice(0, 900);
+  const summaryTruncated = summary.length > shortSummary.length;
+  const summaryBody = summary
+    ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${summaryTruncated ? "\n…" : ""}</pre></blockquote>`
+    : "";
   const tokens = e.data?.tokens as { input?: number; output?: number } | undefined;
   const tokenText = tokens ? ` · ${((tokens.input ?? 0) + (tokens.output ?? 0)).toLocaleString()} tokens` : "";
   if (s) {
@@ -268,23 +273,13 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
     if (s.statusMessageId) {
       updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
     } else {
-      const shortSummary = summary.slice(0, 900);
-      const truncated = summary.length > shortSummary.length;
-      const body = summary
-        ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre></blockquote>`
-        : "";
       await tg
-        .sendRichMessage(chatId, sessionHeader(s) + `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
+        .sendRichMessage(chatId, sessionHeader(s) + `📦 <b>Compaction complete</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
         .catch((err) => console.warn("[events]", err?.message ?? err));
     }
   } else {
-    const shortSummary = summary.slice(0, 900);
-    const truncated = summary.length > shortSummary.length;
-    const body = summary
-      ? `<blockquote expandable>📦 Summary\n<pre>${esc(shortSummary)}${truncated ? "\n…" : ""}</pre></blockquote>`
-      : "";
     await tg
-      .sendRichMessage(chatId, sessionHeader(null, sessionId) + `📦 <b>Compaction complete</b>${tokenText}${body ? "\n" + body : ""}`, threadOpts(threadId))
+      .sendRichMessage(chatId, sessionHeader(null, sessionId) + `📦 <b>Compaction complete</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
       .catch((err) => console.warn("[events]", err?.message ?? err));
   }
   logger.info("events", "compaction.ended", { sessionId, chatId, threadId, summaryLen: summary.length, usedStatus: !!(s?.statusMessageId) });
