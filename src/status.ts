@@ -75,7 +75,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 3. Prompt being answered — context before detail.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) {
-      lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
+      lines.push(`<p><i>📝 ${esc(clampText(prompt.trim(), 300))}</i></p>`);
     }
     // 4. Compact activity summary (OpenCode 2.3.0 style). One line of counters
     // plus a single expandable block replaces the separate thought/tool blocks.

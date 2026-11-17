@@ -132,6 +132,12 @@ export function recordTool(a: TurnActivity, name: string, input: string, opts: {
   });
 }
 
+/** Replace the placeholder detail with the real input from session.tool.called. */
+export function updateToolDetail(a: TurnActivity, toolId: string, detail: string): void {
+  const entry = [...a.entries].reverse().find((e) => e.toolId === toolId);
+  if (entry) entry.detail = detail;
+}
+
 export function finishTool(a: TurnActivity, toolId: string, ok: boolean, opts: { at?: number } = {}): void {
   const at = opts.at ?? Date.now();
   const entry = [...a.entries].reverse().find((e) => e.toolId === toolId);
@@ -185,7 +191,10 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   if (!parts.length) return "";
 
   const detailCap = verbosity === "low" ? 0 : verbosity === "high" ? 360 : 90;
-  const maxEntries = verbosity === "low" ? 8 : verbosity === "high" ? MAX_ENTRIES : 12;
+  // Collapsed stays compact (a handful of rows); the toggle reveals the rest.
+  const maxEntries = expanded
+    ? (verbosity === "low" ? 8 : verbosity === "high" ? MAX_ENTRIES : 12)
+    : (verbosity === "low" ? 3 : verbosity === "high" ? 6 : 5);
   const visible = a.entries.slice(-maxEntries);
   const blocks: ActivityBlock[] = [];
 
@@ -238,5 +247,5 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
 
   const prefix = finished ? "−" : "+";
   const hint = expanded ? " ▴" : " ▾";
-  return `${prefix}${parts.join(" · ")}${hint}\n${renderBody(kept)}`;
+  return `<p>${prefix}${parts.join(" · ")}${hint}</p>\n${renderBody(kept)}`;
 }

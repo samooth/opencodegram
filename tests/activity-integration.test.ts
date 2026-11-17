@@ -69,6 +69,33 @@ describe("turn activity recording", () => {
     expect(entry?.ok).toBe(true);
   });
 
+  test("tool input started without payload does not record a literal empty JSON string", async () => {
+    const { deps, store } = makeDeps();
+    const s = makeSession();
+    s.activity = createTurnActivity();
+    store.sessionsById.set(s.sessionId, s);
+    store.chatBySession.set(s.sessionId, s.targetChatId!);
+
+    await handleEvent({ type: "session.tool.input.started", data: { sessionID: s.sessionId, id: "c1", name: "bash" } }, deps);
+    const entry = s.activity.entries.find((e) => e.toolId === "c1");
+    expect(entry?.detail).toBe("");
+    expect(s.toolCallDetails[0]?.input).toBe("");
+    await handleEvent({ type: "session.tool.input.started", data: { sessionID: s.sessionId, id: "c2", name: "bash", input: "bun test" } }, deps);
+    expect(s.activity.entries.find((e) => e.toolId === "c2")?.detail).toBe("bun test");
+  });
+
+  test("tool.called updates the activity detail with the real command or file", async () => {
+    const { deps, store } = makeDeps();
+    const s = makeSession();
+    s.activity = createTurnActivity();
+    store.sessionsById.set(s.sessionId, s);
+    store.chatBySession.set(s.sessionId, s.targetChatId!);
+
+    await handleEvent({ type: "session.tool.input.started", data: { sessionID: s.sessionId, id: "c1", name: "edit" } }, deps);
+    await handleEvent({ type: "session.tool.called", data: { sessionID: s.sessionId, id: "c1", input: { filePath: "/workspace/src/pilot.py", oldString: "a", newString: "b" } } }, deps);
+    expect(s.activity.entries.find((e) => e.toolId === "c1")?.detail).toContain("src/pilot.py");
+  });
+
   test("closing thoughts leaves running tools open", () => {
     const a = createTurnActivity();
     a.thoughts = 1;

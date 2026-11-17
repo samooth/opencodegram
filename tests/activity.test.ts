@@ -161,6 +161,21 @@ describe("turn activity counters", () => {
     expect(out.match(/<blockquote expandable>/g)).toHaveLength(1);
   });
 
+  test("collapsed mode shows only the last few entries", () => {
+    const a = createTurnActivity();
+    for (let i = 0; i < 20; i++) recordThought(a, `pensamiento ${i}`, { at: 1000 + i });
+    const collapsed = renderActivity(a, "high", false, 2000, false);
+    const expanded = renderActivity(a, "high", false, 2000, true);
+    expect((collapsed.match(/<blockquote/g) ?? []).length).toBeLessThanOrEqual(7);
+    expect((expanded.match(/<blockquote/g) ?? []).length).toBeGreaterThan((collapsed.match(/<blockquote/g) ?? []).length);
+  });
+
+  test("summary line is a block element so it does not glue to the prompt", () => {
+    const a = createTurnActivity();
+    recordThought(a, "algo", { at: 1000 });
+    expect(renderActivity(a, "medium", false, 1100, false)).toMatch(/^<p>[+−]/);
+  });
+
   test("gives each entry its own expandable block in collapsed mode", () => {
     const a = createTurnActivity();
     recordThought(a, "primero", { at: 1000 });

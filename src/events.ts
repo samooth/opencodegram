@@ -6,7 +6,7 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState, PermissionInfo } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { closeThoughts, finishTool, recordThought, recordThoughtDelta, recordTool } from "./activity.js";
+import { closeThoughts, finishTool, recordThought, recordThoughtDelta, recordTool, updateToolDetail } from "./activity.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon } from "./util.js";
 import { splitBySections, splitMarkdown } from "./transcript.js";
 import { logger } from "./logger.js";
@@ -74,6 +74,13 @@ type RawFormOption = {
   label?: unknown;
   description?: unknown;
 };
+
+/** Serialize a tool input without turning a missing payload into the string `""`. */
+function toolInputText(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
 
 async function ensureLiveStatus(deps: EventsDeps, sessionId: string | undefined, chatId: number | undefined): Promise<ChatSession | undefined> {
   if (!sessionId || chatId === undefined) return undefined;
@@ -161,9 +168,8 @@ const handleSessionToolInputStarted: EventHandler = async (event, deps) => {
   const name = (e.data?.name as string | undefined) ?? "tool";
   if (name) s.toolCalls.push(name);
   const id = (e.data?.id as string | undefined) ?? String(s.toolCallDetails.length);
-  const rawInput = e.data?.input;
-  const input = typeof rawInput === "string" ? rawInput : JSON.stringify(rawInput ?? "");
-  s.toolCallDetails.push({ id, name, status: "running" });
+  const input = toolInputText(e.data?.input);
+  s.toolCallDetails.push({ id, name, input, status: "running" });
   if (s.activity) recordTool(s.activity, name, input, { toolId: id });
   updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
 };
@@ -198,9 +204,10 @@ async function applyToolEvent(
 }
 
 const handleSessionToolCalled: EventHandler = async (event, deps) =>
-  applyToolEvent(deps, event, (detail, d) => {
-    const input = d.input;
-    detail.input = typeof input === "string" ? input : JSON.stringify(input ?? "");
+  applyToolEvent(deps, event, (detail, d, _id, s) => {
+    const input = toolInputText(d.input);
+    detail.input = input;
+    if (s.activity) updateToolDetail(s.activity, detail.id, input);
   });
 
 const handleSessionToolSuccess: EventHandler = async (event, deps) =>
