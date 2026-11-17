@@ -158,16 +158,22 @@ const handleSessionToolInputStarted: EventHandler = async (event, deps) => {
   updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
 };
 
-const handleSessionToolCalled: EventHandler = async (event, deps) => {
+/**
+ * Shared wiring for tool events: resolve session + target detail by id (with
+ * a running-tool fallback) and apply a mutation, then refresh the card.
+ */
+async function applyToolEvent(
+  deps: EventsDeps,
+  event: { type: string; data?: unknown },
+  mutate: (detail: ChatSession["toolCallDetails"][number], d: Record<string, unknown>, id: string | undefined, s: ChatSession) => void,
+): Promise<void> {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
   const e = event as { type: string; data?: Record<string, unknown> };
   const sessionId = e.data?.sessionID as string | undefined;
-  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
+  const s = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
-  if (chatId === undefined || !sessionId) return;
-  const s = _s0;
-  if (!s) return;
+  if (!s || chatId === undefined || !sessionId) return;
   const id = e.data?.id as string | undefined;
   let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
   if (!detail && s.toolCallDetails.length) {
@@ -175,59 +181,30 @@ const handleSessionToolCalled: EventHandler = async (event, deps) => {
     detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
   }
   if (detail) {
-    const input = e.data?.input;
+    mutate(detail, e.data ?? {}, id, s);
+    if (id && detail.id !== id) detail.id = id;
+  }
+  updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
+}
+
+const handleSessionToolCalled: EventHandler = async (event, deps) =>
+  applyToolEvent(deps, event, (detail, d) => {
+    const input = d.input;
     detail.input = typeof input === "string" ? input : JSON.stringify(input ?? "");
-    if (id && detail.id !== id) detail.id = id;
-  }
-  updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-};
+  });
 
-const handleSessionToolSuccess: EventHandler = async (event, deps) => {
-  const { store, updateStatus } = deps;
-  const { findSessionById, resolveChatId } = store;
-  const e = event as { type: string; data?: Record<string, unknown> };
-  const sessionId = e.data?.sessionID as string | undefined;
-  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-  const chatId = resolveChatId(sessionId);
-  if (chatId === undefined || !sessionId) return;
-  const s = _s0;
-  if (!s) return;
-  const id = e.data?.id as string | undefined;
-  let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
-  if (!detail && s.toolCallDetails.length) {
-    detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
-  }
-  if (detail) {
+const handleSessionToolSuccess: EventHandler = async (event, deps) =>
+  applyToolEvent(deps, event, (detail, d) => {
     detail.status = "success";
-    const out = (e.data as { content?: unknown; output?: unknown } | undefined)?.content ?? (e.data as { output?: unknown } | undefined)?.output;
+    const out = d.content ?? d.output;
     detail.output = typeof out === "string" ? out.slice(0, 2000) : JSON.stringify(out ?? "").slice(0, 2000);
-    if (id && detail.id !== id) detail.id = id;
-  }
-  updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-};
+  });
 
-const handleSessionToolFailed: EventHandler = async (event, deps) => {
-  const { store, updateStatus } = deps;
-  const { findSessionById, resolveChatId } = store;
-  const e = event as { type: string; data?: Record<string, unknown> };
-  const sessionId = e.data?.sessionID as string | undefined;
-  const _s0 = sessionId ? findSessionById(sessionId) : undefined;
-  const chatId = resolveChatId(sessionId);
-  if (chatId === undefined || !sessionId) return;
-  const s = _s0;
-  if (!s) return;
-  const id = e.data?.id as string | undefined;
-  let detail = id ? s.toolCallDetails.find((d) => d.id === id) : undefined;
-  if (!detail && s.toolCallDetails.length) {
-    detail = [...s.toolCallDetails].reverse().find((d) => d.status === "running") ?? s.toolCallDetails[s.toolCallDetails.length - 1];
-  }
-  if (detail) {
+const handleSessionToolFailed: EventHandler = async (event, deps) =>
+  applyToolEvent(deps, event, (detail, d) => {
     detail.status = "failed";
-    detail.output = (e.data as { error?: { message?: string } } | undefined)?.error?.message ?? "failed";
-    if (id && detail.id !== id) detail.id = id;
-  }
-  updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-};
+    detail.output = ((d.error as { message?: string } | undefined)?.message ?? "failed").slice(0, 2000);
+  });
 
 const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
   const { tg, store, updateStatus } = deps;
