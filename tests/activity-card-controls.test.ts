@@ -61,7 +61,18 @@ describe("activity card controls", () => {
     recordTool(s.activity!, "read", "README.md", { at: 1100, toolId: "r1" });
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
     const flat = tm.cardKeyboard(s, 0, 0, {}).flat();
-    expect(flat.some((b) => b.callback_data === "readfile:README.md")).toBe(true);
+    expect(flat.some((b) => b.callback_data === `readfile:${s.sessionId}:0`)).toBe(true);
+  });
+
+  test("every generated callback_data stays within Telegram's 64-byte limit", () => {
+    const { s } = makeHarness();
+    const store = new SessionStore(join(root, "data"));
+    recordTool(s.activity!, "read", "src/muy/larga/ruta/de/archivo/que/excede/el/limite/de/64/bytes/README.md", { at: 1000, toolId: "r1" });
+    const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
+    const flat = tm.cardKeyboard(s, 0, 2, { working: true }).flat();
+    for (const b of flat) {
+      expect(Buffer.byteLength(b.callback_data, "utf8")).toBeLessThanOrEqual(64);
+    }
   });
 
   test("card keyboard exposes per-file diff and open-file buttons", () => {

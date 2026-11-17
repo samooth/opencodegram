@@ -35,6 +35,24 @@ export type TranscriptDeps = {
 
 export type TranscriptManager = ReturnType<typeof createTranscriptManager>;
 
+/**
+ * Telegram allows at most 64 bytes of callback_data per button. Read paths can
+ * be far longer, so the keyboard carries a short key and the path lives here.
+ */
+const activityReadPaths = new Map<string, string>();
+
+export function rememberActivityReadPath(key: string, path: string): void {
+  activityReadPaths.set(key, path);
+  if (activityReadPaths.size > 500) {
+    const oldest = activityReadPaths.keys().next().value;
+    if (oldest) activityReadPaths.delete(oldest);
+  }
+}
+
+export function getActivityReadPath(key: string): string | undefined {
+  return activityReadPaths.get(key);
+}
+
 export function createTranscriptManager({ tg, store, threadOptsFor, renderResources }: TranscriptDeps) {
   /**
    * Telegram cancels an edit when a newer one arrives for the same message.
@@ -310,11 +328,16 @@ ${body}
       .filter((e) => e.kind === "read" && e.detail.trim())
       .slice(-6)
       .map((e) => e.detail.trim().replace(/[\r\n]/g, " ").slice(0, 160));
+    for (const key of [...activityReadPaths.keys()]) {
+      if (key.startsWith(`${s.sessionId}:`)) activityReadPaths.delete(key);
+    }
     const seenReads = new Set<string>();
     for (const path of readPaths) {
       if (seenReads.has(path)) continue;
       seenReads.add(path);
-      keyboard.push([{ text: `📖 ${path.split("/").pop() ?? path}`.slice(0, 64), callback_data: `readfile:${path}` }]);
+      const key = `${s.sessionId}:${seenReads.size - 1}`;
+      rememberActivityReadPath(key, path);
+      keyboard.push([{ text: `📖 ${path.split("/").pop() ?? path}`.slice(0, 64), callback_data: `readfile:${key}` }]);
     }
     // 📝 Edits are part of this card. The snapshot is registered on its message
     // id at turn end, so per-file buttons survive new turns and restarts.

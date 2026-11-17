@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { handleCallback } from "../src/callbacks.js";
 import { SessionStore } from "../src/store.js";
+import { rememberActivityReadPath } from "../src/transcriptmanager.js";
 
 const TEST_ROOT = "/tmp/opencode";
 
@@ -108,9 +109,10 @@ describe("handleCallback", () => {
 
   test("readfile button opens what the tool read", async () => {
     const deps = makeDeps();
+    rememberActivityReadPath("ses_read:0", "README.md");
     const opened: string[] = [];
     deps.files.showFile = async (_chat: number, _thread: unknown, path: string) => { opened.push(path); };
-    const cq = { id: "8", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "readfile:README.md" } as any;
+    const cq = { id: "8", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "readfile:ses_read:0" } as any;
     await handleCallback(deps, cq);
     expect(opened).toEqual(["README.md"]);
   });

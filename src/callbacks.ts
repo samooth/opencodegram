@@ -10,6 +10,7 @@ import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
 import { extractEditFile } from "./editutil.js";
+import { getActivityReadPath } from "./transcriptmanager.js";
 import { showSessionPicker } from "./messages.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
@@ -883,8 +884,13 @@ async function handleReadFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   const m = data.match(/^readfile:(.+)$/);
   if (!m) return;
   await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const path = getActivityReadPath(m[1]);
+  if (!path) {
+    await deps.tg.answerCallbackQuery(cq.id, "Lectura expirada").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
   const s = deps.store.getActiveSession(chatId, threadId);
-  await deps.files.showFile(chatId, threadId, m[1], { base: s?.directory, forcePreview: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.files.showFile(chatId, threadId, path, { base: s?.directory, forcePreview: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
 /** Open the file of an edited entry directly in the file browser. */
