@@ -7,6 +7,7 @@ import type { TodoItem } from "./todos.js";
 import { TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_TOOLS_BLOCKS } from "./transcript.js";
 import { esc, clampText } from "./util.js";
 import { renderResourceBlock, ensureGpuCache } from "./resources.js";
+import { logger } from "./logger.js";
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
 
@@ -330,7 +331,7 @@ export class SessionStore {
       for (const [sid, info] of this.statusMessageBySession) obj[sid] = info;
       writeFileSync(this.statusMessagesFile, JSON.stringify(obj, null, 2));
     } catch (err) {
-      console.error("[statusMessages] save failed", err);
+      logger.error("store", "[statusMessages] save failed", err);
     }
   };
 
@@ -464,7 +465,7 @@ export class SessionStore {
       for (const [sid, todos] of this.todosBySession) obj[sid] = todos;
       writeFileSync(this.todosFile, JSON.stringify(obj), "utf8");
     } catch (err) {
-      console.error("[todos] save failed", err);
+      logger.error("store", "[todos] save failed", err);
     }
   };
 
@@ -479,7 +480,7 @@ export class SessionStore {
       }
       writeFileSync(this.turnPromptsFile, JSON.stringify(obj), "utf8");
     } catch (err) {
-      console.error("[turnPrompts] save failed", err);
+      logger.error("store", "[turnPrompts] save failed", err);
     }
   };
 
@@ -579,7 +580,7 @@ export class SessionStore {
       for (const [chatId, buttons] of this.customButtonsByChat) obj[String(chatId)] = buttons;
       writeFileSync(this.buttonsFile, JSON.stringify(obj, null, 2));
     } catch (err) {
-      console.error("[buttons] save failed", err);
+      logger.error("store", "[buttons] save failed", err);
     }
   };
 
@@ -590,7 +591,7 @@ export class SessionStore {
       for (const [mid, snap] of this.pendingEditsByMessage) obj[String(mid)] = snap;
       writeFileSync(this.pendingEditsFile, JSON.stringify(obj, null, 2));
     } catch (err) {
-      console.error("[pendingEdits] save failed", err);
+      logger.error("store", "[pendingEdits] save failed", err);
     }
   };
 
@@ -736,7 +737,7 @@ export class SessionStore {
       for (const [key, value] of this.dashboardByRoute) obj[key] = value;
       writeFileSync(this.dashboardFile, JSON.stringify(obj, null, 2));
     } catch (err) {
-      console.error("[dashboard] save failed", err);
+      logger.error("store", "[dashboard] save failed", err);
     }
   };
 
@@ -826,16 +827,16 @@ export class SessionStore {
         if (!blocks) continue;
         const file = join(this.transcriptsDir, `${sid}.json`);
         try { await writeFile(file, JSON.stringify(blocks), "utf8"); }
-        catch (err) { console.error("[transcripts] save failed", sid, err); this.dirtyTranscripts.add(sid); }
+        catch (err) { logger.error("store", "[transcripts] save failed", sid, err); this.dirtyTranscripts.add(sid); }
       }
     } catch (err) {
-      console.error("[transcripts] save failed", err);
+      logger.error("store", "[transcripts] save failed", err);
     }
   };
 
   private deleteTranscriptFile = async (sessionId: string): Promise<void> => {
     try { await rm(join(this.transcriptsDir, `${sessionId}.json`), { force: true }); }
-    catch (err) { console.error("[transcripts] delete failed", sessionId, err); }
+    catch (err) { logger.error("store", "[transcripts] delete failed", sessionId, err); }
   };
 
   /**
@@ -862,7 +863,7 @@ export class SessionStore {
       for (const [k, v] of entries) obj[k] = v;
       writeFileSync(file, JSON.stringify(obj, null, pretty ? 2 : 0));
     } catch (err) {
-      console.error(`${tag} save failed`, err);
+      logger.error("store", `${tag} save failed`, err);
     }
   }
 
@@ -873,7 +874,7 @@ export class SessionStore {
       for (const [k, v] of map) obj[k] = v;
       writeFileSync(file, JSON.stringify(obj, null, 2));
     } catch (err) {
-      console.error(`${tag} save failed`, err);
+      logger.error("store", `${tag} save failed`, err);
     }
   }
 
@@ -884,7 +885,7 @@ export class SessionStore {
         for (const [k, v] of Object.entries(parsed)) this.threadBySession.set(k, v);
       }
     } catch (err) {
-      console.error("[threads] load failed", err);
+      logger.error("store", "[threads] load failed", err);
     }
     try {
       if (existsSync(this.chatsFile)) {
@@ -892,7 +893,7 @@ export class SessionStore {
         for (const [k, v] of Object.entries(parsed)) this.chatBySession.set(k, v);
       }
     } catch (err) {
-      console.error("[chats] load failed", err);
+      logger.error("store", "[chats] load failed", err);
     }
     try {
       if (existsSync(this.statusMessagesFile)) {
@@ -904,7 +905,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[statusMessages] load failed", err);
+      logger.error("store", "[statusMessages] load failed", err);
     }
     try {
       if (existsSync(this.messagesFile)) {
@@ -914,7 +915,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[messages] load failed", err);
+      logger.error("store", "[messages] load failed", err);
     }
     try {
       if (existsSync(this.topicTitlesFile)) {
@@ -924,7 +925,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[topicTitles] load failed", err);
+      logger.error("store", "[topicTitles] load failed", err);
     }
     try {
       if (existsSync(this.cotFile)) {
@@ -934,7 +935,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[cot] load failed", err);
+      logger.error("store", "[cot] load failed", err);
     }
     try {
       if (existsSync(this.lastChatsFile)) {
@@ -944,7 +945,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[lastChats] load failed", err);
+      logger.error("store", "[lastChats] load failed", err);
     }
     try {
       if (existsSync(this.lastPromptsFile)) {
@@ -954,7 +955,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[lastPrompts] load failed", err);
+      logger.error("store", "[lastPrompts] load failed", err);
     }
     try {
       if (existsSync(this.lastInteractedFile)) {
@@ -966,7 +967,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[lastInteracted] load failed", err);
+      logger.error("store", "[lastInteracted] load failed", err);
     }
     try {
       if (existsSync(this.deliveryFile)) {
@@ -978,7 +979,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[delivery] load failed", err);
+      logger.error("store", "[delivery] load failed", err);
     }
     try {
       if (existsSync(this.todosFile)) {
@@ -988,7 +989,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[todos] load failed", err);
+      logger.error("store", "[todos] load failed", err);
     }
     // Migrate legacy single-file transcripts.json into per-session files.
     try {
@@ -1001,14 +1002,14 @@ export class SessionStore {
             const limited = this.limitTranscript(blocks);
             this.transcriptBySession.set(sid, limited);
             try { writeFileSync(join(this.transcriptsDir, `${sid}.json`), JSON.stringify(limited), "utf8"); }
-            catch (err) { console.error("[transcripts] migrate write failed", sid, err); }
+            catch (err) { logger.error("store", "[transcripts] migrate write failed", sid, err); }
           }
         }
         // Rename legacy file so migration runs only once.
         try { renameSync(legacy, `${legacy}.migrated`); } catch { /* ignore */ }
       }
     } catch (err) {
-      console.error("[transcripts] migrate failed", err);
+      logger.error("store", "[transcripts] migrate failed", err);
     }
     // Load per-session files.
     try {
@@ -1021,11 +1022,11 @@ export class SessionStore {
           const blocks = JSON.parse(readFileSync(join(this.transcriptsDir, f), "utf8")) as TranscriptBlock[];
           if (Array.isArray(blocks)) this.transcriptBySession.set(sid, this.limitTranscript(blocks));
         } catch (err) {
-          console.error("[transcripts] load failed", sid, err);
+          logger.error("store", "[transcripts] load failed", sid, err);
         }
       }
     } catch (err) {
-      console.error("[transcripts] load failed", err);
+      logger.error("store", "[transcripts] load failed", err);
     }
     try {
       if (existsSync(this.dashboardFile)) {
@@ -1042,7 +1043,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[dashboard] load failed", err);
+      logger.error("store", "[dashboard] load failed", err);
     }
 
     // Explicit tab bindings.
@@ -1062,7 +1063,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[active] load failed", err);
+      logger.error("store", "[active] load failed", err);
     }
 
     // Migration for installs created before active.json existed: threads.json
@@ -1078,7 +1079,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[buttons] load failed", err);
+      logger.error("store", "[buttons] load failed", err);
     }
 
     // Load persisted pending-edits snapshots (messageId -> {sessionId, edits}).
@@ -1097,7 +1098,7 @@ export class SessionStore {
         }
       }
     } catch (err) {
-      console.error("[pendingEdits] load failed", err);
+      logger.error("store", "[pendingEdits] load failed", err);
     }
 
     // already records which session belongs to each topic, so reuse it.
