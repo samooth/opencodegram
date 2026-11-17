@@ -11,6 +11,8 @@ export type DisplayMode = "unified" | "flexible";
 export type LongAnswerDelivery = "card" | "message" | "auto";
 /** Card visual theme (auto uses neutral glyphs that work in both themes). */
 export type CardTheme = "auto" | "light" | "dark";
+/** Card verbosity mapped from OpenCode 2.3.0 session.verbosity. */
+export type CardVerbosity = "low" | "medium" | "high";
 
 export type ChatSettings = {
   showThinking: boolean;
@@ -45,6 +47,7 @@ export type ChatSettings = {
   /** Character threshold used when longAnswerDelivery is "auto". */
   longAnswerThreshold: number;
   cardTheme: CardTheme;
+  cardVerbosity: CardVerbosity;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -76,6 +79,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   longAnswerDelivery: "auto",
   longAnswerThreshold: 1800,
   cardTheme: "auto",
+  cardVerbosity: "medium",
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -103,6 +107,9 @@ export class SettingsStore {
     }
     if (merged.cardTheme !== "auto" && merged.cardTheme !== "light" && merged.cardTheme !== "dark") {
       merged.cardTheme = DEFAULT_SETTINGS.cardTheme;
+    }
+    if (merged.cardVerbosity !== "low" && merged.cardVerbosity !== "medium" && merged.cardVerbosity !== "high") {
+      merged.cardVerbosity = DEFAULT_SETTINGS.cardVerbosity;
     }
     if (typeof merged.longAnswerThreshold !== "number" || !Number.isFinite(merged.longAnswerThreshold) || merged.longAnswerThreshold < 200) {
       merged.longAnswerThreshold = DEFAULT_SETTINGS.longAnswerThreshold;
@@ -179,6 +186,7 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   longAnswerDelivery: "📤 Respuesta larga",
   longAnswerThreshold: "📏 Umbral respuesta",
   cardTheme: "🎨 Tema del card",
+  cardVerbosity: "📊 Verbosidad",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
@@ -250,6 +258,15 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
         text: `📍 Tarjeta: ${cardLabels[behavior]}`,
         callback_data: `set:cardBehavior:${cardCycle[behavior]}`,
       },
+    ]);
+  }
+
+  {
+    const verbLabels: Record<CardVerbosity, string> = { low: "baja", medium: "media", high: "alta" };
+    const verbCycle: Record<CardVerbosity, CardVerbosity> = { low: "medium", medium: "high", high: "low" };
+    const v = verbLabels[settings.cardVerbosity] ? settings.cardVerbosity : "medium";
+    keyboard.push([
+      { text: `📊 Verbosidad: ${verbLabels[v]}`, callback_data: `set:cardVerbosity:${verbCycle[v]}` },
     ]);
   }
 

@@ -171,10 +171,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       { text: mode === "group" ? "✅ Group" : "📁 Group", callback_data: "sessions:filter:group" },
     ];
     keyboard.push(filterRow);
+    if (mode !== "all") keyboard.push([{ text: "◀ Todas", callback_data: "sessions:filter:all" }]);
     keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const activeLine = activeId ? `\nActiva: <code>${esc(activeId.slice(0, 8))}</code>` : "";
     const scopeLine = filterChatId !== undefined ? "\n<i>Mostrando sesiones de este chat</i>" : "";
-    await sendOrEditRich(chatId, messageId, `<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${activeLine}${scopeLine}\n<i>Selecciona una sesión:</i>`, {
+    const crumb = `<i>🏠 Panel › 📂 Sesiones${mode !== "all" ? ` › ${mode}` : ""}</i>\n`;
+    await sendOrEditRich(chatId, messageId, `${crumb}<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${activeLine}${scopeLine}\n<i>Selecciona una sesión:</i>`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });

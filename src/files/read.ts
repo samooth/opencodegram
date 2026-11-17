@@ -10,12 +10,30 @@ import {
   type FileDocument,
 } from "./path.js";
 
+// Small LRU cache of recent text reads keyed by absolute path + options.
+const READ_CACHE_LIMIT = 12;
+const readCache = new Map<string, ReadResult>();
+
+function readCacheKey(absolute: string, options: { startLine?: number; maxLines?: number; maxBytes?: number }): string {
+  return `${absolute}|${options.startLine ?? 1}|${options.maxLines ?? 200}|${options.maxBytes ?? MAX_READ_BYTES}`;
+}
+
+export function clearReadCache(): void { readCache.clear(); }
+
 export async function readTextFile(
   base: string,
   input: string,
   options: { startLine?: number; maxLines?: number; maxBytes?: number } = {},
 ): Promise<ReadResult> {
   const safe = await resolveSafePath(base, input);
+  const cacheKey = readCacheKey(safe.absolute, options);
+  const cached = readCache.get(cacheKey);
+  if (cached) {
+    // Refresh LRU position.
+    readCache.delete(cacheKey);
+    readCache.set(cacheKey, cached);
+    return cached;
+  }
   const st = await stat(safe.absolute).catch(() => null);
   if (!st) throw new FileAccessError("not_found", `Path not found: ${input || "."}`);
   if (!st.isFile()) throw new FileAccessError("not_file", "That path is not a file.");
@@ -50,7 +68,7 @@ export async function readTextFile(
   const text = lines.slice(startIndex, endIndex).join("\n");
   const lineTruncated = endIndex < lines.length || startIndex > 0;
 
-  return {
+  const result: ReadResult = {
     base: safe.base,
     absolute: safe.absolute,
     relative: safe.relative,
@@ -61,6 +79,13 @@ export async function readTextFile(
     totalLines,
     truncated: byteTruncated || lineTruncated,
   };
+  readCache.set(cacheKey, result);
+  while (readCache.size > READ_CACHE_LIMIT) {
+    const oldest = readCache.keys().next();
+    if (oldest.done) break;
+    readCache.delete(oldest.value);
+  }
+  return result;
 }
 
 export async function prepareDocument(base: string, input: string, maxBytes = MAX_DOCUMENT_BYTES): Promise<FileDocument> {

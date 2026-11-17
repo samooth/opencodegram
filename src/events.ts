@@ -118,7 +118,7 @@ const handleSessionTextStarted: EventHandler = async (event, deps) => {
   if (s.typingTimer) clearInterval(s.typingTimer);
   s.typingTimer = setInterval(() => {
     tg.sendChatAction(chatId, "typing", s.threadId ?? s.targetThreadId).catch((err) => console.warn("[events]", err?.message ?? err));
-  }, 4000);
+  }, 3000);
   tg.sendChatAction(chatId, "typing", s.threadId ?? s.targetThreadId).catch((err) => console.warn("[events]", err?.message ?? err));
 };
 

@@ -90,15 +90,16 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 4. TODO checklist for the session (from todo.updated events).
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
-    // 5. Thought (reasoning).
+    // 5. Thought (reasoning) — collapse when verbosity is low.
     const thinking = renderThinkingBottom(s, settings);
-    if (thinking) lines.push(thinking);
-    // 6. Shell / latest tool.
+    if (thinking) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${thinking}</blockquote>` : thinking);
+    // 6. Shell / latest tool — collapse when verbosity is low.
     const shell = renderLatestToolBottom(s, settings);
-    if (shell) lines.push(shell);
+    if (shell) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${shell}</blockquote>` : shell);
     // 7. Partial answer in a blockquote, clearly distinct from reasoning.
     if (settings.showPartialText && s.buffer.trim()) {
-      const tail = s.buffer.trim().slice(-(unified ? 600 : 400));
+      const cap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
+      const tail = s.buffer.trim().slice(-cap);
       lines.push(`💬 <i>escribiendo…</i>\n<blockquote>${esc(tail)}</blockquote>`);
     }
     // 8. COT last, collapsed.
