@@ -179,48 +179,36 @@ async function main() {
     sessions.cleanupStaleAttachments(1).catch(() => {});
   }
 
-  const audit = (action: string, detail: string) => {
+  /** Append a line to a rotating log (1 MB -> `.1`). Never breaks the bot. */
+  const appendRotatingLog = (name: "audit" | "sessions", line: string) => {
     void (async () => {
       try {
         const dataDir = join(process.cwd(), "data");
         await mkdir(dataDir, { recursive: true });
-        const auditFile = join(dataDir, "audit.log");
+        const file = join(dataDir, name === "audit" ? "audit.log" : "sessions.log");
         try {
-          const st = await stat(auditFile);
-          if (st.size > 1_000_000) await rename(auditFile, auditFile + ".1");
+          const st = await stat(file);
+          if (st.size > 1_000_000) await rename(file, file + ".1");
         } catch {
           // File does not exist yet.
         }
-        const redacted = detail
-          .replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_TOKEN]")
-          .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[REDACTED]");
-        const line = `${new Date().toISOString()} ${action} ${redacted}\n`;
-        await appendFile(auditFile, line, "utf8");
+        await appendFile(file, line, "utf8");
       } catch {
-        // Audit logging must never break the bot.
+        // Logging must never break the bot.
       }
     })();
   };
 
+  const audit = (action: string, detail: string) => {
+    const redacted = detail
+      .replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_TOKEN]")
+      .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[REDACTED]");
+    appendRotatingLog("audit", `${new Date().toISOString()} ${action} ${redacted}\n`);
+  };
+
   /** Structured per-session trace: chat, topic, session and latency. */
   const sessionTrace = (event: string, fields: Record<string, unknown>) => {
-    void (async () => {
-      try {
-        const dataDir = join(process.cwd(), "data");
-        await mkdir(dataDir, { recursive: true });
-        const sessionsFile = join(dataDir, "sessions.log");
-        try {
-          const st = await stat(sessionsFile);
-          if (st.size > 1_000_000) await rename(sessionsFile, sessionsFile + ".1");
-        } catch {
-          // File does not exist yet.
-        }
-        const line = `${new Date().toISOString()} ${event} ${JSON.stringify(fields)}\n`;
-        await appendFile(sessionsFile, line, "utf8");
-      } catch {
-        // Tracing must never break the bot.
-      }
-    })();
+    appendRotatingLog("sessions", `${new Date().toISOString()} ${event} ${JSON.stringify(fields)}\n`);
   };
 
   const deps: BotDeps = {
