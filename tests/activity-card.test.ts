@@ -84,6 +84,13 @@ describe("activity summary in the session card", () => {
     expect(top).not.toContain("texto secreto");
   });
 
+  test("startStatus hides resources by default on the first turn", async () => {
+    const { status, s } = makeHarness();
+    s.resourcesCollapsed = undefined;
+    await status.startStatus(7, s);
+    expect(s.resourcesCollapsed).toBe(true);
+  });
+
   test("finishStatus returns the card to the latest page", async () => {
     const { status, s } = makeHarness();
     s.transcriptFollow = false;

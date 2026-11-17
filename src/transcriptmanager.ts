@@ -130,7 +130,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const pages = paginateTranscript(all);
     const header = `<h3>${sessionHeader(s).trimEnd()}</h3>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
-    const resources = opts.showResources === false ? "" : renderResources ? renderResources(s) : "";
+    const resources = opts.showResources === false || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
     const extraTop = opts.extraTop ?? "";
     const extraBottom = opts.extraBottom ?? "";
 
@@ -315,6 +315,12 @@ ${body}
       keyboard.push([{
         text: s.activityExpanded ? "▴ Ocultar detalles" : "▾ Ver detalles",
         callback_data: `activity:${s.sessionId}`,
+      }]);
+    }
+    if (!opts?.unified) {
+      keyboard.push([{
+        text: s.resourcesCollapsed ? "📊 Recursos ▴" : "📊 Recursos ▾",
+        callback_data: `resources:${s.sessionId}`,
       }]);
     }
     if (opts?.working) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);

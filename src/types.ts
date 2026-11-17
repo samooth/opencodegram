@@ -67,6 +67,8 @@ export type ChatSession = {
   transcriptMessageId?: number;
   /** Reusable drill-down message for diffs/files opened from the card. */
   detailMessageId?: number;
+  /** Hide the CPU/RAM/VRAM block on the card (toggled from its keyboard). */
+  resourcesCollapsed?: boolean;
   /** Page currently displayed in the transcript message. */
   transcriptPage?: number;
   /** True while the user has not navigated away from the latest page. */

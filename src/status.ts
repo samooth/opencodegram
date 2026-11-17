@@ -198,6 +198,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.toolCallDetails = [];
     s.activity = createTurnActivity();
     s.activityExpanded = false;
+    if (s.resourcesCollapsed === undefined) s.resourcesCollapsed = true;
     s.turnOutputTokens = 0;
     s.turnFirstStreamedAt = undefined;
     s.stopped = false;

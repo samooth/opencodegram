@@ -56,6 +56,7 @@ const PREFIXES = [
   "activity:",
   "editfile:",
   "readfile:",
+  "resources:",
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -879,6 +880,18 @@ async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   }
 }
 
+/** Collapse or expand the resource indicators on the card. */
+async function handleResourcesToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, _threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const m = data.match(/^resources:(.+)$/);
+  if (!m) return;
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const s = deps.store.findSessionById(m[1]);
+  if (!s) return;
+  s.resourcesCollapsed = !s.resourcesCollapsed;
+  const refresh = s.statusFinished ? deps.status.publishCard(chatId, s) : deps.status.updateStatus(chatId, s, true);
+  await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
 /** Show what a read tool actually opened, in the file browser. */
 async function handleReadFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
   const m = data.match(/^readfile:(.+)$/);
@@ -928,6 +941,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "activity:": handleActivityToggle,
   "editfile:": handleEditFile,
   "readfile:": handleReadFile,
+  "resources:": handleResourcesToggle,
   "tpage:": handleTranscriptPage,
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,

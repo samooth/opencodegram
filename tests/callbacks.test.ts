@@ -82,6 +82,18 @@ describe("handleCallback", () => {
     expect(refreshes).toBe(1);
   });
 
+  test("resources toggle flips the flag and refreshes the card", async () => {
+    const deps = makeDeps();
+    const s = { sessionId: "ses_res", resourcesCollapsed: false } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    let refreshes = 0;
+    deps.status.updateStatus = async () => { refreshes++; };
+    const cq = { id: "9", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "resources:ses_res" } as any;
+    await handleCallback(deps, cq);
+    expect(s.resourcesCollapsed).toBe(true);
+    expect(refreshes).toBe(1);
+  });
+
   test("activity toggle also refreshes a finished card", async () => {
     const deps = makeDeps();
     const s = { sessionId: "ses_toggle_done", activityExpanded: false, statusFinished: true } as any;

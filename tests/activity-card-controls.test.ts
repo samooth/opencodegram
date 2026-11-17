@@ -75,6 +75,30 @@ describe("activity card controls", () => {
     }
   });
 
+  test("card keyboard offers a resources toggle", () => {
+    const { s } = makeHarness();
+    const store = new SessionStore(join(root, "data"));
+    const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
+    const flat = tm.cardKeyboard(s, 0, 0, {}).flat();
+    expect(flat.some((b) => b.callback_data === `resources:${s.sessionId}`)).toBe(true);
+  });
+
+  test("renderPage hides the resource block when collapsed", () => {
+    const { s } = makeHarness();
+    const store = new SessionStore(join(root, "data"));
+    const tm = createTranscriptManager({
+      tg: {} as any,
+      store,
+      threadOptsFor: () => ({}),
+      renderResources: () => "CPU ▓░░ 9%",
+    });
+    const shown = tm.renderPage(s, { showResources: true });
+    expect(shown?.html).toContain("CPU ▓░░ 9%");
+    s.resourcesCollapsed = true;
+    const hidden = tm.renderPage(s, { showResources: true });
+    expect(hidden?.html).not.toContain("CPU ▓░░ 9%");
+  });
+
   test("card keyboard exposes per-file diff and open-file buttons", () => {
     const { s } = makeHarness();
     const store = new SessionStore(join(root, "data"));
