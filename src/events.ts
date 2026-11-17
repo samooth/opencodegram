@@ -6,6 +6,7 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState, PermissionInfo } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
+import { closeThoughts, finishTool, recordThought, recordThoughtDelta, recordTool } from "./activity.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon } from "./util.js";
 import { splitBySections, splitMarkdown } from "./transcript.js";
 import { logger } from "./logger.js";
@@ -125,6 +126,10 @@ const handleSessionReasoningStarted: EventHandler = async (event, deps) => {
   if (!s) return;
   // Preserve earlier reasoning across multiple reasoning blocks in one turn.
   if (s.reasoningBuffer.trim()) s.reasoningBuffer += "\n\n---\n\n";
+  if (s.activity) {
+    closeThoughts(s.activity);
+    recordThought(s.activity, "");
+  }
 };
 
 const handleSessionReasoningDelta: EventHandler = async (event, deps) => {
@@ -137,7 +142,9 @@ const handleSessionReasoningDelta: EventHandler = async (event, deps) => {
   if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
-  s.reasoningBuffer += String(e.data?.delta ?? "");
+  const delta = String(e.data?.delta ?? "");
+  s.reasoningBuffer += delta;
+  if (s.activity && delta) recordThoughtDelta(s.activity, delta);
   updateStatus(chatId, s).catch((err) => console.warn("[events]", err?.message ?? err));
 };
 
@@ -154,7 +161,10 @@ const handleSessionToolInputStarted: EventHandler = async (event, deps) => {
   const name = (e.data?.name as string | undefined) ?? "tool";
   if (name) s.toolCalls.push(name);
   const id = (e.data?.id as string | undefined) ?? String(s.toolCallDetails.length);
+  const rawInput = e.data?.input;
+  const input = typeof rawInput === "string" ? rawInput : JSON.stringify(rawInput ?? "");
   s.toolCallDetails.push({ id, name, status: "running" });
+  if (s.activity) recordTool(s.activity, name, input, { toolId: id });
   updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
 };
 
@@ -194,16 +204,18 @@ const handleSessionToolCalled: EventHandler = async (event, deps) =>
   });
 
 const handleSessionToolSuccess: EventHandler = async (event, deps) =>
-  applyToolEvent(deps, event, (detail, d) => {
+  applyToolEvent(deps, event, (detail, d, _id, s) => {
     detail.status = "success";
     const out = d.content ?? d.output;
     detail.output = typeof out === "string" ? out.slice(0, 2000) : JSON.stringify(out ?? "").slice(0, 2000);
+    if (s.activity) finishTool(s.activity, detail.id, true);
   });
 
 const handleSessionToolFailed: EventHandler = async (event, deps) =>
-  applyToolEvent(deps, event, (detail, d) => {
+  applyToolEvent(deps, event, (detail, d, _id, s) => {
     detail.status = "failed";
     detail.output = ((d.error as { message?: string } | undefined)?.message ?? "failed").slice(0, 2000);
+    if (s.activity) finishTool(s.activity, detail.id, false);
   });
 
 const handleSessionCompactionStarted: EventHandler = async (event, deps) => {

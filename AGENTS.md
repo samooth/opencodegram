@@ -64,6 +64,7 @@ Main modules:
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
+| `activity.ts` | Per-turn compact activity counters and expandable summary (`+3 thoughts · 3 reads · 1 tool`) |
 | `todos.ts` | TODO checklist types and rich-HTML rendering |
 | `apitypes.ts` | Shared structural types for OpenCode/Telegram payloads (no `any` in src) |
 | `dangerous.ts` | Shared list of commands requiring confirmation |
@@ -124,7 +125,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (197 tests across 27 files):
+`bun test` covers (217 tests across 30 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -134,6 +135,9 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/util.test.ts` — `:15` retry timing, mention normalization, parsing.
 - `tests/autoretry.test.ts` — bounded auto-retry, stale-prompt guard.
 - `tests/ratethrottle.test.ts` — adaptive edit throttle (429 penalties, decay).
+- `tests/activity.test.ts`, `tests/activity-integration.test.ts`,
+  `tests/activity-card.test.ts` — compact activity counters, event recording and
+  card rendering.
 - `tests/callbacks.test.ts`, `tests/events.test.ts`, `tests/panels.test.ts`,
   `tests/sessions.test.ts`, `tests/status.test.ts`, `tests/updates.test.ts` —
   handlers, rendering and routing.

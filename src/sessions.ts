@@ -10,6 +10,7 @@ import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import { clampText, esc, projectEmoji, sessionHeader, threadOpts } from "./util.js";
 import { logger } from "./logger.js";
+import { createTurnActivity } from "./activity.js";
 
 export type SessionsDeps = {
   config: Config;
@@ -357,6 +358,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       cs.reasoningBuffer = "";
       cs.toolCalls = [];
       cs.toolCallDetails = [];
+      cs.activity = createTurnActivity();
       cs.sentArtifacts = new Set();
     }
     store.rememberSessionChat(sessionId, chatId);

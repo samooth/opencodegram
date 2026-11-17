@@ -1,4 +1,5 @@
 import type { TranscriptBlock } from "./transcript.js";
+import type { TurnActivity } from "./activity.js";
 
 export type ChatSession = {
   sessionId: string;
@@ -52,6 +53,8 @@ export type ChatSession = {
   lastOutputTokens?: number;
   /** Accumulated output tokens across all steps of the current turn. */
   turnOutputTokens?: number;
+  /** Compact per-turn activity counters and detail entries for the card. */
+  activity?: TurnActivity;
   /** Timestamp of the first streamed token of the current turn (ms). */
   turnFirstStreamedAt?: number;
   lastContextTokens?: number;

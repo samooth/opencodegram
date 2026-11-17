@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
 import { createSessionManager } from "../src/sessions.js";
+import { createTurnActivity, recordThought } from "../src/activity.js";
 
 const TEST_ROOT = "/tmp/opencode";
 
@@ -31,6 +32,7 @@ function makeHarness() {
       },
     },
     interrupt: async () => {},
+    contextWindow: async () => undefined,
   } as any;
   const finishStatus = async () => {};
   const sessions = createSessionManager({ config: { OPENCODE_DIRECTORY: root } as any, tg, oc, store, topicsEnabled: false, finishStatus });
@@ -48,6 +50,20 @@ describe("sessions restoreActiveSession", () => {
     const { sessions } = makeHarness();
     const res = await sessions.ensureActiveSession(-100, 456);
     expect(res).toBeUndefined();
+  });
+
+  test("reactivating a finished session resets per-turn activity", async () => {
+    const { sessions, store } = makeHarness();
+    const activity = createTurnActivity();
+    recordThought(activity, "turno anterior");
+    const s = {
+      sessionId: "ses_react", buffer: "x", reasoningBuffer: "y", toolCalls: [], toolCallDetails: [],
+      stopped: false, targetChatId: 123, statusFinished: true, activity,
+    } as any;
+    store.sessionsById.set(s.sessionId, s);
+    await sessions.activateSession(123, s.sessionId);
+    expect(s.activity.thoughts).toBe(0);
+    expect(s.activity.entries).toHaveLength(0);
   });
 });
 

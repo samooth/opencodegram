@@ -41,6 +41,8 @@
 - Adaptive per-chat throttle, enriched `/ops` health (throttles + GPU).
 - OpenCode 2.3.0 in Docker: background subagents and fork/subagent badges, MCP
   events, quieter transcripts (card verbosity setting).
+- Compact activity summary on the card (`+3 thoughts · 3 reads · 1 tool`),
+  expandable in place via native Telegram blockquote — no extra messages.
 - Browser tooling: optional OpenCode Browse (real browser via extension) and
   always-on Playwright MCP (headless Chromium for web debugging).
 - Streaming transcription (SSE) with partial text published to the card.

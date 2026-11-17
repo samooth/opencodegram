@@ -9,6 +9,7 @@ import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.
 import type { DashboardManager } from "./dashboard.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
+import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
 import { capDiff, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, shortToolArg, StatusDeps, truncateText } from "./status-render.js";
 
@@ -75,6 +76,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (prompt?.trim()) {
       lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
     }
+    // 4. Compact activity summary (OpenCode 2.3.0 style). One line of counters
+    // plus a single expandable block replaces the separate thought/tool blocks.
+    const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false);
+    if (activityBlock) {
+      lines.push(activityBlock);
+    } else {
+      // Fallback for sessions created before per-turn activity was tracked.
+      const thinking = renderThinkingBottom(s, settings);
+      if (thinking) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${thinking}</blockquote>` : thinking);
+      const shell = renderLatestToolBottom(s, settings);
+      if (shell) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${shell}</blockquote>` : shell);
+    }
     // Subagents (forks) running in background — new in OpenCode 2.3.0.
     const subs = store?.getActiveSubagents?.(s.sessionId);
     if (subs && subs.total > 0) {
@@ -93,12 +106,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 4. TODO checklist for the session (from todo.updated events).
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
-    // 5. Thought (reasoning) — collapse when verbosity is low.
-    const thinking = renderThinkingBottom(s, settings);
-    if (thinking) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${thinking}</blockquote>` : thinking);
-    // 6. Shell / latest tool — collapse when verbosity is low.
-    const shell = renderLatestToolBottom(s, settings);
-    if (shell) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${shell}</blockquote>` : shell);
     // 7. Partial answer in a blockquote, clearly distinct from reasoning.
     if (settings.showPartialText && s.buffer.trim()) {
       const cap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
@@ -127,7 +134,9 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<i>🔀 Esta sesión quedó en segundo plano.</i>");
-    if (settings.showTools && s.toolCallDetails.length) {
+    const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true);
+    if (doneActivity) lines.push(doneActivity);
+    if (settings.showTools && !s.activity && s.toolCallDetails.length) {
       const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;
       const other = s.toolCallDetails.length - shell;
       const parts: string[] = [];
@@ -186,6 +195,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.reasoningBuffer = "";
     s.toolCalls = [];
     s.toolCallDetails = [];
+    s.activity = createTurnActivity();
     s.turnOutputTokens = 0;
     s.turnFirstStreamedAt = undefined;
     s.stopped = false;
@@ -395,6 +405,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
     if (s.deltaFlushTimer) { clearTimeout(s.deltaFlushTimer); s.deltaFlushTimer = undefined; }
     s.statusFinished = true;
+    if (s.activity) closeOpen(s.activity);
     if (s.statusEditPromise) {
       await s.statusEditPromise.catch((err) => console.warn("[status]", err?.message ?? err));
       s.statusEditPromise = undefined;
