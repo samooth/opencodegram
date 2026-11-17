@@ -1,3 +1,4 @@
+import { logger } from "./logger.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
@@ -362,14 +363,14 @@ async function startPrompt(
     await startStatus(chatId, s);
     if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {
-      updateStatus(chatId, s).catch(() => {});
+      updateStatus(chatId, s).catch((err) => logger.warn("messages", "status update failed", String(err)));
     }, STATUS_EDIT_INTERVAL_MS);
     void oc.prompt(s.sessionId, text, files).catch(async (err) => {
       if (s.statusTimer) {
         clearInterval(s.statusTimer);
         s.statusTimer = undefined;
       }
-      await finishStatus(chatId, s).catch(() => {});
+      await finishStatus(chatId, s).catch((err) => logger.warn("messages", "finishStatus failed", String(err)));
       const errMsg = String(err);
       const isLimit = /limit|usage|quota|provider|subscribe|free/i.test(errMsg);
       const limitKb = [[{ text: "Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "Sesiones", callback_data: "panel:sessions" }]];
@@ -384,7 +385,7 @@ async function startPrompt(
       clearInterval(s.statusTimer);
       s.statusTimer = undefined;
     }
-    await finishStatus(chatId, s).catch(() => {});
+    await finishStatus(chatId, s).catch((err) => logger.warn("messages", "finishStatus failed", String(err)));
     const errMsg2 = String(err);
     const isLimit2 = /limit|usage|quota|provider|subscribe|free/i.test(errMsg2);
     const limitKb = [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]];
