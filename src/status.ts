@@ -466,7 +466,10 @@ ${chunk}</blockquote>`,
           );
         }
       }
+      // Drop any stale page the user was browsing mid-turn so the finished
+      // answer is the one on screen (no need to tap "⏭ Última").
       s.transcriptFollow = true;
+      s.transcriptPage = undefined;
       const unified = settings.displayMode === "unified";
       // Keep the finished card attached: it holds the final answer and stays
       // navigable (pagination). The next turn start decides whether it is
@@ -479,14 +482,14 @@ ${chunk}</blockquote>`,
       if (unified && dashboard) {
         await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch((err) => console.warn("[status] dashboard.update failed", err?.message ?? err));
       }
-      // Edits are offered in their own message so the session card keeps its
-      // paginated content intact. A snapshot of this turn's edit details is
-      // persisted under BOTH message ids so the buttons and the 📝 Diff card
-      // button keep working after new turns and restarts.
+      // Edits live INSIDE the session card as a transcript block: one message
+      // per turn, no separate "Edits" message to navigate back from. The same
+      // table + per-file expandable diff presentation is kept. The snapshot is
+      // registered under the card id so the per-file buttons keep working.
       if (editDetails.length && finishedCardId) {
-        const editMessageId = finishedCardId ?? 0;
         const editLines: string[] = [];
         const tableRows: string[] = [];
+        const plainFiles: string[] = [];
         for (const detail of editDetails) {
           const file = relativeEditPath(s, extractEditFile(detail.input) ?? `edit ${editLines.length + 1}`);
           const { added, removed } = editStats(detail.input);
@@ -494,25 +497,14 @@ ${chunk}</blockquote>`,
           const diff = formatEditDiff(detail.input, settings.diffStyle, s.directory);
           const capped = capDiff(diff, 12);
           editLines.push(`✏️ <b>${esc(file)}</b>${diff.trim() ? `\n<blockquote expandable><pre><code class="language-diff">${esc(capped)}</code></pre></blockquote>` : ""}`);
+          plainFiles.push(file);
         }
         const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
-        try {
-          const text = `${sessionHeader(s)}<h4>Edits (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
-          const sent = await tg.sendRichMessage(chatId, text, {
-            ...threadOptsFor(s),
-            reply_markup: { inline_keyboard: finishedKeyboard(editDetails, undefined, s, editMessageId) },
-          });
-          const snapshot = editDetails.map((d) => ({ ...d }));
-          if (sent?.message_id) {
-            pendingEdits.set(sent.message_id, s);
-            store?.rememberPendingEdits(sent.message_id, s.sessionId, snapshot);
-            // Replying to the edits message must route to its session.
-            store?.rememberMessageSession(chatId, sent.message_id, s.sessionId);
-          }
-          if (finishedCardId) store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
-        } catch (err) {
-          console.error("[status] edits message failed", err);
-        }
+        const html = `<h4>✏️ Edits (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
+        const snapshot = editDetails.map((d) => ({ ...d }));
+        store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
+        pendingEdits.set(finishedCardId, s);
+        transcript.addBlock(s, "tools", html, `Edits (${editDetails.length}): ${plainFiles.join(", ")}`);
       }
       return;
     }

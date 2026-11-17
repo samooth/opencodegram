@@ -125,7 +125,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (225 tests across 31 files):
+`bun test` covers (232 tests across 32 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -137,8 +137,8 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/ratethrottle.test.ts` — adaptive edit throttle (429 penalties, decay).
 - `tests/activity.test.ts`, `tests/activity-integration.test.ts`,
   `tests/activity-card.test.ts`, `tests/activity-card-controls.test.ts` —
-  compact activity counters, event recording, card rendering, details toggle and
-  clearing keyboards from old cards.
+  compact activity counters, event recording, per-row expandable card rendering,
+  per-file edit buttons and clearing keyboards from old cards.
 - `tests/callbacks.test.ts`, `tests/events.test.ts`, `tests/panels.test.ts`,
   `tests/sessions.test.ts`, `tests/status.test.ts`, `tests/updates.test.ts` —
   handlers, rendering and routing.

@@ -581,6 +581,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         transcript.addBlock(s, "meta", `<i>${esc(metaLine)}</i>`, metaLine);
       }
       s.transcriptFollow = true;
+      s.transcriptPage = undefined;
       if (publishCard) await publishCard(chatId, s).catch((err) => console.warn("[events] publishCard failed", err?.message ?? err));
       else await transcript.publish(chatId, s, { extraTop: "" }).catch((err) => console.warn("[events] transcript.publish failed", err?.message ?? err));
       if (s.transcriptMessageId) {

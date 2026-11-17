@@ -82,4 +82,13 @@ describe("activity summary in the session card", () => {
     expect(top).toContain("<blockquote expandable>");
     expect(top).not.toContain("texto secreto");
   });
+
+  test("finishStatus returns the card to the latest page", async () => {
+    const { status, s } = makeHarness();
+    s.transcriptFollow = false;
+    s.transcriptPage = 0;
+    await status.finishStatus(7, s);
+    expect(s.transcriptFollow).toBe(true);
+    expect(s.transcriptPage).toBeUndefined();
+  });
 });

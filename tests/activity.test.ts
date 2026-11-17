@@ -147,4 +147,29 @@ describe("turn activity counters", () => {
     expect(out.length).toBeLessThan(2500);
     expect(out.trimEnd().endsWith("</blockquote>")).toBe(true);
   });
+
+  test("groups consecutive shell calls into one terminal-like block", () => {
+    const a = createTurnActivity();
+    recordTool(a, "bash", "bun test", { at: 1000, toolId: "a" });
+    finishTool(a, "a", true, { at: 1100 });
+    recordTool(a, "bash", "git status", { at: 1200, toolId: "b" });
+    finishTool(a, "b", true, { at: 1300 });
+    const out = renderActivity(a, "high", false, 1400, false);
+    expect(out).toContain("Shell (2)");
+    expect(out).toContain("$ bun test");
+    expect(out).toContain("$ git status");
+    expect(out.match(/<blockquote expandable>/g)).toHaveLength(1);
+  });
+
+  test("gives each entry its own expandable block in collapsed mode", () => {
+    const a = createTurnActivity();
+    recordThought(a, "primero", { at: 1000 });
+    closeOpen(a, 1500);
+    recordThought(a, "segundo", { at: 2000 });
+    closeOpen(a, 2500);
+    recordTool(a, "read", "README.md", { at: 3000, toolId: "a" });
+    const out = renderActivity(a, "high", false, 3500, false);
+    expect(out.match(/<blockquote expandable>/g)).toHaveLength(3);
+    expect(out).toContain("Thought</b> · 500ms");
+  });
 });

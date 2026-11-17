@@ -92,4 +92,22 @@ describe("handleCallback", () => {
     expect(s.activityExpanded).toBe(true);
     expect(publishes).toBe(1);
   });
+
+  test("editfile button opens the edited file in the file browser", async () => {
+    const deps = makeDeps();
+    const s = {
+      sessionId: "ses_file", directory: "/workspace",
+      toolCallDetails: [{
+        id: "e1", name: "edit", status: "success",
+        input: JSON.stringify({ filePath: "/workspace/src/x.ts", oldString: "a", newString: "b" }),
+      }],
+    } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    deps.store.rememberPendingEdits(77, s.sessionId, s.toolCallDetails);
+    const opened: string[] = [];
+    deps.files.showFile = async (_chat: number, _thread: unknown, path: string) => { opened.push(path); };
+    const cq = { id: "6", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 77 }, data: "editfile:0" } as any;
+    await handleCallback(deps, cq);
+    expect(opened).toEqual(["/workspace/src/x.ts"]);
+  });
 });

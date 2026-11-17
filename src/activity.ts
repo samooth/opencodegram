@@ -159,12 +159,17 @@ const ICONS: Record<ActivityKind, string> = {
   tool: "🔧",
 };
 
-function renderEntry(e: ActivityEntry, detailCap: number, now: number): string {
+type ActivityBlock = { head: string; detail: string };
+
+function entryHead(e: ActivityEntry, now: number): string {
   const status = e.ok === true ? " ✅" : e.ok === false ? " ❌" : e.open ? " ⏳" : "";
   const duration = fmtDuration(e.durationMs ?? Math.max(0, now - e.at));
-  const head = `${ICONS[e.kind]} <b>${esc(e.label)}</b> · ${duration}${status}`;
-  const detail = e.detail.trim() && detailCap > 0 ? `\n   <i>${esc(truncate(e.detail.trim(), detailCap))}</i>` : "";
-  return head + detail;
+  return `${ICONS[e.kind]} <b>${esc(e.label)}</b> · ${duration}${status}`;
+}
+
+function detailPara(text: string, detailCap: number): string {
+  if (!text.trim() || detailCap <= 0) return "";
+  return `<p><i>${esc(truncate(text.trim(), detailCap))}</i></p>`;
 }
 
 /** Render the compact summary line plus one native expandable detail block. */
@@ -182,11 +187,25 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   const detailCap = verbosity === "low" ? 0 : verbosity === "high" ? 360 : 90;
   const maxEntries = verbosity === "low" ? 8 : verbosity === "high" ? MAX_ENTRIES : 12;
   const visible = a.entries.slice(-maxEntries);
-  const lines: string[] = [];
+  const blocks: ActivityBlock[] = [];
 
   let i = 0;
   while (i < visible.length) {
     const e = visible[i];
+    if (e.kind === "shell") {
+      // Consecutive shell calls share ONE terminal-like block, as in the card's
+      // 🖥 Shell section: `$ command` lines inside a single expandable quote.
+      const run: ActivityEntry[] = [];
+      while (i < visible.length && visible[i].kind === "shell") run.push(visible[i++]);
+      const last = run[run.length - 1];
+      const status = last.ok === true ? " ✅" : last.ok === false ? " ❌" : run.some((x) => x.open) ? " ⏳" : "";
+      const duration = fmtDuration(last.durationMs ?? Math.max(0, now - last.at));
+      const commands = run
+        .map((r) => `<p><code>$ ${esc(truncate(r.detail.trim() || r.label, detailCap || 80))}</code></p>`)
+        .join("");
+      blocks.push({ head: `${ICONS.shell} Shell (${run.length}) · ${duration}${status}`, detail: commands });
+      continue;
+    }
     if (e.kind === "read" || e.kind === "search") {
       const run: ActivityEntry[] = [];
       while (i < visible.length && (visible[i].kind === "read" || visible[i].kind === "search")) run.push(visible[i++]);
@@ -195,27 +214,29 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
       const grouped: string[] = [];
       if (reads) grouped.push(`${reads} ${reads === 1 ? "read" : "reads"}`);
       if (searches) grouped.push(`${searches} ${searches === 1 ? "search" : "searches"}`);
-      lines.push(`→ Explored: ${grouped.join(", ")}`);
-      for (const r of run) lines.push(renderEntry(r, detailCap, now));
-    } else {
-      lines.push(renderEntry(e, detailCap, now));
-      i++;
+      blocks.push({
+        head: `→ Explored: ${grouped.join(", ")}`,
+        detail: run.map((r) => `<p>${esc(r.label)} · <code>${esc(truncate(r.detail.trim() || r.label, detailCap || 80))}</code></p>`).join(""),
+      });
+      continue;
     }
+    blocks.push({ head: entryHead(e, now), detail: detailPara(e.detail, detailCap) });
+    i++;
   }
 
-  // Keep the block well under the card's 3900-char budget so clampText never
-  // cuts it in the middle of a tag (which would make Telegram drop formatting).
-  const renderBody = (ls: string[]) => expanded
-    ? `<blockquote>${ls.map((l) => `<p>${l.replace(/\n   /g, " — ")}</p>`).join("")}</blockquote>`
-    : `<blockquote expandable>\n${ls.join("\n")}\n</blockquote>`;
+  // One expandable block per row gives a native +/- affordance for each thought,
+  // edit and tool — the OpenCode 2.3.0 transcript behavior. The global toggle
+  // switches every row at once for clients without native expandables.
+  const renderBlock = (b: ActivityBlock): string => expanded
+    ? `<blockquote>${b.head}${b.detail}</blockquote>`
+    : `<blockquote expandable>${b.head}${b.detail}</blockquote>`;
+  const renderBody = (bs: ActivityBlock[]) => bs.map(renderBlock).join("\n");
   const budget = expanded ? 1800 : 1400;
-  let kept = lines;
+  let kept = blocks;
   while (kept.length > 1 && renderBody(kept).length > budget) kept = kept.slice(1);
-  if (kept.length !== lines.length) kept = ["<i>… anteriores</i>", ...kept];
+  if (kept.length !== blocks.length) kept = [{ head: "<i>… anteriores</i>", detail: "" }, ...kept];
 
   const prefix = finished ? "−" : "+";
   const hint = expanded ? " ▴" : " ▾";
-  // The rich-message backend collapses bare newlines, so the expanded variant
-  // uses <p> block elements to guarantee one entry per visible line.
   return `${prefix}${parts.join(" · ")}${hint}\n${renderBody(kept)}`;
 }

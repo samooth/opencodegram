@@ -53,4 +53,18 @@ describe("activity card controls", () => {
     expect(cleared).toContain(42);
     expect(s.transcriptMessageId).toBeUndefined();
   });
+
+  test("card keyboard exposes per-file diff and open-file buttons", () => {
+    const { s } = makeHarness();
+    const store = new SessionStore(join(root, "data"));
+    store.rememberPendingEdits(77, s.sessionId, [{
+      id: "e1", name: "edit", status: "success",
+      input: JSON.stringify({ filePath: "/workspace/src/x.ts", oldString: "a", newString: "b" }),
+    }]);
+    const controlled = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
+    s.transcriptMessageId = 77;
+    const flat = controlled.cardKeyboard(s, 0, 0, {}).flat();
+    expect(flat.some((b) => b.callback_data === "edit:0")).toBe(true);
+    expect(flat.some((b) => b.callback_data === "editfile:0")).toBe(true);
+  });
 });

@@ -2,6 +2,7 @@ import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
 import { clampText, esc, markdownToHtml, sessionHeader } from "./util.js";
+import { extractEditFile } from "./editutil.js";
 import {
   paginateTranscript,
   resolvePage,
@@ -304,12 +305,18 @@ ${body}
     if (s.lastFinalText) tools.push({ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` });
     tools.push({ text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` });
     keyboard.push(tools);
-    // 📝 Diff of this turn's edits: snapshot is registered on the card id when
-    // the turn finishes, so the button survives new turns and restarts.
+    // 📝 Edits are part of this card. The snapshot is registered on its message
+    // id at turn end, so per-file buttons survive new turns and restarts.
     if (!opts?.working && s.transcriptMessageId) {
-      const edits = store.getPendingEditsSnapshot(s.transcriptMessageId)?.edits?.length ?? 0;
-      if (edits > 0) {
-        keyboard.push([{ text: `📝 Diff (${edits})`, callback_data: `edits:full:${s.transcriptMessageId}` }]);
+      const edits = store.getPendingEditsSnapshot(s.transcriptMessageId)?.edits ?? [];
+      for (let idx = 0; idx < edits.length; idx++) {
+        const raw = extractEditFile(edits[idx]?.input) ?? `edit ${idx + 1}`;
+        const label = raw.split("/").pop() ?? raw;
+        keyboard.push([{ text: `✏️ ${label}`.slice(0, 64), callback_data: `edit:${idx}` }]);
+        keyboard.push([{ text: `📄 ${label}`.slice(0, 64), callback_data: `editfile:${idx}` }]);
+      }
+      if (edits.length) {
+        keyboard.push([{ text: `📝 Diff (${edits.length})`, callback_data: `edits:full:${s.transcriptMessageId}` }]);
       }
     }
     if (!opts?.unified) {

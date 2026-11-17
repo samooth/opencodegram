@@ -9,6 +9,7 @@ import type { ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
+import { extractEditFile } from "./editutil.js";
 import { showSessionPicker } from "./messages.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
@@ -52,6 +53,7 @@ const PREFIXES = [
   "profile:",
   "viewfull:",
   "activity:",
+  "editfile:",
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -875,6 +877,24 @@ async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   }
 }
 
+/** Open the file of an edited entry directly in the file browser. */
+async function handleEditFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const m = data.match(/^editfile:(\d+)$/);
+  if (!m) return;
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  if (messageId === undefined) return;
+  const snap = deps.store.getPendingEditsSnapshot(messageId);
+  const detail = snap?.edits?.[Number(m[1])];
+  const raw = detail ? extractEditFile(detail.input) : undefined;
+  if (!raw || !snap) {
+    await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  const base = deps.store.findSessionById(snap.sessionId)?.directory;
+  const path = raw.startsWith("/") ? raw : base ? join(base, raw) : raw;
+  await deps.files.showFile(chatId, threadId, path, { forcePreview: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
 /** Show/hide the compact activity detail inline on the same card message. */
 async function handleActivityToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, _threadId: number | undefined, _messageId: number | undefined, data: string) {
   const m = data.match(/^activity:(.+)$/);
@@ -890,6 +910,7 @@ async function handleActivityToggle(deps: BotDeps, cq: TelegramCallbackQuery, ch
 
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "activity:": handleActivityToggle,
+  "editfile:": handleEditFile,
   "tpage:": handleTranscriptPage,
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,
