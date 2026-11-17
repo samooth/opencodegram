@@ -71,7 +71,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (tokens && tokenElapsed > 0 && settings.showTokenSpeed) {
       progressParts.push(`⚡ ${(tokens / tokenElapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`);
     }
-    if (progressParts.length) lines.push(`<i>${esc(progressParts.join(" · "))}</i>`);
+    if (progressParts.length) lines.push(`<p><i>${esc(progressParts.join(" · "))}</i></p>`);
     // 3. Prompt being answered — context before detail.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) {
@@ -93,7 +93,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const subs = store?.getActiveSubagents?.(s.sessionId);
     if (subs && subs.total > 0) {
       const label = subs.busy > 0 ? `🤖 ${subs.busy}/${subs.total} subagentes activos` : `🤖 ${subs.total} subagentes`;
-      lines.push(`<i>${label}</i>`);
+      lines.push(`<p><i>${label}</i></p>`);
     }
     // Recent MCP events (experimental, 2.3.0).
     const mcpEvts = mcpEvents?.get(s.sessionId);
@@ -102,7 +102,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`<blockquote expandable>🔌 MCP · ${esc(latest.server)}\n${esc(latest.text)}</blockquote>`);
     }
     if (s.detached && !s.stopped) {
-      lines.push("<i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i>");
+      lines.push("<p><i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i></p>");
     }
     // 4. TODO checklist for the session (from todo.updated events).
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
@@ -111,7 +111,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showPartialText && s.buffer.trim()) {
       const cap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
       const tail = s.buffer.trim().slice(-cap);
-      lines.push(`💬 <i>escribiendo…</i>\n<blockquote>${esc(tail)}</blockquote>`);
+      lines.push(`<p><i>💬 escribiendo…</i></p>\n<blockquote>${esc(tail)}</blockquote>`);
     }
     // 8. COT last, collapsed.
     if (!unified && settings.showCot && s.cotBuffer?.trim()) {
@@ -131,10 +131,10 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
     const lines: string[] = ["✅ <b>Done</b>"];
     const prompt = store?.lastPromptBySession.get(s.sessionId);
-    if (prompt?.trim()) lines.push(`<i>📝 ${esc(clampText(prompt.trim(), 300))}</i>`);
+    if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(clampText(prompt.trim(), 300))}</i></p>`);
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
-    if (s.detached) lines.push("<i>🔀 Esta sesión quedó en segundo plano.</i>");
+    if (s.detached) lines.push("<p><i>🔀 Esta sesión quedó en segundo plano.</i></p>");
     const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), s.activityExpanded === true);
     if (doneActivity) lines.push(doneActivity);
     if (settings.showTools && !s.activity && s.toolCallDetails.length) {
@@ -143,7 +143,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const parts: string[] = [];
       if (shell) parts.push(`${shell} shell`);
       if (other) parts.push(`${other} tools`);
-      lines.push(`<i>🔧 ${parts.join(" · ")}</i>`);
+      lines.push(`<p><i>🔧 ${parts.join(" · ")}</i></p>`);
     }
     return lines.join("\n");
   };

@@ -332,28 +332,32 @@ ${body}
     // 📖 Files read this turn: open the actual content instead of a bare name.
     const readPaths = (s.activity?.entries ?? [])
       .filter((e) => e.kind === "read" && e.detail.trim())
-      .slice(-6)
+      .slice(-3)
       .map((e) => e.detail.trim().replace(/[\r\n]/g, " ").slice(0, 160));
     for (const key of [...activityReadPaths.keys()]) {
       if (key.startsWith(`${s.sessionId}:`)) activityReadPaths.delete(key);
     }
     const seenReads = new Set<string>();
+    const readButtons: Array<{ text: string; callback_data: string }> = [];
     for (const path of readPaths) {
       if (seenReads.has(path)) continue;
       seenReads.add(path);
       const key = `${s.sessionId}:${seenReads.size - 1}`;
       rememberActivityReadPath(key, path);
-      keyboard.push([{ text: `📖 ${path.split("/").pop() ?? path}`.slice(0, 64), callback_data: `readfile:${key}` }]);
+      readButtons.push({ text: `📖 ${path.split("/").pop() ?? path}`.slice(0, 64), callback_data: `readfile:${key}` });
     }
+    if (readButtons.length) keyboard.push(readButtons);
     // 📝 Edits are part of this card. The snapshot is registered on its message
     // id at turn end, so per-file buttons survive new turns and restarts.
     if (!opts?.working && s.transcriptMessageId) {
       const edits = store.getPendingEditsSnapshot(s.transcriptMessageId)?.edits ?? [];
-      for (let idx = 0; idx < edits.length; idx++) {
+      for (let idx = Math.max(0, edits.length - 3); idx < edits.length; idx++) {
         const raw = extractEditFile(edits[idx]?.input) ?? `edit ${idx + 1}`;
         const label = raw.split("/").pop() ?? raw;
-        keyboard.push([{ text: `✏️ ${label}`.slice(0, 64), callback_data: `edit:${idx}` }]);
-        keyboard.push([{ text: `📄 ${label}`.slice(0, 64), callback_data: `editfile:${idx}` }]);
+        keyboard.push([
+          { text: `✏️ ${label}`.slice(0, 64), callback_data: `edit:${idx}` },
+          { text: `📄 ${label}`.slice(0, 64), callback_data: `editfile:${idx}` },
+        ]);
       }
       if (edits.length) {
         keyboard.push([{ text: `📝 Diff (${edits.length})`, callback_data: `edits:full:${s.transcriptMessageId}` }]);

@@ -84,6 +84,15 @@ describe("activity summary in the session card", () => {
     expect(top).not.toContain("texto secreto");
   });
 
+  test("progress and prompts render as block elements, not glued inline text", async () => {
+    const { status, s, published } = makeHarness();
+    s.turnOutputTokens = 500;
+    s.turnFirstStreamedAt = Date.now() - 4000;
+    await status.publishCard(7, s);
+    const top = published[0]?.extraTop ?? "";
+    expect(top).toContain("<p><i>⚡");
+  });
+
   test("startStatus hides resources by default on the first turn", async () => {
     const { status, s } = makeHarness();
     s.resourcesCollapsed = undefined;

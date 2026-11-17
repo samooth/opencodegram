@@ -83,6 +83,24 @@ describe("activity card controls", () => {
     expect(flat.some((b) => b.callback_data === `resources:${s.sessionId}`)).toBe(true);
   });
 
+  test("file buttons are capped and grouped instead of one huge list", () => {
+    const { s } = makeHarness();
+    const store = new SessionStore(join(root, "data"));
+    for (let i = 0; i < 10; i++) {
+      recordTool(s.activity!, "read", `src/archivo${i}.ts`, { at: 1000 + i, toolId: `r${i}` });
+    }
+    const edits = Array.from({ length: 10 }, (_, i) => ({
+      id: `e${i}`, name: "edit", status: "success",
+      input: JSON.stringify({ filePath: `/workspace/src/archivo${i}.ts`, oldString: "a", newString: "b" }),
+    }));
+    store.rememberPendingEdits(77, s.sessionId, edits);
+    s.transcriptMessageId = 77;
+    const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
+    const rows = tm.cardKeyboard(s, 0, 0, {});
+    const fileButtons = rows.flat().filter((b) => /^(readfile|edit|editfile):/.test(b.callback_data));
+    expect(fileButtons.length).toBeLessThanOrEqual(9);
+  });
+
   test("renderPage hides the resource block when collapsed", () => {
     const { s } = makeHarness();
     const store = new SessionStore(join(root, "data"));
