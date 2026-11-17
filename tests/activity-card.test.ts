@@ -14,6 +14,7 @@ function makeHarness(overrides: Partial<ChatSettings> = {}) {
     refloat: async () => 1,
   } as any;
   const settings = { ...DEFAULT_SETTINGS, cardVerbosity: "medium" as const, ...overrides };
+  const store = { lastPromptBySession: new Map<string, string>(), getTodos: () => [] } as any;
   const status = createStatusManager({
     tg: {} as any,
     threadOptsFor: () => ({}),
@@ -22,14 +23,14 @@ function makeHarness(overrides: Partial<ChatSettings> = {}) {
     rememberCot: () => {},
     rememberStatusMessage: () => {},
     forgetStatusMessage: () => {},
-    store: undefined,
+    store,
     transcript,
   } as any);
   const s: ChatSession = {
     sessionId: "ses_card", buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [],
     stopped: false, targetChatId: 7, activity: createTurnActivity(),
   } as ChatSession;
-  return { status, s, published };
+  return { status, s, published, store };
 }
 
 describe("activity summary in the session card", () => {
@@ -82,6 +83,27 @@ describe("activity summary in the session card", () => {
     expect(top).toContain("+1 thought");
     expect(top).toContain("<blockquote>");
     expect(top).not.toContain("texto secreto");
+  });
+
+  test("live card truncates the prompt to a short hint", async () => {
+    const { status, s, published, store } = makeHarness();
+    const long = "Explicame de que va este repo y ademas quiero que detalles todos los modos de la tarjeta y sus botones por favor";
+    store.lastPromptBySession.set(s.sessionId, long);
+    await status.publishCard(7, s);
+    const top = published[0]?.extraTop ?? "";
+    expect(top).toContain(long.slice(0, 80));
+    expect(top).not.toContain(long);
+    expect(top).toContain("…");
+  });
+
+  test("done strip also truncates the prompt", async () => {
+    const { status, s, published, store } = makeHarness();
+    const long = "Explicame de que va este repo y ademas quiero que detalles todos los modos de la tarjeta y sus botones por favor";
+    store.lastPromptBySession.set(s.sessionId, long);
+    await status.finishStatus(7, s);
+    const top = published[published.length - 1]?.extraTop ?? "";
+    expect(top).toContain(long.slice(0, 80));
+    expect(top).not.toContain(long);
   });
 
   test("low token counts show a count but no misleading tok/s", async () => {

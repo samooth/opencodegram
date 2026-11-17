@@ -115,7 +115,7 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (258 tests across 34 files):
+`bun test` runs the Bun suite in `tests/` (260 tests across 34 files):
 
 - `store.test.ts` — route/tab isolation, persistence and retirement.
 - `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.

@@ -79,7 +79,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 3. Prompt being answered — context before detail.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) {
-      lines.push(`<p><i>📝 ${esc(clampText(prompt.trim(), 300))}</i></p>`);
+      lines.push(`<p><i>📝 ${esc(truncate(prompt.trim(), 80))}</i></p>`);
     }
     // 4. Compact activity summary (OpenCode 2.3.0 style). One line of counters
     // plus a single expandable block replaces the separate thought/tool blocks.
@@ -135,7 +135,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
     const lines: string[] = ["✅ <b>Done</b>"];
     const prompt = store?.lastPromptBySession.get(s.sessionId);
-    if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(clampText(prompt.trim(), 300))}</i></p>`);
+    if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(truncate(prompt.trim(), 80))}</i></p>`);
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<p><i>🔀 Esta sesión quedó en segundo plano.</i></p>");
