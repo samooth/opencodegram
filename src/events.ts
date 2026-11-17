@@ -387,7 +387,10 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
   if (!s.deltaFlushTimer) {
     s.deltaFlushTimer = setTimeout(() => {
       s.deltaFlushTimer = undefined;
-      updateStatus(chatId, s).catch((err) => console.warn("[events]", err?.message ?? err));
+      // Resolve the delivery target at flush time: the session may have moved
+      // to another tab during the 500ms coalescing window.
+      const targetChat = deps.store.resolveChatId(s.sessionId) ?? chatId;
+      updateStatus(targetChat, s).catch((err) => console.warn("[events]", err?.message ?? err));
     }, 500);
   }
 };
