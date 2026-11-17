@@ -125,11 +125,12 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (241 tests across 32 files):
+`bun test` covers (244 tests across 33 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
-- `tests/files.test.ts` — path confinement, symlinks, list/find/read, `/file`.
+- `tests/files.test.ts`, `tests/md-lifecycle.test.ts` — path confinement,
+  symlinks, list/find/read, `/file` and create/edit/delete lifecycle of an md file.
 - `tests/filebrowser.test.ts` — listing, navigation, preview, search, expiry, documents.
 - `tests/commands.test.ts` — command dispatch, usage, safe `/file`.
 - `tests/util.test.ts` — `:15` retry timing, mention normalization, parsing.

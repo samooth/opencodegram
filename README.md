@@ -33,7 +33,7 @@ with per-topic isolation, rich status cards and inline keyboards.
   for web debugging). OpenCode pinned to 2.3.0.
 - **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
   fork/subagent badges and background-subagent counts.
-- **Tests** — 241 Bun tests across 32 files + TypeScript typecheck.
+- **Tests** — 244 Bun tests across 33 files + TypeScript typecheck.
 
 ## Quick start
 
