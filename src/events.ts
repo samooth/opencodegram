@@ -840,7 +840,7 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     if (sessionId && latestPrompt) updateRetryPrompt(sessionId, latestPrompt);
     const promptForRetry = latestPrompt;
     if (s?.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
-    if (s) await finishStatus(chatId, s);
+    if (s) await finishStatus(chatId, s).catch((err) => console.warn("[events] finishStatus failed", err?.message ?? err));
     if (sessionId && !isRateLimit) cancelAutoRetry(sessionId);
 
     // Retry only prompts sent by this process and only up to
@@ -893,11 +893,11 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
         chatId,
         sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}\n\n⛔ Auto-retry limit reached (${decision.attempts}/${decision.maxAttempts}). Use /retry to try again manually.`,
         { ...threadOpts(threadId), reply_markup: { inline_keyboard: [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } },
-      );
+      ).catch((err) => console.warn("[events] exhausted notice failed", err?.message ?? err));
       retryMessageBySession.delete(sid);
       cancelAutoRetry(sid);
     } else if (decision.action === "none") {
-      await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId));
+      await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId)).catch((err) => console.warn("[events] failure notice failed", err?.message ?? err));
       if (sessionId) retryMessageBySession.delete(sessionId);
     }
     // "wait": a retry is already pending for this prompt; avoid duplicate events.
