@@ -94,7 +94,12 @@ async function main() {
     threadOptsFor: (s) => store.threadOptsFor(s),
     renderResources: (s) => {
       const chatId = store.resolveChatId(s.sessionId);
-      if (chatId !== undefined && settings.get(chatId).displayMode === "unified") return "";
+      if (chatId !== undefined) {
+        const st = settings.get(chatId);
+        if (st.displayMode === "unified" || !st.showResourceUsage) return "";
+        s.cardTheme = st.cardTheme;
+        return renderResourceBlock(s, { history: st.resourceHistory });
+      }
       return renderResourceBlock(s);
     },
   });
@@ -175,9 +180,11 @@ async function main() {
     })();
     await Promise.race([restoreAll, globalTimeout]);
   })().catch(() => {});
+  // Downloaded media lives in /tmp and must not depend on session archiving:
+  // clean it unconditionally so attachments do not pile up forever.
+  sessions.cleanupStaleAttachments(1).catch(() => {});
   if (config.AUTO_CLEANUP_DAYS > 0) {
     sessions.cleanupStaleSessions(config.AUTO_CLEANUP_DAYS).catch(() => {});
-    sessions.cleanupStaleAttachments(1).catch(() => {});
   }
 
   /** Append a line to a rotating log (1 MB -> `.1`). Never breaks the bot. */
@@ -266,15 +273,20 @@ async function main() {
   // loop blocks forever, and in webhook mode there is no blocking call at all.
   let webhookServer: ReturnType<typeof createWebhookServer> | undefined;
   let stopping = false;
-  const stopAll = () => {
-    if (stopping) return;
+  let shutdownPromise: Promise<void> | undefined;
+  const stopAll = (): Promise<void> => {
+    if (stopping) return shutdownPromise ?? Promise.resolve();
     stopping = true;
     try { ops.stop(); } catch {}
     try { webhookServer?.stop(); } catch {}
     requestStopPolling();
+    // The transcript save is debounced (2 s); without an explicit flush the
+    // last turn (including the final answer) is lost on shutdown.
+    shutdownPromise = store.flushTranscripts().catch((err) => console.warn("[shutdown] transcript flush failed", err?.message ?? err));
+    return shutdownPromise;
   };
-  process.on("SIGINT", stopAll);
-  process.on("SIGTERM", stopAll);
+  process.on("SIGINT", () => { void stopAll().finally(() => process.exit(0)); });
+  process.on("SIGTERM", () => { void stopAll().finally(() => process.exit(0)); });
 
   if (config.WEBHOOK_MODE) {
     if (!config.WEBHOOK_URL) {
@@ -295,7 +307,7 @@ async function main() {
     console.log("[opencodegram] starting polling...");
     await startPolling(deps);
     // The polling loop only returns after requestStopPolling() from a signal.
-    await new Promise((r) => setTimeout(r, 1500));
+    await stopAll();
     console.log("[opencodegram] shutting down");
     process.exit(0);
   }

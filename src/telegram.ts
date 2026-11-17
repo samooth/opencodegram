@@ -341,9 +341,14 @@ export class TelegramClient {
         console.error("[telegram] editRichMessage failed", chatId, messageId, "len=", safe.length, "err=", msg);
       }
       // The message is gone: let callers recover (e.g. resend the card).
-      // Other failures are swallowed to avoid breaking existing callers; the
-      // rate-limit backoff above prevents tight retry loops on 429.
-      if (/message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
+      // Permanent 400s (invalid buttons, bad entities, invalid rich payload)
+      // must also surface: swallowing them used to leave the card frozen on
+      // stale content forever. 429 keeps the backoff path above and resolves
+      // quietly so it cannot spin.
+      if (
+        /message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg) ||
+        (/Telegram editMessageText failed: 400\b/i.test(msg) && !/message is too long|RICH_MESSAGE_TEXT_TOO_LONG/i.test(msg))
+      ) {
         throw err;
       }
       return undefined;
@@ -369,7 +374,10 @@ export class TelegramClient {
       if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg) && !/message was deleted/i.test(msg)) {
         console.error("[telegram] editRichMessageMarkdown failed", chatId, messageId, "len=", safe.length, "err=", msg);
       }
-      if (/message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
+      if (
+        /message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg) ||
+        (/Telegram editMessageText failed: 400\b/i.test(msg) && !/message is too long|RICH_MESSAGE_TEXT_TOO_LONG/i.test(msg))
+      ) {
         throw err;
       }
       return undefined;

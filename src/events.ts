@@ -609,7 +609,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           const parts = sections.length ? sections : splitMarkdown(finalText, 3200);
           for (let i = 0; i < parts.length; i++) {
             const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
-            const resourceSuffix = i === parts.length - 1 ? `\n${renderResourceBlock(s)}` : "";
+            const resourceSuffix = i === parts.length - 1 && st.showResourceUsage ? `\n${renderResourceBlock(s, { history: st.resourceHistory })}` : "";
             const piece = `${sessionHeader(s, undefined, (settings.get(chatId).sessionNameInMessages ?? true))}${prefix}<blockquote>${markdownToHtml(parts[i])}</blockquote>${resourceSuffix}`;
             await tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts2).catch((err) => console.warn("[events]", err?.message ?? err));
           }
@@ -652,7 +652,9 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           extraHtml += `\n\n<blockquote expandable>🔧 Tool calls (${otherDetails.length})\n${body}</blockquote>`;
         }
       }
-      const finalHtml = sessionHeader(s, undefined, (settings.get(chatId).sessionNameInMessages ?? true)) + `<blockquote>${answerHtml}</blockquote>` + extraHtml + copyRow + `\n${renderResourceBlock(s)}`;
+      const finalSt = settings.get(chatId);
+      const resourcesHtml = finalSt.showResourceUsage ? `\n${renderResourceBlock(s, { history: finalSt.resourceHistory })}` : "";
+      const finalHtml = sessionHeader(s, undefined, (finalSt.sessionNameInMessages ?? true)) + `<blockquote>${answerHtml}</blockquote>` + extraHtml + copyRow + resourcesHtml;
       // Always send a new message: editing the previous final is confusing.
       const finalMessage = await tg.sendRichMessage(chatId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
         console.error("[send final]", err);

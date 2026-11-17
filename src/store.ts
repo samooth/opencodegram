@@ -8,6 +8,15 @@ import { TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_T
 import { esc, clampText } from "./util.js";
 import { renderResourceBlock, ensureGpuCache } from "./resources.js";
 import { logger } from "./logger.js";
+import { readJsonSafe, writeJsonAtomic } from "./persist.js";
+
+/** Persisted edit snapshots kept for the "full diff" buttons. */
+const PENDING_EDITS_MAX = 200;
+/** Upper bound for a single input/output field inside a snapshot. */
+const PENDING_EDIT_FIELD_MAX = 24_000;
+
+const clampField = (value: string | undefined): string | undefined =>
+  value && value.length > PENDING_EDIT_FIELD_MAX ? value.slice(0, PENDING_EDIT_FIELD_MAX) + "\n…" : value;
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
 
@@ -326,10 +335,9 @@ export class SessionStore {
 
   saveStatusMessages = () => {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, { chatId: number; threadId?: number; messageId: number }> = {};
       for (const [sid, info] of this.statusMessageBySession) obj[sid] = info;
-      writeFileSync(this.statusMessagesFile, JSON.stringify(obj, null, 2));
+      writeJsonAtomic(this.statusMessagesFile, obj);
     } catch (err) {
       logger.error("store", "[statusMessages] save failed", err);
     }
@@ -460,10 +468,9 @@ export class SessionStore {
 
   private saveTodos = () => {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, TodoItem[]> = {};
       for (const [sid, todos] of this.todosBySession) obj[sid] = todos;
-      writeFileSync(this.todosFile, JSON.stringify(obj), "utf8");
+      writeJsonAtomic(this.todosFile, obj, false);
     } catch (err) {
       logger.error("store", "[todos] save failed", err);
     }
@@ -471,14 +478,13 @@ export class SessionStore {
 
   private saveTurnPrompts = () => {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, Record<string, string>> = {};
       for (const [sid, map] of this.turnPromptsBySession) {
         const inner: Record<string, string> = {};
         for (const [t, p] of map) inner[String(t)] = p;
         obj[sid] = inner;
       }
-      writeFileSync(this.turnPromptsFile, JSON.stringify(obj), "utf8");
+      writeJsonAtomic(this.turnPromptsFile, obj, false);
     } catch (err) {
       logger.error("store", "[turnPrompts] save failed", err);
     }
@@ -556,8 +562,27 @@ export class SessionStore {
    * working after new turns and after restarts).
    */
   rememberPendingEdits = (messageId: number, sessionId: string, edits?: EditDetail[]) => {
-    this.pendingEditsByMessage.set(messageId, { sessionId, edits });
+    // Snapshots carry raw tool input/output, which can be huge for file writes.
+    // Cap each field and keep only the newest entries so the JSON file (which
+    // is rewritten on every turn) stays small.
+    const compact = edits?.map((e) => ({
+      ...e,
+      input: clampField(e.input),
+      output: clampField(e.output),
+    }));
+    this.pendingEditsByMessage.delete(messageId);
+    this.pendingEditsByMessage.set(messageId, { sessionId, edits: compact });
+    this.prunePendingEdits();
     this.savePendingEdits();
+  };
+
+  /** Drop the oldest edit snapshots beyond the retention cap. */
+  private prunePendingEdits = () => {
+    while (this.pendingEditsByMessage.size > PENDING_EDITS_MAX) {
+      const oldest = this.pendingEditsByMessage.keys().next();
+      if (oldest.done) break;
+      this.pendingEditsByMessage.delete(oldest.value);
+    }
   };
 
   getPendingEditsSession = (messageId: number): string | undefined => {
@@ -575,10 +600,9 @@ export class SessionStore {
 
   saveButtons = () => {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, Array<{ label: string; text: string }>> = {};
       for (const [chatId, buttons] of this.customButtonsByChat) obj[String(chatId)] = buttons;
-      writeFileSync(this.buttonsFile, JSON.stringify(obj, null, 2));
+      writeJsonAtomic(this.buttonsFile, obj);
     } catch (err) {
       logger.error("store", "[buttons] save failed", err);
     }
@@ -586,10 +610,9 @@ export class SessionStore {
 
   savePendingEdits = () => {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, { sessionId: string; edits?: EditDetail[] }> = {};
       for (const [mid, snap] of this.pendingEditsByMessage) obj[String(mid)] = snap;
-      writeFileSync(this.pendingEditsFile, JSON.stringify(obj, null, 2));
+      writeJsonAtomic(this.pendingEditsFile, obj);
     } catch (err) {
       logger.error("store", "[pendingEdits] save failed", err);
     }
@@ -641,7 +664,12 @@ export class SessionStore {
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
     this.deliveryBySession.delete(sessionId);
+    this.todosBySession.delete(sessionId);
+    this.turnPromptsBySession.delete(sessionId);
+    this.pendingTurnPromptBySession.delete(sessionId);
+    this.sessionStatusBySession.delete(sessionId);
     this.transcriptBySession.delete(sessionId);
+    void this.deleteTranscriptFile(sessionId);
     for (const [key, dash] of this.dashboardByRoute) if (dash.sessionId === sessionId) this.dashboardByRoute.delete(key);
     this.saveThreads();
     this.saveChats();
@@ -652,6 +680,8 @@ export class SessionStore {
     this.saveCot();
     this.saveLastChats();
     this.saveLastPrompts();
+    this.saveTodos();
+    this.saveTurnPrompts();
     this.savePendingEdits();
     this.saveLastInteracted();
     this.saveDelivery();
@@ -717,25 +747,49 @@ export class SessionStore {
     }
     this.saveStatusMessages();
     const prefix = `${chatId}:`;
+    const affected = new Set<string>();
     for (const key of [...this.messageToSession.keys()]) {
       if (key.startsWith(prefix)) this.messageToSession.delete(key);
     }
     this.saveMessages();
-    for (const key of [...this.activeSessionByRoute.keys()]) {
-      if (key.startsWith(prefix)) this.activeSessionByRoute.delete(key);
+    for (const [key, sid] of [...this.activeSessionByRoute]) {
+      if (key.startsWith(prefix)) {
+        this.activeSessionByRoute.delete(key);
+        affected.add(sid);
+      }
     }
-    for (const key of [...this.lastInteractedSessionByRoute.keys()]) {
+    for (const [key, sid] of [...this.lastInteractedSessionByRoute]) {
       if (key.startsWith(prefix)) this.lastInteractedSessionByRoute.delete(key);
     }
+    // Drop the session -> chat/thread/delivery mappings too. Otherwise the
+    // startup migration rebuilds the active route from threads.json and the
+    // dead chat comes back on every restart.
+    for (const [sid, cid] of this.chatBySession) if (cid === chatId) affected.add(sid);
+    for (const [sid, info] of this.deliveryBySession) if (info.chatId === chatId) affected.add(sid);
+    for (const sid of affected) {
+      this.threadBySession.delete(sid);
+      this.chatBySession.delete(sid);
+      this.lastChatBySession.delete(sid);
+      this.deliveryBySession.delete(sid);
+      const cs = this.sessionsById.get(sid);
+      if (cs) {
+        cs.targetChatId = undefined;
+        cs.targetThreadId = undefined;
+      }
+    }
+    this.saveThreads();
+    this.saveChats();
+    this.saveLastChats();
+    this.saveDelivery();
+    this.saveLastInteracted();
     this.saveActiveSessions();
   };
 
   saveDashboard = () => {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, { sessionId: string; chatId: number; threadId?: number; messageId: number }> = {};
       for (const [key, value] of this.dashboardByRoute) obj[key] = value;
-      writeFileSync(this.dashboardFile, JSON.stringify(obj, null, 2));
+      writeJsonAtomic(this.dashboardFile, obj);
     } catch (err) {
       logger.error("store", "[dashboard] save failed", err);
     }
@@ -822,16 +876,37 @@ export class SessionStore {
       // Only rewrite sessions that changed since the last save.
       const dirty = [...this.dirtyTranscripts];
       this.dirtyTranscripts.clear();
+      let failed = false;
       for (const sid of dirty) {
         const blocks = this.transcriptBySession.get(sid);
         if (!blocks) continue;
         const file = join(this.transcriptsDir, `${sid}.json`);
-        try { await writeFile(file, JSON.stringify(blocks), "utf8"); }
-        catch (err) { logger.error("store", "[transcripts] save failed", sid, err); this.dirtyTranscripts.add(sid); }
+        const tmp = `${file}.${process.pid}.tmp`;
+        try {
+          // Atomic replace: a crash mid-write cannot truncate the transcript.
+          await writeFile(tmp, JSON.stringify(blocks), "utf8");
+          await rename(tmp, file);
+        } catch (err) {
+          failed = true;
+          logger.error("store", "[transcripts] save failed", sid, err);
+          this.dirtyTranscripts.add(sid);
+        }
       }
+      // Retry failed writes even if no new block arrives (otherwise the last
+      // turn of a session could be lost on shutdown).
+      if (failed) this.scheduleSaveTranscripts(5000);
     } catch (err) {
       logger.error("store", "[transcripts] save failed", err);
     }
+  };
+
+  /** Cancel the debounce and write every pending transcript right away. */
+  flushTranscripts = async (): Promise<void> => {
+    if (this.transcriptsSaveTimer) {
+      clearTimeout(this.transcriptsSaveTimer);
+      this.transcriptsSaveTimer = undefined;
+    }
+    await this.saveTranscripts();
   };
 
   private deleteTranscriptFile = async (sessionId: string): Promise<void> => {
@@ -855,13 +930,12 @@ export class SessionStore {
     this.transcriptsSaveTimer.unref?.();
   };
 
-  /** Generic JSON persistence: serialize entries, create dataDir, log on failure. */
+  /** Generic JSON persistence: serialize entries, log on failure. */
   private saveJson<T>(file: string, entries: Iterable<readonly [string, T]>, tag: string, pretty = true): void {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, T> = {};
       for (const [k, v] of entries) obj[k] = v;
-      writeFileSync(file, JSON.stringify(obj, null, pretty ? 2 : 0));
+      writeJsonAtomic(file, obj, pretty);
     } catch (err) {
       logger.error("store", `${tag} save failed`, err);
     }
@@ -869,10 +943,9 @@ export class SessionStore {
 
   private saveNumberMap(file: string, map: Map<string, number>, tag: string) {
     try {
-      mkdirSync(this.dataDir, { recursive: true });
       const obj: Record<string, number> = {};
       for (const [k, v] of map) obj[k] = v;
-      writeFileSync(file, JSON.stringify(obj, null, 2));
+      writeJsonAtomic(file, obj);
     } catch (err) {
       logger.error("store", `${tag} save failed`, err);
     }
@@ -1083,13 +1156,18 @@ export class SessionStore {
     }
 
     // Load persisted pending-edits snapshots (messageId -> {sessionId, edits}).
-    // Old installs stored a plain sessionId string; accept both.
-    try {
-      if (existsSync(this.pendingEditsFile)) {
-        const parsed = JSON.parse(readFileSync(this.pendingEditsFile, "utf8")) as Record<string, string | { sessionId: string; edits?: EditDetail[] }>;
-        for (const [mid, value] of Object.entries(parsed)) {
-          const id = Number(mid);
-          if (!Number.isFinite(id)) continue;
+    // Old installs stored a plain sessionId string; accept both. Entries are
+    // pruned to the newest ones (message ids grow monotonically) so a legacy
+    // file cannot keep the map (and its rewrite) unbounded.
+    {
+      const parsed = readJsonSafe<Record<string, string | { sessionId: string; edits?: EditDetail[] }>>(this.pendingEditsFile, "store");
+      if (parsed) {
+        const entries = Object.entries(parsed)
+          .map(([mid, value]) => [Number(mid), value] as const)
+          .filter(([id]) => Number.isFinite(id))
+          .sort((a, b) => a[0] - b[0])
+          .slice(-PENDING_EDITS_MAX);
+        for (const [id, value] of entries) {
           if (typeof value === "string") {
             if (value) this.pendingEditsByMessage.set(id, { sessionId: value });
           } else if (value?.sessionId) {
@@ -1097,8 +1175,6 @@ export class SessionStore {
           }
         }
       }
-    } catch (err) {
-      logger.error("store", "[pendingEdits] load failed", err);
     }
 
     // already records which session belongs to each topic, so reuse it.

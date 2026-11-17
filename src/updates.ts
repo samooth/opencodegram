@@ -1,10 +1,10 @@
 import type { BotDeps } from "./context.js";
 import type { TelegramUpdate } from "./telegram.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { handleCallback } from "./callbacks.js";
 import { handleMessage } from "./messages.js";
 import { POLL_BACKOFF_MS } from "./constants.js";
+import { readJsonSafe, writeJsonAtomic } from "./persist.js";
 
 let stopRequested = false;
 export function requestStopPolling(): void { stopRequested = true; }
@@ -36,8 +36,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
 
   const saveOffset = (value: number) => {
     try {
-      mkdirSync(store.dataDir, { recursive: true });
-      writeFileSync(offsetFile, JSON.stringify({ offset: value, botId }));
+      writeJsonAtomic(offsetFile, { offset: value, botId }, false);
     } catch (err) {
       console.error("[poll] could not persist offset", err);
     }
@@ -87,8 +86,8 @@ export async function startPolling(deps: BotDeps): Promise<void> {
 
 function loadOffset(file: string, botId?: number): number {
   try {
-    if (!existsSync(file)) return 0;
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as { offset?: unknown; botId?: unknown };
+    const parsed = readJsonSafe<{ offset?: unknown; botId?: unknown }>(file, "poll");
+    if (!parsed) return 0;
     const storedBotId = Number(parsed?.botId);
     if (botId && Number.isFinite(storedBotId) && storedBotId > 0 && storedBotId !== botId) {
       console.warn(`[poll] telegram bot changed (${storedBotId} -> ${botId}); resetting update offset`);

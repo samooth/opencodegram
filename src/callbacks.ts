@@ -896,13 +896,19 @@ async function handleResourcesToggle(deps: BotDeps, cq: TelegramCallbackQuery, c
 async function handleReadFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
   const m = data.match(/^readfile:(.+)$/);
   if (!m) return;
-  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
-  const path = getActivityReadPath(m[1]);
+  const key = m[1];
+  const path = getActivityReadPath(key);
   if (!path) {
     await deps.tg.answerCallbackQuery(cq.id, "Lectura expirada").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
-  const s = deps.store.getActiveSession(chatId, threadId);
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  // The key is `<sessionId>:<index>`; resolve the directory against that
+  // session, not whichever one happens to be active in the tab now (the card
+  // may belong to another session/tab or a session that is no longer active).
+  const sep = key.lastIndexOf(":");
+  const sessionId = sep > 0 ? key.slice(0, sep) : "";
+  const s = (sessionId ? deps.store.findSessionById(sessionId) : undefined) ?? deps.store.getActiveSession(chatId, threadId);
   await deps.files.showFile(chatId, threadId, path, { base: s?.directory, forcePreview: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 

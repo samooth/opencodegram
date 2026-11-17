@@ -598,7 +598,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     let resourceBlock = "";
     if (settings.showResourceUsage) {
       target.cardTheme = settings.cardTheme;
-      resourceBlock = renderResourceBlock(target);
+      resourceBlock = renderResourceBlock(target, { history: settings.resourceHistory });
       lines.push(resourceBlock);
       const full = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
       if (full.length > 3900 && resourceBlock) {

@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { esc } from "./util.js";
+import { logger } from "./logger.js";
+import { readJsonSafe, writeJsonAtomic } from "./persist.js";
 
 export type DiffStyle = "simple" | "unified";
 /** Where the session card lives and whether its previous messages are preserved. */
@@ -136,23 +137,21 @@ export class SettingsStore {
     try {
       const obj: Record<string, Partial<ChatSettings>> = {};
       for (const [chatId, settings] of this.settings) obj[String(chatId)] = settings;
-      writeFileSync(this.file, JSON.stringify(obj, null, 2));
-    } catch {
-      // Settings are a convenience; never break the bot.
+      writeJsonAtomic(this.file, obj);
+    } catch (err) {
+      // Settings are a convenience; never break the bot, but do not hide the
+      // failure: a full disk would silently lose every toggle.
+      logger.error("settings", "save failed", err);
     }
   }
 
   private load(): void {
-    try {
-      if (!existsSync(this.file)) return;
-      const parsed = JSON.parse(readFileSync(this.file, "utf8")) as Record<string, Partial<ChatSettings>>;
-      for (const [chatId, settings] of Object.entries(parsed)) {
-        const id = Number(chatId);
-        if (!Number.isFinite(id)) continue;
-        this.settings.set(id, settings ?? {});
-      }
-    } catch {
-      // Ignore corrupt settings and fall back to defaults.
+    const parsed = readJsonSafe<Record<string, Partial<ChatSettings>>>(this.file, "settings");
+    if (!parsed) return;
+    for (const [chatId, settings] of Object.entries(parsed)) {
+      const id = Number(chatId);
+      if (!Number.isFinite(id)) continue;
+      this.settings.set(id, settings ?? {});
     }
   }
 }

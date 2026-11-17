@@ -104,23 +104,24 @@ export function readMemoryPercent(): number {
  */
 const resourceCache = new WeakMap<ChatSession, { key: string; html: string }>();
 
-export function renderResourceBlock(s: ChatSession): string {
+export function renderResourceBlock(s: ChatSession, opts: { history?: number } = {}): string {
   const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
   const memPercent = readMemoryPercent();
   const gpuNow = readGpuInfo();
-  const key = [cpuPercent, memPercent, s.lastContextTokens ?? 0, s.contextWindow ?? 0, gpuNow?.usedMB ?? 0, gpuNow?.totalMB ?? 0, gpuNow?.util ?? 0, gpuNow?.temperature ?? ""].join("|");
+  const theme = s.cardTheme ?? "auto";
+  const key = [cpuPercent, memPercent, s.lastContextTokens ?? 0, s.contextWindow ?? 0, gpuNow?.usedMB ?? 0, gpuNow?.totalMB ?? 0, gpuNow?.util ?? 0, gpuNow?.temperature ?? "", theme].join("|");
   const cached = resourceCache.get(s);
   if (cached?.key === key) return cached.html;
   if (!s.cpuHistory) s.cpuHistory = [];
   if (!s.memHistory) s.memHistory = [];
   s.cpuHistory.push(cpuPercent);
   s.memHistory.push(memPercent);
-  const limit = 12;
+  const limit = Math.max(2, Math.min(60, Math.round(opts.history ?? 12)));
   while (s.cpuHistory.length > limit) s.cpuHistory.shift();
   while (s.memHistory.length > limit) s.memHistory.shift();
-  const cpuBar = progressBar(cpuPercent, 10, s.cardTheme ?? "auto");
+  const cpuBar = progressBar(cpuPercent, 10, theme);
   const cpuTrend = s.cpuHistory.length >= 2 ? (s.cpuHistory[s.cpuHistory.length - 2] > cpuPercent ? " ↓" : s.cpuHistory[s.cpuHistory.length - 2] < cpuPercent ? " ↑" : "") : "";
-  const memBar = progressBar(memPercent, 10, s.cardTheme ?? "auto");
+  const memBar = progressBar(memPercent, 10, theme);
   const memTrend = s.memHistory.length >= 2 ? (s.memHistory[s.memHistory.length - 2] > memPercent ? " ↓" : s.memHistory[s.memHistory.length - 2] < memPercent ? " ↑" : "") : "";
   const resourceLines: string[] = [];
   resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);

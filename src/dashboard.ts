@@ -35,7 +35,7 @@ function turnProgressLine(s: ChatSession): string {
   if (!s.promptStartTime) return "";
   const elapsed = Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000));
   const elapsedText = elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
-  const tokens = s.lastOutputTokens ?? 0;
+  const tokens = s.turnOutputTokens ?? s.lastOutputTokens ?? 0;
   const speed = tokens && elapsed > 1 ? ` · ⚡ ${(tokens / elapsed).toFixed(1)} tok/s` : "";
   return `⏳ <b>Progreso</b>: ${elapsedText}${speed}`;
 }
@@ -67,7 +67,8 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
       if (progress) lines.push(progress);
     }
     if (st.showResourceUsage) {
-      lines.push("", renderResourceBlock(s));
+      s.cardTheme = st.cardTheme;
+      lines.push("", renderResourceBlock(s, { history: st.resourceHistory }));
     }
     const html = lines.join("\n").replace(/\n{3,}/g, "\n\n");
 
