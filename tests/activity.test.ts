@@ -8,6 +8,7 @@ import {
   finishTool,
   renderActivity,
   toolCategory,
+  updateToolDetail,
 } from "../src/activity.js";
 
 describe("turn activity counters", () => {
@@ -146,6 +147,31 @@ describe("turn activity counters", () => {
     const out = renderActivity(a, "high", false, 2000, true);
     expect(out.length).toBeLessThan(2500);
     expect(out.trimEnd().endsWith("</blockquote>")).toBe(true);
+  });
+
+  test("shell entries extract the command from a JSON input", () => {
+    const a = createTurnActivity();
+    recordTool(a, "bash", JSON.stringify({ command: "bun test" }), { at: 1000, toolId: "a" });
+    expect(a.entries[0]?.detail).toBe("bun test");
+    const out = renderActivity(a, "high", false, 1100, true);
+    expect(out).toContain("$ bun test");
+    expect(out).not.toContain("&quot;command&quot;");
+  });
+
+  test("shell detail updates also extract the command from JSON", () => {
+    const a = createTurnActivity();
+    recordTool(a, "bash", "", { at: 1000, toolId: "a" });
+    updateToolDetail(a, "a", JSON.stringify({ cmd: "git status" }));
+    expect(a.entries[0]?.detail).toBe("git status");
+  });
+
+  test("edit entries show the file path instead of raw JSON", () => {
+    const a = createTurnActivity();
+    recordTool(a, "edit", JSON.stringify({ filePath: "/workspace/src/pilot.py", oldString: "a", newString: "b" }), { at: 1000, toolId: "e" });
+    expect(a.entries[0]?.detail).toBe("/workspace/src/pilot.py");
+    const out = renderActivity(a, "high", false, 1100, true);
+    expect(out).toContain("pilot.py");
+    expect(out).not.toContain("oldString");
   });
 
   test("groups consecutive shell calls into one terminal-like block", () => {

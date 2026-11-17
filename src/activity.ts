@@ -6,6 +6,7 @@
  * extra messages or callbacks are needed.
  */
 import { esc } from "./util.js";
+import { extractEditFile } from "./editutil.js";
 import type { CardVerbosity } from "./settings.js";
 
 export type ActivityKind = "thought" | "read" | "search" | "edit" | "shell" | "tool";
@@ -125,17 +126,36 @@ export function recordTool(a: TurnActivity, name: string, input: string, opts: {
   return push(a, {
     kind,
     label: labelFor(name, kind),
-    detail: input,
+    detail: kind === "shell" ? shellCommand(input) : kind === "edit" ? (extractEditFile(input) ?? input) : input,
     at,
     open: true,
     toolId: opts.toolId,
   });
 }
 
+/** Pull the actual command out of a shell tool's JSON/array input. */
+function shellCommand(input: string): string {
+  const trimmed = (input || "").trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return trimmed;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      for (const key of ["command", "cmd"]) {
+        if (typeof obj[key] === "string") return obj[key] as string;
+      }
+    }
+    if (Array.isArray(parsed) && parsed.length && typeof parsed[0] === "string") return parsed.join(" ");
+  } catch {
+    // Not JSON; fall through to the raw text.
+  }
+  return trimmed;
+}
+
 /** Replace the placeholder detail with the real input from session.tool.called. */
 export function updateToolDetail(a: TurnActivity, toolId: string, detail: string): void {
   const entry = [...a.entries].reverse().find((e) => e.toolId === toolId);
-  if (entry) entry.detail = detail;
+  if (entry) entry.detail = entry.kind === "shell" ? shellCommand(detail) : entry.kind === "edit" ? (extractEditFile(detail) ?? detail) : detail;
 }
 
 export function finishTool(a: TurnActivity, toolId: string, ok: boolean, opts: { at?: number } = {}): void {
