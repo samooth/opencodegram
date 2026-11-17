@@ -226,7 +226,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
       if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s));
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
-      const btnRows = customBtns.map((b: any, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
+      const btnRows = customBtns.map((b: { label: string }, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const keyboard = [
         [{ text: "⏹ Stop", callback_data: "panel:stop" }],
         ...btnRows,
@@ -352,7 +352,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const finalText = clampText(parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trimEnd(), 3900);
 
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
-      const btnRows = customBtns.map((b: any, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
+      const btnRows = customBtns.map((b: { label: string }, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const editKeyboard = [
         [{ text: "⏹ Stop", callback_data: "panel:stop" }],
         ...btnRows,
@@ -603,7 +603,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
 
   const finishedKeyboard = (editDetails: ChatSession["toolCallDetails"], expandedEditIndex: number | undefined, target: ChatSession, messageId?: number): Array<Array<{ text: string; callback_data: string }>> => {
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    editDetails.forEach((detail: any, index: number) => {
+    editDetails.forEach((detail: ChatSession["toolCallDetails"][number], index: number) => {
       const file = relativeEditPath(target, extractEditFile(detail.input) ?? `edit ${index + 1}`);
       const label = expandedEditIndex === index ? `✏️ ${file} ▾` : `✏️ ${file}`;
       keyboard.push([{ text: label.slice(0, 64), callback_data: `edit:${index}` }]);

@@ -1,3 +1,4 @@
+import type { InlineButton, InlineKeyboard } from "./apitypes.js";
 import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
 import type { SettingsStore } from "./settings.js";
@@ -40,7 +41,7 @@ function turnProgressLine(s: ChatSession): string {
 }
 
 export function createDashboardManager({ tg, store, settings, threadOptsFor }: DashboardDeps) {
-  function render(s: ChatSession, chatId: number, opts?: { working?: boolean }): { html: string; keyboard: any[][] } {
+  function render(s: ChatSession, chatId: number, opts?: { working?: boolean }): { html: string; keyboard: InlineKeyboard } {
     const st = settings.get(chatId);
     const header = sessionHeader(s, undefined, settings.get(chatId).showSessionNameInStatus).trimEnd();
     const model = s.model
@@ -70,7 +71,7 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
     }
     const html = lines.join("\n").replace(/\n{3,}/g, "\n\n");
 
-    const keyboard: any[][] = [];
+    const keyboard: InlineKeyboard = [];
     if (opts?.working) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
     keyboard.push([
       { text: "🧠 Modelos", callback_data: `panel:ms:${s.sessionId}` },
