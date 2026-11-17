@@ -27,8 +27,13 @@ with per-topic isolation, rich status cards and inline keyboards.
   reject-with-reason.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — profiles and toggles for display/delivery, thinking, tools,
-  shell, previews, artifacts, voice and compact final.
-- **Tests** — 169 Bun tests + TypeScript typecheck.
+  shell, previews, artifacts, voice, compact final, card theme and verbosity.
+- **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
+  (real browser via extension) and always-on Playwright MCP (headless Chromium
+  for web debugging). OpenCode pinned to 2.3.0.
+- **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
+  fork/subagent badges and background-subagent counts.
+- **Tests** — 197 Bun tests across 27 files + TypeScript typecheck.
 
 ## Quick start
 
@@ -77,12 +82,12 @@ add them to `ecosystem.config.cjs`.
 
 | Group | Commands |
 | --- | --- |
-| Sessions | `/start`, `/help`, `/status`, `/session`, `/sessions`, `/use`, `/new`, `/stop` |
-| Models | `/models`, `/agents` |
+| Sessions | `/start`, `/help`, `/status`, `/session`, `/sessions`, `/running`, `/use`, `/new`, `/stop`, `/abort`, `/retry`, `/cancel` |
+| Models | `/models`, `/model`, `/agents`, `/agent` |
 | Files | `/file`, `/ls`, `/find`, `/read`, `/zip` |
-| Session tools | `/diff`, `/context`, `/sync`, `/compact`, `/usage` |
-| Project | `/vcs`, `/worktrees`, `/worktree`, `/forms`, `/formreply` |
-| Other | `/settings`, `/commands`, `/fork`, `/rename`, `/archive`, `/unarchive`, `/delete`, `/retry`, `/buttons` |
+| Session tools | `/diff`, `/context`, `/sync`, `/compact`, `/usage`, `/todos` |
+| Project | `/vcs`, `/worktrees`, `/worktree`, `/forms`, `/formreply`, `/mcp` |
+| Chat | `/settings`, `/commands`, `/ops`, `/buttons`, `/unlink`, `/fork`, `/rename`, `/archive`, `/unarchive`, `/delete` |
 
 Full reference: [docs/COMMANDS.md](docs/COMMANDS.md).
 

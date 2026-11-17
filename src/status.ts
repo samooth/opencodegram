@@ -60,11 +60,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 2. Progress (tools + tok/s) right under the state.
     const tools = s.toolCallDetails.length;
     const failedTools = s.toolCallDetails.filter((detail) => detail.status === "failed").length;
-    const tokens = s.lastOutputTokens ?? 0;
+    // Accumulated tokens across this turn; elapsed measured from first streamed
+    // token (consistent with the final answer and OpenCode 2.3.0).
+    const tokens = s.turnOutputTokens ?? s.lastOutputTokens ?? 0;
+    const tokenElapsed = s.turnFirstStreamedAt ? Math.max(0.5, (Date.now() - s.turnFirstStreamedAt) / 1000) : elapsed;
     const progressParts: string[] = [];
     if (tools) progressParts.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
-    if (tokens && elapsed > 1 && settings.showTokenSpeed) {
-      progressParts.push(`⚡ ${(tokens / elapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`);
+    if (tokens && tokenElapsed > 0 && settings.showTokenSpeed) {
+      progressParts.push(`⚡ ${(tokens / tokenElapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`);
     }
     if (progressParts.length) lines.push(`<i>${esc(progressParts.join(" · "))}</i>`);
     // 3. Prompt being answered — context before detail.
@@ -183,6 +186,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.reasoningBuffer = "";
     s.toolCalls = [];
     s.toolCallDetails = [];
+    s.turnOutputTokens = 0;
+    s.turnFirstStreamedAt = undefined;
     s.stopped = false;
     s.transcriptPage = undefined;
     // Keep the previous turn's final answer reference so the "Ver completo"

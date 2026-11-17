@@ -121,7 +121,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (169 tests across 21 files):
+`bun test` covers (197 tests across 27 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -142,8 +142,13 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/transcribe.test.ts` — voice transcription config and execution.
 - `tests/promptdedupe.test.ts` — stripping restated prompts from reasoning.
 - `tests/summary.test.ts` — file summaries, search and tree rendering.
-- `tests/editutil.test.ts` — edit detection, file extraction, stats and unified diffs (including `apply_patch`).
+- `tests/editutil.test.ts` — edit detection, unified diffs and apply_patch parsing.
 - `tests/todos.test.ts` — per-session TODO persistence and checklist rendering.
+- `tests/picker.test.ts` — session picker ordering and empty state.
+- `tests/messages.test.ts` — group media gating and command routing.
+- `tests/resources.test.ts` — resource-block rendering and cache.
+- `tests/readcache.test.ts` — text-read LRU cache.
+- `tests/tok-speed.test.ts` — accumulated turn tokens and streamed-window speed.
 
 ## Conventions
 

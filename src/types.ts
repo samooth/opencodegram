@@ -50,6 +50,10 @@ export type ChatSession = {
   statusEditPromise?: Promise<unknown>;
   promptStartTime?: number;
   lastOutputTokens?: number;
+  /** Accumulated output tokens across all steps of the current turn. */
+  turnOutputTokens?: number;
+  /** Timestamp of the first streamed token of the current turn (ms). */
+  turnFirstStreamedAt?: number;
   lastContextTokens?: number;
   contextWindow?: number;
   /** Full transcript of the session, rendered as paginated pages. */

@@ -115,7 +115,7 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (169 tests across 21 files):
+`bun test` runs the Bun suite in `tests/` (197 tests across 27 files):
 
 - `store.test.ts` — route/tab isolation, persistence and retirement.
 - `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.
@@ -130,8 +130,9 @@
 - `transcribe.test.ts` — voice transcription config and execution.
 - `promptdedupe.test.ts` — stripping restated prompts from reasoning.
 - `summary.test.ts` — file summaries, search and tree rendering.
-- `editutil.test.ts` — edit detection, file extraction, stats and unified diffs (including `apply_patch`).
-- `todos.test.ts` — per-session TODO persistence and checklist rendering.
+- `editutil.test.ts`, `todos.test.ts`, `picker.test.ts`, `messages.test.ts`,
+  `resources.test.ts`, `readcache.test.ts`, `tok-speed.test.ts` — diffs, TODOs,
+  picker, media gating, resources, read cache and token-speed calculation.
 
 `bun run typecheck` checks `src/` with `tsc --noEmit`.
 

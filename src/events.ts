@@ -386,7 +386,11 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
   const s = _s0;
   if (!s) return;
   const delta = String(e.data?.delta ?? e.data?.text ?? "");
-  s.buffer += delta;
+  if (delta) {
+    s.buffer += delta;
+    // First streamed token timestamp (authoritative metric for tok/s in 2.3.0).
+    if (!s.turnFirstStreamedAt) s.turnFirstStreamedAt = Date.now();
+  }
   // Coalesce a burst of deltas into a single card update (500ms). updateStatus
   // still applies its own throttle and the adaptive 429 backoff.
   if (!s.deltaFlushTimer) {
@@ -408,7 +412,11 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
   const s = _s0;
   if (!s) return;
   const out = (e.data?.tokens as { output?: number } | undefined)?.output;
-  if (typeof out === "number") s.lastOutputTokens = out;
+  if (typeof out === "number") {
+    s.lastOutputTokens = out;
+    // Accumulate across all steps of this turn (multi-step tool calls).
+    s.turnOutputTokens = (s.turnOutputTokens ?? 0) + out;
+  }
   const inp = (e.data?.tokens as { input?: number } | undefined)?.input;
   const cacheRead = ((e.data?.tokens as { cache?: { read?: number } } | undefined)?.cache?.read) ?? 0;
   if (typeof inp === "number") s.lastContextTokens = inp + (typeof cacheRead === "number" ? cacheRead : 0);
@@ -526,21 +534,27 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     endedText = String(e.data?.text ?? "").trim();
     let finalText = endedText || s.buffer || "(empty response)";
     let elapsed = 0;
-    let tokens = s.lastOutputTokens ?? 0;
+    // Tokens are accumulated across ALL steps of the turn (multi-step tool
+    // calls), not just the last one (fix B1/B2).
+    let tokens = s.turnOutputTokens ?? s.lastOutputTokens ?? 0;
+    let streamedAt = s.turnFirstStreamedAt;
     try {
       const msgId = (e as { data?: Record<string, unknown> }).data?.assistantMessageID as string | undefined;
       if (msgId) {
         const m = await oc.client.session.message.get({ sessionID: s.sessionId, messageID: msgId });
         const t = (m as { time?: { completed?: number; streamed?: number; created?: number } })?.time;
+        if (t?.streamed && !streamedAt) streamedAt = t.streamed;
         if (t?.completed) {
-          const start = t.streamed || t.created;
-          if (start && t.completed > start) {
-            elapsed = (t.completed - start) / 1000;
-          }
+          // Prefer the API's streamed→completed window (OpenCode 2.3.0 metric).
+          const start = t.streamed || streamedAt || t.created;
+          if (start && t.completed > start) elapsed = (t.completed - start) / 1000;
         }
       }
     } catch {
       // ignore
+    }
+    if (!elapsed && streamedAt) {
+      elapsed = (Date.now() - streamedAt) / 1000;
     }
     if (!elapsed && s.promptStartTime) {
       elapsed = (Date.now() - s.promptStartTime) / 1000;
