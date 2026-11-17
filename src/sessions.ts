@@ -21,6 +21,8 @@ export type SessionsDeps = {
   dashboard?: DashboardManager;
   topicsEnabled: boolean;
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
+  /** Remove resources and buttons from a card that is no longer active. */
+  cleanupCard?: (chatId: number, messageId: number) => Promise<void>;
 };
 
 export type SessionManager = ReturnType<typeof createSessionManager>;
@@ -51,7 +53,7 @@ export function resolveRepoDirectory(config: Config | Record<string, unknown>, n
   return full;
 }
 
-export function createSessionManager({ config, tg, oc, store, settings, dashboard, topicsEnabled, finishStatus }: SessionsDeps) {
+export function createSessionManager({ config, tg, oc, store, settings, dashboard, topicsEnabled, finishStatus, cleanupCard }: SessionsDeps) {
   const {
     sessionsByChat,
     sessionsByThread,
@@ -102,6 +104,11 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       }
     }
     if (interrupt) await oc.interrupt(previous.sessionId).catch(() => {});
+    // A finished card left behind by a tab switch becomes static history: strip
+    // its live indicators and buttons so only the active card carries controls.
+    if (!forget && !live && previous.transcriptMessageId) {
+      await cleanupCard?.(chatId, previous.transcriptMessageId).catch(() => {});
+    }
     if (forget && previous.statusMessageId) {
       await tg
         .editRichMessage(chatId, previous.statusMessageId, "⏹ <b>Session closed</b>", {

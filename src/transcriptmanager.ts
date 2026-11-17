@@ -40,6 +40,8 @@ export type TranscriptManager = ReturnType<typeof createTranscriptManager>;
  * be far longer, so the keyboard carries a short key and the path lives here.
  */
 const activityReadPaths = new Map<string, string>();
+/** Last resource-free HTML published per card, for cleaning up old messages. */
+const cardCleanHtml = new Map<number, string>();
 
 export function rememberActivityReadPath(key: string, path: string): void {
   activityReadPaths.set(key, path);
@@ -389,6 +391,7 @@ ${body}
   ): Promise<void> => {
     const rendered = renderPage(s, { extraTop: opts?.extraTop, extraBottom: opts?.extraBottom, showResources: opts?.showResources });
     if (!rendered) return;
+    const cleanHtml = renderPage(s, { extraTop: opts?.extraTop, extraBottom: opts?.extraBottom, showResources: false })?.html ?? rendered.html;
     const tgOpts = threadOptsFor(s);
     const keyboard = { inline_keyboard: cardKeyboard(s, rendered.page, rendered.total, opts) };
     if (s.transcriptMessageId) {
@@ -399,13 +402,14 @@ ${body}
       if (ok) {
         s.transcriptPage = rendered.page;
         s.statusMessageId = s.transcriptMessageId;
+        cardCleanHtml.set(s.transcriptMessageId, cleanHtml);
         store.rememberMessageSession(chatId, s.transcriptMessageId, s.sessionId);
         return;
       }
       // The card is gone or can't be edited: strip its keyboard (if it still
       // exists) so only the newest card keeps interactive buttons.
       const previousId = s.transcriptMessageId;
-      if (previousId) await tg.editMessageReplyMarkup(chatId, previousId, { inline_keyboard: [] }).catch(() => {});
+      if (previousId) await cleanupCard(chatId, previousId);
       s.transcriptMessageId = undefined;
     }
     const sent = await tg
@@ -417,6 +421,7 @@ ${body}
     if (sent?.message_id) {
       s.transcriptMessageId = sent.message_id;
       s.statusMessageId = sent.message_id;
+      cardCleanHtml.set(sent.message_id, cleanHtml);
       s.transcriptPage = rendered.page;
       store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
     }
@@ -465,7 +470,7 @@ ${body}
       // newest card should carry interactive controls.
       s.transcriptMessageId = undefined;
       if (s.statusMessageId === messageId) s.statusMessageId = undefined;
-      await tg.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(() => {});
+      await cleanupCard(chatId, messageId);
       return;
     }
     // Remove the previous card so the new turn's card appears as a new
@@ -736,7 +741,17 @@ ${body}
   /** Total number of pages currently available. */
   const pageCount = (s: ChatSession): number => paginateTranscript(blocksOf(s)).length;
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat };
+  /** Strip resources and buttons from a card that is no longer the active one. */
+  const cleanupCard = async (chatId: number, messageId: number): Promise<void> => {
+    const clean = cardCleanHtml.get(messageId);
+    if (clean) {
+      await tg.editRichMessage(chatId, messageId, clean).catch(() => {});
+      cardCleanHtml.delete(messageId);
+    }
+    await tg.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(() => {});
+  };
+
+  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat, cleanupCard };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };

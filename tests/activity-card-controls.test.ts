@@ -101,6 +101,30 @@ describe("activity card controls", () => {
     expect(fileButtons.length).toBeLessThanOrEqual(9);
   });
 
+  test("cleanupCard strips resources and clears keyboard from an old card", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const sent: string[] = [];
+    const edits: string[] = [];
+    const cleared: number[] = [];
+    const tg = {
+      sendRichMessage: async (_c: number, html: string) => { sent.push(html); return { message_id: 91 }; },
+      editRichMessage: async (_c: number, _m: number, html: string) => { edits.push(html); return {}; },
+      editMessageReplyMarkup: async (_c: number, m: number) => { cleared.push(m); return {}; },
+    } as any;
+    const tm = createTranscriptManager({
+      tg, store, threadOptsFor: () => ({}), renderResources: () => "CPU ▓░░ 9%",
+    });
+    const s = {
+      sessionId: "ses_clean", buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [],
+      stopped: false, targetChatId: 7, activity: createTurnActivity(), resourcesCollapsed: false,
+    } as ChatSession;
+    await tm.publish(7, s, { showResources: true });
+    expect(sent[0]).toContain("CPU ▓░░ 9%");
+    await tm.cleanupCard(7, 91);
+    expect(edits.some((h) => !h.includes("CPU ▓░░ 9%"))).toBe(true);
+    expect(cleared).toContain(91);
+  });
+
   test("renderPage hides the resource block when collapsed", () => {
     const { s } = makeHarness();
     const store = new SessionStore(join(root, "data"));

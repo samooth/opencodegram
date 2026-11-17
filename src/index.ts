@@ -116,6 +116,7 @@ async function main() {
     tg,
     oc,
     store,
+    cleanupCard: transcript.cleanupCard,
     settings,
     dashboard,
     topicsEnabled,

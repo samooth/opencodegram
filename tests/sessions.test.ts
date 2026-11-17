@@ -35,8 +35,10 @@ function makeHarness() {
     contextWindow: async () => undefined,
   } as any;
   const finishStatus = async () => {};
-  const sessions = createSessionManager({ config: { OPENCODE_DIRECTORY: root } as any, tg, oc, store, topicsEnabled: false, finishStatus });
-  return { store, tg, oc, sessions };
+  const cleaned: number[] = [];
+  const cleanupCard = async (_chatId: number, messageId: number) => { cleaned.push(messageId); };
+  const sessions = createSessionManager({ config: { OPENCODE_DIRECTORY: root } as any, tg, oc, store, topicsEnabled: false, finishStatus, cleanupCard });
+  return { store, tg, oc, sessions, cleaned };
 }
 
 describe("sessions restoreActiveSession", () => {
@@ -50,6 +52,15 @@ describe("sessions restoreActiveSession", () => {
     const { sessions } = makeHarness();
     const res = await sessions.ensureActiveSession(-100, 456);
     expect(res).toBeUndefined();
+  });
+
+  test("retiring a session cleans its old card", async () => {
+    const { sessions, cleaned } = makeHarness();
+    const previous = {
+      sessionId: "ses_retire", statusMessageId: 77, transcriptMessageId: 77, statusFinished: true,
+    } as any;
+    await sessions.retireSession(123, previous);
+    expect(cleaned).toContain(77);
   });
 
   test("reactivating a finished session resets per-turn activity", async () => {
