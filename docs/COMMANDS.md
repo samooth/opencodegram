@@ -20,7 +20,7 @@
 ## Models and agents
 
 - `/models`, `/model` — model picker, free models first, variant selection.
-- `/agents`, `/agent` — agent picker.
+- `/agents`, `/agent` — agent picker; `/goal` — run the goal agent (multi-step tasks).
 
 ## Settings
 

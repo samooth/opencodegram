@@ -65,6 +65,9 @@ Main modules:
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
 | `todos.ts` | TODO checklist types and rich-HTML rendering |
+| `apitypes.ts` | Shared structural types for OpenCode/Telegram payloads (no `any` in src) |
+| `dangerous.ts` | Shared list of commands requiring confirmation |
+| `whisper_daemon.py` | Optional persistent Whisper transcription daemon (SSE streaming) |
 | `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
 | `transcript.ts` | Transcript blocks, splitting and pagination |
 | `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |

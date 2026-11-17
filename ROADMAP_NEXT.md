@@ -39,19 +39,28 @@
 - Group media policy: photos/documents require an explicit mention; voice notes
   also work as a reply to the bot.
 - Adaptive per-chat throttle, enriched `/ops` health (throttles + GPU).
+- OpenCode 2.3.0 in Docker: background subagents and fork/subagent badges, MCP
+  events, quieter transcripts (card verbosity setting).
+- Browser tooling: optional OpenCode Browse (real browser via extension) and
+  always-on Playwright MCP (headless Chromium for web debugging).
+- Streaming transcription (SSE) with partial text published to the card.
+- Card theme (auto/light/dark), card verbosity and read-text LRU cache.
+- `/todos`, `/unlink`, `/cancel` commands; per-user rate limiting opt-in via env.
+- Code quality: zero `any` in `src`, structured logging, unified save/load
+  helpers, no silent `answerCallbackQuery` failures.
 
 ## Next
 
 1. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
 2. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
-3. **Whisper daemon** – keep the model loaded to cut voice latency (design
-   depends on the user's environment).
-4. **Automatic session summary** – generate a short topic title from the turn
+3. **Automatic session summary** – generate a short topic title from the turn
    result.
-5. **`/retry` with turn selection** – replay a specific past turn.
-6. **`/search` over user prompts** – currently only answer blocks are searched.
+4. **`/retry` with turn selection** – replay a specific past turn.
+5. **`/search` over user prompts** – currently only answer blocks are searched.
+6. **Graceful degradation when OpenCode is down** – notify and retry instead of hanging.
 
 ## Suggested order
 
-The file browser, artifacts, voice notes, MCP status, worktrees and VCS actions
-are shipped. Next: Whisper daemon, automatic summaries and `/retry` turn picker.
+The file browser, artifacts, voice notes (including streaming), MCP status,
+worktrees, VCS actions and browser tooling are shipped. Next: automatic
+summaries, `/retry` turn picker and prompt search.

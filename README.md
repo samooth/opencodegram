@@ -27,7 +27,7 @@ with per-topic isolation, rich status cards and inline keyboards.
   reject-with-reason.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — profiles and toggles for display/delivery, thinking, tools,
-  shell, previews, artifacts, voice, compact final, card theme and verbosity.
+  shell, previews, artifacts, voice, compact final, card theme, verbosity and streaming transcription.
 - **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
   (real browser via extension) and always-on Playwright MCP (headless Chromium
   for web debugging). OpenCode pinned to 2.3.0.

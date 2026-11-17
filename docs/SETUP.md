@@ -246,7 +246,27 @@ story"*. Agent tabs open in the background in collapsed groups; when a login or
   automatic relay updates inside the container.
 - Browse never solves CAPTCHAs or bot challenges by itself.
 
-### Troubleshooting
+### Advanced configuration
+
+All options live in `.env` (see `.env.example` for the full annotated list):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VOICE_TRANSCRIBER` | — | Whisper CLI or bundled Python wrapper (`transcribe_whisper.py`). |
+| `VOICE_TRANSCRIPTION_LANGUAGE` | `auto` | Language code, or `auto` for detection. |
+| `WHISPER_DAEMON_URL` | — | `http://127.0.0.1:8877` to use the persistent daemon (streaming partial transcripts). |
+| `ENABLE_BROWSE` | `false` | Install/enable OpenCode Browse (real browser via extension). |
+| `OPENCODE_BROWSER_AUTO_UPDATE` | `off` | Disable in-container relay auto-updates. |
+| `USER_RATE_LIMIT_ENABLED` | `false` | Opt-in per-user message rate limit (off by default; monouser). |
+| `AUTO_RETRY_ENABLED` | `true` | Auto-retry on rate limits (bounded). |
+| `AUTO_CLEANUP_DAYS` | `0` | Archive stale OpenCode sessions (0 disables). |
+
+Per-chat settings (via `/settings`) include `cardTheme` (`auto`/`light`/`dark`)
+and `cardVerbosity` (`low`/`medium`/`high`, mapped from OpenCode 2.3.0's
+transcript verbosity). The daemon enables experimental `mcp_events` so MCP
+activity from Browse/Playwright is shown on the card.
+
+## Troubleshooting
 
 - `docker compose exec opencode browse status` shows the relay, extension,
   pairing state and agent tabs.
