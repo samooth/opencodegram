@@ -291,6 +291,13 @@ ${body}
         keyboard.push([{ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
       }
     }
+    const activity = s.activity;
+    if (activity && activity.thoughts + activity.reads + activity.searches + activity.edits + activity.shells + activity.tools > 0) {
+      keyboard.push([{
+        text: s.activityExpanded ? "▴ Ocultar detalles" : "▾ Ver detalles",
+        callback_data: `activity:${s.sessionId}`,
+      }]);
+    }
     if (opts?.working) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
     // "View full" escape hatch for long answers; history export always available.
     const tools: Array<{ text: string; callback_data: string }> = [];
@@ -344,7 +351,10 @@ ${body}
         store.rememberMessageSession(chatId, s.transcriptMessageId, s.sessionId);
         return;
       }
-      // The card is gone (deleted or too old): fall back to a new message.
+      // The card is gone or can't be edited: strip its keyboard (if it still
+      // exists) so only the newest card keeps interactive buttons.
+      const previousId = s.transcriptMessageId;
+      if (previousId) await tg.editMessageReplyMarkup(chatId, previousId, { inline_keyboard: [] }).catch(() => {});
       s.transcriptMessageId = undefined;
     }
     const sent = await tg
@@ -400,9 +410,11 @@ ${body}
     const messageId = s.transcriptMessageId;
     if (!messageId) return;
     if (opts?.keep) {
-      // Keep the previous card as history; detach from the live slot.
+      // Keep the previous card as history but remove its buttons: only the
+      // newest card should carry interactive controls.
       s.transcriptMessageId = undefined;
       if (s.statusMessageId === messageId) s.statusMessageId = undefined;
+      await tg.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(() => {});
       return;
     }
     // Remove the previous card so the new turn's card appears as a new

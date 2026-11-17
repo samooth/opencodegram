@@ -114,6 +114,7 @@ describe("transcript manager", () => {
     const sent: any[] = [];
     const edited: any[] = [];
     const tg = {
+      editMessageReplyMarkup: async () => ({}),
       sendRichMessage: async (...args: any[]) => {
         sent.push(args);
         return { message_id: 100 + sent.length };
@@ -320,6 +321,7 @@ describe("transcript manager", () => {
     const store = new SessionStore(join(root, "data"));
     const sent: any[] = [];
     const tg = {
+      editMessageReplyMarkup: async () => ({}),
       sendRichMessage: async (...args: any[]) => {
         sent.push(args);
         return { message_id: 5 };
@@ -345,6 +347,7 @@ describe("transcript manager", () => {
     const { store, transcript } = makeHarness();
     const order: string[] = [];
     const tg = {
+      editMessageReplyMarkup: async () => ({}),
       sendRichMessage: async () => ({ message_id: 7 }),
       editRichMessage: async (_chat: number, _id: number, _html: string) => {
         order.push("start");
@@ -372,6 +375,7 @@ describe("transcript manager", () => {
     const sent: any[] = [];
     let edits = 0;
     const tg = {
+      editMessageReplyMarkup: async () => ({}),
       sendRichMessage: async (...args: any[]) => {
         sent.push(args);
         return { message_id: 200 + sent.length };
@@ -402,6 +406,7 @@ describe("transcript manager", () => {
     const deleted: any[] = [];
     const edited: any[] = [];
     const tg = {
+      editMessageReplyMarkup: async () => ({}),
       sendRichMessage: async (...args: any[]) => {
         sent.push(args);
         return { message_id: 300 + sent.length };
@@ -440,6 +445,7 @@ describe("transcript manager", () => {
     const deleted: any[] = [];
     const edited: any[] = [];
     const tg = {
+      editMessageReplyMarkup: async () => ({}),
       sendRichMessage: async (...args: any[]) => {
         sent.push(args);
         return { message_id: 400 + sent.length };

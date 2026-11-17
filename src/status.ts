@@ -66,7 +66,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const tokens = s.turnOutputTokens ?? s.lastOutputTokens ?? 0;
     const tokenElapsed = s.turnFirstStreamedAt ? Math.max(0.5, (Date.now() - s.turnFirstStreamedAt) / 1000) : elapsed;
     const progressParts: string[] = [];
-    if (tools) progressParts.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
+    // The activity summary already carries tool counts; avoid showing them twice.
+    if (tools && !s.activity) progressParts.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
     if (tokens && tokenElapsed > 0 && settings.showTokenSpeed) {
       progressParts.push(`⚡ ${(tokens / tokenElapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`);
     }
@@ -78,7 +79,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     // 4. Compact activity summary (OpenCode 2.3.0 style). One line of counters
     // plus a single expandable block replaces the separate thought/tool blocks.
-    const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false);
+    const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
     if (activityBlock) {
       lines.push(activityBlock);
     } else {
@@ -134,7 +135,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<i>🔀 Esta sesión quedó en segundo plano.</i>");
-    const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true);
+    const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), s.activityExpanded === true);
     if (doneActivity) lines.push(doneActivity);
     if (settings.showTools && !s.activity && s.toolCallDetails.length) {
       const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;
@@ -196,6 +197,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.toolCalls = [];
     s.toolCallDetails = [];
     s.activity = createTurnActivity();
+    s.activityExpanded = false;
     s.turnOutputTokens = 0;
     s.turnFirstStreamedAt = undefined;
     s.stopped = false;

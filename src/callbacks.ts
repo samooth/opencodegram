@@ -51,6 +51,7 @@ const PREFIXES = [
   "ops:",
   "profile:",
   "viewfull:",
+  "activity:",
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -874,7 +875,21 @@ async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   }
 }
 
+/** Show/hide the compact activity detail inline on the same card message. */
+async function handleActivityToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, _threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const m = data.match(/^activity:(.+)$/);
+  if (!m) return;
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const s = deps.store.findSessionById(m[1]);
+  if (!s) return;
+  s.activityExpanded = !s.activityExpanded;
+  // updateStatus bails out on finished cards; publishCard works in both states.
+  const refresh = s.statusFinished ? deps.status.publishCard(chatId, s) : deps.status.updateStatus(chatId, s, true);
+  await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
+  "activity:": handleActivityToggle,
   "tpage:": handleTranscriptPage,
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,

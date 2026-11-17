@@ -27,13 +27,13 @@ with per-topic isolation, rich status cards and inline keyboards.
   reject-with-reason.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — profiles and toggles for display/delivery, thinking, tools,
-  shell, previews, artifacts, voice, compact final, card theme, verbosity, compact activity summary (`+3 thoughts · 3 reads · 1 tool`, expandable in place) and streaming transcription.
+  shell, previews, artifacts, voice, compact final, card theme, verbosity, compact activity summary (`+3 thoughts · 3 reads · 1 tool`, expandable in place, plus an explicit ▾ Ver detalles toggle) and streaming transcription.
 - **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
   (real browser via extension) and always-on Playwright MCP (headless Chromium
   for web debugging). OpenCode pinned to 2.3.0.
 - **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
   fork/subagent badges and background-subagent counts.
-- **Tests** — 217 Bun tests across 30 files + TypeScript typecheck.
+- **Tests** — 225 Bun tests across 31 files + TypeScript typecheck.
 
 ## Quick start
 

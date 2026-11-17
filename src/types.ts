@@ -55,6 +55,8 @@ export type ChatSession = {
   turnOutputTokens?: number;
   /** Compact per-turn activity counters and detail entries for the card. */
   activity?: TurnActivity;
+  /** Whether the activity detail is currently shown inline on the card. */
+  activityExpanded?: boolean;
   /** Timestamp of the first streamed token of the current turn (ms). */
   turnFirstStreamedAt?: number;
   lastContextTokens?: number;

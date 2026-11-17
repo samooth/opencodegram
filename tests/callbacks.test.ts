@@ -68,4 +68,28 @@ describe("handleCallback", () => {
     await handleCallback(deps, cq);
     expect(true).toBe(true);
   });
+
+  test("activity toggle flips the session flag and refreshes the card", async () => {
+    const deps = makeDeps();
+    const s = { sessionId: "ses_toggle", activityExpanded: false } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    let refreshes = 0;
+    deps.status.updateStatus = async () => { refreshes++; };
+    const cq = { id: "4", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "activity:ses_toggle" } as any;
+    await handleCallback(deps, cq);
+    expect(s.activityExpanded).toBe(true);
+    expect(refreshes).toBe(1);
+  });
+
+  test("activity toggle also refreshes a finished card", async () => {
+    const deps = makeDeps();
+    const s = { sessionId: "ses_toggle_done", activityExpanded: false, statusFinished: true } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    let publishes = 0;
+    deps.status.publishCard = async () => { publishes++; };
+    const cq = { id: "5", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "activity:ses_toggle_done" } as any;
+    await handleCallback(deps, cq);
+    expect(s.activityExpanded).toBe(true);
+    expect(publishes).toBe(1);
+  });
 });

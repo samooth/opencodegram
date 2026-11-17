@@ -123,4 +123,28 @@ describe("turn activity counters", () => {
     const out = renderActivity(a, "high", false, 1100);
     expect(out).toContain("delta inicial");
   });
+
+  test("expanded mode renders detail as block elements instead of an expandable quote", () => {
+    const a = createTurnActivity();
+    recordThought(a, "texto visible", { at: 1000 });
+    const out = renderActivity(a, "high", false, 1100, true);
+    expect(out).toContain("<p>");
+    expect(out).toContain("texto visible");
+    expect(out).not.toContain("<blockquote expandable>");
+  });
+
+  test("collapsed mode keeps the native expandable quote", () => {
+    const a = createTurnActivity();
+    recordThought(a, "oculto", { at: 1000 });
+    const out = renderActivity(a, "high", false, 1100, false);
+    expect(out).toContain("<blockquote expandable>");
+  });
+
+  test("keeps the detail block within a character budget so HTML is never cut mid-tag", () => {
+    const a = createTurnActivity();
+    for (let i = 0; i < 40; i++) recordThought(a, "x".repeat(300), { at: 1000 + i });
+    const out = renderActivity(a, "high", false, 2000, true);
+    expect(out.length).toBeLessThan(2500);
+    expect(out.trimEnd().endsWith("</blockquote>")).toBe(true);
+  });
 });

@@ -168,7 +168,7 @@ function renderEntry(e: ActivityEntry, detailCap: number, now: number): string {
 }
 
 /** Render the compact summary line plus one native expandable detail block. */
-export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, finished: boolean, now = Date.now()): string {
+export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, finished: boolean, now = Date.now(), expanded = false): string {
   if (!a) return "";
   const parts: string[] = [];
   if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "thought" : "thoughts"}`);
@@ -203,6 +203,19 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
     }
   }
 
+  // Keep the block well under the card's 3900-char budget so clampText never
+  // cuts it in the middle of a tag (which would make Telegram drop formatting).
+  const renderBody = (ls: string[]) => expanded
+    ? `<blockquote>${ls.map((l) => `<p>${l.replace(/\n   /g, " — ")}</p>`).join("")}</blockquote>`
+    : `<blockquote expandable>\n${ls.join("\n")}\n</blockquote>`;
+  const budget = expanded ? 1800 : 1400;
+  let kept = lines;
+  while (kept.length > 1 && renderBody(kept).length > budget) kept = kept.slice(1);
+  if (kept.length !== lines.length) kept = ["<i>… anteriores</i>", ...kept];
+
   const prefix = finished ? "−" : "+";
-  return `${prefix}${parts.join(" · ")}\n<blockquote expandable>\n${lines.join("\n")}\n</blockquote>`;
+  const hint = expanded ? " ▴" : " ▾";
+  // The rich-message backend collapses bare newlines, so the expanded variant
+  // uses <p> block elements to guarantee one entry per visible line.
+  return `${prefix}${parts.join(" · ")}${hint}\n${renderBody(kept)}`;
 }
