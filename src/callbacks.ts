@@ -278,6 +278,7 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
     decision = "always";
   }
   info.decided = true;
+  if (info.timeoutHandle) clearTimeout(info.timeoutHandle);
   await deps.oc.replyPermission(info.sessionId, requestId, decision);
   await deps.tg.answerCallbackQuery(cq.id, decision === "once" ? "Allowed" : decision === "always" ? "Always allowed" : "Rejected").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (info.messageId) {

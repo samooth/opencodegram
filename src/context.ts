@@ -20,6 +20,8 @@ export type PermissionInfo = {
   decided: boolean;
   label: string;
   resource: string;
+  /** Handle of the 5-minute auto-reject timer, cleared when a decision is made. */
+  timeoutHandle?: ReturnType<typeof setTimeout>;
 };
 
 export type FormField = {

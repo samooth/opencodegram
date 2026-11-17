@@ -3,7 +3,7 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
-import type { FormField, FormState } from "./context.js";
+import type { FormField, FormState, PermissionInfo } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon } from "./util.js";
@@ -17,15 +17,6 @@ import { formatBytes, MAX_DOCUMENT_BYTES, prepareDocument } from "./files/index.
 import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted, updateRetryPrompt } from "./autoretry.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
-
-export type PermissionInfo = {
-  chatId: number;
-  sessionId: string;
-  messageId?: number;
-  decided: boolean;
-  label: string;
-  resource: string;
-};
 
 export type EventsDeps = {
   /** Telegram client used to send/edit messages. */
@@ -725,8 +716,8 @@ const handlePermissionAsked: EventHandler = async (event, deps) => {
   });
   if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
   pendingPermissions.set(requestId, { chatId, sessionId, messageId: sent.message_id, decided: false, label, resource });
-  // Auto-reject on timeout
-  setTimeout(async () => {
+  // Auto-reject on timeout. Store the handle so decisions can cancel it.
+  const timeoutHandle = setTimeout(async () => {
     const info = pendingPermissions.get(requestId);
     if (info && !info.decided) {
       info.decided = true;
@@ -741,6 +732,8 @@ const handlePermissionAsked: EventHandler = async (event, deps) => {
       pendingPermissions.delete(requestId);
     }
   }, 5 * 60 * 1000);
+  const permInfo = pendingPermissions.get(requestId);
+  if (permInfo) permInfo.timeoutHandle = timeoutHandle;
 };
 
 const handleFormCreated: EventHandler = async (event, deps) => {
@@ -812,6 +805,7 @@ const handlePermissionReplied: EventHandler = async (event, deps) => {
   const info = requestId ? pendingPermissions.get(requestId as string) : undefined;
   if (info && !info.decided) {
     info.decided = true;
+    if (info.timeoutHandle) clearTimeout(info.timeoutHandle);
     const reply = (p.reply as string | undefined) ?? "replied";
     if (info.messageId) {
       await tg.editRichMessage(info.chatId, info.messageId, `<b>Permission ${reply} (via OpenCode)</b>\n<i>${esc(info.label)}</i>\n<code>${esc(info.resource)}</code>`).catch((err) => console.warn("[events]", err?.message ?? err));
