@@ -32,6 +32,22 @@ export type PanelsDeps = {
 export type Panels = ReturnType<typeof createPanels>;
 
 export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, modelListByChat, routeKey, chatBySession, deliveryBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
+  /** CPU/load/memory/GPU indicators shared by status, panel and ops cards. */
+  const hostInfo = () => {
+    const cpuCount = os.cpus().length;
+    const load = os.loadavg().map((x) => x.toFixed(2)).join(" ");
+    const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
+    const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
+    let gpu = "";
+    const gpuInfo = readGpuInfo();
+    if (gpuInfo) gpu = `${esc(gpuInfo.name)}<br>VRAM: ${gpuInfo.usedMB} MiB/${gpuInfo.totalMB} MiB<br>Load: ${gpuInfo.util}%`;
+    return { cpuCount, load, totalMem, freeMem, gpu };
+  };
+  /** Human-readable bot uptime since process start. */
+  const botUptimeText = () => {
+    const sec = Math.max(1, Math.round((Date.now() - metrics.startedAt) / 1000));
+    return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+  };
   /** Model lists depend on the project directory, so the cache is per directory. */
   const modelCache = new Map<string, { time: number; data: any[] }>();
   const MODEL_CACHE_TTL_MS = 15000;
@@ -342,18 +358,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       oc.listSessionsCached().then((list) => list.length).catch(() => 0),
       s?.sessionId ? oc.client.session.get({ sessionID: s.sessionId }).catch(() => null) : Promise.resolve(null),
     ]);
-    const cpuCount = os.cpus().length;
-    const load = os.loadavg().map((x) => x.toFixed(2)).join(" ");
-    const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
-    const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
-    let gpu = "";
-    const gpuInfo = readGpuInfo();
-    if (gpuInfo) {
-      gpu = `${esc(gpuInfo.name)}<br>VRAM: ${gpuInfo.usedMB} MiB/${gpuInfo.totalMB} MiB<br>Load: ${gpuInfo.util}%`;
-    }
-
-    const botUptimeSeconds = Math.max(1, Math.round((Date.now() - metrics.startedAt) / 1000));
-    const botUptime = `${Math.floor(botUptimeSeconds / 3600)}h ${Math.floor((botUptimeSeconds % 3600) / 60)}m`;
+    const { cpuCount, load, totalMem, freeMem, gpu } = hostInfo();
+    const botUptime = botUptimeText();
     let title = s?.sessionId ? "(loading…)" : "none";
     let modelLine = "—";
     let directory = s?.directory ?? config.OPENCODE_DIRECTORY ?? "—";
@@ -412,15 +418,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       oc.serverInfo().catch(() => null),
       oc.listSessionsCached().then((list) => list.length).catch(() => 0),
     ]);
-    const cpuCount = os.cpus().length;
-    const load = os.loadavg().map((x) => x.toFixed(2)).join(" ");
-    const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
-    const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
-    let gpu = "";
-    const gpuInfo = readGpuInfo();
-    if (gpuInfo) {
-      gpu = `${esc(gpuInfo.name)}<br>VRAM: ${gpuInfo.usedMB} MiB/${gpuInfo.totalMB} MiB<br>Load: ${gpuInfo.util}%`;
-    }
+    const { cpuCount, load, totalMem, freeMem, gpu } = hostInfo();
     const rows = [
       s ? `<tr><td><b>Session</b></td><td><code>${esc(s.sessionId)}</code></td></tr>` : `<tr><td><b>Session</b></td><td>none</td></tr>`,
       s?.model ? `<tr><td><b>Model</b></td><td><code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>${s.model.variant ? " (" + esc(s.model.variant) + ")" : ""}</td></tr>` : "",
@@ -447,8 +445,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       oc.serverInfo().catch(() => null),
       statfs(process.cwd()).catch(() => null),
     ]);
-    const botUptimeSeconds = Math.max(1, Math.round((Date.now() - metrics.startedAt) / 1000));
-    const botUptime = `${Math.floor(botUptimeSeconds / 3600)}h ${Math.floor((botUptimeSeconds % 3600) / 60)}m`;
+    const botUptime = botUptimeText();
     const mem = process.memoryUsage();
     const diskFree = disk ? formatBytes(disk.bavail * disk.bsize) : "?";
     const throttleTotalsInfo = throttleTotals();
