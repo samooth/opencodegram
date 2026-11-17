@@ -458,7 +458,8 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     return;
   }
   const hasContent = !!(msg.text ?? msg.caption ?? msg.photo ?? msg.document ?? msg.audio ?? msg.voice ?? msg.video);
-  const isService = !!(msg as any).forum_topic_created || !!(msg as any).forum_topic_edited || !!(msg as any).forum_topic_closed || !!(msg as any).pinned_message;
+  const serviceMsg = msg as typeof msg & { forum_topic_created?: unknown; forum_topic_edited?: unknown; forum_topic_closed?: unknown; pinned_message?: unknown };
+  const isService = !!(serviceMsg.forum_topic_created || serviceMsg.forum_topic_edited || serviceMsg.forum_topic_closed || serviceMsg.pinned_message);
   if (isService && !hasContent) return;
   const allowedUsers = new Set<number>();
   if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);
@@ -493,7 +494,8 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // "ses_..." in their header). This keeps replies routing to the right
   // session instead of showing the "which session?" picker.
   if (!repliedSessionId && replyMessageId) {
-    const repliedText = ((msg.reply_to_message as any)?.text ?? (msg.reply_to_message as any)?.caption ?? "").toString();
+    const replied = msg.reply_to_message as { text?: unknown; caption?: unknown } | undefined;
+    const repliedText = ((replied?.text ?? replied?.caption ?? "") as string).toString();
     // Recover the session from a ses_ id embedded in the replied bot message
     // (cards, digests, final answers and errors all include it in their
     // header). This keeps replies routing to the right session even when the
@@ -654,7 +656,8 @@ export async function handleMediaMessage(
       try {
         await copyFile(srcPath, destPath);
         att.uri = `file://${destPath}`;
-        if ((att as any).source) (att as any).source.uri = `file://${destPath}`;
+        const withSource = att as typeof att & { source?: { type: string; uri: string } };
+        if (withSource.source) withSource.source.uri = `file://${destPath}`;
       } catch (err) {
         console.warn("[media] could not copy to session dir", srcPath, err);
       }
@@ -670,10 +673,11 @@ export async function handleMediaMessage(
     try {
       const res = await oc.client.model.list();
       const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
-      const current = list.find((m: any) => m.id === s.model?.id && m.providerID === s.model?.providerID) as { id?: string; providerID?: string; capabilities?: { input?: string[] }; variants?: Array<{ id?: string }> } | undefined;
+      type VisionModel = { id?: string; providerID?: string; capabilities?: { input?: string[] }; variants?: Array<{ id?: string }> };
+      const current = (list as VisionModel[]).find((m) => m.id === s.model?.id && m.providerID === s.model?.providerID);
       const supportsImage = Array.isArray(current?.capabilities?.input) && current.capabilities.input.includes("image");
       if (!supportsImage) {
-        const visionModel = list.find((m: any) => Array.isArray(m.capabilities?.input) && m.capabilities.input.includes("image")) as { id?: string; providerID?: string; capabilities?: { input?: string[] }; variants?: Array<{ id?: string }> } | undefined;
+        const visionModel = (list as VisionModel[]).find((m) => Array.isArray(m.capabilities?.input) && m.capabilities.input.includes("image"));
         if (visionModel) {
           await oc.switchModel(s.sessionId, { id: visionModel.id!, providerID: visionModel.providerID!, variant: visionModel.variants?.[0]?.id });
           s.model = { id: visionModel.id!, providerID: visionModel.providerID!, variant: visionModel.variants?.[0]?.id };
@@ -772,7 +776,7 @@ export async function handleTextMessage(
     // Pre-filter using cached OpenCode command list.
     try {
       const cmds = await oc.listCommandsCached(s.directory);
-      const names = cmds.map((c: any) => String(c?.name ?? c?.command ?? c)).filter(Boolean);
+      const names = (cmds as Array<{ name?: string; command?: string } | string>).map((c) => String((c as { name?: string })?.name ?? (c as { command?: string })?.command ?? c)).filter(Boolean);
       if (names.length && !names.includes(name)) {
         // fuzzy suggestions
         const lower = name.toLowerCase();

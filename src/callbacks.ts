@@ -1,4 +1,5 @@
 import { isDangerousCommand } from "./dangerous.js";
+import type { InlineKeyboard } from "./apitypes.js";
 import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files/index.js";
 import { renderForm, formKeyboard } from "./formui.js";
@@ -120,7 +121,7 @@ async function handleHistory(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     try {
       const res = await deps.oc.client.session.context({ sessionID: s.sessionId });
       const msgs = Array.isArray(res) ? res : (((res as { data?: unknown })?.data ?? (res as { messages?: unknown })?.messages) ?? []);
-      for (const m of (msgs as any[])) {
+      for (const m of (msgs as Array<Record<string, unknown>>)) {
         if (m?.type !== "user") continue;
         const text = typeof m?.text === "string" ? m.text.trim() : "";
         if (text) userPrompts.push(text);
@@ -445,7 +446,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   }
   if (!messageId) deps.pendingModelByChat.set(scope, pending);
   const variants = Array.isArray(model.variants) ? model.variants : [];
-  const keyboard: any[][] = [];
+  const keyboard: InlineKeyboard = [];
   for (const v of variants) {
     keyboard.push([{ text: v.id === model.variants?.[0]?.id ? `${v.id} (default)` : v.id, callback_data: `variant:${v.id}` }]);
   }
@@ -673,7 +674,7 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     const repos = listRepoDirectories(deps.config);
     if (repos.length) {
       await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
-      const keyboard: any[][] = repos.map((name) => [{ text: name, callback_data: `repo:${name}` }]);
+      const keyboard: InlineKeyboard = repos.map((name) => [{ text: name, callback_data: `repo:${name}` }]);
       keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
       await tg.sendRichMessage(chatId, "Elige el repositorio para la nueva sesión:", { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
       return;
@@ -798,7 +799,7 @@ async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
     return;
   }
   const cmds = await deps.oc.listCommandsCached(s.directory);
-  if (!cmds.some((c: any) => c?.name === name)) {
+  if (!(cmds as Array<{ name?: string }>).some((c) => c?.name === name)) {
     await deps.tg.answerCallbackQuery(cq.id, "Unknown command").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }

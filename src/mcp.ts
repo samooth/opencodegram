@@ -18,10 +18,15 @@ export type McpResourceInfo = {
   mimeType?: string;
 };
 
-function serverStatus(server: any): { status: string; error?: string } {
-  const status = server?.status?.status ?? server?.status ?? "unknown";
-  const error = server?.status?.error ?? server?.error;
-  return { status: String(status), error };
+type McpServerRaw = {
+  status?: string | { status?: unknown; error?: unknown };
+  error?: unknown;
+};
+function serverStatus(server: McpServerRaw): { status: string; error?: string } {
+  const raw = server?.status;
+  const status = (typeof raw === "object" && raw !== null ? raw.status : raw) ?? "unknown";
+  const error = (typeof raw === "object" && raw !== null ? raw.error : undefined) ?? server?.error;
+  return { status: String(status), error: error === undefined ? undefined : String(error) };
 }
 
 export function mcpStatusEmoji(status: string): string {
@@ -44,7 +49,7 @@ export function mcpStatusEmoji(status: string): string {
 export async function listMcpServers(oc: OpenCodeBridge, directory?: string): Promise<McpServerInfo[]> {
   const res = await oc.client.mcp.list(directory ? ({ location: { directory } } as unknown as Parameters<typeof oc.client.mcp.list>[0]) : undefined);
   const list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
-  return list.map((server: any) => ({
+  return (list as Array<McpServerRaw & { name?: string; id?: string; title?: string }>).map((server) => ({
     name: server.name ?? server.id ?? "unnamed",
     status: serverStatus(server).status,
     title: server.title,
@@ -70,17 +75,17 @@ export async function listMcpResources(oc: OpenCodeBridge, directory?: string): 
   const resources = Array.isArray(data.resources) ? data.resources : [];
   const templates = Array.isArray(data.templates) ? data.templates : [];
   return {
-    resources: resources.map((item: any) => ({
-      server: item.server,
-      name: item.name,
-      uri: item.uri,
+    resources: (resources as Array<{ server?: string; name?: string; uri?: string; description?: string; mimeType?: string }>).map((item) => ({
+      server: item.server ?? "",
+      name: item.name ?? "",
+      uri: item.uri ?? "",
       description: item.description,
       mimeType: item.mimeType,
     })),
-    templates: templates.map((item: any) => ({
-      server: item.server,
-      name: item.name,
-      uri: item.uriTemplate ?? item.uri,
+    templates: (templates as Array<{ server?: string; name?: string; uri?: string; uriTemplate?: string; description?: string; mimeType?: string }>).map((item) => ({
+      server: item.server ?? "",
+      name: item.name ?? "",
+      uri: item.uriTemplate ?? item.uri ?? "",
       description: item.description,
       mimeType: item.mimeType,
     })),
