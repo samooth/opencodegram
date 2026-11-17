@@ -1,3 +1,4 @@
+type Named = { name?: string; id?: string; description?: string };
 import type { BotDeps, SendFn } from "../context.js";
 import { renderSettings, settingsKeyboard } from "../settings.js";
 import { esc, truncate } from "../util.js";
@@ -71,9 +72,9 @@ export async function cmd_agents(deps: BotDeps, chatId: number, threadId: number
       await send("no agents available. Configure agents in OpenCode.");
       return true;
     }
-    const rows = agents.map((a: any) => `<tr><td><b>${esc(a.name ?? a.id)}</b></td><td>${esc(truncate(a.description ?? "", 90))}</td></tr>`).join("");
+    const rows = (agents as Named[]).map((a) => `<tr><td><b>${esc(a.name ?? a.id ?? "")}</b></td><td>${esc(truncate(a.description ?? "", 90))}</td></tr>`).join("");
     const table = `<table><tr><th>Agent</th><th>Description</th></tr>${rows}</table>`;
-    const keyboard = agents.map((a: any) => [{ text: a.name ?? a.id, callback_data: `agent:${a.id}` }]);
+    const keyboard = (agents as Named[]).map((a) => [{ text: a.name ?? a.id ?? "", callback_data: `agent:${a.id ?? ""}` }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     await send(`<b>Agents</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
     return true;
@@ -91,9 +92,9 @@ export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number
       await send("no skills available.");
       return true;
     }
-    const rows = skills.map((k: any) => `<tr><td><b>${esc(k.name ?? k.id)}</b></td><td>${esc(truncate(k.description ?? "", 90))}</td></tr>`).join("");
+    const rows = (skills as Named[]).map((k) => `<tr><td><b>${esc(k.name ?? k.id ?? "")}</b></td><td>${esc(truncate(k.description ?? "", 90))}</td></tr>`).join("");
     const table = `<table><tr><th>Skill</th><th>Description</th></tr>${rows}</table>`;
-    const keyboard = skills.map((k: any) => [{ text: k.name ?? k.id, callback_data: `skill:${k.id}` }]);
+    const keyboard = (skills as Named[]).map((k) => [{ text: k.name ?? k.id ?? "", callback_data: `skill:${k.id ?? ""}` }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     await send(`<b>Skills</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
     return true;

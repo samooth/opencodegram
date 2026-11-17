@@ -1,3 +1,4 @@
+type Wt = { directory?: string; path?: string };
 import type { BotDeps, SendFn } from "../context.js";
 import * as vcs from "../vcs.js";
 import { colorDiff, esc } from "../util.js";
@@ -187,7 +188,7 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
         await send("no worktrees.");
         return true;
       }
-      const lines = list.map((w: any) => `• <code>${esc(w.directory ?? w.path ?? "")}</code>`);
+      const lines = (list as Wt[]).map((w) => `• <code>${esc(w.directory ?? w.path ?? "")}</code>`);
       await send(`<b>Worktrees</b>\n${lines.join("\n")}`);
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
@@ -207,7 +208,7 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
           await send("no worktrees.");
           return true;
         }
-        const lines = list.map((w: any) => `• <code>${esc(w.directory ?? w.path ?? "")}</code>`);
+        const lines = (list as Wt[]).map((w) => `• <code>${esc(w.directory ?? w.path ?? "")}</code>`);
         await send(`<b>Worktrees</b>\n${lines.join("\n")}`);
       } catch (err) {
         await send(`❌ ${esc(String(err))}`);
@@ -274,7 +275,7 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
       }
       try {
         const list = await C.oc.worktreeList(directory);
-        const directories = list.map((w: any) => w.directory ?? w.path).filter(Boolean);
+        const directories = (list as Wt[]).map((w) => w.directory ?? w.path).filter(Boolean);
         if (!directories.includes(target)) {
           await send(`❌ Not a known worktree:\n<code>${esc(target)}</code>`);
           return true;

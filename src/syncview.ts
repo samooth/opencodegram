@@ -36,7 +36,7 @@ export function digestStats(items: DigestItem[]): DigestStats {
     else if (role === "assistant") {
       stats.assistants++;
       const content = Array.isArray(item.content) ? item.content : [];
-      stats.tools += content.filter((p: any) => p.type === "tool").length;
+      stats.tools += content.filter((p: { type?: string; text?: unknown; name?: string; tool?: string }) => p.type === "tool").length;
     } else if (role === "compaction") stats.compactions++;
   }
   return stats;
@@ -55,8 +55,8 @@ function withHint(text: string, max: number): string {
 function assistantText(item: DigestItem): string {
   const content = Array.isArray(item.content) ? item.content : [];
   return content
-    .filter((p: any) => p.type === "text")
-    .map((p: any) => (typeof p.text === "string" ? p.text : p?.text ? JSON.stringify(p.text) : ""))
+    .filter((p: { type?: string; text?: unknown; name?: string; tool?: string }) => p.type === "text")
+    .map((p: { type?: string; text?: unknown; name?: string; tool?: string }) => (typeof p.text === "string" ? p.text : p?.text ? JSON.stringify(p.text) : ""))
     .join("\n\n")
     .trim();
 }
@@ -64,8 +64,8 @@ function assistantText(item: DigestItem): string {
 function assistantTools(item: DigestItem): string[] {
   const content = Array.isArray(item.content) ? item.content : [];
   return content
-    .filter((p: any) => p.type === "tool")
-    .map((p: any) => String(p.name ?? p.tool ?? "tool"));
+    .filter((p: { type?: string; text?: unknown; name?: string; tool?: string }) => p.type === "tool")
+    .map((p: { type?: string; text?: unknown; name?: string; tool?: string }) => String(p.name ?? p.tool ?? "tool"));
 }
 
 /** One rendered message of the digest (already HTML). */
@@ -75,7 +75,7 @@ function renderItem(item: DigestItem): string {
     const raw = item.text;
     const text = typeof raw === "string" ? raw : raw ? JSON.stringify(raw) : "";
     if (!text.trim()) return "";
-    const repeat = (item as any)._repeat;
+    const repeat = (item as { _repeat?: number })._repeat;
     const repeatHint = repeat && repeat > 1 ? ` <i>(×${repeat})</i>` : "";
     return `<h4>👤 Tú</h4>${repeatHint}\n<blockquote>${esc(withHint(text.trim(), 1400))}</blockquote>`;
   }
@@ -133,7 +133,7 @@ export function buildDigestParts(
   for (const item of raw) {
     const prev = meaningful[meaningful.length - 1];
     if (itemRole(item) === "user" && prev && itemRole(prev) === "user" && item.text === prev.text) {
-      (prev as any)._repeat = ((prev as any)._repeat ?? 1) + 1;
+      (prev as { _repeat?: number })._repeat = ((prev as { _repeat?: number })._repeat ?? 1) + 1;
       continue;
     }
     meaningful.push(item);
