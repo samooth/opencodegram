@@ -9,6 +9,7 @@ if [ "${ENABLE_BROWSE:-0}" = "1" ] || [ "${ENABLE_BROWSE:-0}" = "true" ]; then
   cat > "$CFG" <<'JSONC'
 {
   "$schema": "https://opencode.ai/config.json",
+  "experimental": { "mcp_events": true },
   "mcp": {
     "servers": {
       "browse": {
@@ -31,6 +32,7 @@ else
   cat > "$CFG" <<'JSONC'
 {
   "$schema": "https://opencode.ai/config.json",
+  "experimental": { "mcp_events": true },
   "mcp": {
     "servers": {
       "playwright": {
@@ -42,7 +44,7 @@ else
   }
 }
 JSONC
-  echo "[entrypoint] Browse disabled; Playwright MCP enabled"
+  echo "[entrypoint] Browse disabled; Playwright MCP enabled (mcp_events on)"
 fi
 
 exec "$@"
