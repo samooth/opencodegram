@@ -273,7 +273,20 @@ async function main() {
     mcpEvents,
   });
 
+  // Register signal handlers BEFORE starting either loop: in polling mode the
+  // loop blocks forever, and in webhook mode there is no blocking call at all.
   let webhookServer: ReturnType<typeof createWebhookServer> | undefined;
+  let stopping = false;
+  const stopAll = () => {
+    if (stopping) return;
+    stopping = true;
+    try { ops.stop(); } catch {}
+    try { webhookServer?.stop(); } catch {}
+    requestStopPolling();
+  };
+  process.on("SIGINT", stopAll);
+  process.on("SIGTERM", stopAll);
+
   if (config.WEBHOOK_MODE) {
     if (!config.WEBHOOK_URL) {
       throw new Error("WEBHOOK_MODE is enabled but WEBHOOK_URL is not set");
@@ -286,25 +299,17 @@ async function main() {
     if (!ok) throw new Error("Failed to register Telegram webhook");
     console.log(`[opencodegram] webhook registered: ${publicUrl}`);
     webhookServer = createWebhookServer(deps);
+    // Webhook mode is event-driven: do not exit here. The HTTP server keeps
+    // the process alive until a signal calls stopAll().
   } else {
     await tg.deleteWebhook().catch(() => {});
     console.log("[opencodegram] starting polling...");
     await startPolling(deps);
+    // The polling loop only returns after requestStopPolling() from a signal.
+    await new Promise((r) => setTimeout(r, 1500));
+    console.log("[opencodegram] shutting down");
+    process.exit(0);
   }
-
-  // Graceful shutdown handling for servers.
-  const stopAll = () => {
-    try { ops.stop(); } catch {}
-    try { webhookServer?.stop(); } catch {}
-    requestStopPolling();
-  };
-  process.on("SIGINT", () => { stopAll(); });
-  process.on("SIGTERM", () => { stopAll(); });
-  // Wait for polling to unwind before exiting so the long-poll connection
-  // is released cleanly (avoids 409 Conflict on the next start).
-  await new Promise((r) => setTimeout(r, 1500));
-  console.log("[opencodegram] shutting down");
-  process.exit(0);
 }
 
 process.on("unhandledRejection", (err) => {
