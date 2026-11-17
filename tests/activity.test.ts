@@ -165,6 +165,27 @@ describe("turn activity counters", () => {
     expect(a.entries[0]?.detail).toBe("git status");
   });
 
+  test("read entries extract path and line range from JSON input", () => {
+    const a = createTurnActivity();
+    recordTool(a, "read", JSON.stringify({ filePath: "/workspace/src/foo.ts", offset: 10, limit: 5 }), { at: 1000, toolId: "r1" });
+    expect(a.entries[0]?.detail).toBe("/workspace/src/foo.ts:10-14");
+    const out = renderActivity(a, "high", false, 1100, true);
+    expect(out).toContain("foo.ts:10-14");
+    expect(out).not.toContain("&quot;row&quot;");
+  });
+
+  test("search entries use the pattern when there is no file", () => {
+    const a = createTurnActivity();
+    recordTool(a, "grep", JSON.stringify({ pattern: "TODO", path: "." }), { at: 1000, toolId: "g1" });
+    expect(a.entries[0]?.detail).toBe("TODO");
+  });
+
+  test("plain text paths still work as input", () => {
+    const a = createTurnActivity();
+    recordTool(a, "read", "README.md", { at: 1000, toolId: "r1" });
+    expect(a.entries[0]?.detail).toBe("README.md");
+  });
+
   test("collapsed headers omit the open spinner, expanded ones keep it", () => {
     const a = createTurnActivity();
     recordThought(a, "pensando", { at: 1000 });

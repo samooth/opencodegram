@@ -125,7 +125,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (262 tests across 34 files):
+`bun test` covers (266 tests across 34 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -142,7 +142,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
   compact activity counters, event recording, header-only collapsed rows,
   per-file diff/read buttons, colored diffs, 64-byte callback_data limit and
   clearing keyboards from old cards, a collapsible resource block and real
-  shell commands / file paths extracted from raw tool JSON.
+  shell commands, file paths and line ranges extracted from raw tool JSON.
 - `tests/callbacks.test.ts`, `tests/events.test.ts`, `tests/panels.test.ts`,
   `tests/sessions.test.ts`, `tests/status.test.ts`, `tests/updates.test.ts` —
   handlers, rendering and routing.

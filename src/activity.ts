@@ -6,7 +6,7 @@
  * extra messages or callbacks are needed.
  */
 import { esc } from "./util.js";
-import { extractEditFile } from "./editutil.js";
+import { describeToolInput } from "./editutil.js";
 import type { CardVerbosity } from "./settings.js";
 
 export type ActivityKind = "thought" | "read" | "search" | "edit" | "shell" | "tool";
@@ -126,7 +126,7 @@ export function recordTool(a: TurnActivity, name: string, input: string, opts: {
   return push(a, {
     kind,
     label: labelFor(name, kind),
-    detail: kind === "shell" ? shellCommand(input) : kind === "edit" ? (extractEditFile(input) ?? input) : input,
+    detail: toolDetail(kind, input),
     at,
     open: true,
     toolId: opts.toolId,
@@ -152,10 +152,21 @@ function shellCommand(input: string): string {
   return trimmed;
 }
 
+/** Turn a tool's raw input into a short human-readable detail. */
+function toolDetail(kind: ActivityKind, input: string): string {
+  if (kind === "shell") return shellCommand(input);
+  if (kind === "read" || kind === "edit" || kind === "search") {
+    const target = describeToolInput(input);
+    if (kind === "search") return target.hint || target.file || input;
+    return target.file ? (target.hint ? `${target.file}:${target.hint}` : target.file) : input;
+  }
+  return input;
+}
+
 /** Replace the placeholder detail with the real input from session.tool.called. */
 export function updateToolDetail(a: TurnActivity, toolId: string, detail: string): void {
   const entry = [...a.entries].reverse().find((e) => e.toolId === toolId);
-  if (entry) entry.detail = entry.kind === "shell" ? shellCommand(detail) : entry.kind === "edit" ? (extractEditFile(detail) ?? detail) : detail;
+  if (entry) entry.detail = toolDetail(entry.kind, detail);
 }
 
 export function finishTool(a: TurnActivity, toolId: string, ok: boolean, opts: { at?: number } = {}): void {

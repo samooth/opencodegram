@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { createTranscriptManager } from "../src/transcriptmanager.js";
+import { createTranscriptManager, getActivityReadPath } from "../src/transcriptmanager.js";
 import { SessionStore } from "../src/store.js";
 import { createTurnActivity, recordThought, recordTool } from "../src/activity.js";
 import type { ChatSession } from "../src/types.js";
@@ -99,6 +99,17 @@ describe("activity card controls", () => {
     const rows = tm.cardKeyboard(s, 0, 0, {});
     const fileButtons = rows.flat().filter((b) => /^(readfile|edit|editfile):/.test(b.callback_data));
     expect(fileButtons.length).toBeLessThanOrEqual(9);
+  });
+
+  test("read buttons open the file path without the line-range suffix", () => {
+    const { s } = makeHarness();
+    const store = new SessionStore(join(root, "data"));
+    recordTool(s.activity!, "read", JSON.stringify({ filePath: "/workspace/src/foo.ts", offset: 10, limit: 5 }), { at: 1000, toolId: "r1" });
+    const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
+    const rows = tm.cardKeyboard(s, 0, 0, {});
+    const btn = rows.flat().find((b) => b.callback_data.startsWith("readfile:"));
+    expect(btn?.text).toContain("foo.ts:10-14");
+    expect(getActivityReadPath(btn!.callback_data.slice("readfile:".length))).toBe("/workspace/src/foo.ts");
   });
 
   test("cleanupCard strips resources and clears keyboard from an old card", async () => {

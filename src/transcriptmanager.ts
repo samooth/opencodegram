@@ -345,7 +345,8 @@ ${body}
       if (seenReads.has(path)) continue;
       seenReads.add(path);
       const key = `${s.sessionId}:${seenReads.size - 1}`;
-      rememberActivityReadPath(key, path);
+      // The label keeps the line range; the stored path must not include it.
+      rememberActivityReadPath(key, path.replace(/:\d+(?:-\d+)?$/, ""));
       readButtons.push({ text: `📖 ${path.split("/").pop() ?? path}`.slice(0, 64), callback_data: `readfile:${key}` });
     }
     if (readButtons.length) keyboard.push(readButtons);

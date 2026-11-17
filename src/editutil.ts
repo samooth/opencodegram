@@ -20,6 +20,56 @@ export function isEditTool(name: string, input?: string): boolean {
   return false;
 }
 
+export type ToolTarget = { file: string; hint: string };
+
+function firstString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function firstNumber(obj: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+/** Extract a readable file target and detail (line range or search pattern)
+ * from a tool's raw JSON input, an apply_patch blob, or a plain path. */
+export function describeToolInput(input: string | undefined): ToolTarget {
+  if (!input || !input.trim()) return { file: "", hint: "" };
+  const trimmed = input.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const obj = parsed as Record<string, unknown>;
+        const file = firstString(obj, ["filePath", "file_path", "file", "path", "filename", "target"]) ?? "";
+        const pattern = firstString(obj, ["pattern", "query", "regex", "term", "search"]) ?? "";
+        const start = firstNumber(obj, ["offset", "start", "startLine", "line", "row", "from"]);
+        const limit = firstNumber(obj, ["limit", "count"]);
+        const end = firstNumber(obj, ["end", "endLine", "to"]);
+        let hint = pattern;
+        if (!hint) {
+          if (start !== undefined && limit !== undefined) hint = `${start}-${start + limit - 1}`;
+          else if (start !== undefined && end !== undefined) hint = `${start}-${end}`;
+          else if (start !== undefined) hint = String(start);
+        }
+        return { file, hint };
+      }
+    } catch {
+      // Not JSON; fall through to the other formats.
+    }
+  }
+  const patch = trimmed.match(/\*\*\*\s*(?:Update|Add|Delete)\s+File:\s*(.+)/);
+  if (patch) return { file: patch[1].trim(), hint: "" };
+  return { file: trimmed.split(/\s+/)[0] ?? trimmed, hint: "" };
+}
+
 export function extractEditFile(input: string | undefined): string | null {
   if (!input) return null;
   // Try JSON first.
