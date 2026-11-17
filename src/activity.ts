@@ -187,8 +187,8 @@ const ICONS: Record<ActivityKind, string> = {
 
 type ActivityBlock = { head: string; detail: string };
 
-function entryHead(e: ActivityEntry, now: number): string {
-  const status = e.ok === true ? " ✅" : e.ok === false ? " ❌" : e.open ? " ⏳" : "";
+function entryHead(e: ActivityEntry, now: number, showOpen = true): string {
+  const status = e.ok === true ? " ✅" : e.ok === false ? " ❌" : e.open && showOpen ? " ⏳" : "";
   const duration = fmtDuration(e.durationMs ?? Math.max(0, now - e.at));
   return `${ICONS[e.kind]} <b>${esc(e.label)}</b> · ${duration}${status}`;
 }
@@ -227,7 +227,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
       const run: ActivityEntry[] = [];
       while (i < visible.length && visible[i].kind === "shell") run.push(visible[i++]);
       const last = run[run.length - 1];
-      const status = last.ok === true ? " ✅" : last.ok === false ? " ❌" : run.some((x) => x.open) ? " ⏳" : "";
+      const status = last.ok === true ? " ✅" : last.ok === false ? " ❌" : expanded && run.some((x) => x.open) ? " ⏳" : "";
       const duration = fmtDuration(last.durationMs ?? Math.max(0, now - last.at));
       const commands = run
         .map((r) => `<p><code>$ ${esc(truncate(r.detail.trim() || r.label, detailCap || 80))}</code></p>`)
@@ -249,7 +249,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
       });
       continue;
     }
-    blocks.push({ head: entryHead(e, now), detail: detailPara(e.detail, detailCap) });
+    blocks.push({ head: entryHead(e, now, expanded), detail: detailPara(e.detail, detailCap) });
     i++;
   }
 

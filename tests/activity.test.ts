@@ -165,6 +165,15 @@ describe("turn activity counters", () => {
     expect(a.entries[0]?.detail).toBe("git status");
   });
 
+  test("collapsed headers omit the open spinner, expanded ones keep it", () => {
+    const a = createTurnActivity();
+    recordThought(a, "pensando", { at: 1000 });
+    const collapsed = renderActivity(a, "high", false, 1100, false);
+    const expanded = renderActivity(a, "high", false, 1100, true);
+    expect(collapsed).not.toContain("⏳");
+    expect(expanded).toContain("⏳");
+  });
+
   test("edit entries show the file path instead of raw JSON", () => {
     const a = createTurnActivity();
     recordTool(a, "edit", JSON.stringify({ filePath: "/workspace/src/pilot.py", oldString: "a", newString: "b" }), { at: 1000, toolId: "e" });

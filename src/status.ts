@@ -69,7 +69,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // The activity summary already carries tool counts; avoid showing them twice.
     if (tools && !s.activity) progressParts.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
     if (tokens && tokenElapsed > 0 && settings.showTokenSpeed) {
-      progressParts.push(`⚡ ${(tokens / tokenElapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`);
+      // A handful of tokens over a long "thinking" window yields a meaningless
+      // tok/s. Show the count alone until there is enough output to measure.
+      progressParts.push(tokens >= 100
+        ? `⚡ ${(tokens / tokenElapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`
+        : `✍️ ${tokens.toLocaleString()} tok`);
     }
     if (progressParts.length) lines.push(`<p><i>${esc(progressParts.join(" · "))}</i></p>`);
     // 3. Prompt being answered — context before detail.
