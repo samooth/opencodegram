@@ -423,7 +423,8 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   // point to another model after a refresh or a concurrent user action.
   const panel = messageId !== undefined ? deps.panels.modelPanels.get(messageId) : undefined;
   const scope = panel?.scope ?? deps.panels.userScope(chatId, threadId, userId);
-  const models = panel?.list ?? deps.modelListByChat.get(scope) ?? [];
+  type UiModel = { id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string } | string> };
+  const models = (panel?.list ?? deps.modelListByChat.get(scope) ?? []) as UiModel[];
   const model = models[idx];
   const targetId = panel?.targetSessionId ?? deps.panels.modelTargetSessionByScope.get(scope);
   const s = targetId ? deps.store.findSessionById(targetId) : deps.store.getActiveSession(chatId, threadId);
@@ -439,7 +440,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
-  const pending = { id: model.id, providerID: model.providerID, variant: model.variant };
+  const pending = { id: model.id ?? "", providerID: model.providerID ?? "", variant: model.variant };
   if (messageId !== undefined) {
     const entry = deps.panels.modelPanels.get(messageId);
     if (entry) entry.pendingModel = pending;
@@ -447,8 +448,10 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   if (!messageId) deps.pendingModelByChat.set(scope, pending);
   const variants = Array.isArray(model.variants) ? model.variants : [];
   const keyboard: InlineKeyboard = [];
-  for (const v of variants) {
-    keyboard.push([{ text: v.id === model.variants?.[0]?.id ? `${v.id} (default)` : v.id, callback_data: `variant:${v.id}` }]);
+  const variantIds = variants.map((v) => (typeof v === "string" ? v : v.id ?? ""));
+  const defaultVariant = variantIds[0] ?? "";
+  for (const v of variantIds) {
+    keyboard.push([{ text: v === defaultVariant ? `${v} (default)` : v, callback_data: `variant:${v}` }]);
   }
   keyboard.push([{ text: "Default", callback_data: "variant:default" }]);
   keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }]);

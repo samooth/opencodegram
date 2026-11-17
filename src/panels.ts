@@ -1,3 +1,7 @@
+type SessionRow = { id?: string; title?: string; model?: { providerID?: string; id?: string }; location?: { directory?: string }; directory?: string };
+type CommandRow = { name?: string; description?: string };
+type ModelRow = { id?: string; modelID?: string; name?: string; providerID?: string; provider?: string; variants?: Array<{ id?: string } | string>; capabilities?: { input?: string[] } };
+
 import os from "node:os";
 import { statfs } from "node:fs/promises";
 import type { Config } from "./config.js";
@@ -8,6 +12,7 @@ import type { MetricsStore } from "./metrics.js";
 import { esc, sessionHeader, threadOpts, projectLabel, clampText } from "./util.js";
 import { formatBytes } from "./files/index.js";
 import { BOT_COMMANDS } from "./botcommands.js";
+import type { InlineKeyboard, InlineButton } from "./apitypes.js";
 import { readGpuInfo } from "./resources.js";
 import { describeThrottles, throttleTotals } from "./ratethrottle.js";
 
@@ -49,7 +54,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
   };
   /** Model lists depend on the project directory, so the cache is per directory. */
-  const modelCache = new Map<string, { time: number; data: any[] }>();
+  const modelCache = new Map<string, { time: number; data: ModelRow[] }>();
   const MODEL_CACHE_TTL_MS = 15000;
   const providerListByChat = new Map<string, string[]>();
   const selectedProviderByChat = new Map<string, string | undefined>();
@@ -80,12 +85,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
   async function showDeleteSessions(chatId: number, page = 0, messageId?: number, threadId?: number, filterChatId?: number, onlyRunning?: boolean, _includeArchived?: boolean): Promise<void> {
     const pageSize = 8;
     const res = await oc.client.session.list({ limit: 100, order: "desc", archived: false });
-    let list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+    let list = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as SessionRow[];
     if (filterChatId !== undefined && chatBySession) {
-      list = list.filter((s: any) => chatBySession.get(s.id) === filterChatId);
+      list = list.filter((s: SessionRow) => chatBySession.get(s.id ?? "") === filterChatId);
     }
     if (onlyRunning && getSessionStatus) {
-      list = list.filter((s: any) => getSessionStatus(s.id) === "busy");
+      list = list.filter((s: SessionRow) => getSessionStatus(s.id ?? "") === "busy");
     }
     if (!list.length) {
       await sendOrEditRich(chatId, messageId, "no sessions found.", threadOpts(threadId));
@@ -94,21 +99,21 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const total = list.length;
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
-    const lines = slice.map((s: any, i: number) => {
+    const lines = slice.map((s: SessionRow, i: number) => {
       const title = esc(s.title ?? "(untitled)");
       const directory = esc(projectLabel(s.location?.directory ?? s.directory));
       const dirSuffix = directory ? ` · ${directory}` : "";
-      return `<tr><td>${start + i + 1}</td><td><b>${title}</b></td><td><code>${esc(s.id)}</code></td><td>${dirSuffix}</td></tr>`;
+      return `<tr><td>${start + i + 1}</td><td><b>${title}</b></td><td><code>${esc(s.id ?? "")}</code></td><td>${dirSuffix}</td></tr>`;
     });
     const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Dir</th></tr>${lines.join("")}</table>`;
-    const keyboard: any[][] = slice.map((s: any) => {
+    const keyboard: InlineKeyboard = slice.map((s: SessionRow) => {
       const title = (s.title ?? "(untitled)").slice(0, 40);
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
       const label = `🗑 ${(title + dirSuffix).slice(0, 58)}`;
       return [{ text: label, callback_data: `del:${s.id}` }];
     });
-    const nav: any[] = [];
+    const nav: InlineButton[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `delsessions:page:${page - 1}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `delsessions:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
@@ -128,7 +133,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     _opts?: { userId?: number },
   ): Promise<void> {
     const pageSize = 8;
-    const list = await oc.listSessionsCached();
+    const list = (await oc.listSessionsCached()) as SessionRow[];
     if (!list.length) {
       await sendOrEditRich(chatId, messageId, "no sessions found. Use /new to create one.", threadOpts(threadId));
       return;
@@ -145,10 +150,10 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     };
     let filtered = list;
     if (filterChatId !== undefined) {
-      filtered = filtered.filter((s: any) => chatsOf(String(s.id)).includes(filterChatId));
+      filtered = filtered.filter((s: SessionRow) => chatsOf(String(s.id)).includes(filterChatId));
     }
     if (onlyRunning && getSessionStatus) {
-      filtered = filtered.filter((s: any) => {
+      filtered = filtered.filter((s: SessionRow) => {
         const st = getSessionStatus(String(s.id));
         return st === "busy" || st === "retry";
       });
@@ -166,16 +171,16 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       const st = getSessionStatus ? getSessionStatus(id) : undefined;
       return st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
     };
-    const keyboard: any[][] = slice.map((s: any) => {
+    const keyboard: InlineKeyboard = slice.map((s: SessionRow) => {
       const title = (s.title ?? "(untitled)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
       const mark = activeId && activeId === s.id ? " ✓" : "";
-      const label = `${statusIcon(s.id)} ${title}${model}${dirSuffix}${mark}`.slice(0, 64);
-      return [{ text: label, callback_data: `use:${s.id}` }];
+      const label = `${statusIcon(s.id ?? "")} ${title}${model}${dirSuffix}${mark}`.slice(0, 64);
+      return [{ text: label, callback_data: `use:${s.id ?? ""}` }];
     });
-    const nav: any[] = [];
+    const nav: InlineButton[] = [];
     const mode = onlyRunning ? "running" : filterChatId !== undefined ? "group" : "all";
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}:${mode}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}:${mode}` });
@@ -202,14 +207,14 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     let s = getActiveSession(chatId, threadId);
     if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
-    const cmds = await oc.listCommands(directory);
+    const cmds = (await oc.listCommands(directory)) as CommandRow[];
     if (!cmds.length) {
       await tg.sendRichMessage(chatId, "no commands available.", threadOpts(threadId));
       return;
     }
-    const tableRows = cmds.map((c: any) => `<tr><td><code>/${esc(c.name)}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");
+    const tableRows = cmds.map((c: CommandRow) => `<tr><td><code>/${esc(c.name ?? "")}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");
     const table = `<table><tr><th>Command</th><th>Description</th></tr>${tableRows}</table>`;
-    const keyboard = cmds.map((c: any) => [{ text: `/${c.name}`, callback_data: `cmd:${c.name}` }]);
+    const keyboard = cmds.map((c: CommandRow) => [{ text: `/${c.name ?? ""}`, callback_data: `cmd:${c.name ?? ""}` }]);
     keyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }]);
     keyboard.push([{ text: "📊 Status", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const botCmds: Array<[string, string]> = BOT_COMMANDS.map((c) => [`/${c.command}`, c.description]);
@@ -229,7 +234,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
    * same topic can no longer make a click apply the wrong model.
    */
   const modelPanels = new Map<number, {
-    list: any[];
+    list: ModelRow[];
     scope: string;
     targetSessionId?: string;
     provider?: string;
@@ -252,7 +257,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     let s = targetId ? (findSessionById?.(targetId) ?? getActiveSession(chatId, threadId)) : getActiveSession(chatId, threadId);
     if (!s && !targetId && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
-    let raw: any[];
+    let raw: ModelRow[];
     const now = Date.now();
     // The model list depends on the project directory: cache per directory.
     const cacheKey = directory ?? "__default__";
@@ -261,10 +266,10 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       raw = cached.data;
     } else {
       const res = await oc.client.model.list(directory ? ({ location: { directory } } as unknown as Parameters<typeof oc.client.model.list>[0]) : undefined);
-      raw = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+      raw = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as ModelRow[];
       modelCache.set(cacheKey, { time: now, data: raw });
     }
-    const list = [...raw].sort((a: any, b: any) => {
+    const list = [...raw].sort((a: ModelRow, b: ModelRow) => {
       const aFree = /free/i.test(a.id ?? "") || /free/i.test(a.name ?? "");
       const bFree = /free/i.test(b.id ?? "") || /free/i.test(b.name ?? "");
       if (aFree !== bFree) return aFree ? -1 : 1;
@@ -272,7 +277,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     });
     const current = s?.model;
     modelListByChat.set(scope, list as Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id: string }> }>);
-    const providers = [...new Set(list.map((m: any) => m.providerID ?? m.provider ?? "unknown"))].sort();
+    const providers = [...new Set(list.map((m: ModelRow) => m.providerID ?? m.provider ?? "unknown"))].sort();
     const dirLabel = directory ? `<i>dir: <code>${esc(directory)}</code></i>` : "";
 
     if (!provider) {
@@ -290,17 +295,17 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
         ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
         : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
       const lines = slice.map((providerId: string, i: number) => {
-        const count = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
+        const count = list.filter((m: ModelRow) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
         const isCurrent = current && current.providerID === providerId;
         const mark = isCurrent ? " ✅" : "";
         return `<tr><td>${start + i + 1}</td><td><b>${esc(providerId)}</b>${mark}</td><td>${count}</td></tr>`;
       });
       const table = `<table><tr><th>#</th><th>Provider</th><th>Models</th></tr>${lines.join("")}</table>`;
-      const keyboard: any[][] = slice.map((providerId: string, i: number) => {
-        const count = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
+      const keyboard: InlineKeyboard = slice.map((providerId: string, i: number) => {
+        const count = list.filter((m: ModelRow) => (m.providerID ?? m.provider ?? "unknown") === providerId).length;
         return [{ text: `${providerId} (${count})`.slice(0, 64), callback_data: `prov:${start + i}` }];
       });
-      const nav: any[] = [];
+      const nav: InlineButton[] = [];
       if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
       if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
       if (nav.length) keyboard.push(nav);
@@ -315,25 +320,25 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     }
 
     selectedProviderByChat.set(scope, provider);
-    const providerModels = list.filter((m: any) => (m.providerID ?? m.provider ?? "unknown") === provider);
+    const providerModels = list.filter((m: ModelRow) => (m.providerID ?? m.provider ?? "unknown") === provider);
     const total = providerModels.length;
     const pageSize = 8;
     const start = page * pageSize;
     const slice = providerModels.slice(start, start + pageSize);
-    const lines = slice.map((m: any, i: number) => {
-      const name = esc(m.name ?? m.id);
-      const variant = m.variants?.length ? esc(m.variants.map((v: any) => v.id).join(", ")) : "—";
+    const lines = slice.map((m: ModelRow, i: number) => {
+      const name = esc(m.name ?? m.id ?? "");
+      const variant = m.variants?.length ? esc(m.variants.map((v) => (typeof v === "string" ? v : v.id ?? "")).join(", ")) : "—";
       const isCurrent = current && current.providerID === (m.providerID ?? m.provider) && current.id === m.id;
       const mark = isCurrent ? " ✅" : "";
-      return `<tr><td>${start + i + 1}</td><td><b>${name}</b>${mark}</td><td><code>${esc(m.providerID ?? m.provider ?? "")}/${esc(m.id)}</code></td><td>${variant}</td></tr>`;
+      return `<tr><td>${start + i + 1}</td><td><b>${name}</b>${mark}</td><td><code>${esc(m.providerID ?? m.provider ?? "")}/${esc(m.id ?? "")}</code></td><td>${variant}</td></tr>`;
     });
     const table = `<table><tr><th>#</th><th>Model</th><th>ID</th><th>Variants</th></tr>${lines.join("")}</table>`;
-    const keyboard: any[][] = slice.map((m: any) => {
+    const keyboard: InlineKeyboard = slice.map((m: ModelRow) => {
       const idx = list.indexOf(m);
       const label = `${m.name ?? m.id}`.slice(0, 48);
       return [{ text: label, callback_data: `model:${idx}` }];
     });
-    const nav: any[] = [];
+    const nav: InlineButton[] = [];
     if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
     if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
@@ -400,7 +405,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
     const text = `<h3>📊 Status</h3>\n\n<table compact striped bordered>${rows}</table>`;
-    const keyboard: any[][] = [];
+    const keyboard: InlineKeyboard = [];
     if (s?.sessionId) keyboard.push([{ text: "🔗 Conectar", callback_data: `connect:${s.sessionId}` }]);
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
     keyboard.push([
