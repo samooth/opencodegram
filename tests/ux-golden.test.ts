@@ -6,7 +6,7 @@ import { createTranscriptManager } from "../src/transcriptmanager.js";
 import { createStatusManager } from "../src/status.js";
 import { DEFAULT_SETTINGS } from "../src/settings.js";
 import { createTurnActivity, recordThought, recordTool, finishTool } from "../src/activity.js";
-import { sparkline } from "../src/resources.js";
+import { sparkline, renderResourceBlock } from "../src/resources.js";
 import { webAppHtml, createOpsServer } from "../src/ops.js";
 import type { ChatSession } from "../src/types.js";
 
@@ -190,6 +190,13 @@ describe("P2 entry points and cost", () => {
 });
 
 describe("P1.5 resources and web app", () => {
+  test("CTX never clamps an over-limit window; it flags it", () => {
+    const s = makeSession({ lastContextTokens: 247_758, contextWindow: 200_000, cpuHistory: [23], memHistory: [57] });
+    const text = renderResourceBlock(s, { history: 12 }).replace(/<[^>]+>/g, "");
+    expect(text).toContain("CTX ⚠ 124% (247,758 / 200,000 tok)");
+    expect(text).not.toContain("CTX 100%");
+  });
+
   test("sparkline maps samples to Unicode blocks and stays bounded", () => {
     expect(sparkline([])).toBe("");
     expect(sparkline([0, 100])).toBe("▁█");

@@ -5,7 +5,7 @@ import type { TranscriptManager } from "./transcriptmanager.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { clampText, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
+import { clampText, contextUsage, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
 
 export function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -360,9 +360,8 @@ export function turnTelemetry(s: ChatSession, now = Date.now(), showSpeed = true
     if (tokens >= 100) parts.push(`⚡ ${(tokens / seconds).toFixed(1)} tok/s`);
   }
   if (tokens) parts.push(`${formatTokenCount(tokens)} tok`);
-  if (s.lastContextTokens && s.contextWindow) {
-    parts.push(`${Math.min(100, Math.round((s.lastContextTokens / s.contextWindow) * 100))}% ctx`);
-  }
+  const usage = contextUsage(s.lastContextTokens, s.contextWindow);
+  if (usage) parts.push(`${usage.over ? "⚠ " : ""}${usage.percent}% ctx`);
   return parts;
 }
 

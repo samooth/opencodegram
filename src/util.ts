@@ -97,6 +97,17 @@ export function htmlToPlainText(html: string): string {
     .trim();
 }
 
+/**
+ * Context usage without clamping: hiding >100% makes an overflow look like a
+ * full-but-valid window. `over` lets callers flag it explicitly.
+ */
+export function contextUsage(tokens: number | undefined, window: number | undefined): { percent: number; over: boolean } | undefined {
+  if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens <= 0) return undefined;
+  if (typeof window !== "number" || !Number.isFinite(window) || window <= 0) return undefined;
+  const percent = Math.round((tokens / window) * 100);
+  return { percent, over: percent > 100 };
+}
+
 export type ParsedSlashCommand = {
   name: string;
   args: string;

@@ -27,6 +27,16 @@ export type SessionsDeps = {
 
 export type SessionManager = ReturnType<typeof createSessionManager>;
 
+/** Resolve the context window for a model, ignoring stale async responses. */
+function refreshContextWindow(oc: OpenCodeBridge, cs: ChatSession, model?: { id: string; providerID: string }): void {
+  if (!model) return;
+  void oc.contextWindow(model.providerID, model.id).then((cw) => {
+    if (cw && cs.model?.id === model.id && cs.model?.providerID === model.providerID) {
+      cs.contextWindow = cw;
+    }
+  }).catch(() => {});
+}
+
 export function listRepoDirectories(config: Config | Record<string, unknown>): string[] {
   const root = getReposDirectory(config);
   if (!root) return [];
@@ -184,6 +194,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     const title = (session as { title?: string })?.title ?? "Telegram session";
     const cs: ChatSession = { sessionId, directory, model, buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [], stopped: false, targetChatId: chatId, cotBuffer: "", cotCount: 0 };
     cs.topicTitle = store.topicTitleBySession.get(sessionId);
+    refreshContextWindow(oc, cs, model);
 
     let targetThread = threadId;
     if (targetThread === undefined && topicsEnabled && chatId > 0) {
@@ -348,11 +359,7 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     cs.directory = directory;
     cs.model = model;
     // Resolve context window for the active model (cached, best-effort).
-    if (model) {
-      void oc.contextWindow(model.providerID, model.id).then((cw) => {
-        if (cw) cs.contextWindow = cw;
-      }).catch(() => {});
-    }
+    refreshContextWindow(oc, cs, model);
     // A session with an open status card is still working: keep its buffers,
     // its target chat/topic and its "detached" flag so the card keeps
     // updating where the user started it.

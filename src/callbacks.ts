@@ -572,6 +572,11 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     deps.pendingModelByChat.delete(scope);
     if (panel) panel.pendingModel = undefined;
     s.model = { id: model.id, providerID: model.providerID, variant };
+    // Refresh the context window: keeping the old model's value would make
+    // the CTX line show a bogus percentage (or >100%) after a model switch.
+    void deps.oc.contextWindow(model.providerID, model.id).then((cw) => {
+      if (cw && s.model?.id === model.id) s.contextWindow = cw;
+    }).catch((err) => console.warn("[callbacks] contextWindow refresh failed", err?.message ?? err));
     if (cq.message?.message_id) {
       await deps.tg.editRichMessage(
         chatId,

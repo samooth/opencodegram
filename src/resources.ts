@@ -2,7 +2,7 @@ import os from "node:os";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { ChatSession } from "./types.js";
-import { esc } from "./util.js";
+import { contextUsage, esc } from "./util.js";
 
 /**
  * System indicators (CPU, RAM, GPU, VRAM, temperature).
@@ -138,13 +138,13 @@ export function renderResourceBlock(s: ChatSession, opts: { history?: number } =
   const resourceLines: string[] = [];
   resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend} ${sparkline(s.cpuHistory)}`);
   resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend} ${sparkline(s.memHistory)}`);
-  if (typeof s.lastContextTokens === "number" && s.lastContextTokens > 0) {
-    if (typeof s.contextWindow === "number" && s.contextWindow > 0) {
-      const pct = Math.min(100, Math.round((s.lastContextTokens / s.contextWindow) * 100));
-      resourceLines.push(`CTX ${pct}% (${s.lastContextTokens.toLocaleString()} / ${s.contextWindow.toLocaleString()} tok)`);
-    } else {
-      resourceLines.push(`CTX ${s.lastContextTokens.toLocaleString()} tok`);
-    }
+  const usage = contextUsage(s.lastContextTokens, s.contextWindow);
+  if (usage) {
+    // Never clamp: >100% is a real signal (stale window or over-limit context).
+    const flag = usage.over ? "⚠ " : "";
+    resourceLines.push(`CTX ${flag}${usage.percent}% (${s.lastContextTokens!.toLocaleString()} / ${s.contextWindow!.toLocaleString()} tok)`);
+  } else if (typeof s.lastContextTokens === "number" && s.lastContextTokens > 0) {
+    resourceLines.push(`CTX ${s.lastContextTokens.toLocaleString()} tok`);
   }
   const gpu = gpuNow;
   if (gpu) {

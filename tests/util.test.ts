@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { clampText, esc, normalizeCommandText, parseSlashCommand, rateLimitRetryAt } from "../src/util.js";
+import { clampText, contextUsage, esc, normalizeCommandText, parseSlashCommand, rateLimitRetryAt } from "../src/util.js";
 
 describe("rateLimitRetryAt", () => {
   test("schedules :15 of the current hour before the mark", () => {
@@ -58,6 +58,22 @@ describe("parseSlashCommand", () => {
 describe("esc", () => {
   test("escapes Telegram HTML", () => {
     expect(esc('<b>&"x"</b>')).toBe("&lt;b&gt;&amp;&quot;x&quot;&lt;/b&gt;");
+  });
+});
+
+import { contextUsage } from "../src/util.js";
+
+describe("contextUsage", () => {
+  test("returns the real ratio without clamping", () => {
+    expect(contextUsage(68_000, 100_000)).toEqual({ percent: 68, over: false });
+    expect(contextUsage(247_758, 200_000)).toEqual({ percent: 124, over: true });
+  });
+
+  test("ignores missing or invalid values", () => {
+    expect(contextUsage(undefined, 100_000)).toBeUndefined();
+    expect(contextUsage(1_000, undefined)).toBeUndefined();
+    expect(contextUsage(0, 100_000)).toBeUndefined();
+    expect(contextUsage(1_000, 0)).toBeUndefined();
   });
 });
 
