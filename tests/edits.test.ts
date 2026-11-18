@@ -39,7 +39,7 @@ const EDIT_DETAIL: EditDetail = {
 
 function makeStore(snapshots: Record<number, { sessionId: string; edits?: EditDetail[] }> = {}) {
   return {
-    getPendingEditsSnapshot: (mid: number) => snapshots[mid],
+    getPendingEditsSnapshot: (_chatId: number, mid: number) => snapshots[mid],
     findSessionById: (sid: string) => (sid === "ses_x" ? makeSession({ sessionId: sid }) : undefined),
   } as any;
 }

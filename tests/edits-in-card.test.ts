@@ -7,9 +7,16 @@ import type { ChatSession } from "../src/types.js";
 function makeHarness() {
   const blocks: any[] = [];
   const sent: any[] = [];
+  const published: any[] = [];
+  const order: string[] = [];
   const transcript = {
-    publish: async () => 1,
-    addBlock: (...args: any[]) => { blocks.push(args); },
+    publish: async (_chatId: number, session: ChatSession, opts?: any) => {
+      order.push("publish");
+      published.push(opts);
+      if (!session.transcriptMessageId) session.transcriptMessageId = 123;
+      return 1;
+    },
+    addBlock: (...args: any[]) => { order.push("block"); blocks.push(args); },
     refloat: async () => 1,
   } as any;
   const tg = {
@@ -24,10 +31,10 @@ function makeHarness() {
     stopped: false, targetChatId: 7, directory: "/workspace",
     transcriptMessageId: 77, activity: createTurnActivity(),
   } as ChatSession;
-  const snapshots = new Map<number, { sessionId: string; edits: any[] }>();
+  const snapshots = new Map<string, { sessionId: string; edits: any[] }>();
   const store = {
-    getPendingEditsSnapshot: (id: number) => snapshots.get(id),
-    rememberPendingEdits: (id: number, sessionId: string, edits: any[]) => { snapshots.set(id, { sessionId, edits }); },
+    getPendingEditsSnapshot: (chatId: number, id: number) => snapshots.get(`${chatId}:${id}`),
+    rememberPendingEdits: (chatId: number, id: number, sessionId: string, edits: any[]) => { snapshots.set(`${chatId}:${id}`, { sessionId, edits }); },
     findSessionById: (id: string) => (id === s.sessionId ? s : undefined),
     getTodos: () => [],
     lastPromptBySession: new Map(),
@@ -44,7 +51,7 @@ function makeHarness() {
     store,
     transcript,
   } as any);
-  return { status, s, blocks, sent, store };
+  return { status, s, blocks, sent, store, published, order, snapshots };
 }
 
 describe("edits inside the session card", () => {
@@ -68,13 +75,39 @@ describe("edits inside the session card", () => {
     const { status, s, sent, store } = makeHarness();
     await status.finishStatus(7, s);
     s.toolCallDetails[0]!.input = JSON.stringify({ path: "/workspace/src/x.ts", content: "linea uno\nlinea dos" });
-    store.rememberPendingEdits(77, s.sessionId, s.toolCallDetails);
+    store.rememberPendingEdits(7, 77, s.sessionId, s.toolCallDetails);
     const sentBefore = sent.length;
     const handled = await status.showEditDetail(7, 77, 0);
     expect(handled).toBe(true);
     const html = String(sent[sentBefore]?.[1] ?? "");
     expect(html).toContain("+2/-0");
     expect(html).not.toContain('"content"');
+  });
+
+  test("the edits block is appended before the card is published", async () => {
+    const { status, s, order } = makeHarness();
+    await status.finishStatus(7, s);
+    expect(order.filter((step) => step === "publish").length).toBe(1);
+    expect(order.indexOf("block")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("block")).toBeLessThan(order.indexOf("publish"));
+  });
+
+  test("a stopped turn closes the card as Stopped", async () => {
+    const { status, s, published } = makeHarness();
+    s.stopped = true;
+    await status.finishStatus(7, s);
+    expect(published[0]?.extraTop).toContain("⏹ <b>Stopped</b>");
+    expect(published[0]?.extraTop).not.toContain("✅ <b>Done</b>");
+    expect(published[0]?.working).toBe(false);
+  });
+
+  test("the snapshot is registered under the card id created by publishing", async () => {
+    const { status, s, store, snapshots } = makeHarness();
+    s.transcriptMessageId = undefined;
+    await status.finishStatus(7, s);
+    expect(s.transcriptMessageId).toBe(123);
+    expect(snapshots.get("7:123")?.sessionId).toBe(s.sessionId);
+    expect(store.getPendingEditsSnapshot(7, 123)?.edits?.length).toBe(1);
   });
 
   test("the diff uses colorDiff markup for additions and deletions", async () => {

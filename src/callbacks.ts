@@ -752,21 +752,17 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     cancelAutoRetry(s.sessionId);
     await oc.interrupt(s.sessionId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await tg.answerCallbackQuery(cq.id, "Stopped").catch((err) => console.warn("[callbacks]", err?.message ?? err));
-    if (s.transcriptMessageId) {
-      // The session card keeps its paginated transcript; only the live part ends.
-      await deps.status.publishCard(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
-      s.statusMessageId = undefined;
-    } else if (s.statusMessageId) {
-      await tg
-        .editRichMessage(chatId, s.statusMessageId, "⏹ <b>Stopped</b>", {
-          ...store.threadOptsFor(s),
-          reply_markup: { inline_keyboard: [] },
-        })
-        .catch((err) => console.warn("[callbacks]", err?.message ?? err));
-      s.statusMessageId = undefined;
+    // Close the turn like a normal finish: the card drops the Stop button and
+    // keeps its transcript, and renders "⏹ Stopped" instead of "✅ Done".
+    // finishStatus is idempotent, so a later step.ended is harmless.
+    const hadCard = Boolean(s.transcriptMessageId || s.statusMessageId);
+    await deps.status.finishStatus(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    // Only chat with no card at all gets a short confirmation; the card itself
+    // already reports the stopped state.
+    if (!hadCard) {
+      const stoppedMsg = await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => undefined);
+      if (stoppedMsg?.message_id) store.rememberMessageSession(chatId, stoppedMsg.message_id, s.sessionId);
     }
-    const stoppedMsg = await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => undefined);
-    if (stoppedMsg?.message_id) store.rememberMessageSession(chatId, stoppedMsg.message_id, s.sessionId);
     return;
   }
 }
@@ -918,7 +914,7 @@ async function handleEditFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   if (!m) return;
   await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId === undefined) return;
-  const snap = deps.store.getPendingEditsSnapshot(messageId);
+  const snap = deps.store.getPendingEditsSnapshot(chatId, messageId);
   const detail = snap?.edits?.[Number(m[1])];
   const raw = detail ? extractEditFile(detail.input) : undefined;
   if (!raw || !snap) {

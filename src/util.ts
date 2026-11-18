@@ -2,14 +2,57 @@ export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-/** Clamp a string for Telegram (max 4096 chars) without splitting mid-entity. */
+/** Elements that never need a closing tag. */
+const VOID_ELEMENTS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input",
+  "link", "meta", "param", "source", "track", "wbr",
+]);
+
+/** Close the tags left open by a truncated HTML prefix (reverse order). */
+function closeOpenTags(html: string): string {
+  const stack: string[] = [];
+  const tagRe = /<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/g;
+  let match: RegExpExecArray | null;
+  while ((match = tagRe.exec(html))) {
+    const [, closing, rawName, selfClosing] = match;
+    const name = rawName.toLowerCase();
+    if (VOID_ELEMENTS.has(name) || selfClosing) continue;
+    if (closing) {
+      // A closing tag closes the nearest matching open tag.
+      const idx = stack.lastIndexOf(name);
+      if (idx >= 0) stack.splice(idx, 1);
+    } else {
+      stack.push(name);
+    }
+  }
+  return stack.reverse().map((name) => `</${name}>`).join("");
+}
+
+/**
+ * Clamp a string for Telegram (max 4096 chars).
+ *
+ * The text is usually Telegram HTML, so a naive slice can cut a tag or an
+ * entity in half and make the API reject the whole message ("can't parse
+ * entities"). This keeps the cut outside tags/entities and closes any tag the
+ * truncation left open.
+ */
 export function clampText(s: string, max = 3900): string {
   if (s.length <= max) return s;
-  let cut = max;
+  let cut = Math.max(1, max - 2); // room for the trailing "\n…"
   // Avoid splitting a UTF-16 surrogate pair.
   const code = s.charCodeAt(cut - 1);
   if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
-  return s.slice(0, cut) + "\n…";
+  // Move the cut before an unterminated tag or entity.
+  for (let i = 0; i < 3; i++) {
+    const lastOpen = s.lastIndexOf("<", cut - 1);
+    const lastClose = s.lastIndexOf(">", cut - 1);
+    if (lastOpen > lastClose) cut = lastOpen;
+    const lastAmp = s.lastIndexOf("&", cut - 1);
+    if (lastAmp >= 0 && !s.slice(lastAmp, cut).includes(";") && cut - lastAmp <= 12) cut = lastAmp;
+    if (cut <= 0) break;
+  }
+  const head = s.slice(0, Math.max(0, cut));
+  return head + closeOpenTags(head) + "\n…";
 }
 
 export function truncate(s: string, max: number): string {

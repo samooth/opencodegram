@@ -33,7 +33,7 @@ describe("activity card controls", () => {
   test("card keyboard offers a details toggle when activity exists", () => {
     const { tm, s } = makeHarness();
     recordThought(s.activity!, "algo", { at: 1000 });
-    const rows = tm.cardKeyboard(s, 0, 0, {});
+    const rows = tm.cardKeyboard(7, s, 0, 0, {});
     const flat = rows.flat();
     expect(flat.some((b) => b.callback_data.startsWith("activity:"))).toBe(true);
   });
@@ -41,7 +41,7 @@ describe("activity card controls", () => {
   test("card keyboard hides the toggle when there is no activity", () => {
     const { tm, s } = makeHarness();
     s.activity = undefined;
-    const flat = tm.cardKeyboard(s, 0, 0, {}).flat();
+    const flat = tm.cardKeyboard(7, s, 0, 0, {}).flat();
     expect(flat.some((b) => b.callback_data.startsWith("activity:"))).toBe(false);
   });
 
@@ -60,7 +60,7 @@ describe("activity card controls", () => {
     recordThought(s.activity!, "check", { at: 1000 });
     recordTool(s.activity!, "read", "README.md", { at: 1100, toolId: "r1" });
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
-    const flat = tm.cardKeyboard(s, 0, 0, {}).flat();
+    const flat = tm.cardKeyboard(7, s, 0, 0, {}).flat();
     expect(flat.some((b) => b.callback_data === `readfile:${s.sessionId}:0`)).toBe(true);
   });
 
@@ -69,7 +69,7 @@ describe("activity card controls", () => {
     const store = new SessionStore(join(root, "data"));
     recordTool(s.activity!, "read", "src/muy/larga/ruta/de/archivo/que/excede/el/limite/de/64/bytes/README.md", { at: 1000, toolId: "r1" });
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
-    const flat = tm.cardKeyboard(s, 0, 2, { working: true }).flat();
+    const flat = tm.cardKeyboard(7, s, 0, 2, { working: true }).flat();
     for (const b of flat) {
       expect(Buffer.byteLength(b.callback_data, "utf8")).toBeLessThanOrEqual(64);
     }
@@ -79,7 +79,7 @@ describe("activity card controls", () => {
     const { s } = makeHarness();
     const store = new SessionStore(join(root, "data"));
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
-    const flat = tm.cardKeyboard(s, 0, 0, {}).flat();
+    const flat = tm.cardKeyboard(7, s, 0, 0, {}).flat();
     expect(flat.some((b) => b.callback_data === `resources:${s.sessionId}`)).toBe(true);
   });
 
@@ -93,10 +93,10 @@ describe("activity card controls", () => {
       id: `e${i}`, name: "edit", status: "success",
       input: JSON.stringify({ filePath: `/workspace/src/archivo${i}.ts`, oldString: "a", newString: "b" }),
     }));
-    store.rememberPendingEdits(77, s.sessionId, edits);
+    store.rememberPendingEdits(7, 77, s.sessionId, edits);
     s.transcriptMessageId = 77;
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
-    const rows = tm.cardKeyboard(s, 0, 0, {});
+    const rows = tm.cardKeyboard(7, s, 0, 0, {});
     const fileButtons = rows.flat().filter((b) => /^(readfile|edit|editfile):/.test(b.callback_data));
     expect(fileButtons.length).toBeLessThanOrEqual(9);
   });
@@ -106,7 +106,7 @@ describe("activity card controls", () => {
     const store = new SessionStore(join(root, "data"));
     recordTool(s.activity!, "read", JSON.stringify({ filePath: "/workspace/src/foo.ts", offset: 10, limit: 5 }), { at: 1000, toolId: "r1" });
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
-    const rows = tm.cardKeyboard(s, 0, 0, {});
+    const rows = tm.cardKeyboard(7, s, 0, 0, {});
     const btn = rows.flat().find((b) => b.callback_data.startsWith("readfile:"));
     expect(btn?.text).toContain("foo.ts:10-14");
     expect(getActivityReadPath(btn!.callback_data.slice("readfile:".length))).toBe("/workspace/src/foo.ts");
@@ -155,13 +155,13 @@ describe("activity card controls", () => {
   test("card keyboard exposes per-file diff and open-file buttons", () => {
     const { s } = makeHarness();
     const store = new SessionStore(join(root, "data"));
-    store.rememberPendingEdits(77, s.sessionId, [{
+    store.rememberPendingEdits(7, 77, s.sessionId, [{
       id: "e1", name: "edit", status: "success",
       input: JSON.stringify({ filePath: "/workspace/src/x.ts", oldString: "a", newString: "b" }),
     }]);
     const controlled = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
     s.transcriptMessageId = 77;
-    const flat = controlled.cardKeyboard(s, 0, 0, {}).flat();
+    const flat = controlled.cardKeyboard(7, s, 0, 0, {}).flat();
     expect(flat.some((b) => b.callback_data === "edit:0")).toBe(true);
     expect(flat.some((b) => b.callback_data === "editfile:0")).toBe(true);
   });

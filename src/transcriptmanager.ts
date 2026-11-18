@@ -40,8 +40,13 @@ export type TranscriptManager = ReturnType<typeof createTranscriptManager>;
  * be far longer, so the keyboard carries a short key and the path lives here.
  */
 const activityReadPaths = new Map<string, string>();
-/** Last resource-free HTML published per card, for cleaning up old messages. */
-const cardCleanHtml = new Map<number, string>();
+/**
+ * Last resource-free HTML published per card, for cleaning up old messages.
+ * Telegram message ids are unique per chat, not globally, so the key includes
+ * the chat id to avoid group/private collisions.
+ */
+const cardCleanHtml = new Map<string, string>();
+const cardKey = (chatId: number, messageId: number): string => `${chatId}:${messageId}`;
 
 export function rememberActivityReadPath(key: string, path: string): void {
   activityReadPaths.set(key, path);
@@ -128,6 +133,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     s: ChatSession,
     opts: { extraTop?: string; extraBottom?: string; showResources?: boolean } = {},
   ): { html: string; page: number; total: number } | undefined => {
+    const LAYOUT_LIMIT = 3900;
     const all = blocksOf(s);
     const pages = paginateTranscript(all);
     const header = `<h3>${sessionHeader(s).trimEnd()}</h3>`;
@@ -135,6 +141,35 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const resources = opts.showResources === false || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
     const extraTop = opts.extraTop ?? "";
     const extraBottom = opts.extraBottom ?? "";
+
+    /**
+     * Join the fixed sections with the page content, trimming the CONTENT when
+     * the header/live strip/resources take too much room. The newest blocks
+     * (the tail of the page) are kept: the latest output must stay visible.
+     */
+    const fit = (headParts: string[], blocks: TranscriptBlock[]): string => {
+      const tailParts = [extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
+      const headFixed = [...headParts, extraTop].filter(Boolean).join("\n\n");
+      const tailFixed = tailParts.join("\n\n");
+      // Account for the joins, the `<hr/>` separator and the truncation ellipsis.
+      const budget = Math.max(0, LAYOUT_LIMIT - headFixed.length - tailFixed.length - 20);
+      let content = blocks.map((b) => b.html).join("\n\n");
+      if (content.length > budget) {
+        const kept: TranscriptBlock[] = [];
+        let used = 0;
+        for (let i = blocks.length - 1; i >= 0; i--) {
+          const len = blocks[i].html.length + 2;
+          if (kept.length && used + len > budget) break;
+          kept.unshift(blocks[i]);
+          used += len;
+        }
+        content = (kept.length < blocks.length ? "<i>…</i>\n\n" : "") + kept.map((b) => b.html).join("\n\n");
+        // A single block bigger than the budget: cut it safely.
+        if (content.length > budget) content = clampText(content, budget);
+      }
+      const parts = [headFixed, content ? `<hr/>\n${content}` : "", ...tailParts].filter(Boolean);
+      return clampText(parts.join("\n\n"), LAYOUT_LIMIT);
+    };
 
     // While a turn is streaming and the user follows the card, show only the
     // content produced by the current turn. Nothing has been recorded yet at
@@ -144,44 +179,21 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     if (s.transcriptFollow !== false && !s.statusFinished && s.turnSeq !== undefined) {
       const hasTurnBlocks = all.some((b) => b.turn === s.turnSeq);
       if (!hasTurnBlocks) {
-        const parts = [header, extraTop, extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
-        return { html: clampText(parts.join("\n\n"), 3900), page: Math.max(0, pages.length - 1), total: pages.length };
+        return { html: fit([header], []), page: Math.max(0, pages.length - 1), total: pages.length };
       }
     }
 
     if (!pages.length) {
-      const parts = [header, extraTop, extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
-      return { html: clampText(parts.join("\n\n"), 3900), page: 0, total: 0 };
+      return { html: fit([header], []), page: 0, total: 0 };
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
     const indicator = page.total > 1 ? `<i>📄 ${page.index + 1}/${page.total}</i>` : "";
-
-    // When streaming a bottom section (e.g. live thought), protect it from being truncated.
-    if (extraBottom) {
-      const tailParts = [extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
-      const headParts = [header, indicator, extraTop].filter(Boolean);
-      const overhead = headParts.join("\n\n").length + (headParts.length ? 2 : 0) + tailParts.join("\n\n").length + (tailParts.length ? 2 : 0);
-      let budget = 3900 - overhead - 2;
-      let content = page.html;
-      if (content.length > budget && page.blocks.length > 1) {
-        let kept = [] as typeof page.blocks;
-        let used = 0;
-        for (let i = page.blocks.length - 1; i >= 0; i--) {
-          const len = page.blocks[i].html.length + 2;
-          if (kept.length && used + len > budget) break;
-          kept.unshift(page.blocks[i]);
-          used += len;
-        }
-        content = (kept.length < page.blocks.length ? "<i>…</i>\n\n" : "") + kept.map((b) => b.html).join("\n\n");
-      }
-      if (content.length > budget) content = content.slice(0, Math.max(0, budget)) + "\n…";
-      const parts = [header, indicator, extraTop, content ? `<hr/>\n${content}` : "", ...tailParts].filter(Boolean);
-      return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
-    }
-
-    const parts = [header, indicator, extraTop, page.html ? `<hr/>\n${page.html}` : "", resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
-    return { html: clampText(parts.join("\n\n"), 3900), page: page.index, total: page.total };
+    return {
+      html: fit([header, indicator].filter(Boolean), page.blocks),
+      page: page.index,
+      total: page.total,
+    };
   };
 
   /** Kind label for the history export. */
@@ -295,6 +307,7 @@ ${body}
 
   /** Keyboard for the session card. */
   const cardKeyboard = (
+    chatId: number,
     s: ChatSession,
     page: number,
     total: number,
@@ -353,7 +366,7 @@ ${body}
     // 📝 Edits are part of this card. The snapshot is registered on its message
     // id at turn end, so per-file buttons survive new turns and restarts.
     if (!opts?.working && s.transcriptMessageId) {
-      const edits = store.getPendingEditsSnapshot(s.transcriptMessageId)?.edits ?? [];
+      const edits = store.getPendingEditsSnapshot(chatId, s.transcriptMessageId)?.edits ?? [];
       for (let idx = Math.max(0, edits.length - 3); idx < edits.length; idx++) {
         const raw = extractEditFile(edits[idx]?.input) ?? `edit ${idx + 1}`;
         const label = raw.split("/").pop() ?? raw;
@@ -394,7 +407,7 @@ ${body}
     if (!rendered) return;
     const cleanHtml = renderPage(s, { extraTop: opts?.extraTop, extraBottom: opts?.extraBottom, showResources: false })?.html ?? rendered.html;
     const tgOpts = threadOptsFor(s);
-    const keyboard = { inline_keyboard: cardKeyboard(s, rendered.page, rendered.total, opts) };
+    const keyboard = { inline_keyboard: cardKeyboard(chatId, s, rendered.page, rendered.total, opts) };
     if (s.transcriptMessageId) {
       const ok = await tg
         .editRichMessage(chatId, s.transcriptMessageId, rendered.html, { ...tgOpts, reply_markup: keyboard })
@@ -403,7 +416,7 @@ ${body}
       if (ok) {
         s.transcriptPage = rendered.page;
         s.statusMessageId = s.transcriptMessageId;
-        cardCleanHtml.set(s.transcriptMessageId, cleanHtml);
+        cardCleanHtml.set(cardKey(chatId, s.transcriptMessageId), cleanHtml);
         store.rememberMessageSession(chatId, s.transcriptMessageId, s.sessionId);
         return;
       }
@@ -422,7 +435,7 @@ ${body}
     if (sent?.message_id) {
       s.transcriptMessageId = sent.message_id;
       s.statusMessageId = sent.message_id;
-      cardCleanHtml.set(sent.message_id, cleanHtml);
+      cardCleanHtml.set(cardKey(chatId, sent.message_id), cleanHtml);
       s.transcriptPage = rendered.page;
       store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
     }
@@ -744,10 +757,11 @@ ${body}
 
   /** Strip resources and buttons from a card that is no longer the active one. */
   const cleanupCard = async (chatId: number, messageId: number): Promise<void> => {
-    const clean = cardCleanHtml.get(messageId);
+    const key = cardKey(chatId, messageId);
+    const clean = cardCleanHtml.get(key);
     if (clean) {
       await tg.editRichMessage(chatId, messageId, clean).catch(() => {});
-      cardCleanHtml.delete(messageId);
+      cardCleanHtml.delete(key);
     }
     await tg.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(() => {});
   };

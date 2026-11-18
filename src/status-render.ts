@@ -160,7 +160,7 @@ export type StatusDeps = {
   tg: TelegramClient;
   threadOptsFor: (s: ChatSession | undefined) => Record<string, unknown>;
   getSettings: (chatId: number) => ChatSettings;
-  pendingEdits: Map<number, ChatSession>;
+  pendingEdits: Map<string, ChatSession>;
   rememberCot: (sessionId: string, buffer: string, count: number) => void;
   rememberStatusMessage: (sessionId: string, chatId: number, threadId: number | undefined, messageId: number) => void;
   forgetStatusMessage: (sessionId: string) => void;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { esc, normalizeCommandText, parseSlashCommand, rateLimitRetryAt } from "../src/util.js";
+import { clampText, esc, normalizeCommandText, parseSlashCommand, rateLimitRetryAt } from "../src/util.js";
 
 describe("rateLimitRetryAt", () => {
   test("schedules :15 of the current hour before the mark", () => {
@@ -58,5 +58,39 @@ describe("parseSlashCommand", () => {
 describe("esc", () => {
   test("escapes Telegram HTML", () => {
     expect(esc('<b>&"x"</b>')).toBe("&lt;b&gt;&amp;&quot;x&quot;&lt;/b&gt;");
+  });
+});
+
+describe("clampText", () => {
+  test("leaves short text untouched", () => {
+    expect(clampText("hola", 40)).toBe("hola");
+  });
+
+  test("closes the tags left open by the cut", () => {
+    const html = `<b>negrita</b><blockquote>${"x".repeat(500)}</blockquote>`;
+    const out = clampText(html, 120);
+    expect(out.endsWith("\n…")).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(140);
+    // The open blockquote is closed so Telegram can parse the entities.
+    expect(out.match(/<blockquote>/g)?.length).toBe(1);
+    expect(out.match(/<\/blockquote>/g)?.length).toBe(1);
+    expect(out.match(/<b>/g)?.length).toBe(out.match(/<\/b>/g)?.length);
+    // The cut is not inside a tag.
+    expect(out.slice(0, -2)).not.toMatch(/<[^>]*$/);
+  });
+
+  test("does not split an entity in half", () => {
+    const text = `${"x".repeat(35)}&amp;${"y".repeat(200)}`;
+    const out = clampText(text, 38);
+    expect(out).toBe(`${"x".repeat(35)}\n…`);
+    expect(out).not.toContain("&");
+  });
+
+  test("does not cut a surrogate pair", () => {
+    const text = `${"a".repeat(9)}😀${"b".repeat(100)}`;
+    const out = clampText(text, 12);
+    // max - 2 = 10 would land inside the pair; the cut moves back one char.
+    expect(out).toBe(`${"a".repeat(9)}\n…`);
+    expect(out).not.toContain("\uFFFD");
   });
 });

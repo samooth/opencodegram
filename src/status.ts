@@ -1,5 +1,6 @@
 import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
+import { pendingEditsKey } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
@@ -133,7 +134,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
 
   /** Summary shown once the turn is over. */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
-    const lines: string[] = ["✅ <b>Done</b>"];
+    const lines: string[] = [s.stopped ? "⏹ <b>Stopped</b>" : "✅ <b>Done</b>"];
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(truncate(prompt.trim(), 80))}</i></p>`);
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
@@ -476,22 +477,12 @@ ${chunk}</blockquote>`,
       s.transcriptFollow = true;
       s.transcriptPage = undefined;
       const unified = settings.displayMode === "unified";
-      // Keep the finished card attached: it holds the final answer and stays
-      // navigable (pagination). The next turn start decides whether it is
-      // replaced (única), preserved (conservar) or kept editing in place (fija).
-      const finishedCardId = s.transcriptMessageId;
-      await publishCard(chatId, s).catch((err) => console.warn("[status] publishCard failed", err?.message ?? err));
-      // The card stays alive for pagination; only the live status ends.
-      s.statusMessageId = undefined;
-      forgetStatusMessage(s.sessionId);
-      if (unified && dashboard) {
-        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch((err) => console.warn("[status] dashboard.update failed", err?.message ?? err));
-      }
       // Edits live INSIDE the session card as a transcript block: one message
       // per turn, no separate "Edits" message to navigate back from. The same
-      // table + per-file expandable diff presentation is kept. The snapshot is
-      // registered under the card id so the per-file buttons keep working.
-      if (editDetails.length && finishedCardId) {
+      // table + per-file expandable diff presentation is kept. The block is
+      // appended BEFORE publishing so the finished card already shows it.
+      let editSnapshot: Array<ChatSession["toolCallDetails"][number]> | undefined;
+      if (editDetails.length) {
         const editLines: string[] = [];
         const tableRows: string[] = [];
         const plainFiles: string[] = [];
@@ -506,10 +497,26 @@ ${chunk}</blockquote>`,
         }
         const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
         const html = `<h4>✏️ Edits (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
-        const snapshot = editDetails.map((d) => ({ ...d }));
-        store?.rememberPendingEdits(finishedCardId, s.sessionId, snapshot);
-        pendingEdits.set(finishedCardId, s);
+        editSnapshot = editDetails.map((d) => ({ ...d }));
         transcript.addBlock(s, "tools", html, `Edits (${editDetails.length}): ${plainFiles.join(", ")}`);
+      }
+      // Keep the finished card attached: it holds the final answer and stays
+      // navigable (pagination). The next turn start decides whether it is
+      // replaced (única), preserved (conservar) or kept editing in place (fija).
+      await publishCard(chatId, s).catch((err) => console.warn("[status] publishCard failed", err?.message ?? err));
+      // The card stays alive for pagination; only the live status ends.
+      s.statusMessageId = undefined;
+      forgetStatusMessage(s.sessionId);
+      if (unified && dashboard) {
+        await dashboard.update(chatId, s.targetThreadId ?? s.threadId, s, { working: false }).catch((err) => console.warn("[status] dashboard.update failed", err?.message ?? err));
+      }
+      // Register the snapshot under the id the card ended up with: publishing
+      // may have created a new card, and the per-file buttons read it by
+      // chat+message.
+      const finalCardId = s.transcriptMessageId;
+      if (editSnapshot && finalCardId) {
+        store?.rememberPendingEdits(chatId, finalCardId, s.sessionId, editSnapshot);
+        pendingEdits.set(pendingEditsKey(chatId, finalCardId), s);
       }
       return;
     }
@@ -519,8 +526,8 @@ ${chunk}</blockquote>`,
       const messageId = s.statusMessageId;
       s.expandedEditIndex = undefined;
       if (editDetails.length) {
-        pendingEdits.set(messageId, s);
-        store?.rememberPendingEdits(messageId, s.sessionId, editDetails.map((d) => ({ ...d })));
+        pendingEdits.set(pendingEditsKey(chatId, messageId), s);
+        store?.rememberPendingEdits(chatId, messageId, s.sessionId, editDetails.map((d) => ({ ...d })));
       }
       const fullThinking = (!s.stopped && s.reasoningBuffer.trim()) ? s.reasoningBuffer.trim() : "";
       const text = clampText(renderFinished(s, settings, !fullThinking || !settings.showThinking));
@@ -553,7 +560,7 @@ ${chunk}</blockquote>`,
       lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})
 ${esc(cot)}</blockquote>`);
     }
-    lines.push("✅ <b>Done</b>");
+    lines.push(target.stopped ? "⏹ <b>Stopped</b>" : "✅ <b>Done</b>");
     if (!settings.compactFinal) {
       if (inlineThinking && settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
         const r = target.reasoningBuffer.trim();
@@ -635,11 +642,12 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
    * Resolve the edit snapshot for a message: the live session when available,
    * otherwise the persisted snapshot (survives new turns and restarts).
    */
-  const resolveEditsFor = (messageId: number): { s?: ChatSession; edits: Array<ChatSession["toolCallDetails"][number]>; directory?: string; header: string; threadId?: number; snapshotId?: string } | undefined => {
-    const snap = store?.getPendingEditsSnapshot(messageId);
+  const resolveEditsFor = (chatId: number, messageId: number): { s?: ChatSession; edits: Array<ChatSession["toolCallDetails"][number]>; directory?: string; header: string; threadId?: number; snapshotId?: string } | undefined => {
+    const snap = store?.getPendingEditsSnapshot(chatId, messageId);
     if (!snap) return undefined;
-    let s = pendingEdits.get(messageId) ?? store?.findSessionById(snap.sessionId);
-    if (s) pendingEdits.set(messageId, s);
+    const key = pendingEditsKey(chatId, messageId);
+    let s = pendingEdits.get(key) ?? store?.findSessionById(snap.sessionId);
+    if (s) pendingEdits.set(key, s);
     const edits = (snap.edits?.length ? snap.edits : s?.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input)) ?? []) as Array<ChatSession["toolCallDetails"][number]>;
     if (!edits.length) return undefined;
     const header = s ? sessionHeader(s).trimEnd() : `📌 <code>${esc(snap.sessionId.slice(0, 12))}</code>\n`;
@@ -647,7 +655,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
   };
 
   const showEditDiff = async (chatId: number, messageId: number, index: number): Promise<boolean> => {
-    const resolved = resolveEditsFor(messageId);
+    const resolved = resolveEditsFor(chatId, messageId);
     if (!resolved || !resolved.edits[index]) return false;
     const toggleKey = `${chatId}:${messageId}`;
     const next = editToggles.get(toggleKey) === index ? undefined : index;
@@ -679,7 +687,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
   };
 
   const sendFullDiffs = async (chatId: number, messageId: number, threadId?: number): Promise<boolean> => {
-    const resolved = resolveEditsFor(messageId);
+    const resolved = resolveEditsFor(chatId, messageId);
     if (!resolved) return false;
     const settings = getSettings(chatId);
     const parts: string[] = [];
@@ -710,7 +718,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
    * card untouched (the card is the single source of truth for the turn).
    */
   const showEditDetail = async (chatId: number, messageId: number, index: number): Promise<boolean> => {
-    const resolved = resolveEditsFor(messageId);
+    const resolved = resolveEditsFor(chatId, messageId);
     const detail = resolved?.edits[index];
     if (!resolved || !detail) return false;
     const settings = getSettings(chatId);
@@ -730,7 +738,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
       if (sent?.message_id && resolved.s) {
         resolved.s.detailMessageId = sent.message_id;
         store?.rememberMessageSession(chatId, sent.message_id, resolved.s.sessionId);
-        store?.rememberPendingEdits(sent.message_id, resolved.s.sessionId, resolved.edits);
+        store?.rememberPendingEdits(chatId, sent.message_id, resolved.s.sessionId, resolved.edits);
       }
     }
     return true;

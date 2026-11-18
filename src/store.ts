@@ -20,6 +20,9 @@ const clampField = (value: string | undefined): string | undefined =>
 
 export const routeKey = (chatId: number, threadId?: number): string => `${chatId}:${threadId ?? 0}`;
 
+/** Key for persisted edit snapshots (message ids are only unique per chat). */
+export const pendingEditsKey = (chatId: number, messageId: number): string => `${chatId}:${messageId}`;
+
 /** Serializable snapshot of a turn's tool call details (for edit buttons). */
 export type EditDetail = { id: string; name: string; input?: string; output?: string; status?: string };
 
@@ -59,7 +62,7 @@ export class SessionStore {
   readonly cotBySession = new Map<string, { buffer: string; count: number }>();
   readonly sessionStatusBySession = new Map<string, string>();
   readonly statusMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
-  readonly pendingEditsByMessage = new Map<number, { sessionId: string; edits?: EditDetail[] }>();
+  readonly pendingEditsByMessage = new Map<string, { sessionId: string; edits?: EditDetail[] }>();
 
   readonly customButtonsByChat = new Map<number, Array<{ label: string; text: string }>>();
   /** Last session the user interacted with per route (for @tag / reply routing). */
@@ -560,8 +563,11 @@ export class SessionStore {
    * the edit details at that moment (they are per-turn and get cleared when
    * the next turn starts, so the snapshot is required for the buttons to keep
    * working after new turns and after restarts).
+   *
+   * Keyed by chat AND message: Telegram message ids are only unique inside a
+   * chat, so a group card and a private card can share the same id.
    */
-  rememberPendingEdits = (messageId: number, sessionId: string, edits?: EditDetail[]) => {
+  rememberPendingEdits = (chatId: number, messageId: number, sessionId: string, edits?: EditDetail[]) => {
     // Snapshots carry raw tool input/output, which can be huge for file writes.
     // Cap each field and keep only the newest entries so the JSON file (which
     // is rewritten on every turn) stays small.
@@ -570,8 +576,9 @@ export class SessionStore {
       input: clampField(e.input),
       output: clampField(e.output),
     }));
-    this.pendingEditsByMessage.delete(messageId);
-    this.pendingEditsByMessage.set(messageId, { sessionId, edits: compact });
+    const key = pendingEditsKey(chatId, messageId);
+    this.pendingEditsByMessage.delete(key);
+    this.pendingEditsByMessage.set(key, { sessionId, edits: compact });
     this.prunePendingEdits();
     this.savePendingEdits();
   };
@@ -585,16 +592,16 @@ export class SessionStore {
     }
   };
 
-  getPendingEditsSession = (messageId: number): string | undefined => {
-    return this.pendingEditsByMessage.get(messageId)?.sessionId;
+  getPendingEditsSession = (chatId: number, messageId: number): string | undefined => {
+    return this.pendingEditsByMessage.get(pendingEditsKey(chatId, messageId))?.sessionId;
   };
 
-  getPendingEditsSnapshot = (messageId: number): { sessionId: string; edits?: EditDetail[] } | undefined => {
-    return this.pendingEditsByMessage.get(messageId);
+  getPendingEditsSnapshot = (chatId: number, messageId: number): { sessionId: string; edits?: EditDetail[] } | undefined => {
+    return this.pendingEditsByMessage.get(pendingEditsKey(chatId, messageId));
   };
 
-  forgetPendingEdits = (messageId: number) => {
-    this.pendingEditsByMessage.delete(messageId);
+  forgetPendingEdits = (chatId: number, messageId: number) => {
+    this.pendingEditsByMessage.delete(pendingEditsKey(chatId, messageId));
     this.savePendingEdits();
   };
 
@@ -611,7 +618,7 @@ export class SessionStore {
   savePendingEdits = () => {
     try {
       const obj: Record<string, { sessionId: string; edits?: EditDetail[] }> = {};
-      for (const [mid, snap] of this.pendingEditsByMessage) obj[String(mid)] = snap;
+      for (const [key, snap] of this.pendingEditsByMessage) obj[key] = snap;
       writeJsonAtomic(this.pendingEditsFile, obj);
     } catch (err) {
       logger.error("store", "[pendingEdits] save failed", err);
@@ -659,7 +666,7 @@ export class SessionStore {
     this.lastChatBySession.delete(sessionId);
     this.lastPromptBySession.delete(sessionId);
     for (const [mid, sid] of this.messageToSession) if (sid === sessionId) this.messageToSession.delete(mid);
-    for (const [mid, snap] of this.pendingEditsByMessage) if (snap.sessionId === sessionId) this.pendingEditsByMessage.delete(mid);
+    for (const [key, snap] of this.pendingEditsByMessage) if (snap.sessionId === sessionId) this.pendingEditsByMessage.delete(key);
     this.statusMessageBySession.delete(sessionId);
     this.topicTitleBySession.delete(sessionId);
     this.cotBySession.delete(sessionId);
@@ -1154,23 +1161,27 @@ export class SessionStore {
       logger.error("store", "[buttons] load failed", err);
     }
 
-    // Load persisted pending-edits snapshots (messageId -> {sessionId, edits}).
-    // Old installs stored a plain sessionId string; accept both. Entries are
-    // pruned to the newest ones (message ids grow monotonically) so a legacy
-    // file cannot keep the map (and its rewrite) unbounded.
+    // Load persisted pending-edits snapshots (chatId:messageId -> snapshot).
+    // Legacy files keyed only by message id are dropped: the chat cannot be
+    // recovered, and guessing it could show another chat's diffs. Entries are
+    // pruned to the newest ones so a legacy file cannot keep the map (and its
+    // rewrite) unbounded.
     {
       const parsed = readJsonSafe<Record<string, string | { sessionId: string; edits?: EditDetail[] }>>(this.pendingEditsFile, "store");
       if (parsed) {
         const entries = Object.entries(parsed)
-          .map(([mid, value]) => [Number(mid), value] as const)
-          .filter(([id]) => Number.isFinite(id))
-          .sort((a, b) => a[0] - b[0])
+          .map(([key, value]) => {
+            const match = key.match(/^(\d+):(\d+)$/);
+            return match ? { key, messageId: Number(match[2]), value } : undefined;
+          })
+          .filter((entry): entry is { key: string; messageId: number; value: string | { sessionId: string; edits?: EditDetail[] } } => entry !== undefined)
+          .sort((a, b) => a.messageId - b.messageId)
           .slice(-PENDING_EDITS_MAX);
-        for (const [id, value] of entries) {
+        for (const { key, value } of entries) {
           if (typeof value === "string") {
-            if (value) this.pendingEditsByMessage.set(id, { sessionId: value });
+            if (value) this.pendingEditsByMessage.set(key, { sessionId: value });
           } else if (value?.sessionId) {
-            this.pendingEditsByMessage.set(id, { sessionId: value.sessionId, edits: value.edits });
+            this.pendingEditsByMessage.set(key, { sessionId: value.sessionId, edits: value.edits });
           }
         }
       }

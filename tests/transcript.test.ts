@@ -490,7 +490,7 @@ describe("transcript manager", () => {
     await transcript.publish(1, s);
     const total = transcript.pageCount(s);
     expect(total).toBeGreaterThan(1);
-    const kb = transcript.cardKeyboard(s, 0, total);
+    const kb = transcript.cardKeyboard(1, s, 0, total);
     const flat = kb.flat();
     // Middle button opens the page picker.
     expect(flat.some((b) => b.callback_data === `tpick:${s.sessionId}`)).toBe(true);
@@ -615,6 +615,25 @@ describe("transcript manager", () => {
     expect(dataset.trainingPairs[0].messages[0].content).toBe("nuevo prompt");
   });
 
+  test("a huge live strip trims the page keeping the newest blocks", () => {
+    const { transcript } = makeHarness();
+    const s = makeSession();
+    for (let i = 0; i < 3; i++) {
+      transcript.addBlock(s, "answer", `<p>bloque-${i} ${"a".repeat(190)}</p>`, `bloque-${i}`);
+    }
+    const live = "x".repeat(3500);
+    const rendered = transcript.renderPage(s, { extraTop: live });
+    expect(rendered).toBeDefined();
+    expect(rendered!.html.length).toBeLessThanOrEqual(3900);
+    // The live strip survives whole and the latest block stays visible.
+    expect(rendered!.html).toContain(live);
+    expect(rendered!.html).toContain("bloque-2");
+    expect(rendered!.html).not.toContain("bloque-0");
+    // The cut is announced and does not leave an unclosed tag.
+    expect(rendered!.html).toContain("<i>…</i>");
+    expect(rendered!.html).not.toMatch(/<[^>]*$/);
+  });
+
   test("the card shows a 📝 Diff button when the turn had edits", async () => {
     const { store, transcript } = makeHarness();
     const s = makeSession();
@@ -622,19 +641,19 @@ describe("transcript manager", () => {
     await transcript.publish(1, s);
     expect(s.transcriptMessageId).toBeDefined();
     // No edits yet: no Diff button.
-    let kb = transcript.cardKeyboard(s, 0, 1).flat();
+    let kb = transcript.cardKeyboard(1, s, 0, 1).flat();
     expect(kb.some((b) => b.text.startsWith("📝 Diff"))).toBe(false);
     // Turn finished with edits: snapshot registered under the card id.
-    store.rememberPendingEdits(s.transcriptMessageId!, s.sessionId, [
+    store.rememberPendingEdits(1, s.transcriptMessageId!, s.sessionId, [
       { id: "t1", name: "edit", input: JSON.stringify({ filePath: "src/a.ts" }), status: "success" },
     ]);
-    kb = transcript.cardKeyboard(s, 0, 1).flat();
+    kb = transcript.cardKeyboard(1, s, 0, 1).flat();
     const diffBtn = kb.find((b) => b.text.startsWith("📝 Diff"));
     expect(diffBtn).toBeDefined();
     expect(diffBtn!.text).toBe("📝 Diff (1)");
     expect(diffBtn!.callback_data).toBe(`edits:full:${s.transcriptMessageId}`);
     // While working, the button hides (the turn is producing new edits).
-    kb = transcript.cardKeyboard(s, 0, 1, { working: true }).flat();
+    kb = transcript.cardKeyboard(1, s, 0, 1, { working: true }).flat();
     expect(kb.some((b) => b.text.startsWith("📝 Diff"))).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
+import { writeJsonAtomic } from "../src/persist.js";
 import type { ChatSession } from "../src/types.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -236,28 +237,60 @@ describe("SessionStore pending-edit snapshots", () => {
   test("snapshot round-trips through disk and survives restarts", () => {
     const store = new SessionStore(dataDir);
     const edits = [{ id: "t1", name: "edit", input: JSON.stringify({ filePath: "src/a.ts" }), status: "success" }];
-    store.rememberPendingEdits(777, "ses_x", edits);
-    expect(store.getPendingEditsSnapshot(777)?.sessionId).toBe("ses_x");
-    expect(store.getPendingEditsSnapshot(777)?.edits?.length).toBe(1);
-    expect(store.getPendingEditsSession(777)).toBe("ses_x");
+    store.rememberPendingEdits(100, 777, "ses_x", edits);
+    expect(store.getPendingEditsSnapshot(100, 777)?.sessionId).toBe("ses_x");
+    expect(store.getPendingEditsSnapshot(100, 777)?.edits?.length).toBe(1);
+    expect(store.getPendingEditsSession(100, 777)).toBe("ses_x");
 
     const reloaded = new SessionStore(dataDir);
-    const snap = reloaded.getPendingEditsSnapshot(777);
+    const snap = reloaded.getPendingEditsSnapshot(100, 777);
     expect(snap?.sessionId).toBe("ses_x");
     expect(snap?.edits?.[0].name).toBe("edit");
     expect(JSON.parse(snap?.edits?.[0].input ?? "{}").filePath).toBe("src/a.ts");
   });
 
-  test("legacy plain-sessionId snapshots still load", () => {
+  test("the same message id in another chat keeps its own snapshot", () => {
     const store = new SessionStore(dataDir);
-    store.rememberPendingEdits(888, "ses_old");
-    // Re-read with a store that accepts both formats (handled on load).
+    store.rememberPendingEdits(100, 555, "ses_group", [{ id: "g", name: "edit" }]);
+    store.rememberPendingEdits(200, 555, "ses_private", [{ id: "p", name: "edit" }]);
+    expect(store.getPendingEditsSession(100, 555)).toBe("ses_group");
+    expect(store.getPendingEditsSession(200, 555)).toBe("ses_private");
     const reloaded = new SessionStore(dataDir);
-    expect(reloaded.getPendingEditsSession(888)).toBe("ses_old");
-    // New format overwrites the legacy one cleanly.
-    reloaded.rememberPendingEdits(888, "ses_new", [{ id: "t", name: "edit" }]);
-    expect(reloaded.getPendingEditsSnapshot(888)?.sessionId).toBe("ses_new");
-    expect(reloaded.getPendingEditsSnapshot(888)?.edits?.length).toBe(1);
+    expect(reloaded.getPendingEditsSnapshot(100, 555)?.sessionId).toBe("ses_group");
+    expect(reloaded.getPendingEditsSnapshot(200, 555)?.sessionId).toBe("ses_private");
+  });
+
+  test("forgetting a snapshot only affects that chat", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberPendingEdits(100, 555, "ses_a", [{ id: "a", name: "edit" }]);
+    store.rememberPendingEdits(200, 555, "ses_b", [{ id: "b", name: "edit" }]);
+    store.forgetPendingEdits(100, 555);
+    expect(store.getPendingEditsSnapshot(100, 555)).toBeUndefined();
+    expect(store.getPendingEditsSnapshot(200, 555)?.sessionId).toBe("ses_b");
+  });
+
+  test("legacy message-id-only snapshots are dropped on load", () => {
+    const store = new SessionStore(dataDir);
+    store.rememberPendingEdits(300, 888, "ses_new", [{ id: "t", name: "edit" }]);
+    // Simulate the old format: a numeric key without a chat id.
+    writeJsonAtomic(join(dataDir, "pendingEdits.json"), {
+      "888": { sessionId: "ses_legacy" },
+      "300:888": { sessionId: "ses_new" },
+    });
+    const reloaded = new SessionStore(dataDir);
+    expect(reloaded.getPendingEditsSnapshot(300, 888)?.sessionId).toBe("ses_new");
+    // The legacy entry cannot be resolved to any chat and is not loaded.
+    expect([...reloaded.pendingEditsByMessage.keys()]).toEqual(["300:888"]);
+  });
+
+  test("keeps only the newest snapshots", () => {
+    const store = new SessionStore(dataDir);
+    for (let i = 0; i < 205; i++) store.rememberPendingEdits(100, 1000 + i, `ses_${i}`);
+    expect(store.pendingEditsByMessage.size).toBe(200);
+    expect(store.getPendingEditsSnapshot(100, 1000)).toBeUndefined();
+    expect(store.getPendingEditsSnapshot(100, 1204)?.sessionId).toBe("ses_204");
+    const reloaded = new SessionStore(dataDir);
+    expect(reloaded.pendingEditsByMessage.size).toBe(200);
   });
 });
 

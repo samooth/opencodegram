@@ -94,6 +94,20 @@ describe("handleCallback", () => {
     expect(refreshes).toBe(1);
   });
 
+  test("panel:stop closes the turn instead of only republishing the card", async () => {
+    const deps = makeDeps();
+    const s = { sessionId: "ses_stop", stopped: false, transcriptMessageId: 77, statusMessageId: 77 } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    deps.store.rememberActiveRoute(123, undefined, s.sessionId);
+    deps.store.rememberMessageSession(123, 77, s.sessionId);
+    let finished = 0;
+    deps.status.finishStatus = async () => { finished++; };
+    const cq = { id: "10", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 77 }, data: "panel:stop" } as any;
+    await handleCallback(deps, cq);
+    expect(s.stopped).toBe(true);
+    expect(finished).toBe(1);
+  });
+
   test("activity toggle also refreshes a finished card", async () => {
     const deps = makeDeps();
     const s = { sessionId: "ses_toggle_done", activityExpanded: false, statusFinished: true } as any;
@@ -108,7 +122,7 @@ describe("handleCallback", () => {
 
   test("edit button opens a dedicated diff view without overwriting the card", async () => {
     const deps = makeDeps();
-    deps.store.rememberPendingEdits(77, "ses_edit", [{
+    deps.store.rememberPendingEdits(123, 77, "ses_edit", [{
       id: "e1", name: "edit", status: "success",
       input: JSON.stringify({ filePath: "/workspace/src/x.ts", oldString: "a", newString: "b" }),
     }]);
@@ -139,7 +153,7 @@ describe("handleCallback", () => {
       }],
     } as any;
     deps.store.sessionsById.set(s.sessionId, s);
-    deps.store.rememberPendingEdits(77, s.sessionId, s.toolCallDetails);
+    deps.store.rememberPendingEdits(123, 77, s.sessionId, s.toolCallDetails);
     const opened: string[] = [];
     deps.files.showFile = async (_chat: number, _thread: unknown, path: string) => { opened.push(path); };
     const cq = { id: "6", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 77 }, data: "editfile:0" } as any;

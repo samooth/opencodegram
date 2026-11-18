@@ -64,10 +64,13 @@
 
 ## Edit buttons and turn diffs
 
-- When a turn finishes with file edits, a snapshot of the edit details is
-  persisted (`data/pendingEdits.json`) under both the "Edits" message id and
-  the session card id, so `✏️` file buttons, `📄 Full diffs` and the card's
-  **📝 Diff (N)** button keep working after new turns and restarts.
+- When a turn finishes with file edits, the edits are appended to the session
+  card as a transcript block (table + per-file expandable diffs) and a
+  snapshot of the edit details is persisted (`data/pendingEdits.json`) keyed by
+  `chatId:messageId` under the card id, so `✏️` file buttons, `📄 Full diffs`
+  and the card's **📝 Diff (N)** button keep working after new turns and
+  restarts. Legacy entries keyed only by message id are dropped on load
+  because Telegram message ids are unique per chat, not globally.
 - `showEditDiff` renders an edits-only view from the snapshot; the replied
   Edits message is also mapped via `rememberMessageSession` so replying to it
   routes to its session.
@@ -115,7 +118,7 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (268 tests across 34 files):
+`bun test` runs the Bun suite in `tests/` (280 tests across 34 files):
 
 - `store.test.ts` — route/tab isolation, persistence and retirement.
 - `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.
