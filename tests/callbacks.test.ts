@@ -108,6 +108,58 @@ describe("handleCallback", () => {
     expect(finished).toBe(1);
   });
 
+  test("expired edit snapshots answer with a clear alert", async () => {
+    const deps = makeDeps();
+    const answers: Array<{ text?: string; opts?: { show_alert?: boolean } }> = [];
+    deps.tg.answerCallbackQuery = async (_id: string, text?: string, opts?: { show_alert?: boolean }) => { answers.push({ text, opts }); };
+    deps.status.showEditDetail = async () => false;
+    const cq = { id: "11", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "edit:0" } as any;
+    await handleCallback(deps, cq);
+    expect(answers[0]?.text).toContain("ya no está disponible");
+    expect(answers[0]?.opts?.show_alert).toBe(true);
+  });
+
+  test("copy:answer sends the text with a native copy button in private", async () => {
+    const deps = makeDeps();
+    const sent: Array<{ html: string; opts: any }> = [];
+    deps.tg.sendRichMessage = async (_chatId: number, html: string, opts: any) => { sent.push({ html, opts }); return { message_id: 1 }; };
+    const s = { sessionId: "ses_copy", lastFinalText: "texto para copiar" } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    const cq = { id: "12", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "copy:answer:ses_copy" } as any;
+    await handleCallback(deps, cq);
+    expect(sent[0]?.html).toContain("texto para copiar");
+    const button = sent[0]?.opts?.reply_markup?.inline_keyboard?.[0]?.[0];
+    expect(button?.copy_text).toEqual({ text: "texto para copiar" });
+  });
+
+  test("copy:answer falls back to a group-friendly block without copy_text", async () => {
+    const deps = makeDeps();
+    const sent: Array<{ html: string; opts: any }> = [];
+    deps.tg.sendRichMessage = async (_chatId: number, html: string, opts: any) => { sent.push({ html, opts }); return { message_id: 1 }; };
+    const s = { sessionId: "ses_copy_group", lastFinalText: "texto para copiar" } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    const cq = { id: "13", from: { id: 1 }, message: { chat: { id: -100 }, message_id: 5 }, data: "copy:answer:ses_copy_group" } as any;
+    await handleCallback(deps, cq);
+    expect(sent[0]?.html).toContain("Mantén pulsado");
+    expect(sent[0]?.opts?.reply_markup).toBeUndefined();
+  });
+
+  test("copy:command sends the last shell command", async () => {
+    const deps = makeDeps();
+    const sent: Array<{ html: string; opts: any }> = [];
+    deps.tg.sendRichMessage = async (_chatId: number, html: string, opts: any) => { sent.push({ html, opts }); return { message_id: 1 }; };
+    const s = {
+      sessionId: "ses_copy_cmd",
+      toolCallDetails: [{ id: "1", name: "bash", status: "success", input: JSON.stringify({ command: "bun test" }) }],
+    } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    const cq = { id: "14", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "copy:command:ses_copy_cmd" } as any;
+    await handleCallback(deps, cq);
+    expect(sent[0]?.html).toContain("🖥 Comando");
+    expect(sent[0]?.html).toContain("bun test");
+    expect(sent[0]?.opts?.reply_markup?.inline_keyboard?.[0]?.[0]?.copy_text).toEqual({ text: "bun test" });
+  });
+
   test("activity toggle also refreshes a finished card", async () => {
     const deps = makeDeps();
     const s = { sessionId: "ses_toggle_done", activityExpanded: false, statusFinished: true } as any;

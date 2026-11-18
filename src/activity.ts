@@ -53,12 +53,12 @@ export function toolCategory(name: string): ActivityKind {
 
 function labelFor(name: string, kind: ActivityKind): string {
   switch (kind) {
-    case "thought": return "Thought";
-    case "read": return "Read";
-    case "search": return name ? name.charAt(0).toUpperCase() + name.slice(1) : "Search";
-    case "edit": return "Edit";
+    case "thought": return "Pensamiento";
+    case "read": return "Lectura";
+    case "search": return name ? name.charAt(0).toUpperCase() + name.slice(1) : "Búsqueda";
+    case "edit": return "Edición";
     case "shell": return "Shell";
-    default: return name || "Tool";
+    default: return name || "Herramienta";
   }
 }
 
@@ -75,7 +75,7 @@ function push(a: TurnActivity, entry: Omit<ActivityEntry, "id">): number {
 
 export function recordThought(a: TurnActivity, detail: string, opts: { at?: number } = {}): number {
   const at = opts.at ?? Date.now();
-  const id = push(a, { kind: "thought", label: "Thought", detail, at, open: true });
+  const id = push(a, { kind: "thought", label: "Pensamiento", detail, at, open: true });
   a.thoughts += 1;
   a.openThoughtId = id;
   return id;
@@ -213,12 +213,12 @@ function detailPara(text: string, detailCap: number): string {
 export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, finished: boolean, now = Date.now(), expanded = false): string {
   if (!a) return "";
   const parts: string[] = [];
-  if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "thought" : "thoughts"}`);
-  if (a.reads) parts.push(`${a.reads} ${a.reads === 1 ? "read" : "reads"}`);
-  if (a.searches) parts.push(`${a.searches} ${a.searches === 1 ? "search" : "searches"}`);
-  if (a.edits) parts.push(`${a.edits} ${a.edits === 1 ? "edit" : "edits"}`);
-  if (a.shells) parts.push(`${a.shells} ${a.shells === 1 ? "shell" : "shells"}`);
-  if (a.tools) parts.push(`${a.tools} ${a.tools === 1 ? "tool" : "tools"}`);
+  if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "pensamiento" : "pensamientos"}`);
+  if (a.reads) parts.push(`${a.reads} ${a.reads === 1 ? "lectura" : "lecturas"}`);
+  if (a.searches) parts.push(`${a.searches} ${a.searches === 1 ? "búsqueda" : "búsquedas"}`);
+  if (a.edits) parts.push(`${a.edits} ${a.edits === 1 ? "edición" : "ediciones"}`);
+  if (a.shells) parts.push(`${a.shells} ${a.shells === 1 ? "comando" : "comandos"}`);
+  if (a.tools) parts.push(`${a.tools} ${a.tools === 1 ? "herramienta" : "herramientas"}`);
   if (!parts.length) return "";
 
   const detailCap = verbosity === "low" ? 0 : verbosity === "high" ? 360 : 90;
@@ -252,10 +252,10 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
       const reads = run.filter((r) => r.kind === "read").length;
       const searches = run.length - reads;
       const grouped: string[] = [];
-      if (reads) grouped.push(`${reads} ${reads === 1 ? "read" : "reads"}`);
-      if (searches) grouped.push(`${searches} ${searches === 1 ? "search" : "searches"}`);
+      if (reads) grouped.push(`${reads} ${reads === 1 ? "lectura" : "lecturas"}`);
+      if (searches) grouped.push(`${searches} ${searches === 1 ? "búsqueda" : "búsquedas"}`);
       blocks.push({
-        head: `→ Explored: ${grouped.join(", ")}`,
+        head: `→ Explorado: ${grouped.join(", ")}`,
         detail: run.map((r) => `<p>${esc(r.label)} · <code>${esc(truncate(r.detail.trim() || r.label, detailCap || 80))}</code></p>`).join(""),
       });
       continue;

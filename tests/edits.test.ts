@@ -72,7 +72,7 @@ describe("edit buttons from snapshots", () => {
     expect(chatId).toBe(7);
     expect(messageId).toBe(777);
     // The edits view renders from the snapshot: header + files list.
-    expect(String(html)).toContain("Edits (1)</h4>");
+    expect(String(html)).toContain("Cambios (1)</h4>");
     expect(String(html)).toContain("a.ts");
     // Second call on the same file collapses it again.
     const handled2 = await status.showEditDiff(7, 777, 0);
@@ -116,7 +116,7 @@ describe("edit buttons from snapshots", () => {
     const handled = await status.sendFullDiffs(7, 555);
     expect(handled).toBe(true);
     expect(sent.length).toBe(1);
-    expect(String(sent[0][1])).toContain("Full diffs</b> (1)");
+    expect(String(sent[0][1])).toContain("Diffs completos</b> (1)");
     // Full diffs are not capped at 12 lines here.
     expect(String(sent[0][1])).toContain("a.ts");
   });

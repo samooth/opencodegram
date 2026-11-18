@@ -158,29 +158,29 @@ export class SettingsStore {
 }
 
 export const LABELS: Record<keyof ChatSettings, string> = {
-  showThinking: "🧠 Thinking",
-  showTools: "🔧 Tools",
-  thinkingExpanded: "🧠 Thinking expanded",
-  toolsExpanded: "🔧 Tools expanded",
-  showPartialText: "📝 Partial text",
-  partialTextLines: "📏 Partial text chars",
-  autoArtifacts: "📎 Auto artifacts",
-  voiceTranscription: "🎤 Voice transcription",
-  compactFinal: "📦 Compact final",
+  showThinking: "🧠 Razonamiento",
+  showTools: "🔧 Herramientas",
+  thinkingExpanded: "🧠 Razonamiento expandido",
+  toolsExpanded: "🔧 Herramientas expandidas",
+  showPartialText: "📝 Texto parcial",
+  partialTextLines: "📏 Caracteres de texto parcial",
+  autoArtifacts: "📎 Artefactos automáticos",
+  voiceTranscription: "🎤 Transcripción de voz",
+  compactFinal: "📦 Respuesta compacta",
   showShell: "🖥 Shell",
-  shellExpanded: "🖥 Shell expanded",
-  previewLines: "📏 Preview lines",
-  diffStyle: "🧾 Diff style",
-  showResourceUsage: "📊 Resource usage",
-  resourceHistory: "📈 History size",
-  showLatestThought: "💭 Latest thought",
-  showLatestTool: "🔧 Latest tool",
-  showTokenSpeed: "⚡ Token speed",
-  showCot: "🧾 COT (finished)",
-  showToolInput: "⌨️ Tool input",
-  autoTopicTitle: "🏷 Auto topic title",
-  sessionNameInMessages: "📌 Session name in messages",
-  showSessionNameInStatus: "📌 Session name in status",
+  shellExpanded: "🖥 Shell expandido",
+  previewLines: "📏 Líneas de preview",
+  diffStyle: "🧾 Estilo de diff",
+  showResourceUsage: "📊 Uso de recursos",
+  resourceHistory: "📈 Tamaño del historial",
+  showLatestThought: "💭 Último pensamiento",
+  showLatestTool: "🔧 Última herramienta",
+  showTokenSpeed: "⚡ Velocidad de tokens",
+  showCot: "🧾 COT (al terminar)",
+  showToolInput: "⌨️ Entrada de herramientas",
+  autoTopicTitle: "🏷 Título automático del tema",
+  sessionNameInMessages: "📌 Nombre de sesión en mensajes",
+  showSessionNameInStatus: "📌 Nombre de sesión en el card",
   cardBehavior: "📍 Ubicación tarjeta",
   displayMode: "🧩 Modo",
   longAnswerDelivery: "📤 Respuesta larga",
@@ -203,7 +203,7 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
     const maxLabel = Math.max(...section.keys.map((k) => (LABELS[k].replace(/^[^ ]+ /, "").length)), 8);
     const rows = section.keys.map((key) => {
       const value = settings[key];
-      const display = typeof value === "boolean" ? (value ? "on" : "off") : String(value);
+      const display = typeof value === "boolean" ? (value ? "sí" : "no") : String(value);
       const label = LABELS[key].replace(/^[^ ]+ /, "");
       return `${label.padEnd(maxLabel, " ")}  ${display}`;
     });

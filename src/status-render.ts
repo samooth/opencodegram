@@ -286,3 +286,123 @@ export function relativeEditPath(target: ChatSession, file: string | null): stri
   if (file.startsWith(prefix)) return file.slice(prefix.length);
   return file.split("/").pop() ?? file;
 }
+
+/** Stable human duration for cards and receipts: 42s · 1m 42s · 2h 05m. */
+export function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `${hours}h ${String(rest).padStart(2, "0")}m`;
+}
+
+export function formatTokenCount(n: number): string {
+  if (n < 1000) return `${n}`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}m`;
+}
+
+export type TestRunSummary = { command: string; ok: boolean; count?: number };
+
+const TEST_COMMAND_RE =
+  /(?:^|[\s;&|])(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?test\b|pytest|vitest|jest|go\s+test|cargo\s+test|dotnet\s+test|mvn\s+test|make\s+test/i;
+
+/** Pick the last test command run this turn and guess whether it passed. */
+export function detectTestRun(details: ChatSession["toolCallDetails"]): TestRunSummary | undefined {
+  let found: TestRunSummary | undefined;
+  for (const detail of details) {
+    const command = parseShellCommand(detail.input ?? "") ?? detail.input?.trim() ?? "";
+    if (!command || !TEST_COMMAND_RE.test(command)) continue;
+    const output = parseToolOutput(detail.output ?? "");
+    const count =
+      output.match(/Tests:\s+(\d+)\s+passed/i)?.[1] ??
+      output.match(/(\d+)\s+passed\b/i)?.[1] ??
+      output.match(/(\d+)\s+pass\b/i)?.[1];
+    const failures = Number(output.match(/(\d+)\s+fail(?:ed|s|ures?)?\b/i)?.[1] ?? 0);
+    found = {
+      command: truncate(command.replace(/\s+/g, " ").trim(), 60),
+      ok: detail.status !== "failed" && failures === 0,
+      count: count ? Number(count) : undefined,
+    };
+  }
+  return found;
+}
+
+export function summarizeEdits(
+  target: ChatSession,
+  details: ChatSession["toolCallDetails"],
+): { files: number; added: number; removed: number } {
+  const files = new Set<string>();
+  let added = 0;
+  let removed = 0;
+  for (const detail of details) {
+    if (!isEditTool(detail.name, detail.input)) continue;
+    const stats = editStats(detail.input);
+    files.add(relativeEditPath(target, stats.file));
+    added += stats.added;
+    removed += stats.removed;
+  }
+  return { files: files.size, added, removed };
+}
+
+/** One telemetry line shared by the live card and the finished receipt. */
+export function turnTelemetry(s: ChatSession, now = Date.now(), showSpeed = true): string[] {
+  const parts: string[] = [];
+  const start = s.promptStartTime;
+  const end = s.statusFinished ? (s.turnFinishedAt ?? now) : now;
+  if (start && end >= start) parts.push(`⏱ ${formatDuration(end - start)}`);
+  const tokens = s.turnOutputTokens ?? s.lastOutputTokens ?? 0;
+  if (showSpeed && tokens && s.turnFirstStreamedAt) {
+    const seconds = Math.max(0.5, (end - s.turnFirstStreamedAt) / 1000);
+    if (tokens >= 100) parts.push(`⚡ ${(tokens / seconds).toFixed(1)} tok/s`);
+  }
+  if (tokens) parts.push(`${formatTokenCount(tokens)} tok`);
+  if (s.lastContextTokens && s.contextWindow) {
+    parts.push(`${Math.min(100, Math.round((s.lastContextTokens / s.contextWindow) * 100))}% ctx`);
+  }
+  return parts;
+}
+
+export type TurnReceiptInput = {
+  stopped: boolean;
+  error?: string;
+  prompt?: string;
+  edits?: { files: number; added: number; removed: number };
+  test?: TestRunSummary;
+  telemetry: string[];
+};
+
+/**
+ * Turn receipt: what happened, what it cost and what changed. Rendered as the
+ * first block of the finished card, so the user does not need to open details.
+ */
+export function renderTurnReceipt(input: TurnReceiptInput): string {
+  const lines: string[] = [];
+  lines.push(
+    input.error
+      ? "⚠️ <b>Turno interrumpido</b>"
+      : input.stopped
+        ? "⏹ <b>Detenido</b>"
+        : "✅ <b>Listo</b>",
+  );
+  if (input.error?.trim()) {
+    const line = firstMeaningfulLine(input.error, 180);
+    if (line) lines.push(`<i>${esc(line)}</i>`);
+  }
+  if (input.telemetry.length) lines.push(`<i>${input.telemetry.join(" · ")}</i>`);
+  if (input.prompt?.trim()) lines.push(`📝 <i>“${esc(truncate(input.prompt.trim(), 80))}”</i>`);
+  if (input.edits && input.edits.files > 0) {
+    const files = input.edits.files === 1 ? "1 archivo" : `${input.edits.files} archivos`;
+    lines.push(`✏️ <b>${files}</b> · +${input.edits.added} −${input.edits.removed}`);
+  }
+  if (input.test) {
+    const mark = input.test.ok ? "✓" : "✗";
+    const count = input.test.count !== undefined ? ` · ${input.test.count} ${mark}` : ` ${mark}`;
+    lines.push(`🧪 <code>${esc(input.test.command)}</code>${count}`);
+  }
+  return lines.join("\n");
+}
+

@@ -114,11 +114,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       return [{ text: label, callback_data: `del:${s.id}` }];
     });
     const nav: InlineButton[] = [];
-    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `delsessions:page:${page - 1}` });
-    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `delsessions:page:${page + 1}` });
+    if (page > 0) nav.push({ text: "◀ Anterior", callback_data: `delsessions:page:${page - 1}` });
+    if (start + pageSize < total) nav.push({ text: "Siguiente ▶", callback_data: `delsessions:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
-    keyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, `<b>Delete sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, {
+    keyboard.push([{ text: "📂 Sesiones", callback_data: "panel:sessions" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    await sendOrEditRich(chatId, messageId, `<b>Borrar sesiones</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n\n${table}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
@@ -182,8 +182,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     });
     const nav: InlineButton[] = [];
     const mode = onlyRunning ? "running" : filterChatId !== undefined ? "group" : "all";
-    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `sessions:page:${page - 1}:${mode}` });
-    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `sessions:page:${page + 1}:${mode}` });
+    if (page > 0) nav.push({ text: "◀ Anterior", callback_data: `sessions:page:${page - 1}:${mode}` });
+    if (start + pageSize < total) nav.push({ text: "Siguiente ▶", callback_data: `sessions:page:${page + 1}:${mode}` });
     if (nav.length) keyboard.push(nav);
     // Filters keep the current scope so pagination and filters compose.
     const filterRow = [
@@ -193,7 +193,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     ];
     keyboard.push(filterRow);
     if (mode !== "all") keyboard.push([{ text: "◀ Todas", callback_data: "sessions:filter:all" }]);
-    keyboard.push([{ text: "➕ New session", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    keyboard.push([{ text: "➕ Nueva sesión", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const activeLine = activeId ? `\nActiva: <code>${esc(activeId.slice(0, 8))}</code>` : "";
     const scopeLine = filterChatId !== undefined ? "\n<i>Mostrando sesiones de este chat</i>" : "";
     const crumb = `<i>🏠 Panel › 📂 Sesiones${mode !== "all" ? ` › ${mode}` : ""}</i>\n`;
@@ -215,13 +215,13 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const tableRows = cmds.map((c: CommandRow) => `<tr><td><code>/${esc(c.name ?? "")}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");
     const table = `<table><tr><th>Command</th><th>Description</th></tr>${tableRows}</table>`;
     const keyboard = cmds.map((c: CommandRow) => [{ text: `/${c.name ?? ""}`, callback_data: `cmd:${c.name ?? ""}` }]);
-    keyboard.push([{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }]);
-    keyboard.push([{ text: "📊 Status", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    keyboard.push([{ text: "📂 Sesiones", callback_data: "panel:sessions" }, { text: "🧠 Modelos", callback_data: "panel:models" }]);
+    keyboard.push([{ text: "📊 Estado", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const botCmds: Array<[string, string]> = BOT_COMMANDS.map((c) => [`/${c.command}`, c.description]);
 
     const botRows = botCmds.map(([c, d]) => `<tr><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`).join("");
     const botTable = `<table><tr><th>Bot command</th><th>Description</th></tr>${botRows}</table>`;
-    await tg.sendRichMessage(chatId, `<b>OpenCode commands</b>\n\n${table}\n\n<b>Bot commands</b>\n\n${botTable}`, {
+    await tg.sendRichMessage(chatId, `<b>Comandos de OpenCode</b>\n\n${table}\n\n<b>Comandos del bot</b>\n\n${botTable}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
@@ -306,11 +306,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
         return [{ text: `${providerId} (${count})`.slice(0, 64), callback_data: `prov:${start + i}` }];
       });
       const nav: InlineButton[] = [];
-      if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
-      if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
+      if (page > 0) nav.push({ text: "◀ Anterior", callback_data: `models:page:${page - 1}` });
+      if (start + pageSize < total) nav.push({ text: "Siguiente ▶", callback_data: `models:page:${page + 1}` });
       if (nav.length) keyboard.push(nav);
-      keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-      const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
+      keyboard.push([{ text: "❌ Cancelar", callback_data: "modelcancel" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+      const currentLine = current ? `Actual: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Actual: <i>default</i>";
       const sentId = await sendOrEditRich(chatId, messageId, `${targetHeader}<i>🏠 Panel › 🧠 Modelos</i>\n<b>Providers</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})\n${currentLine}\n${dirLabel}\n\n${table}`, {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: keyboard },
@@ -339,12 +339,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       return [{ text: label, callback_data: `model:${idx}` }];
     });
     const nav: InlineButton[] = [];
-    if (page > 0) nav.push({ text: "◀ Prev", callback_data: `models:page:${page - 1}` });
-    if (start + pageSize < total) nav.push({ text: "Next ▶", callback_data: `models:page:${page + 1}` });
+    if (page > 0) nav.push({ text: "◀ Anterior", callback_data: `models:page:${page - 1}` });
+    if (start + pageSize < total) nav.push({ text: "Siguiente ▶", callback_data: `models:page:${page + 1}` });
     if (nav.length) keyboard.push(nav);
-    keyboard.push([{ text: "◀ Providers", callback_data: "prov:back" }, { text: "❌ Cancel", callback_data: "modelcancel" }]);
+    keyboard.push([{ text: "◀ Proveedores", callback_data: "prov:back" }, { text: "❌ Cancelar", callback_data: "modelcancel" }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    const currentLine = current ? `Current: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Current: <i>default</i>";
+    const currentLine = current ? `Actual: <code>${esc(current.providerID)}/${esc(current.id)}</code>${current.variant ? " (" + esc(current.variant) + ")" : ""}` : "Actual: <i>default</i>";
     const targetHeader = s
       ? `${sessionHeader(s)}🧠 <b>Cambiar modelo para esta sesión</b>`
       : `${targetId ? `📌 <b>Sesión</b> · <code>${esc(targetId.slice(0, 8))}</code>\n` : ""}🧠 <b>Cambiar modelo</b>`;
@@ -407,12 +407,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const text = `<h3>📊 Status</h3>\n\n<table compact striped bordered>${rows}</table>`;
     const keyboard: InlineKeyboard = [];
     if (s?.sessionId) keyboard.push([{ text: "🔗 Conectar", callback_data: `connect:${s.sessionId}` }]);
-    if (s?.statusMessageId) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
+    if (s?.statusMessageId) keyboard.push([{ text: "⏹ Detener", callback_data: "panel:stop" }]);
     keyboard.push([
-      { text: "🧠 Models", callback_data: s?.sessionId ? `panel:ms:${s.sessionId}` : "panel:models" },
-      { text: "📂 Sessions", callback_data: "panel:sessions" },
+      { text: "🧠 Modelos", callback_data: s?.sessionId ? `panel:ms:${s.sessionId}` : "panel:models" },
+      { text: "📂 Sesiones", callback_data: "panel:sessions" },
     ]);
-    keyboard.push([{ text: "🔄 Refresh", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    keyboard.push([{ text: "🔄 Actualizar", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }, s?.sessionId);
   }
 
@@ -434,9 +434,9 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     ].filter(Boolean).join("");
     const text = `<b>OpenCodegram</b>\n\n<table>${rows}</table>`;
     const keyboard = [
-      [{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "🧠 Models", callback_data: "panel:models" }, { text: "📁 Files", callback_data: "panel:files" }],
-      [{ text: "➕ New", callback_data: "panel:new" }, { text: "⚡ Commands", callback_data: "panel:commands" }, { text: "📊 Status", callback_data: "panel:status" }],
-      [{ text: "⏹ Stop", callback_data: "panel:stop" }, { text: "❓ Help", callback_data: "panel:help" }],
+      [{ text: "📂 Sesiones", callback_data: "panel:sessions" }, { text: "🧠 Modelos", callback_data: "panel:models" }, { text: "📁 Archivos", callback_data: "panel:files" }],
+      [{ text: "➕ Nueva", callback_data: "panel:new" }, { text: "⚡ Comandos", callback_data: "panel:commands" }, { text: "📊 Estado", callback_data: "panel:status" }],
+      [{ text: "⏹ Detener", callback_data: "panel:stop" }, { text: "❓ Ayuda", callback_data: "panel:help" }],
     ];
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }

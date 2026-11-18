@@ -12,7 +12,7 @@ import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, shortToolArg, StatusDeps, truncateText } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -51,32 +51,21 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    * bottom of the message (above resource indicators) for readability.
    */
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
-    const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
     const lines: string[] = [];
     // 1. State first — "still working" is the most important signal at a glance.
     lines.push(
       s.stopped
-        ? "<h4>⏹ Stopped</h4>"
-        : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`,
+        ? "<h4>⏹ Detenido</h4>"
+        : "<h4>⏳ Trabajando…</h4>",
     );
-    // 2. Progress (tools + tok/s) right under the state.
+    // 2. Telemetry (duration, speed, tokens, context) under the state. The card
+    // stays readable while working; the finished turns get the full receipt.
+    const telemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
     const tools = s.toolCallDetails.length;
     const failedTools = s.toolCallDetails.filter((detail) => detail.status === "failed").length;
-    // Accumulated tokens across this turn; elapsed measured from first streamed
-    // token (consistent with the final answer and OpenCode 2.3.0).
-    const tokens = s.turnOutputTokens ?? s.lastOutputTokens ?? 0;
-    const tokenElapsed = s.turnFirstStreamedAt ? Math.max(0.5, (Date.now() - s.turnFirstStreamedAt) / 1000) : elapsed;
-    const progressParts: string[] = [];
     // The activity summary already carries tool counts; avoid showing them twice.
-    if (tools && !s.activity) progressParts.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
-    if (tokens && tokenElapsed > 0 && settings.showTokenSpeed) {
-      // A handful of tokens over a long "thinking" window yields a meaningless
-      // tok/s. Show the count alone until there is enough output to measure.
-      progressParts.push(tokens >= 100
-        ? `⚡ ${(tokens / tokenElapsed).toFixed(1)} tok/s · ${tokens.toLocaleString()} tok`
-        : `✍️ ${tokens.toLocaleString()} tok`);
-    }
-    if (progressParts.length) lines.push(`<p><i>${esc(progressParts.join(" · "))}</i></p>`);
+    if (tools && !s.activity) telemetry.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
+    if (telemetry.length) lines.push(`<p><i>${esc(telemetry.join(" · "))}</i></p>`);
     // 3. Prompt being answered — context before detail.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) {
@@ -134,9 +123,17 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
 
   /** Summary shown once the turn is over. */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
-    const lines: string[] = [s.stopped ? "⏹ <b>Stopped</b>" : "✅ <b>Done</b>"];
     const prompt = store?.lastPromptBySession.get(s.sessionId);
-    if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(truncate(prompt.trim(), 80))}</i></p>`);
+    const edits = summarizeEdits(s, s.toolCallDetails);
+    const test = detectTestRun(s.toolCallDetails);
+    const lines: string[] = [renderTurnReceipt({
+      stopped: s.stopped,
+      error: s.lastTurnError,
+      prompt,
+      edits: edits.files ? edits : undefined,
+      test,
+      telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
+    })];
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<p><i>🔀 Esta sesión quedó en segundo plano.</i></p>");
@@ -147,7 +144,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const other = s.toolCallDetails.length - shell;
       const parts: string[] = [];
       if (shell) parts.push(`${shell} shell`);
-      if (other) parts.push(`${other} tools`);
+      if (other) parts.push(`${other} herramientas`);
       lines.push(`<p><i>🔧 ${parts.join(" · ")}</i></p>`);
     }
     return lines.join("\n");
@@ -206,6 +203,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     if (s.resourcesCollapsed === undefined) s.resourcesCollapsed = true;
     s.turnOutputTokens = 0;
     s.turnFirstStreamedAt = undefined;
+    s.turnFinishedAt = undefined;
+    s.lastTurnError = undefined;
     s.stopped = false;
     s.transcriptPage = undefined;
     // Keep the previous turn's final answer reference so the "Ver completo"
@@ -226,7 +225,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         // live streaming while working. Unified and "única" (refloat) replace
         // the previous card (single message per session); "conservar" keeps the
         // finished card as history; "fija" keeps editing the same card in place.
-        store?.beginTurn(s);
+        store?.beginTurn?.(s);
         s.transcriptFollow = true;
         if (unified || settings.cardBehavior !== "fixed") {
           await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
@@ -241,12 +240,12 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const opts = threadOptsFor(s);
       const lines: string[] = [];
       lines.unshift(sessionHeader(s).trimEnd());
-      lines.push("⏳ <b>Working…</b>\n<i>Waiting for OpenCode</i>");
+      lines.push("⏳ <b>Trabajando…</b>\n<i>Esperando a OpenCode</i>");
       if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s));
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b: { label: string }, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const keyboard = [
-        [{ text: "⏹ Stop", callback_data: "panel:stop" }],
+        [{ text: "⏹ Detener", callback_data: "panel:stop" }],
         ...btnRows,
       ];
       const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
@@ -284,8 +283,9 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         return;
       }
       const header = sessionHeader(s).trimEnd();
-      const elapsed = s.promptStartTime ? Math.max(1, Math.round((Date.now() - s.promptStartTime) / 1000)) : 0;
-      const statusLine = s.stopped ? "<h4>⏹ Stopped</h4>" : `<h4>⏳ Working…${elapsed ? ` <i>(${elapsed}s)</i>` : ""}</h4>`;
+      const statusLine = s.stopped ? "<h4>⏹ Detenido</h4>" : "<h4>⏳ Trabajando…</h4>";
+      const telemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
+      const telemetryLine = telemetry.length ? `<p><i>${esc(telemetry.join(" · "))}</i></p>` : "";
       const backgroundNote = s.detached && !s.stopped
         ? "<i>🔀 Esta sesión sigue en segundo plano (otra sesión ocupa la pestaña).</i>"
         : "";
@@ -302,7 +302,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
         const summary = getToolSummary(toolName, lastTool.input);
         const argPart = summary.arg ? ` <code>${esc(shortToolArg(summary.arg, 70))}</code>` : "";
-        const parts = [`${statusEmoji} <b>Latest tool:</b> ${toolIcon(toolName)} <b>${esc(toolName)}</b>${argPart}`];
+        const parts = [`${statusEmoji} <b>Última herramienta:</b> ${toolIcon(toolName)} <b>${esc(toolName)}</b>${argPart}`];
         if (shell && summary.arg && settings.showToolInput) {
           parts.push(`<pre language='bash'>$ ${esc(truncate(summary.arg, 220))}</pre>`);
         } else if (!shell && settings.showToolInput && !summary.arg && lastTool.input) {
@@ -323,7 +323,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
         const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
         const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-        latestThoughtBlock = `💭 <b>Latest thought:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
+        latestThoughtBlock = `💭 <b>Último pensamiento:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
       }
 
       let shellBlock = "";
@@ -335,7 +335,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       let toolsBlock = "";
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails.slice(-6), 180, settings.showToolInput);
-        toolsBlock = `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`;
+        toolsBlock = `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas (${otherDetails.length})\n${details}</blockquote>`;
       } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
         toolsBlock = "🔧 " + esc(s.toolCalls.slice(-6).join(", "));
       }
@@ -346,7 +346,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
           const { file, added, removed } = editStats(detail.input);
           return `${file.split("/").pop() ?? file} (+${added}/-${removed})`;
         });
-        editsLine = `✏️ Edits (${editDetails.length}): ${esc(stats.join(", "))}`;
+        editsLine = `✏️ Cambios (${editDetails.length}): ${esc(stats.join(", "))}`;
       }
 
       let partialBlock = "";
@@ -358,6 +358,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const parts = [
         header,
         statusLine,
+        telemetryLine,
         backgroundNote,
         latestToolBlock,
         latestThoughtBlock,
@@ -372,7 +373,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b: { label: string }, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const editKeyboard = [
-        [{ text: "⏹ Stop", callback_data: "panel:stop" }],
+        [{ text: "⏹ Detener", callback_data: "panel:stop" }],
         ...btnRows,
       ];
       const edit = tg.editRichMessage(chatId, s.statusMessageId!, finalText, {
@@ -413,6 +414,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
     if (s.deltaFlushTimer) { clearTimeout(s.deltaFlushTimer); s.deltaFlushTimer = undefined; }
     s.statusFinished = true;
+    s.turnFinishedAt ??= Date.now();
     if (s.activity) closeOpen(s.activity);
     if (s.statusEditPromise) {
       await s.statusEditPromise.catch((err) => console.warn("[status]", err?.message ?? err));
@@ -429,7 +431,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         // The reasoning is markdown: render it so code blocks and emphasis
         // keep their rich text inside the card.
         const renderThinking = (chunk: string) =>
-          `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking
+          `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Razonamiento
 ${markdownToHtml(chunk)}</blockquote>`;
         // Models often restate the prompt inside their reasoning; showing it
         // again duplicates information the user already sent.
@@ -464,9 +466,9 @@ ${markdownToHtml(chunk)}</blockquote>`;
           transcript.addBlock(
             s,
             "tools",
-            `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`,
+            `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas (${otherDetails.length})\n${details}</blockquote>`,
             details,
-            (chunk) => `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls
+            (chunk) => `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas
 ${chunk}</blockquote>`,
             otherDetails.map((d) => ({ name: d.name, input: d.input, output: d.output, status: d.status })),
           );
@@ -496,9 +498,9 @@ ${chunk}</blockquote>`,
           plainFiles.push(file);
         }
         const table = `<table><tr><th>Archivo</th><th>+</th><th>-</th></tr>${tableRows.join("")}</table>`;
-        const html = `<h4>✏️ Edits (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
+        const html = `<h4>✏️ Cambios (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
         editSnapshot = editDetails.map((d) => ({ ...d }));
-        transcript.addBlock(s, "tools", html, `Edits (${editDetails.length}): ${plainFiles.join(", ")}`);
+        transcript.addBlock(s, "tools", html, `Cambios (${editDetails.length}): ${plainFiles.join(", ")}`);
       }
       // Keep the finished card attached: it holds the final answer and stays
       // navigable (pagination). The next turn start decides whether it is
@@ -560,11 +562,11 @@ ${chunk}</blockquote>`,
       lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})
 ${esc(cot)}</blockquote>`);
     }
-    lines.push(target.stopped ? "⏹ <b>Stopped</b>" : "✅ <b>Done</b>");
+    lines.push(target.stopped ? "⏹ <b>Detenido</b>" : "✅ <b>Listo</b>");
     if (!settings.compactFinal) {
       if (inlineThinking && settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
         const r = target.reasoningBuffer.trim();
-        lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Thinking
+        lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Razonamiento
 ${esc(r)}</blockquote>`);
       }
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
@@ -576,10 +578,10 @@ ${esc(r)}</blockquote>`);
       }
       if (settings.showTools && otherDetails.length) {
         const details = renderTools(otherDetails, 500);
-        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Tool calls (${otherDetails.length})\n${details}</blockquote>`);
+        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas (${otherDetails.length})\n${details}</blockquote>`);
       }
       if (settings.showTools && editDetails.length) {
-        const editLines = [`✏️ Edits: ${editDetails.length}`];
+        const editLines = [`✏️ Cambios: ${editDetails.length}`];
         for (const detail of editDetails) {
           const file = relativeEditPath(target, extractEditFile(detail.input) ?? "edit");
           const diff = formatEditDiff(detail.input, settings.diffStyle, target.directory);
@@ -626,11 +628,11 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
       keyboard.push([{ text: label.slice(0, 64), callback_data: `edit:${index}` }]);
     });
     if (editDetails.length && messageId !== undefined) {
-      keyboard.push([{ text: "📄 Full diffs", callback_data: `edits:full:${messageId}` }]);
+      keyboard.push([{ text: "📄 Diffs completos", callback_data: `edits:full:${messageId}` }]);
     }
     keyboard.push([
-      { text: "🧠 Model", callback_data: `panel:ms:${target.sessionId}` },
-      { text: "📂 Sessions", callback_data: "panel:sessions" },
+      { text: "🧠 Modelo", callback_data: `panel:ms:${target.sessionId}` },
+      { text: "📂 Sesiones", callback_data: "panel:sessions" },
     ]);
     return keyboard;
   };
@@ -666,7 +668,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     }
     if (resolved.s) resolved.s.expandedEditIndex = next;
     const settings = getSettings(chatId);
-    const lines: string[] = [resolved.header, `<h4>Edits (${resolved.edits.length})</h4>`];
+    const lines: string[] = [resolved.header, `<h4>Cambios (${resolved.edits.length})</h4>`];
     resolved.edits.forEach((detail, i) => {
       const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? `edit ${i + 1}`);
       const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
@@ -696,7 +698,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
       const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
       parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`);
     }
-    const full = `${resolved.header}\n<b>Full diffs</b> (${resolved.edits.length})\n\n${parts.join("\n\n")}`;
+    const full = `${resolved.header}\n<b>Diffs completos</b> (${resolved.edits.length})\n\n${parts.join("\n\n")}`;
     const opts = threadOpts(threadId ?? resolved.threadId);
     if (full.length <= 3800) {
       await tg.sendRichMessage(chatId, full, opts).catch((err) => console.warn("[status]", err?.message ?? err));

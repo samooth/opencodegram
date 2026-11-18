@@ -116,7 +116,7 @@ describe("file browser", () => {
     expect(documents.at(-1)?.name).toBe("app.ts");
     expect(documents.at(-1)?.caption).toContain("src/app.ts");
 
-    const backButton = buttons(edits[1].opts).find((button) => button.text.includes("Back"));
+    const backButton = buttons(edits[1].opts).find((button) => button.text.includes("Atrás"));
     expect(backButton?.callback_data).toBe("fs:u");
     await browser.handleCallback(callback(firstId, "fs:u", "cb-back"));
 

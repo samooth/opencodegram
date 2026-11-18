@@ -150,15 +150,15 @@ export async function readMcpResource(uri: string, directory?: string): Promise<
 
 export async function renderMcpList(oc: OpenCodeBridge, directory: string): Promise<{ text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> }> {
   const servers = await listMcpServers(oc, directory);
-  const text = `<b>MCP servers</b>\n${formatMcpServers(servers)}\n\n<i>Directory: ${esc(directory)}</i>`;
+  const text = `<b>Servidores MCP</b>\n${formatMcpServers(servers)}\n\n<i>Directorio: ${esc(directory)}</i>`;
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = servers.map((server) => {
     const buttons: Array<{ text: string; callback_data: string }> = [];
-    if (server.status === "connected") buttons.push({ text: "Disconnect", callback_data: `mcp:disconnect:${server.name}` });
-    else buttons.push({ text: "Connect", callback_data: `mcp:connect:${server.name}` });
-    buttons.push({ text: "Remove", callback_data: `mcp:remove:${server.name}` });
+    if (server.status === "connected") buttons.push({ text: "Desconectar", callback_data: `mcp:disconnect:${server.name}` });
+    else buttons.push({ text: "Conectar", callback_data: `mcp:connect:${server.name}` });
+    buttons.push({ text: "Eliminar", callback_data: `mcp:remove:${server.name}` });
     return buttons;
   });
-  keyboard.push([{ text: "Resources", callback_data: "mcp:resources" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+  keyboard.push([{ text: "Recursos", callback_data: "mcp:resources" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
   return { text, keyboard };
 }
 export function formatMcpServers(servers: McpServerInfo[]): string {

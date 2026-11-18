@@ -821,7 +821,10 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
     if (sessionId && latestPrompt) updateRetryPrompt(sessionId, latestPrompt);
     const promptForRetry = latestPrompt;
     if (s?.typingTimer) { clearInterval(s.typingTimer); s.typingTimer = undefined; }
-    if (s) await finishStatus(chatId, s).catch((err) => console.warn("[events] finishStatus failed", err?.message ?? err));
+    if (s) {
+      s.lastTurnError = msg;
+      await finishStatus(chatId, s).catch((err) => console.warn("[events] finishStatus failed", err?.message ?? err));
+    }
     if (sessionId && !isRateLimit) cancelAutoRetry(sessionId);
 
     // Retry only prompts sent by this process and only up to

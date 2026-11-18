@@ -291,8 +291,8 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     }
     keyboard.push([{ text: "📄 Ver preview", callback_data: "fs:preview" }]);
     keyboard.push([{ text: "📎 Enviar documento", callback_data: "fs:send" }]);
-    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
-    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    if (view.back) keyboard.push([{ text: "⬆ Atrás", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Raíz", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const sentId = await sendOrEdit(chatId, threadId, options.messageId, text, keyboard);
     if (sentId !== undefined) views.set(`${chatId}:${sentId}`, view);
   }
@@ -317,8 +317,8 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       [{ text: "📄 Ver preview", callback_data: "fs:preview" }],
       [{ text: "📎 Enviar documento", callback_data: "fs:send" }],
     ];
-    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
-    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    if (view.back) keyboard.push([{ text: "⬆ Atrás", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Raíz", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     return keyboard;
   }
 
@@ -348,16 +348,16 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     }
     const text = lines.join("\n");
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
-    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    if (view.back) keyboard.push([{ text: "⬆ Atrás", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Raíz", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     const sentId = await sendOrEdit(chatId, threadId, options.messageId, text, keyboard);
     if (sentId !== undefined) views.set(`${chatId}:${sentId}`, view);
   }
 
   function searchKeyboard(view: SearchView): Array<Array<{ text: string; callback_data: string }>> {
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    if (view.back) keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
-    keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
+    if (view.back) keyboard.push([{ text: "⬆ Atrás", callback_data: "fs:u" }]);
+    keyboard.push([{ text: "📂 Raíz", callback_data: "fs:r" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
     return keyboard;
   }
 
@@ -400,8 +400,8 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
     });
 
     const nav: Array<{ text: string; callback_data: string }> = [];
-    if (view.page > 0) nav.push({ text: "◀ Prev", callback_data: `fs:p:${view.page - 1}` });
-    if (start + PAGE_SIZE < view.total) nav.push({ text: "Next ▶", callback_data: `fs:p:${view.page + 1}` });
+    if (view.page > 0) nav.push({ text: "◀ Anterior", callback_data: `fs:p:${view.page - 1}` });
+    if (start + PAGE_SIZE < view.total) nav.push({ text: "Siguiente ▶", callback_data: `fs:p:${view.page + 1}` });
     if (nav.length) keyboard.push(nav);
 
     if (view.dir) {
@@ -461,11 +461,11 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       keyboard.push(row);
     });
     const nav: Array<{ text: string; callback_data: string }> = [];
-    if (view.page > 0) nav.push({ text: "◀ Prev", callback_data: `fs:p:${view.page - 1}` });
-    if (start + PAGE_SIZE < view.entries.length) nav.push({ text: "Next ▶", callback_data: `fs:p:${view.page + 1}` });
+    if (view.page > 0) nav.push({ text: "◀ Anterior", callback_data: `fs:p:${view.page - 1}` });
+    if (start + PAGE_SIZE < view.entries.length) nav.push({ text: "Siguiente ▶", callback_data: `fs:p:${view.page + 1}` });
     if (nav.length) keyboard.push(nav);
     keyboard.push([
-      { text: "📂 Browse root", callback_data: "fs:r" },
+      { text: "📂 Raíz", callback_data: "fs:r" },
       { text: "🏠 Panel", callback_data: "panel:home" },
     ]);
     return keyboard;
@@ -500,9 +500,9 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
       [{ text: "📎 Send as document", callback_data: "fs:send" }],
     ];
     if (view.back) {
-      keyboard.push([{ text: "⬆ Back", callback_data: "fs:u" }]);
+      keyboard.push([{ text: "⬆ Atrás", callback_data: "fs:u" }]);
     } else {
-      keyboard.push([{ text: "📂 Browse root", callback_data: "fs:r" }]);
+      keyboard.push([{ text: "📂 Raíz", callback_data: "fs:r" }]);
     }
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
     return keyboard;

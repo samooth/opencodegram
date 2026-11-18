@@ -14,9 +14,11 @@ with per-topic isolation, rich status cards and inline keyboards.
   a conversation card (M2) that follows the chat and streams the latest thought
   at the bottom.
 - **Status & transcript** — paginated session card with thinking, tool calls,
-  shell output, edits, tok/s, Stop button and final answer; long answers can be
-  sent as separate rich-text messages with a “Ver completo” action. Exports to
-  HTML, Markdown, JSON-LD and JSONL (fine-tuning) with per-turn user prompts.
+  shell output, edits and final answer. Contextual keyboards per state
+  (working / done / stopped / error), turn receipt with duration, edits and
+  detected test runs, telemetry (`⏱ · ⚡ tok/s · tok · % ctx`), actionable
+  errors and copy answer/prompt/command buttons. Exports to HTML, Markdown,
+  JSON-LD and JSONL (fine-tuning) with per-turn user prompts.
 - **Models** — free models first, variant selection, agent picker.
 - **Files** — `/ls`, `/find`, `/read`, `/zip`, `/file`; safe path confinement;
   inline preview and document sends.
@@ -27,7 +29,13 @@ with per-topic isolation, rich status cards and inline keyboards.
   reject-with-reason.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — profiles and toggles for display/delivery, thinking, tools,
-  shell, previews, artifacts, voice, compact final, card theme, verbosity, collapsible resources, compact activity summary (`+3 thoughts · 3 reads · 1 tool`, one collapsible row per thought/edit/tool, edits inside the same card with per-file buttons) and streaming transcription.
+  shell, previews, artifacts, voice, compact final, card theme, verbosity, collapsible resources, compact activity summary (`+3 pensamientos · 3 lecturas · 1 herramienta`, one collapsible row per thought/edit/tool, edits inside the same card with per-file buttons) and streaming transcription.
+- **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
+  (real browser via extension) and always-on Playwright MCP (headless Chromium
+  for web debugging). OpenCode pinned to 2.3.0.
+- **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
+  fork/subagent badges and background-subagent counts.
+- **Tests** — 319 Bun tests across 37 files + TypeScript typecheck.
 - **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
   (real browser via extension) and always-on Playwright MCP (headless Chromium
   for web debugging). OpenCode pinned to 2.3.0.

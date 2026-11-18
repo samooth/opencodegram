@@ -125,7 +125,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (290 tests across 35 files):
+`bun test` covers (319 tests across 37 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -150,6 +150,10 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
   handlers, rendering and routing.
 - `tests/edits.test.ts` — edit buttons and full diffs from persisted turn
   snapshots (work after restarts and new turns).
+- `tests/turn-receipt.test.ts` — duration/token formatting, turn receipts and
+  test-run detection (`bun test`, `pytest`, `go test`, …).
+- `tests/card-actions.test.ts` — contextual card keyboards per state,
+  private/group copy gating and the finished turn receipt.
 - `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.

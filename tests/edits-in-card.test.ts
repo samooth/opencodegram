@@ -96,8 +96,8 @@ describe("edits inside the session card", () => {
     const { status, s, published } = makeHarness();
     s.stopped = true;
     await status.finishStatus(7, s);
-    expect(published[0]?.extraTop).toContain("⏹ <b>Stopped</b>");
-    expect(published[0]?.extraTop).not.toContain("✅ <b>Done</b>");
+    expect(published[0]?.extraTop).toContain("⏹ <b>Detenido</b>");
+    expect(published[0]?.extraTop).not.toContain("✅ <b>Listo</b>");
     expect(published[0]?.working).toBe(false);
   });
 

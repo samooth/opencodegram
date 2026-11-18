@@ -1,7 +1,9 @@
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSession } from "./types.js";
+import type { InlineButton, InlineKeyboard } from "./apitypes.js";
 import type { SessionStore } from "./store.js";
-import { clampText, esc, markdownToHtml, sessionHeader } from "./util.js";
+import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader } from "./util.js";
+import { isShellTool, parseShellCommand } from "./status-render.js";
 import { extractEditFile } from "./editutil.js";
 import {
   paginateTranscript,
@@ -312,10 +314,12 @@ ${body}
     page: number,
     total: number,
     opts?: { working?: boolean; unified?: boolean },
-  ): Array<Array<{ text: string; callback_data: string }>> => {
-    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+  ): InlineKeyboard => {
+    const keyboard: InlineKeyboard = [];
+    const activity = s.activity;
+    const hasActivity = !!activity && activity.thoughts + activity.reads + activity.searches + activity.edits + activity.shells + activity.tools > 0;
     if (total > 1) {
-      const nav: Array<{ text: string; callback_data: string }> = [];
+      const nav: InlineButton[] = [];
       if (page > 0) nav.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
       // Middle button opens the page picker (jump to page N).
       nav.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
@@ -325,8 +329,40 @@ ${body}
         keyboard.push([{ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
       }
     }
-    const activity = s.activity;
-    if (activity && activity.thoughts + activity.reads + activity.searches + activity.edits + activity.shells + activity.tools > 0) {
+
+    // Edits live inside the card; the snapshot survives turns and restarts.
+    const edits = !opts?.working && s.transcriptMessageId
+      ? store.getPendingEditsSnapshot(chatId, s.transcriptMessageId)?.edits ?? []
+      : [];
+
+    // 1) Primary action for the current state. This is always the first row so
+    // the user never has to scroll to act on a long answer.
+    const primary: InlineButton[] = [];
+    if (opts?.working) {
+      primary.push({ text: "⏹ Detener", callback_data: "panel:stop" });
+      if (hasActivity) primary.push({
+        text: s.activityExpanded ? "▴ Ocultar" : "▾ Detalles",
+        callback_data: `activity:${s.sessionId}`,
+      });
+    } else if (s.lastTurnError) {
+      primary.push({ text: "🔁 Reintentar", callback_data: `retry:${s.sessionId}` });
+      primary.push({ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` });
+    } else if (s.stopped) {
+      primary.push({ text: "▶️ Continuar", callback_data: `retry:${s.sessionId}` });
+      primary.push({ text: "📥 Historial", callback_data: `histfmt:${s.sessionId}` });
+    } else {
+      if (s.lastFinalText) primary.push({ text: "📄 Respuesta", callback_data: `viewfull:${s.sessionId}` });
+      if (edits.length && s.transcriptMessageId) {
+        primary.push({ text: "✏️ Cambios", callback_data: `edits:full:${s.transcriptMessageId}` });
+      }
+      const copy = copyTextButton(chatId, "📋 Copiar", s.lastFinalText);
+      if (copy) primary.push(copy);
+    }
+    if (primary.length) keyboard.push(primary);
+
+    // 2) Secondary toggles: detail and resources. The activity toggle moves to
+    // the primary row while working; finished cards keep it here.
+    if (!(opts?.working && hasActivity) && hasActivity) {
       keyboard.push([{
         text: s.activityExpanded ? "▴ Ocultar detalles" : "▾ Ver detalles",
         callback_data: `activity:${s.sessionId}`,
@@ -338,12 +374,20 @@ ${body}
         callback_data: `resources:${s.sessionId}`,
       }]);
     }
-    if (opts?.working) keyboard.push([{ text: "⏹ Stop", callback_data: "panel:stop" }]);
-    // "View full" escape hatch for long answers; history export always available.
-    const tools: Array<{ text: string; callback_data: string }> = [];
-    if (s.lastFinalText) tools.push({ text: "📄 Ver completo", callback_data: `viewfull:${s.sessionId}` });
-    tools.push({ text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` });
-    keyboard.push(tools);
+
+    // 3) Copy prompt and the last shell command (private clipboard button only
+    // when it fits; groups and long texts fall back to a code block).
+    if (!opts?.working) {
+      const copyPrompt = copyTextButton(chatId, "📋 Copiar prompt", store.lastPromptBySession.get(s.sessionId));
+      if (copyPrompt) keyboard.push([copyPrompt]);
+      const lastShell = [...(s.toolCallDetails ?? [])].reverse().find((d) => isShellTool(d.name));
+      const lastCommand = lastShell ? parseShellCommand(lastShell.input ?? "") ?? lastShell.input?.trim() : undefined;
+      if (lastCommand) {
+        const copyCommand = copyTextButton(chatId, "📋 Copiar comando", lastCommand);
+        keyboard.push([copyCommand ?? { text: "📋 Copiar comando", callback_data: `copy:command:${s.sessionId}` }]);
+      }
+    }
+
     // 📖 Files read this turn: open the actual content instead of a bare name.
     const readPaths = (s.activity?.entries ?? [])
       .filter((e) => e.kind === "read" && e.detail.trim())
@@ -353,7 +397,7 @@ ${body}
       if (key.startsWith(`${s.sessionId}:`)) activityReadPaths.delete(key);
     }
     const seenReads = new Set<string>();
-    const readButtons: Array<{ text: string; callback_data: string }> = [];
+    const readButtons: InlineButton[] = [];
     for (const path of readPaths) {
       if (seenReads.has(path)) continue;
       seenReads.add(path);
@@ -363,10 +407,9 @@ ${body}
       readButtons.push({ text: `📖 ${path.split("/").pop() ?? path}`.slice(0, 64), callback_data: `readfile:${key}` });
     }
     if (readButtons.length) keyboard.push(readButtons);
-    // 📝 Edits are part of this card. The snapshot is registered on its message
-    // id at turn end, so per-file buttons survive new turns and restarts.
-    if (!opts?.working && s.transcriptMessageId) {
-      const edits = store.getPendingEditsSnapshot(chatId, s.transcriptMessageId)?.edits ?? [];
+
+    // 4) Per-file edit buttons + the full diff entry point.
+    if (!opts?.working) {
       for (let idx = Math.max(0, edits.length - 3); idx < edits.length; idx++) {
         const raw = extractEditFile(edits[idx]?.input) ?? `edit ${idx + 1}`;
         const label = raw.split("/").pop() ?? raw;
@@ -379,10 +422,22 @@ ${body}
         keyboard.push([{ text: `📝 Diff (${edits.length})`, callback_data: `edits:full:${s.transcriptMessageId}` }]);
       }
     }
+
+    // 5) Export always available; copy fallback for groups or long answers.
+    if (!opts?.working) {
+      const tools: InlineButton[] = [];
+      const nativeCopy = copyTextButton(chatId, "📋 Copiar", s.lastFinalText);
+      if (s.lastFinalText && !nativeCopy) {
+        tools.push({ text: "📋 Copiar respuesta", callback_data: `copy:answer:${s.sessionId}` });
+      }
+      tools.push({ text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` });
+      keyboard.push(tools);
+    }
+
     if (!opts?.unified) {
       keyboard.push([
-        { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },
-        { text: "📂 Sessions", callback_data: "panel:sessions" },
+        { text: "🧠 Modelos", callback_data: `panel:ms:${s.sessionId}` },
+        { text: "📂 Sesiones", callback_data: "panel:sessions" },
         { text: "🏠 Panel", callback_data: "panel:home" },
       ]);
     } else {

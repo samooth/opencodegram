@@ -11,8 +11,9 @@ import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
 import { extractEditFile } from "./editutil.js";
 import { getActivityReadPath } from "./transcriptmanager.js";
+import { isShellTool, parseShellCommand } from "./status-render.js";
 import { showSessionPicker } from "./messages.js";
-import { clampText, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
+import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { describeThrottles, throttleTotals } from "./ratethrottle.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -57,6 +58,7 @@ const PREFIXES = [
   "editfile:",
   "readfile:",
   "resources:",
+  "copy:",
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -257,11 +259,11 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   const requestId = m[2];
   const info = deps.pendingPermissions.get(requestId);
   if (!info) {
-    await deps.tg.answerCallbackQuery(cq.id, "Unknown permission").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Permiso desconocido").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   if (info.decided) {
-    await deps.tg.answerCallbackQuery(cq.id, "Already decided").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Ya decidido").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   if (action === "rejectreason") {
@@ -274,7 +276,7 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
     setTimeout(() => {
       if (deps.awaitingReason.get(reasonKey) === requestId) deps.awaitingReason.delete(reasonKey);
     }, 2 * 60 * 1000);
-    await deps.tg.answerCallbackQuery(cq.id, "Send the reason as a message").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Envía el motivo como mensaje").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (info.messageId) {
       await deps.tg.editRichMessage(info.chatId, info.messageId, `<b>Reject with reason</b>\nSend your reason in the next message.`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
@@ -284,7 +286,7 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   if (action === "allow") decision = "once";
   else if (action === "always") {
     if (!deps.config.ADMIN_TELEGRAM_USER_ID || cq.from?.id !== deps.config.ADMIN_TELEGRAM_USER_ID) {
-      await deps.tg.answerCallbackQuery(cq.id, "Admin only").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await deps.tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
     decision = "always";
@@ -307,7 +309,7 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const m = data.match(/^connect:(.+)$/);
   if (!m) return;
   const sessionId = m[1];
-  await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.tg.answerCallbackQuery(cq.id, "Conectando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
     const resolvedCs = cs ?? deps.store.findSessionById(sessionId);
@@ -353,7 +355,7 @@ async function handleQswitch(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const m = data.match(/^qswitch:(.+)$/);
   if (!m) return;
   const sessionId = m[1];
-  await deps.tg.answerCallbackQuery(cq.id, "Switching…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.tg.answerCallbackQuery(cq.id, "Cambiando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     await deps.sessions.activateSession(chatId, sessionId, false, threadId);
   } catch (err) {
@@ -366,7 +368,7 @@ async function handleGoal(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   if (!m) return;
   const action = m[1];
   const sessionId = m[2];
-  await deps.tg.answerCallbackQuery(cq.id, action === "clear" ? "Clearing…" : "Working…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.tg.answerCallbackQuery(cq.id, action === "clear" ? "Limpiando…" : "Trabajando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     void deps.oc.runCommand(sessionId, "goal", action).catch((err) => {
       deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -383,12 +385,12 @@ async function handleRuncmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   const pending = deps.pendingConfirmations.get(key);
   if (!pending || pending.expires < Date.now()) {
     deps.pendingConfirmations.delete(key);
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Expirado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, "Confirmation expired.", threadOpts(threadId));
     return;
   }
   deps.pendingConfirmations.delete(key);
-  await deps.tg.answerCallbackQuery(cq.id, "Running…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.tg.answerCallbackQuery(cq.id, "Ejecutando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     void deps.oc.runCommand(pending.sessionId, pending.name, pending.args)
       .then(() => { if (pending.name !== "goal") deps.tg.sendRichMessage(chatId, `ran /${esc(pending.name)}`, threadOpts(threadId)); })
@@ -414,7 +416,7 @@ async function handleDel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
     ...threadOpts(threadId),
     reply_markup: {
       inline_keyboard: [
-        [{ text: "🗑 Delete", callback_data: `delconfirm:${sessionId}` }, { text: "Cancel", callback_data: "panel:home" }],
+        [{ text: "🗑 Borrar", callback_data: `delconfirm:${sessionId}` }, { text: "Cancelar", callback_data: "panel:home" }],
       ],
     },
   });
@@ -435,11 +437,11 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   const targetId = panel?.targetSessionId ?? deps.panels.modelTargetSessionByScope.get(scope);
   const s = targetId ? deps.store.findSessionById(targetId) : deps.store.getActiveSession(chatId, threadId);
   if (!model) {
-    await deps.tg.answerCallbackQuery(cq.id, "Model not found").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Modelo no encontrado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   if (!s) {
-    await deps.tg.answerCallbackQuery(cq.id, targetId ? "Target session not found" : "No active session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, targetId ? "Target session not found" : "No hay sesión activa").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, targetId ? `Target session not found: <code>${esc(targetId)}</code>` : "No active session in this chat/topic. Activate or create one first.", {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
@@ -459,7 +461,7 @@ async function handleModel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   for (const v of variantIds) {
     keyboard.push([{ text: v === defaultVariant ? `${v} (default)` : v, callback_data: `variant:${v}` }]);
   }
-  keyboard.push([{ text: "Default", callback_data: "variant:default" }]);
+  keyboard.push([{ text: "Predeterminado", callback_data: "variant:default" }]);
   keyboard.push([{ text: "❌ Cancel", callback_data: "modelcancel" }]);
   keyboard.push([
     { text: "🧠 Models", callback_data: `panel:ms:${s.sessionId}` },
@@ -482,7 +484,7 @@ async function handleAgent(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   const name = m[1];
   const s = await deps.sessions.ensureActiveSession(chatId, threadId);
   if (!s) {
-    await deps.tg.answerCallbackQuery(cq.id, "No active session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "No hay sesión activa").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   await deps.tg.answerCallbackQuery(cq.id, `Switching to ${name}…`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -511,11 +513,11 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   const targetId = panel?.targetSessionId ?? deps.panels.modelTargetSessionByScope.get(scope);
   const s = targetId ? deps.store.findSessionById(targetId) : deps.store.getActiveSession(chatId, threadId);
   if (!model) {
-    await deps.tg.answerCallbackQuery(cq.id, "No pending model").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "No hay modelo pendiente").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   if (!s) {
-    await deps.tg.answerCallbackQuery(cq.id, targetId ? "Target session not found" : "No active session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, targetId ? "Target session not found" : "No hay sesión activa").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, targetId ? `Target session not found: <code>${esc(targetId)}</code>` : "No active session in this chat/topic. Activate or create one first.", {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] },
@@ -523,7 +525,7 @@ async function handleVariant(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
     return;
   }
   const variant = variantId === "default" ? undefined : variantId;
-  await deps.tg.answerCallbackQuery(cq.id, "Switching model…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.tg.answerCallbackQuery(cq.id, "Cambiando modelo…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     await deps.oc.switchModel(s.sessionId, { id: model.id, providerID: model.providerID, variant });
     deps.pendingModelByChat.delete(scope);
@@ -555,7 +557,7 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   if (!data.startsWith("set:")) return;
   const [, key, value] = data.split(":");
   if (!key || !isSettingsKey(key)) {
-    await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Opción desconocida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   let parsedValue: ChatSettings[keyof ChatSettings];
@@ -645,7 +647,7 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     }
     return;
   }
-  await deps.tg.answerCallbackQuery(cq.id, "Unknown setting").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.tg.answerCallbackQuery(cq.id, "Opción desconocida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
 async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
@@ -688,7 +690,7 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
       await tg.sendRichMessage(chatId, "Elige el repositorio para la nueva sesión:", { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
       return;
     }
-    await tg.answerCallbackQuery(cq.id, "Creating…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Creando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await sessions.createNewSession(chatId, false, threadId);
     await panels.sendPanel(chatId, threadId);
     return;
@@ -737,7 +739,7 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
       }
     }
     if (!s) {
-      await tg.answerCallbackQuery(cq.id, "No active session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await tg.answerCallbackQuery(cq.id, "No hay sesión activa").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
     s.stopped = true;
@@ -751,16 +753,16 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     }
     cancelAutoRetry(s.sessionId);
     await oc.interrupt(s.sessionId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
-    await tg.answerCallbackQuery(cq.id, "Stopped").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Detenido").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     // Close the turn like a normal finish: the card drops the Stop button and
-    // keeps its transcript, and renders "⏹ Stopped" instead of "✅ Done".
+    // keeps its transcript, and renders "⏹ Detenido" instead of "✅ Listo".
     // finishStatus is idempotent, so a later step.ended is harmless.
     const hadCard = Boolean(s.transcriptMessageId || s.statusMessageId);
     await deps.status.finishStatus(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     // Only chat with no card at all gets a short confirmation; the card itself
     // already reports the stopped state.
     if (!hadCard) {
-      const stoppedMsg = await tg.sendRichMessage(chatId, "⏹ stopped", threadOpts(threadId)).catch(() => undefined);
+      const stoppedMsg = await tg.sendRichMessage(chatId, "⏹ detenido", threadOpts(threadId)).catch(() => undefined);
       if (stoppedMsg?.message_id) store.rememberMessageSession(chatId, stoppedMsg.message_id, s.sessionId);
     }
     return;
@@ -794,18 +796,18 @@ async function handleCmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   if (!m) return;
   const name = m[1];
   if (isDangerousCommand(name)) {
-    await deps.tg.answerCallbackQuery(cq.id, "Type the command manually").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Escribe el comando manualmente").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, "⚠️ For safety, run this command by typing it.", threadOpts(threadId));
     return;
   }
   const s = deps.store.getActiveSession(chatId, threadId);
   if (!s) {
-    await deps.tg.answerCallbackQuery(cq.id, "No active session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "No hay sesión activa").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   const cmds = await deps.oc.listCommandsCached(s.directory);
   if (!(cmds as Array<{ name?: string }>).some((c) => c?.name === name)) {
-    await deps.tg.answerCallbackQuery(cq.id, "Unknown command").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Comando desconocido").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   await deps.tg.answerCallbackQuery(cq.id, `Running /${name}…`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -895,7 +897,7 @@ async function handleReadFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   const key = m[1];
   const path = getActivityReadPath(key);
   if (!path) {
-    await deps.tg.answerCallbackQuery(cq.id, "Lectura expirada").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Esta lectura ya no está disponible. Abre /status para ver el turno actual.", { show_alert: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -912,15 +914,15 @@ async function handleReadFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
 async function handleEditFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const m = data.match(/^editfile:(\d+)$/);
   if (!m) return;
-  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId === undefined) return;
   const snap = deps.store.getPendingEditsSnapshot(chatId, messageId);
   const detail = snap?.edits?.[Number(m[1])];
   const raw = detail ? extractEditFile(detail.input) : undefined;
   if (!raw || !snap) {
-    await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Este archivo ya no está disponible. Abre /status para ver el turno actual.", { show_alert: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const base = deps.store.findSessionById(snap.sessionId)?.directory;
   const path = raw.startsWith("/") ? raw : base ? join(base, raw) : raw;
   await deps.files.showFile(chatId, threadId, path, { forcePreview: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -939,11 +941,42 @@ async function handleActivityToggle(deps: BotDeps, cq: TelegramCallbackQuery, ch
   await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
+/**
+ * Clipboard fallback for groups or texts longer than 256 characters: send the
+ * content as a code block the user can long-press to copy. In private chats a
+ * native copy_text button is attached when the text fits.
+ */
+async function handleCopy(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const m = data.match(/^copy:(answer|prompt|command):(.+)$/);
+  if (!m) return;
+  const kind = m[1];
+  const sessionId = m[2];
+  const s = deps.store.findSessionById(sessionId);
+  const lastShell = s ? [...(s.toolCallDetails ?? [])].reverse().find((d) => isShellTool(d.name)) : undefined;
+  const lastCommand = lastShell ? parseShellCommand(lastShell.input ?? "") ?? lastShell.input?.trim() : undefined;
+  const text = (kind === "answer" ? s?.lastFinalText : kind === "prompt" ? deps.store.lastPromptBySession.get(sessionId) : lastCommand)?.trim();
+  if (!text) {
+    await deps.tg.answerCallbackQuery(cq.id, "No hay nada que copiar todavía.", { show_alert: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  await deps.tg.answerCallbackQuery(cq.id, "Abriendo…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const title = kind === "answer" ? "📄 Respuesta" : kind === "command" ? "🖥 Comando" : "📝 Prompt";
+  const body = text.slice(0, 3600);
+  const copy = copyTextButton(chatId, "📋 Copiar", body);
+  const hint = chatId < 0 ? "\n<i>Mantén pulsado el bloque para copiar.</i>" : "";
+  await deps.tg.sendRichMessage(
+    chatId,
+    `<b>${title}</b>\n<pre><code>${esc(body)}</code></pre>${hint}`,
+    { ...threadOpts(threadId), ...(copy ? { reply_markup: { inline_keyboard: [[copy]] } } : {}) },
+  ).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
 export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "activity:": handleActivityToggle,
   "editfile:": handleEditFile,
   "readfile:": handleReadFile,
   "resources:": handleResourcesToggle,
+  "copy:": handleCopy,
   "tpage:": handleTranscriptPage,
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,
@@ -964,7 +997,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
     const m = data.match(/^use:(.+)$/);
     if (!m) return;
     const sessionId = m[1];
-    await deps.tg.answerCallbackQuery(cq.id, "Connecting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Conectando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     try {
       const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
       // Rename the tab to the connected session (best-effort; works in
@@ -991,7 +1024,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
       }
       await deps.panels.showStatus(chatId, threadId, cq.message?.message_id);
     } catch (err) {
-      await deps.tg.answerCallbackQuery(cq.id, "Failed").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await deps.tg.answerCallbackQuery(cq.id, "Falló").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
     }
   },
@@ -1028,7 +1061,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     }
   }
   if (allowedUsers.size === 0 || userId === undefined || !allowedUsers.has(userId)) {
-    await tg.answerCallbackQuery(cq.id, "Not authorized").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "No autorizado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
 
@@ -1053,7 +1086,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const buttons = deps.store.getCustomButtons(chatId);
     const btn = buttons[idx];
     if (!btn) {
-      await tg.answerCallbackQuery(cq.id, "Button expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await tg.answerCallbackQuery(cq.id, "Botón expirado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
     await tg.answerCallbackQuery(cq.id, btn.label).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -1074,10 +1107,10 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const retryMatch = cbData.match(/^retry:(.+)$/);
   if (retryMatch) {
     const sessionId = retryMatch[1];
-    await tg.answerCallbackQuery(cq.id, "Retrying…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Reintentando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     const prompt = deps.store.lastPromptBySession.get(sessionId);
     if (!prompt) {
-      await tg.sendRichMessage(chatId, "no previous prompt to retry.", threadOpts(threadId));
+      await tg.sendRichMessage(chatId, "No hay un prompt anterior para reintentar.", threadOpts(threadId));
       return;
     }
     try {
@@ -1114,7 +1147,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const deleteConfirmMatch = cbData.match(/^delconfirm:(.+)$/);
   if (deleteConfirmMatch) {
     const sessionId = deleteConfirmMatch[1];
-    await tg.answerCallbackQuery(cq.id, "Deleting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Eliminando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     try {
       await oc.interrupt(sessionId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       await oc.deleteSession(sessionId);
@@ -1140,13 +1173,13 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     try {
       if (action === "connect" && name) {
         await deps.oc.client.mcp.connect({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.connect>[0]);
-        await deps.tg.answerCallbackQuery(cq.id, "Connected").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+        await deps.tg.answerCallbackQuery(cq.id, "Conectado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       } else if (action === "disconnect" && name) {
         await deps.oc.client.mcp.disconnect({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.disconnect>[0]);
-        await deps.tg.answerCallbackQuery(cq.id, "Disconnected").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+        await deps.tg.answerCallbackQuery(cq.id, "Desconectado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       } else if (action === "remove" && name) {
         await deps.oc.client.mcp.remove({ server: name, location: { directory } } as unknown as Parameters<typeof deps.oc.client.mcp.remove>[0]);
-        await deps.tg.answerCallbackQuery(cq.id, "Removed").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+        await deps.tg.answerCallbackQuery(cq.id, "Eliminado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       } else if (action === "resources") {
         await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
         const { resources, templates } = await mcp.listMcpResources(deps.oc, directory);
@@ -1159,7 +1192,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
         await deps.tg.sendRichMessage(chatId, `<b>MCP resources</b>\n${lines.join("\n\n")}\n\nUse /mcp read <uri>`, threadOpts(threadId));
         return;
       } else {
-        await deps.tg.answerCallbackQuery(cq.id, "Unknown MCP action").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+        await deps.tg.answerCallbackQuery(cq.id, "Acción MCP desconocida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
         return;
       }
       const { text, keyboard } = await mcp.renderMcpList(deps.oc, directory);
@@ -1169,7 +1202,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
         await deps.tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
       }
     } catch (err) {
-      await deps.tg.answerCallbackQuery(cq.id, "Failed").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await deps.tg.answerCallbackQuery(cq.id, "Falló").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
     return;
@@ -1181,7 +1214,11 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const fullEditsMatch = (cq.data ?? "").match(/^edits:full:(\d+)$/);
   if (fullEditsMatch && cq.message?.message_id !== undefined) {
     const handled = await deps.status.sendFullDiffs(chatId, Number(fullEditsMatch[1]), threadId);
-    await deps.tg.answerCallbackQuery(cq.id, handled ? "Sending diffs…" : "Edit expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(
+      cq.id,
+      handled ? "Enviando diffs…" : "Este diff ya no está disponible. Abre /status para ver el turno actual.",
+      handled ? {} : { show_alert: true },
+    ).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
 
@@ -1192,12 +1229,16 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
-    await deps.tg.answerCallbackQuery(cq.id, "Edit expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(
+      cq.id,
+      "Este diff ya no está disponible. Abre /status para ver el turno actual.",
+      { show_alert: true },
+    ).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
 
   if (cbData === "new:confirm") {
-    await tg.answerCallbackQuery(cq.id, "Creating…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Creando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     try {
       await createNewSession(chatId, false, threadId);
     } catch (err) {
@@ -1206,14 +1247,14 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     return;
   }
   if (cbData === "new:cancel") {
-    await tg.answerCallbackQuery(cq.id, "Canceled").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Cancelado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
 
   const repoMatch = cbData.match(/^(?:repo|newrepo|repos|new:repo|repo:new):(.+)$/);
   if (repoMatch) {
     const repoName = repoMatch[1].trim();
-    await tg.answerCallbackQuery(cq.id, "Creating…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Creando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     const directory = resolveRepoDirectory(deps.config, repoName) ?? repoName;
     try {
       await sessions.createNewSession(chatId, false, threadId, directory);
@@ -1229,17 +1270,17 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const action = deleteMatch[1];
     const sessionId = deleteMatch[2];
     if (action === "cancel") {
-      await tg.answerCallbackQuery(cq.id, "Cancelled").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await tg.answerCallbackQuery(cq.id, "Cancelado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       if (messageId !== undefined) {
         await tg.editRichMessage(chatId, messageId, "Deletion cancelled.", { reply_markup: { inline_keyboard: [] } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       }
       return;
     }
     if (!sessionId) {
-      await tg.answerCallbackQuery(cq.id, "Missing session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await tg.answerCallbackQuery(cq.id, "Sesión no encontrada").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
-    await tg.answerCallbackQuery(cq.id, "Deleting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Eliminando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     try {
       await oc.deleteSession(sessionId);
       store.forgetSession(sessionId);
@@ -1267,7 +1308,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const index = parseInt(raw, 10);
     const provider = providers[index];
     if (!provider) {
-      await tg.answerCallbackQuery(cq.id, "Provider not found").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await tg.answerCallbackQuery(cq.id, "Proveedor no encontrado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
     await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -1281,7 +1322,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     pendingModelByChat.delete(scope);
     deps.panels.modelTargetSessionByScope.delete(scope);
     if (messageId !== undefined) deps.panels.modelPanels.delete(messageId);
-    await tg.answerCallbackQuery(cq.id, "Cancelled").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await tg.answerCallbackQuery(cq.id, "Cancelado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (cq.message?.message_id) {
       await tg.editRichMessage(chatId, cq.message.message_id, "Model selection cancelled.", {
         reply_markup: { inline_keyboard: [[{ text: "🧠 Models", callback_data: "panel:models" }, { text: "🏠 Panel", callback_data: "panel:home" }]] },
@@ -1305,7 +1346,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const id = skillMatch[1];
     const s = getActiveSession(chatId, threadId);
     if (!s) {
-      await tg.answerCallbackQuery(cq.id, "No active session").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await tg.answerCallbackQuery(cq.id, "No hay sesión activa").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
     await tg.answerCallbackQuery(cq.id, `Loading ${id}…`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -1329,17 +1370,17 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
   const threadId = cq.message?.message_thread_id;
   const messageId = cq.message?.message_id;
   if (messageId === undefined) {
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Expirado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
   const state = deps.pendingForms.get(messageId);
   if (!state) {
-    await deps.tg.answerCallbackQuery(cq.id, "Form expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Formulario expirado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
 
   if (data === "forms:cancel") {
-    await deps.tg.answerCallbackQuery(cq.id, "Cancelled").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Cancelado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg
       .editRichMessage(chatId, messageId, `<b>Form cancelled</b>\n<code>${esc(state.formId)}</code>`, {
         reply_markup: { inline_keyboard: [] },
@@ -1352,16 +1393,16 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
 
   if (data === "forms:submit") {
     if (state.submitted) {
-      await deps.tg.answerCallbackQuery(cq.id, "Already submitted").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await deps.tg.answerCallbackQuery(cq.id, "Ya enviado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return true;
     }
     const allRequired = state.fields.filter((field) => field.required).every((field) => state.answers[field.key] !== undefined);
     if (!allRequired) {
-      await deps.tg.answerCallbackQuery(cq.id, "Required fields missing").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await deps.tg.answerCallbackQuery(cq.id, "Faltan campos obligatorios").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return true;
     }
     state.submitted = true;
-    await deps.tg.answerCallbackQuery(cq.id, "Submitting…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Enviando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     // Route the form's follow-up responses to the tab where the form lives.
     deps.store.rememberDelivery(state.sessionId, state.chatId, state.threadId);
     try {
@@ -1382,14 +1423,14 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
 
   const match = data.match(/^fq:(\d+):(-?\d+)$/);
   if (!match) {
-    await deps.tg.answerCallbackQuery(cq.id, "Unknown form action").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Acción de formulario desconocida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
   const fieldIndex = Number(match[1]);
   const optionIndex = Number(match[2]);
   const field = state.fields[fieldIndex];
   if (!field) {
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Expirado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
   const multi = (() => {
@@ -1399,7 +1440,7 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
   })();
 
   if (optionIndex === -1) {
-    await deps.tg.answerCallbackQuery(cq.id, "Done").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Listo").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg
       .editRichMessage(chatId, messageId, renderForm(state), {
         ...threadOpts(threadId),
@@ -1411,7 +1452,7 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
 
   const option = field.options?.[optionIndex];
   if (!option) {
-    await deps.tg.answerCallbackQuery(cq.id, "Expired").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Expirado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return true;
   }
 

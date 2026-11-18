@@ -23,5 +23,11 @@ export type ProjectLike = { canonical?: string; directory?: string };
 
 export type CustomButton = { label: string; text: string };
 
-export type InlineButton = { text: string; callback_data?: string; url?: string };
+export type InlineButton = {
+  text: string;
+  callback_data?: string;
+  url?: string;
+  /** Telegram native clipboard button (private chats, 1-256 characters). */
+  copy_text?: { text: string };
+};
 export type InlineKeyboard = InlineButton[][];

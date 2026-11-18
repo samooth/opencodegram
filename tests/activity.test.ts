@@ -22,15 +22,15 @@ describe("turn activity counters", () => {
     recordThought(a, "segundo", { at: 2000 });
     recordThought(a, "tercero", { at: 3000 });
     const out = renderActivity(a, "medium", false, 4000);
-    expect(out).toContain("+3 thoughts");
+    expect(out).toContain("+3 pensamientos");
   });
 
   test("uses a minus prefix for a finished turn", () => {
     const a = createTurnActivity();
     recordThought(a, "listo", { at: 1000 });
     const out = renderActivity(a, "medium", true, 1500);
-    expect(out).toContain("−1 thought");
-    expect(out).not.toContain("+1 thought");
+    expect(out).toContain("−1 pensamiento");
+    expect(out).not.toContain("+1 pensamiento");
   });
 
   test("categorizes reads, searches, edits and shells into counters", () => {
@@ -47,19 +47,19 @@ describe("turn activity counters", () => {
     recordTool(a, "bash", "bun test", { at: 1300, toolId: "d" });
     recordTool(a, "mystery_tool", "x", { at: 1400, toolId: "e" });
     const out = renderActivity(a, "high", false, 2000);
-    expect(out).toContain("1 read");
-    expect(out).toContain("1 search");
-    expect(out).toContain("1 edit");
-    expect(out).toContain("1 shell");
-    expect(out).toContain("1 tool");
+    expect(out).toContain("1 lectura");
+    expect(out).toContain("1 búsqueda");
+    expect(out).toContain("1 edición");
+    expect(out).toContain("1 comando");
+    expect(out).toContain("1 herramienta");
   });
 
   test("does not double count reads as generic tools", () => {
     const a = createTurnActivity();
     recordTool(a, "read", "README.md", { at: 1000, toolId: "a" });
     const out = renderActivity(a, "high", false, 1100);
-    expect(out).not.toContain("1 tool");
-    expect(out).toContain("1 read");
+    expect(out).not.toContain("1 herramienta");
+    expect(out).toContain("1 lectura");
   });
 
   test("renders tool durations and success marks in the expandable detail", () => {
@@ -86,8 +86,8 @@ describe("turn activity counters", () => {
     recordTool(a, "read", ".", { at: 1000, toolId: "a" });
     recordTool(a, "glob", "README*", { at: 1100, toolId: "b" });
     const out = renderActivity(a, "high", false, 1200, true);
-    expect(out).toContain("Explored: 1 read, 1 search");
-    expect(out).toContain("Read");
+    expect(out).toContain("Explorado: 1 lectura, 1 búsqueda");
+    expect(out).toContain("Lectura");
     expect(out).toContain("Glob");
   });
 
@@ -112,9 +112,9 @@ describe("turn activity counters", () => {
     const a = createTurnActivity();
     for (let i = 0; i < 100; i++) recordThought(a, `pensamiento ${i}`, { at: 1000 + i });
     const out = renderActivity(a, "high", false, 2000);
-    expect(out).toContain("+100 thoughts");
+    expect(out).toContain("+100 pensamientos");
     expect(out).not.toContain("pensamiento 0\n");
-    expect((out.match(/Thought ·/g) ?? []).length).toBeLessThanOrEqual(40);
+    expect((out.match(/Pensamiento ·/g) ?? []).length).toBeLessThanOrEqual(40);
   });
 
   test("lazily opens a thought on the first delta without a started event", () => {
@@ -250,6 +250,6 @@ describe("turn activity counters", () => {
     recordTool(a, "read", "README.md", { at: 3000, toolId: "a" });
     const out = renderActivity(a, "high", false, 3500, false);
     expect(out.match(/<blockquote>/g)).toHaveLength(3);
-    expect(out).toContain("Thought</b> · 500ms");
+    expect(out).toContain("Pensamiento</b> · 500ms");
   });
 });

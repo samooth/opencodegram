@@ -87,6 +87,21 @@ describe("handleEvent", () => {
     expect(true).toBe(true);
   });
 
+  test("stores a provider failure on the session before closing the card", async () => {
+    const { deps, store } = makeDeps();
+    const session = {
+      sessionId: "ses_fail", buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [],
+      stopped: false, targetChatId: 100, statusFinished: false,
+    } as any;
+    store.sessionsById.set("ses_fail", session);
+    store.chatBySession.set("ses_fail", 100);
+    let finished = 0;
+    deps.finishStatus = async (_chatId: number, s: any) => { finished++; expect(s.lastTurnError).toContain("provider exploded"); };
+    await handleEvent({ type: "session.execution.failed", data: { sessionID: "ses_fail", error: { message: "provider exploded" } } }, deps);
+    expect(session.lastTurnError).toContain("provider exploded");
+    expect(finished).toBe(1);
+  });
+
   test("does not auto-retry a prompt restored from disk", async () => {
     const { deps, store } = makeDeps();
     store.rememberLastChat("ses_old", 123);

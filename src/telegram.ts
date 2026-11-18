@@ -388,8 +388,8 @@ export class TelegramClient {
     return this.call<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
   }
 
-  answerCallbackQuery(callbackQueryId: string, text?: string): Promise<boolean> {
-    return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
+  answerCallbackQuery(callbackQueryId: string, text?: string, opts: { show_alert?: boolean } = {}): Promise<boolean> {
+    return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text, ...opts });
   }
 
   createForumTopic(chatId: number, name: string, iconEmojiId?: string): Promise<{ message_thread_id: number; name: string }> {

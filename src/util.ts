@@ -63,6 +63,40 @@ export function threadOpts(threadId?: number): Record<string, unknown> {
   return threadId ? { message_thread_id: threadId } : {};
 }
 
+/** Telegram limits native copy buttons to 256 characters. */
+export const COPY_TEXT_MAX = 256;
+
+/**
+ * Native clipboard button. Only private chats get it: in groups the fallback is
+ * a `📋 Copiar` callback that sends the text as a tappable code block.
+ */
+export function copyTextButton(
+  chatId: number,
+  label: string,
+  text: string | undefined,
+): { text: string; copy_text: { text: string } } | undefined {
+  // Groups are negative; native clipboard buttons are only reliable in private.
+  if (chatId < 0) return undefined;
+  const value = (text ?? "").trim();
+  if (!value || value.length > COPY_TEXT_MAX) return undefined;
+  return { text: label, copy_text: { text: value } };
+}
+
+/** Plain-text version of a rich HTML message, for clipboard fallbacks. */
+export function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|blockquote|pre|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export type ParsedSlashCommand = {
   name: string;
   args: string;

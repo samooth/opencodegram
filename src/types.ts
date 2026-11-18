@@ -50,6 +50,10 @@ export type ChatSession = {
   statusFinished?: boolean;
   statusEditPromise?: Promise<unknown>;
   promptStartTime?: number;
+  /** Timestamp of the last finished turn, used for the stable turn receipt. */
+  turnFinishedAt?: number;
+  /** Last turn-level failure (provider error, rate limit, interruption). */
+  lastTurnError?: string;
   lastOutputTokens?: number;
   /** Accumulated output tokens across all steps of the current turn. */
   turnOutputTokens?: number;
