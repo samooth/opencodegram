@@ -103,7 +103,7 @@ async function main() {
       return renderResourceBlock(s);
     },
   });
-  const dashboard = createDashboardManager({ tg, store, settings, threadOptsFor: (s) => store.threadOptsFor(s) });
+  const dashboard = createDashboardManager({ tg, store, settings, oc, threadOptsFor: (s) => store.threadOptsFor(s) });
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),

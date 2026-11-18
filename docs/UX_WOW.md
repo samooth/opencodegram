@@ -6,8 +6,8 @@
 
 ## Estado
 
-**P0 completado** (18 nov 2026). Validado con `bun run typecheck`, `bun test`
-(319 tests en 37 archivos) y `bun run build`. P1 y P2 siguen pendientes.
+**P0, P1 y P2 completados** (18 nov 2026). Validado con `bun run typecheck`,
+`bun test` (345 tests en 39 archivos) y `bun run build`.
 
 ## Principios
 
@@ -67,42 +67,42 @@
 ## P1 — Estructura y navegación (3–5 días)
 
 ### P1.1 Card compacto + modo lectura
-- [ ] Card por defecto ≤1.200 caracteres y ≤3 filas de botones.
-- [ ] `📖 Leer` transforma el mismo mensaje en transcript paginado.
-- [ ] `⬅ Volver` restaura el panel sin crear mensajes nuevos.
+- [x] Card por defecto ≤1.200 caracteres y ≤3 filas de botones.
+- [x] `📖 Leer` transforma el mismo mensaje en transcript paginado.
+- [x] `⬅ Volver` restaura el panel sin crear mensajes nuevos.
 
 ### P1.2 Rail de últimas 3 acciones
-- [ ] Pipeline en vivo: `✅ Leer…`, `✅ Editar…`, `⏳ bun test`.
-- [ ] Sin progreso falso: tiempo real, última acción y tokens.
-- [ ] El detalle completo sigue en `▾ Detalles`.
+- [x] Pipeline en vivo: `✅ Leer…`, `✅ Editar…`, `⏳ bun test`.
+- [x] Sin progreso falso: tiempo real, última acción y tokens.
+- [x] El detalle completo sigue en `▾ Detalles`.
 
 ### P1.3 Navegación por turnos
-- [ ] `Turno 3/12` en lugar de `3/12`; selector con resumen de una línea.
-- [ ] `⏭ Último` visible si el usuario se alejó del final.
-- [ ] Mini “previously on…” de 2 líneas al cambiar de turno.
+- [x] `Turno 3/12` en lugar de `3/12`; selector con resumen de una línea.
+- [x] `⏭ Último` visible si el usuario se alejó del final.
+- [x] Mini “previously on…” de 2 líneas al cambiar de turno.
 
 ### P1.4 Revisión de cambios tipo PR
-- [ ] Tabla `archivo +N −M` y acciones por archivo.
-- [ ] `📦 Descargar .patch` listo para aplicar.
-- [ ] `📋 Copiar diff` (privado) y fallback a bloque de código.
+- [x] Tabla `archivo +N −M` y acciones por archivo.
+- [x] `📦 Descargar .patch` listo para aplicar.
+- [x] `📋 Copiar diff` (privado) y fallback a bloque de código.
 
 ### P1.5 Mission control
-- [ ] Chips de sesión con estado real (🟢/⚪/🔴) y tap para conectar.
-- [ ] Sparklines Unicode para CPU/RAM/GPU.
-- [ ] Coste acumulado si el modelo expone precios.
+- [x] Chips de sesión con estado real (🟢/⚪/🔴) y tap para conectar.
+- [x] Sparklines Unicode para CPU/RAM/GPU.
+- [x] Coste acumulado si el modelo expone precios.
 
 ### P1.6 Presets de estilo
-- [ ] Minimal / Balanced / Verbose / Terminal.
-- [ ] Persistidos por chat y aplicables desde `/settings`.
+- [x] Minimal / Balanced / Verbose / Terminal.
+- [x] Persistidos por chat y aplicables desde `/settings`.
 
 ## P2 — Producto (1–2 semanas)
 
-- [ ] Web App Mission control (solo privado; en grupos solo botones).
-- [ ] Recap de sesión al reconectar.
-- [ ] Búsqueda dentro de la conversación.
-- [ ] Onboarding con demo corta y tips progresivos.
-- [ ] Efectos/celebración opcional al entregar la respuesta final.
-- [ ] Pasada de accesibilidad y tests golden de UX por estado.
+- [x] Web App Mission control (solo privado; en grupos solo botones).
+- [x] Recap de sesión al reconectar.
+- [x] Búsqueda dentro de la conversación.
+- [x] Onboarding con demo corta y tips progresivos.
+- [x] Efectos/celebración opcional al entregar la respuesta final.
+- [x] Pasada de accesibilidad y tests golden de UX por estado.
 
 ## Presupuestos medibles
 

@@ -10,6 +10,43 @@ import { esc } from "./util.js";
 import { describeThrottles, throttleTotals } from "./ratethrottle.js";
 import { readGpuInfo } from "./resources.js";
 
+/** P2: self-contained Mission Control page (no external assets or scripts). */
+export function webAppHtml(title: string): string {
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${esc(title)}</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0b0f14;color:#e6edf3}
+body{margin:0;padding:2rem;max-width:1100px;margin:auto}
+h1{font-size:1.4rem;margin:0 0 1rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
+.card{background:#151b23;border:1px solid #30363d;border-radius:12px;padding:1rem}
+.card h2{font-size:1rem;margin:0 0 .5rem}
+.ok{color:#3fb950}.busy{color:#d29922}.err{color:#f85149}
+.muted{color:#8b949e;font-size:.85rem}
+</style></head><body>
+<h1>🎛 ${esc(title)}</h1>
+<p class="muted">Solo privado · actualización automática cada 5 s</p>
+<div class="grid" id="grid"></div>
+<script>
+async function load(){
+ const r=await fetch('data.json'+location.search); if(!r.ok)return;
+ const d=await r.json();
+ document.getElementById('grid').innerHTML=d.sessions.map(s=>{
+  const st=s.error?'err':s.working?'busy':'ok';
+  const icon=s.error?'🔴':s.working?'🟡':'🟢';
+  return '<div class="card"><h2>'+icon+' '+esc(s.id.slice(0,12))+'</h2>'+
+   '<p class="'+st+'">'+(s.error?esc(s.error.slice(0,80)):s.working?'Trabajando…':s.stopped?'Detenido':'Lista')+'</p>'+
+   '<p class="muted">'+esc(s.model||'sin modelo')+' · '+s.tokens+' tok'+(s.cost?' · $'+s.cost.toFixed(4):'')+'</p>'+
+   '<p class="muted">'+esc((s.prompt||'').slice(0,90))+'</p></div>';
+ }).join('')||'<p class="muted">Sin sesiones.</p>';
+}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+load();setInterval(load,5000);
+</script></body></html>`;
+}
+
 export type OpsServer = {
   url: string;
   stop: () => void;
@@ -102,6 +139,40 @@ export function createOpsServer(deps: {
         gpu: readGpuInfo(),
         counters: metrics.snapshot(),
       }));
+      return;
+    }
+    if (url.pathname === "/app" || url.pathname === "/app/") {
+      // P2: private Mission Control web app. No token configured -> 404 (it
+      // stays completely off unless the admin opts in).
+      const token = config.WEB_APP_TOKEN;
+      if (!token || url.searchParams.get("token") !== token) {
+        response.statusCode = 404;
+        response.end("Not found");
+        return;
+      }
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(webAppHtml(config.WEB_APP_TITLE));
+      return;
+    }
+    if (url.pathname === "/app/data.json") {
+      const token = config.WEB_APP_TOKEN;
+      if (!token || url.searchParams.get("token") !== token) {
+        response.statusCode = 404;
+        response.end("Not found");
+        return;
+      }
+      const sessions = [...store.sessionsById.values()].map((s) => ({
+        id: s.sessionId,
+        model: s.model ? `${s.model.providerID}/${s.model.id}` : undefined,
+        working: !!s.statusMessageId && !s.statusFinished,
+        stopped: !!s.stopped,
+        error: s.lastTurnError,
+        prompt: store.lastPromptBySession.get(s.sessionId),
+        cost: s.cost,
+        tokens: s.turnOutputTokens ?? s.lastOutputTokens ?? 0,
+      }));
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ sessions, metrics: metrics.snapshot(), at: Date.now() }));
       return;
     }
     if (url.pathname === "/ready") {

@@ -293,12 +293,12 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
       updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
     } else {
       await tg
-        .sendRichMessage(chatId, sessionHeader(s) + `📦 <b>Compaction complete</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
+        .sendRichMessage(chatId, sessionHeader(s) + `📦 <b>Compactación completada</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
         .catch((err) => console.warn("[events]", err?.message ?? err));
     }
   } else {
     await tg
-      .sendRichMessage(chatId, sessionHeader(null, sessionId) + `📦 <b>Compaction complete</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
+      .sendRichMessage(chatId, sessionHeader(null, sessionId) + `📦 <b>Compactación completada</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
       .catch((err) => console.warn("[events]", err?.message ?? err));
   }
   logger.info("events", "compaction.ended", { sessionId, chatId, threadId, summaryLen: summary.length, usedStatus: !!(s?.statusMessageId) });
@@ -319,9 +319,9 @@ const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
     s.compacting = false;
     s.compactionError = msg;
     if (s && s.statusMessageId) updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-    else { const _cf = await tg.sendRichMessage(chatId, sessionHeader(s) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined); if (_cf?.message_id) store.rememberMessageSession(chatId, _cf.message_id, sessionId); }
+    else { const _cf = await tg.sendRichMessage(chatId, sessionHeader(s) + `❌ <b>Error al compactar</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined); if (_cf?.message_id) store.rememberMessageSession(chatId, _cf.message_id, sessionId); }
   } else {
-    const _cf2 = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ <b>Compaction failed</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined);
+    const _cf2 = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ <b>Error al compactar</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined);
     if (_cf2?.message_id) store.rememberMessageSession(chatId, _cf2.message_id, sessionId);
   }
   logger.warn("events", "compaction.failed", { sessionId, chatId, threadId, error: msg });
@@ -466,7 +466,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       const retryNotice = retryMessageBySession.get(sessionId);
       if (retryNotice) {
         retryMessageBySession.delete(sessionId);
-        await tg.editRichMessage(retryNotice.chatId, retryNotice.messageId, "✅ Retry succeeded.").catch((err) => console.warn("[events]", err?.message ?? err));
+        await tg.editRichMessage(retryNotice.chatId, retryNotice.messageId, "✅ Reintento correcto.").catch((err) => console.warn("[events]", err?.message ?? err));
       }
     }
   }
@@ -515,6 +515,10 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     logger.breadcrumb("events", "text.ended.flush", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
+      // P2: optional celebration reaction on the finished card.
+      if (settings.get(chatId).celebrateOnDone && s.transcriptMessageId && !s.stopped && !s.lastTurnError) {
+        await tg.setMessageReaction(chatId, s.transcriptMessageId, "🎉").catch((err) => console.warn("[events] celebration failed", err?.message ?? err));
+      }
     }
     endedText = String(e.data?.text ?? "").trim();
     let finalText = endedText || s.buffer || "(empty response)";
@@ -754,7 +758,7 @@ const handleFormCreated: EventHandler = async (event, deps) => {
       };
       if (normalized.type === "boolean" && !normalized.options) {
         normalized.options = [
-          { value: "true", label: "Yes" },
+          { value: "true", label: "Sí" },
           { value: "false", label: "No" },
         ];
       }

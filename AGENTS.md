@@ -49,6 +49,10 @@ temporary files small and clean them up.
 - `OPENCODE_BASE_URL` (default `http://127.0.0.1:49374`)
 - `OPENCODE_DIRECTORY` (optional session directory)
 - `REPOS_DIRECTORY` (optional folder containing repositories; enables choosing a repo when creating a session)
+- `WEB_APP_TOKEN` (optional; enables the private Mission Control web app at
+  `OPS_HOST:OPS_PORT/app?token=…`; disabled when unset)
+- `WEB_APP_TITLE` (default `Mission Control`)
+- `WEB_APP_URL` (optional public URL used by `/web` in private chats)
 
 OpenCode 2.2.x runs locally. The daemon reads `.env` automatically under Bun.
 
@@ -64,14 +68,14 @@ Main modules:
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
-| `activity.ts` | Per-turn compact activity counters and expandable summary (`+3 thoughts · 3 reads · 1 tool`) |
+| `activity.ts` | Per-turn compact activity counters, expandable summary and P1.2 live action rail |
 | `todos.ts` | TODO checklist types and rich-HTML rendering |
 | `apitypes.ts` | Shared structural types for OpenCode/Telegram payloads (no `any` in src) |
 | `dangerous.ts` | Shared list of commands requiring confirmation |
 | `whisper_daemon.py` | Optional persistent Whisper transcription daemon (SSE streaming) |
 | `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
 | `transcript.ts` | Transcript blocks, splitting and pagination |
-| `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
+| `transcriptmanager.ts` | Session card (M2): publish, pagination, compact/reading views, turn navigation, refloat/recovery |
 | `resources.ts` | CPU/GPU/RAM/VRAM/temp indicators |
 | `events.ts` | OpenCode event stream to Telegram, artifacts, retries, final-answer delivery |
 | `panels.ts` | Panel, sessions, models and commands views |
@@ -93,8 +97,8 @@ Main modules:
 | `logger.ts` | Structured logging |
 | `mcp.ts` | MCP server/resource bridge |
 | `metrics.ts` | Counters and error recording |
-| `ops.ts` | Health endpoint, metrics, disk guard |
-| `settings.ts` | Persistent per-chat settings (modes, profiles, delivery, toggles) |
+| `ops.ts` | Health endpoint, metrics, disk guard and P2 private web app (`/app`) |
+| `settings.ts` | Persistent per-chat settings, style presets, compact card and celebration/onboarding toggles |
 | `transcribe.ts` | Local voice-note transcription |
 | `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
 | `types.ts` | Shared types (`ChatSession`, etc.) |
@@ -125,7 +129,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (319 tests across 37 files):
+`bun test` covers (345 tests across 39 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -154,6 +158,10 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
   test-run detection (`bun test`, `pytest`, `go test`, …).
 - `tests/card-actions.test.ts` — contextual card keyboards per state,
   private/group copy gating and the finished turn receipt.
+- `tests/ux-p1.test.ts` — compact card and reading mode, live action rail,
+  turn navigation, PR-style diff review and `.patch` export.
+- `tests/ux-golden.test.ts` — golden card states, accessibility checks,
+  sparklines and the private web app.
 - `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.

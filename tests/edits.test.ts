@@ -116,7 +116,11 @@ describe("edit buttons from snapshots", () => {
     const handled = await status.sendFullDiffs(7, 555);
     expect(handled).toBe(true);
     expect(sent.length).toBe(1);
-    expect(String(sent[0][1])).toContain("Diffs completos</b> (1)");
+    expect(String(sent[0][1])).toContain("Revisión de cambios</b> (1)");
+    expect(String(sent[0][1])).toContain("<table><tr><th>Archivo</th>");
+    const markup = sent[0][2]?.reply_markup?.inline_keyboard ?? [];
+    expect(markup.flat().some((b: any) => b.callback_data === "patch:555")).toBe(true);
+    expect(markup.flat().some((b: any) => b.text === "📋 Copiar diff")).toBe(true);
     // Full diffs are not capped at 12 lines here.
     expect(String(sent[0][1])).toContain("a.ts");
   });

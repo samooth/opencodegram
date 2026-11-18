@@ -98,6 +98,18 @@ export function readMemoryPercent(): number {
   return percent;
 }
 
+/** P1.5: Unicode sparkline from a bounded history of 0–100 samples. */
+export function sparkline(values: number[] | undefined, max = 100): string {
+  const data = (values ?? []).slice(-16);
+  if (!data.length) return "";
+  const glyphs = "▁▂▃▄▅▆▇█";
+  return data.map((v) => {
+    const clamped = Math.max(0, Math.min(max, v));
+    const idx = Math.min(glyphs.length - 1, Math.floor((clamped / max) * glyphs.length));
+    return glyphs[idx];
+  }).join("");
+}
+
 /**
  * Render the indicators block. Always returns a non-empty block so the
  * indicators are present at the bottom of every message.
@@ -124,8 +136,8 @@ export function renderResourceBlock(s: ChatSession, opts: { history?: number } =
   const memBar = progressBar(memPercent, 10, theme);
   const memTrend = s.memHistory.length >= 2 ? (s.memHistory[s.memHistory.length - 2] > memPercent ? " ↓" : s.memHistory[s.memHistory.length - 2] < memPercent ? " ↑" : "") : "";
   const resourceLines: string[] = [];
-  resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
-  resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
+  resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend} ${sparkline(s.cpuHistory)}`);
+  resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend} ${sparkline(s.memHistory)}`);
   if (typeof s.lastContextTokens === "number" && s.lastContextTokens > 0) {
     if (typeof s.contextWindow === "number" && s.contextWindow > 0) {
       const pct = Math.min(100, Math.round((s.lastContextTokens / s.contextWindow) * 100));
@@ -139,7 +151,10 @@ export function renderResourceBlock(s: ChatSession, opts: { history?: number } =
     const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
     const vramBar = progressBar(vramPercent, 10, s.cardTheme ?? "auto");
     const tempStr = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-    resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}${tempStr}`);
+    resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}${tempStr} ${sparkline(s.gpuHistory)}`);
+    if (!s.gpuHistory) s.gpuHistory = [];
+    s.gpuHistory.push(gpu.util);
+    while (s.gpuHistory.length > limit) s.gpuHistory.shift();
     resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
     resourceLines.push(`Load ${progressBar(gpu.util, 10, s.cardTheme ?? "auto")} ${gpu.util}%`);
   }

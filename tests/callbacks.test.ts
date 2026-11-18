@@ -94,6 +94,20 @@ describe("handleCallback", () => {
     expect(refreshes).toBe(1);
   });
 
+  test("preset: applies a style bundle and refreshes /settings", async () => {
+    const deps = makeDeps();
+    const { SettingsStore } = await import("../src/settings.js");
+    const settings = new SettingsStore(join(root, "data"));
+    deps.settings = settings;
+    const edits: string[] = [];
+    deps.tg.editRichMessage = async (_chatId: number, _messageId: number, html: string) => { edits.push(html); return { message_id: 1 }; };
+    const cq = { id: "15", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "preset:minimal" } as any;
+    await handleCallback(deps, cq);
+    expect(settings.get(123).cardPreset).toBe("minimal");
+    expect(settings.get(123).showThinking).toBe(false);
+    expect(edits[0]).toContain("Estilo");
+  });
+
   test("panel:stop closes the turn instead of only republishing the card", async () => {
     const deps = makeDeps();
     const s = { sessionId: "ses_stop", stopped: false, transcriptMessageId: 77, statusMessageId: 77 } as any;

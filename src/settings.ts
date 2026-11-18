@@ -15,6 +15,91 @@ export type LongAnswerDelivery = "card" | "message" | "auto";
 export type CardTheme = "auto" | "light" | "dark";
 /** Card verbosity mapped from OpenCode 2.3.0 session.verbosity. */
 export type CardVerbosity = "low" | "medium" | "high";
+/** Named style bundles that can be applied from /settings and persisted per chat. */
+export type CardPreset = "minimal" | "balanced" | "verbose" | "terminal";
+
+export const CARD_PRESETS: CardPreset[] = ["minimal", "balanced", "verbose", "terminal"];
+
+export const PRESET_LABELS: Record<CardPreset, string> = {
+  minimal: "Minimal",
+  balanced: "Balanceado",
+  verbose: "Detallado",
+  terminal: "Terminal",
+};
+
+/** Overlay applied on top of the current settings when a preset is selected. */
+export const PRESET_SETTINGS: Record<CardPreset, Partial<ChatSettings>> = {
+  minimal: {
+    compactCard: true,
+    showActionRail: false,
+    cardVerbosity: "low",
+    showThinking: false,
+    showTools: false,
+    showCot: false,
+    showLatestThought: false,
+    showLatestTool: false,
+    showPartialText: false,
+    showResourceUsage: false,
+    showSessionNameInStatus: false,
+    thinkingExpanded: false,
+    toolsExpanded: false,
+    compactFinal: true,
+  },
+  balanced: {
+    compactCard: true,
+    showActionRail: true,
+    cardVerbosity: "medium",
+    showThinking: true,
+    showTools: true,
+    showCot: true,
+    showLatestThought: true,
+    showLatestTool: true,
+    showPartialText: true,
+    showResourceUsage: true,
+    showSessionNameInStatus: true,
+    thinkingExpanded: false,
+    toolsExpanded: true,
+    compactFinal: false,
+  },
+  verbose: {
+    compactCard: false,
+    showActionRail: true,
+    cardVerbosity: "high",
+    showThinking: true,
+    showTools: true,
+    showCot: true,
+    showLatestThought: true,
+    showLatestTool: true,
+    showPartialText: true,
+    showResourceUsage: true,
+    showSessionNameInStatus: true,
+    showToolInput: true,
+    thinkingExpanded: true,
+    toolsExpanded: true,
+    compactFinal: false,
+  },
+  terminal: {
+    compactCard: true,
+    showActionRail: true,
+    cardVerbosity: "medium",
+    diffStyle: "unified",
+    showShell: true,
+    shellExpanded: true,
+    showToolInput: true,
+    showTokenSpeed: true,
+    showThinking: false,
+    showPartialText: true,
+    showCot: false,
+    cardTheme: "dark",
+    thinkingExpanded: false,
+    toolsExpanded: true,
+  },
+};
+
+/** Pure helper: settings as they would look after applying a preset. */
+export function withPreset(settings: ChatSettings, preset: CardPreset): ChatSettings {
+  return { ...settings, ...PRESET_SETTINGS[preset], cardPreset: preset };
+}
 
 export type ChatSettings = {
   showThinking: boolean;
@@ -50,6 +135,16 @@ export type ChatSettings = {
   longAnswerThreshold: number;
   cardTheme: CardTheme;
   cardVerbosity: CardVerbosity;
+  /** Persistent style bundle selected in /settings. */
+  cardPreset: CardPreset;
+  /** P1.1: keep the default card short, with ≤3 keyboard rows. */
+  compactCard: boolean;
+  /** P1.2: show the last three actions as a live pipeline. */
+  showActionRail: boolean;
+  /** P2: react with 🎉 when a turn finishes successfully. */
+  celebrateOnDone: boolean;
+  /** P2: onboarding step already shown to this chat. */
+  onboardingStep: number;
 };
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -82,6 +177,11 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   longAnswerThreshold: 1800,
   cardTheme: "auto",
   cardVerbosity: "medium",
+  cardPreset: "balanced",
+  compactCard: true,
+  showActionRail: true,
+  celebrateOnDone: false,
+  onboardingStep: 0,
 };
 
 export const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof ChatSettings>;
@@ -113,6 +213,8 @@ export class SettingsStore {
     if (merged.cardVerbosity !== "low" && merged.cardVerbosity !== "medium" && merged.cardVerbosity !== "high") {
       merged.cardVerbosity = DEFAULT_SETTINGS.cardVerbosity;
     }
+    if (!CARD_PRESETS.includes(merged.cardPreset)) merged.cardPreset = DEFAULT_SETTINGS.cardPreset;
+    if (!Number.isFinite(merged.onboardingStep) || merged.onboardingStep < 0) merged.onboardingStep = 0;
     if (typeof merged.longAnswerThreshold !== "number" || !Number.isFinite(merged.longAnswerThreshold) || merged.longAnswerThreshold < 200) {
       merged.longAnswerThreshold = DEFAULT_SETTINGS.longAnswerThreshold;
     }
@@ -132,6 +234,15 @@ export class SettingsStore {
     const value = current[key];
     if (typeof value === "boolean") return this.set(chatId, key, !value);
     return current;
+  }
+
+  /** Apply a style bundle and persist it for this chat. */
+  applyPreset(chatId: number, preset: CardPreset): ChatSettings {
+    const selected = CARD_PRESETS.includes(preset) ? preset : DEFAULT_SETTINGS.cardPreset;
+    const current = this.settings.get(chatId) ?? {};
+    this.settings.set(chatId, { ...current, ...PRESET_SETTINGS[selected], cardPreset: selected });
+    this.save();
+    return this.get(chatId);
   }
 
   private save(): void {
@@ -187,12 +298,18 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   longAnswerThreshold: "📏 Umbral respuesta",
   cardTheme: "🎨 Tema del card",
   cardVerbosity: "📊 Verbosidad",
+  cardPreset: "🎛 Estilo",
+  compactCard: "📏 Card compacto",
+  showActionRail: "⚡ Rail de acciones",
+  celebrateOnDone: "🎉 Celebración",
+  onboardingStep: "🎓 Onboarding",
 };
 
 export function renderSettings(chatId: number, settings: ChatSettings): string {
   const sections: Array<{ title: string; emoji: string; keys: Array<keyof ChatSettings> }> = [
-    { title: "Modo y entrega", emoji: "🧩", keys: ["displayMode", "cardBehavior", "longAnswerDelivery", "longAnswerThreshold"] },
-    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle"] },
+    { title: "Modo y entrega", emoji: "🧩", keys: ["displayMode", "cardBehavior", "longAnswerDelivery", "longAnswerThreshold", "cardPreset"] },
+    { title: "Accesibilidad y feedback", emoji: "♿", keys: ["celebrateOnDone"] },
+    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle", "compactCard", "showActionRail", "celebrateOnDone"] },
     { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded", "showToolInput"] },
     { title: "Archivos", emoji: "📁", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
     { title: "Voz", emoji: "🎤", keys: ["voiceTranscription"] },
@@ -229,6 +346,12 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     { text: "Perfil: Unificado+msg", callback_data: "profile:unified_split" },
     { text: "Perfil: Flexible", callback_data: "profile:flexible" },
   ]);
+
+  // P1.6: style presets are one tap away and persist per chat.
+  keyboard.push(CARD_PRESETS.map((preset) => ({
+    text: `${settings.cardPreset === preset ? "✅ " : ""}${PRESET_LABELS[preset]}`,
+    callback_data: `preset:${preset}`,
+  })));
 
   keyboard.push([
     { text: `🧩 Modo: ${settings.displayMode === "unified" ? "unificado" : "flexible"}`, callback_data: `set:displayMode:${settings.displayMode === "unified" ? "flexible" : "unified"}` },
@@ -299,6 +422,9 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     "autoTopicTitle",
     "sessionNameInMessages",
     "showSessionNameInStatus",
+    "compactCard",
+    "showActionRail",
+    "celebrateOnDone",
   ];
   // Two buttons per row for compactness.
   for (let i = 0; i < booleanKeys.length; i += 2) {

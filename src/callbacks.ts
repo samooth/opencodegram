@@ -4,8 +4,8 @@ import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files/index.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import * as mcp from "./mcp.js";
-import { isSettingsKey, LABELS, renderSettings, settingsKeyboard } from "./settings.js";
-import type { ChatSettings } from "./settings.js";
+import { CARD_PRESETS, isSettingsKey, LABELS, PRESET_LABELS, renderSettings, settingsKeyboard } from "./settings.js";
+import type { CardPreset, ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
@@ -13,7 +13,7 @@ import { extractEditFile } from "./editutil.js";
 import { getActivityReadPath } from "./transcriptmanager.js";
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { showSessionPicker } from "./messages.js";
-import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts } from "./util.js";
+import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "./util.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { describeThrottles, throttleTotals } from "./ratethrottle.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -40,6 +40,7 @@ const PREFIXES = [
   "variant:",
   "set:",
   "cycle:",
+  "preset:",
   "goal:",
   "qswitch:",
   "runcmd:",
@@ -49,6 +50,9 @@ const PREFIXES = [
   "tpage:",
   "tpagep:",
   "tpick:",
+  "read:",
+  "back:",
+  "menu:",
   "hist:",
   "histfmt:",
   "ops:",
@@ -58,6 +62,7 @@ const PREFIXES = [
   "editfile:",
   "readfile:",
   "resources:",
+  "patch:",
   "copy:",
 ].sort((a, b) => b.length - a.length);
 
@@ -78,6 +83,26 @@ async function handleTranscriptPage(deps: BotDeps, cq: TelegramCallbackQuery, ch
   await deps.transcript.goToPage(chatId, s, page).catch((err) => {
     console.error("[tpage] failed", err);
   });
+}
+
+/**
+ * P1.1: reading mode and the compact-card overflow menu. Both edit the SAME
+ * card message through publishCard, so no new message is ever created.
+ */
+async function handleCardView(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, _threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const m = data.match(/^(read|back|menu):(.+)$/);
+  if (!m) return;
+  const action = m[1];
+  const s = deps.store.findSessionById(m[2]);
+  if (!s) {
+    await deps.tg.answerCallbackQuery(cq.id, "La sesión ya no está disponible.", { show_alert: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  if (action === "read") s.readingMode = true;
+  else if (action === "back") s.readingMode = false;
+  else s.cardMenuExpanded = !s.cardMenuExpanded;
+  await deps.tg.answerCallbackQuery(cq.id, action === "read" ? "📖 Leyendo…" : action === "back" ? "⬅ Volviendo…" : "⚙️ Opciones").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  await deps.status.publishCard(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
 /**
@@ -224,8 +249,10 @@ async function handlePagePicker(deps: BotDeps, cq: TelegramCallbackQuery, chatId
     await deps.tg.answerCallbackQuery(cq.id, "Solo hay una página").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
+  // P1.3: the picker tells the user what the current turn is about.
+  const summary = deps.transcript.turnSummary(s).replace(/[<>&]/g, "");
   await deps.tg
-    .sendRichMessage(chatId, `⊞ <b>Ir a página</b> · <i>${total} páginas de ${esc((s.topicTitle || "").trim() || sessionId.slice(0, 12))}</i>`, {
+    .sendRichMessage(chatId, `⊞ <b>Ir a turno</b> · <i>${total} páginas de ${esc((s.topicTitle || "").trim() || sessionId.slice(0, 12))}</i>\n<i>${esc(summary)}</i>`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: deps.transcript.pagePickerKeyboard(s, total) },
     })
@@ -331,6 +358,20 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
       if (s?.model) lines.push(`🧠 ${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? ` (${esc(s.model.variant)})` : ""}`);
       if (s?.directory) lines.push(`📁 <code>${esc(s.directory)}</code>`);
       if (s?.lastFinalText) lines.push("", s.lastFinalText.slice(0, 3000));
+      // P2: a short recap so reconnecting feels like picking up a conversation,
+      // not starting cold. Last prompt + activity counts come from local state.
+      const lastPrompt = deps.store.lastPromptBySession.get(sessionId);
+      const a = s?.activity;
+      const counts = a
+        ? [`${a.thoughts} pensamientos`, `${a.reads} lecturas`, `${a.edits} ediciones`, `${a.shells} comandos`]
+          .filter((part) => !part.startsWith("0 ")).join(" · ")
+        : "";
+      if (lastPrompt || counts) {
+        lines.push("", "⏮ <b>Recap</b>");
+        if (lastPrompt) lines.push(`👤 <i>${esc(truncate(lastPrompt, 160))}</i>`);
+        if (counts) lines.push(`🔧 <i>${esc(counts)}</i>`);
+        if (s?.model) lines.push(`🧠 <code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>`);
+      }
       const html = lines.join("\n");
       const keyboard = [[
         { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
@@ -386,7 +427,7 @@ async function handleRuncmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   if (!pending || pending.expires < Date.now()) {
     deps.pendingConfirmations.delete(key);
     await deps.tg.answerCallbackQuery(cq.id, "Expirado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
-    await deps.tg.sendRichMessage(chatId, "Confirmation expired.", threadOpts(threadId));
+    await deps.tg.sendRichMessage(chatId, "Confirmación expirada.", threadOpts(threadId));
     return;
   }
   deps.pendingConfirmations.delete(key);
@@ -562,6 +603,7 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   }
   let parsedValue: ChatSettings[keyof ChatSettings];
   if (key === "previewLines" || key === "longAnswerThreshold") parsedValue = Number(value);
+  else if (key === "onboardingStep") parsedValue = Number(value);
   else if (key === "diffStyle") parsedValue = value === "unified" ? "unified" : "simple";
   else if (key === "cardBehavior")
     parsedValue = value === "refloat_keep" ? "refloat_keep" : value === "refloat" ? "refloat" : "fixed";
@@ -570,6 +612,8 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
     parsedValue = value === "light" ? "light" : value === "dark" ? "dark" : "auto";
   else if (key === "cardVerbosity")
     parsedValue = value === "low" ? "low" : value === "high" ? "high" : "medium";
+  else if (key === "cardPreset")
+    parsedValue = CARD_PRESETS.includes(value as CardPreset) ? (value as CardPreset) : "balanced";
   else if (key === "longAnswerDelivery")
     parsedValue = value === "message" ? "message" : value === "auto" ? "auto" : "card";
   else parsedValue = value === "true";
@@ -648,6 +692,26 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     return;
   }
   await deps.tg.answerCallbackQuery(cq.id, "Opción desconocida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
+/** P1.6: apply a named style bundle from /settings and persist it per chat. */
+async function handlePreset(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  if (!data.startsWith("preset:")) return;
+  const preset = data.slice("preset:".length) as CardPreset;
+  if (!CARD_PRESETS.includes(preset)) {
+    await deps.tg.answerCallbackQuery(cq.id, "Estilo desconocido").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  const settings = deps.settings.applyPreset(chatId, preset);
+  await deps.tg.answerCallbackQuery(cq.id, `🎛 Estilo: ${PRESET_LABELS[preset]}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  if (messageId !== undefined) {
+    await deps.tg
+      .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: settingsKeyboard(settings) },
+      })
+      .catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
 }
 
 async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
@@ -941,26 +1005,45 @@ async function handleActivityToggle(deps: BotDeps, cq: TelegramCallbackQuery, ch
   await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
+/** P1.4: download the turn's edits as a .patch document. */
+async function handlePatch(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const m = data.match(/^patch:(\d+)$/);
+  if (!m) return;
+  await deps.tg.answerCallbackQuery(cq.id, "Generando .patch…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const ok = await deps.status.sendPatch?.(chatId, Number(m[1]), threadId).catch((err) => {
+    console.warn("[callbacks] patch failed", err);
+    return false;
+  });
+  if (!ok) {
+    await deps.tg.answerCallbackQuery(cq.id, "Este diff ya no está disponible. Abre /status para ver el turno actual.", { show_alert: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
+}
+
 /**
  * Clipboard fallback for groups or texts longer than 256 characters: send the
  * content as a code block the user can long-press to copy. In private chats a
  * native copy_text button is attached when the text fits.
  */
 async function handleCopy(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
-  const m = data.match(/^copy:(answer|prompt|command):(.+)$/);
+  const m = data.match(/^copy:(answer|prompt|command|diff):(.+)$/);
   if (!m) return;
   const kind = m[1];
-  const sessionId = m[2];
+  const rest = m[2];
+  // diff carries "<sessionId>:<messageId>" so the snapshot can be resolved.
+  const [sessionId, diffMessageId] = kind === "diff" ? rest.split(":") : [rest, undefined];
   const s = deps.store.findSessionById(sessionId);
   const lastShell = s ? [...(s.toolCallDetails ?? [])].reverse().find((d) => isShellTool(d.name)) : undefined;
   const lastCommand = lastShell ? parseShellCommand(lastShell.input ?? "") ?? lastShell.input?.trim() : undefined;
-  const text = (kind === "answer" ? s?.lastFinalText : kind === "prompt" ? deps.store.lastPromptBySession.get(sessionId) : lastCommand)?.trim();
+  const diffText = kind === "diff" && diffMessageId
+    ? deps.status.plainDiffFor?.(chatId, Number(diffMessageId))
+    : undefined;
+  const text = (kind === "answer" ? s?.lastFinalText : kind === "prompt" ? deps.store.lastPromptBySession.get(sessionId) : kind === "command" ? lastCommand : diffText)?.trim();
   if (!text) {
     await deps.tg.answerCallbackQuery(cq.id, "No hay nada que copiar todavía.", { show_alert: true }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   await deps.tg.answerCallbackQuery(cq.id, "Abriendo…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
-  const title = kind === "answer" ? "📄 Respuesta" : kind === "command" ? "🖥 Comando" : "📝 Prompt";
+  const title = kind === "answer" ? "📄 Respuesta" : kind === "command" ? "🖥 Comando" : kind === "diff" ? "🧾 Diff" : "📝 Prompt";
   const body = text.slice(0, 3600);
   const copy = copyTextButton(chatId, "📋 Copiar", body);
   const hint = chatId < 0 ? "\n<i>Mantén pulsado el bloque para copiar.</i>" : "";
@@ -976,10 +1059,14 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "editfile:": handleEditFile,
   "readfile:": handleReadFile,
   "resources:": handleResourcesToggle,
+  "patch:": handlePatch,
   "copy:": handleCopy,
   "tpage:": handleTranscriptPage,
   "tpagep:": handlePickerJump,
   "tpick:": handlePagePicker,
+  "read:": handleCardView,
+  "back:": handleCardView,
+  "menu:": handleCardView,
   "hist:": handleHistory,
   "histfmt:": handleHistoryFormatPicker,
   "ops:": handleOps,
@@ -1035,6 +1122,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "variant:": handleVariant,
   "set:": handleSet,
   "cycle:": handleCycle,
+  "preset:": handlePreset,
   "goal:": handleGoal,
   "qswitch:": handleQswitch,
   "runcmd:": handleRuncmd,
@@ -1092,7 +1180,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     await tg.answerCallbackQuery(cq.id, btn.label).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     const s = deps.store.getActiveSession(chatId, threadId);
     if (!s) {
-      await tg.sendRichMessage(chatId, "no active session.", threadOpts(threadId));
+      await tg.sendRichMessage(chatId, "No hay sesión activa.", threadOpts(threadId));
       return;
     }
     // Send the configured text as a prompt.
@@ -1185,7 +1273,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
         const { resources, templates } = await mcp.listMcpResources(deps.oc, directory);
         const all = [...resources, ...templates];
         if (!all.length) {
-          await deps.tg.sendRichMessage(chatId, "No MCP resources available.", threadOpts(threadId));
+          await deps.tg.sendRichMessage(chatId, "No hay recursos MCP disponibles.", threadOpts(threadId));
           return;
         }
         const lines = all.map((resource) => `• <b>${esc(resource.name)}</b> (${esc(resource.server)})\n  <code>${esc(resource.uri)}</code>`);

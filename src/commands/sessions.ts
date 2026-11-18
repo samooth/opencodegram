@@ -1,5 +1,6 @@
 import type { BotDeps, SendFn } from "../context.js";
 import { colorDiff, esc } from "../util.js";
+import { paginateTranscript } from "../transcript.js";
 import { buildDigestParts } from "../syncview.js";
 import { cancelAutoRetry } from "../autoretry.js";
 import { ctx } from "./shared.js";
@@ -52,7 +53,7 @@ export async function cmd_stop(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/stop" || text === "/abort") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session");
+      await send("No hay sesión activa");
       return true;
     }
     try {
@@ -79,7 +80,7 @@ export async function cmd_fork(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/fork") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -109,12 +110,12 @@ export async function cmd_rename(deps: BotDeps, chatId: number, threadId: number
   if (text.startsWith("/rename ")) {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     const title = text.slice(8).trim();
     if (!title) {
-      await send("usage: /rename <title>");
+      await send("Uso: /rename <title>");
       return true;
     }
     try {
@@ -152,7 +153,7 @@ export async function cmd_archive(deps: BotDeps, chatId: number, threadId: numbe
   if (text === "/archive") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -173,7 +174,7 @@ export async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: num
   if (text === "/unarchive") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -202,7 +203,7 @@ export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number
   if (text === "/delete") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     await send(`Delete session <code>${esc(s.sessionId)}</code>?`, {
@@ -220,7 +221,7 @@ export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number
   if (text === "/delete confirm") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -245,7 +246,7 @@ export async function cmd_compact(deps: BotDeps, chatId: number, threadId: numbe
   if (text === "/compact") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -266,7 +267,7 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
   if (text === "/context") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -417,7 +418,7 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/sync") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -516,7 +517,7 @@ export async function cmd_diff(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/diff") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -555,39 +556,53 @@ export async function cmd_search(deps: BotDeps, chatId: number, threadId: number
   const s = await C.restoreActiveSession(chatId, threadId);
   const transcript = deps.transcript;
   if (!s || !transcript) {
-    await send("no active session.");
+    await send("No hay sesión activa.");
     return true;
   }
   const blocks = transcript.blocksOf(s);
   const lower = term.toLowerCase();
-  const hits: Array<{ page: number; snippet: string }> = [];
+  // P2: search the whole conversation — assistant/tool blocks AND the user
+  // prompts that started each turn (which are not stored as blocks).
+  const pages = paginateTranscript(blocks);
+  const pageOf = new Map<number, number>();
+  pages.forEach((p, i) => p.blocks.forEach((b, j) => pageOf.set(blocks.indexOf(b, j ? undefined : 0), i)));
+  const hits: Array<{ page: number; snippet: string; turn?: number }> = [];
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (!b.text.toLowerCase().includes(lower)) continue;
-    // find the page this block is on
-    const pg = Math.floor(i / 8) + 1; // approximate; refined below
+    const pg = (pageOf.get(i) ?? Math.min(pages.length - 1, Math.floor(i / 8))) + 1;
     const idx = b.text.toLowerCase().indexOf(lower);
     const start = Math.max(0, idx - 40);
     const end = Math.min(b.text.length, idx + term.length + 40);
     const snippet = esc(b.text.slice(start, end).replace(/\s+/g, " "));
     const highlighted = snippet.replace(new RegExp(esc(term), "gi"), (x) => `<mark>${x}</mark>`);
-    hits.push({ page: pg, snippet: highlighted });
+    hits.push({ page: pg, snippet: highlighted, turn: b.turn });
+  }
+  const turns = [...new Set(blocks.map((b) => b.turn).filter((t): t is number => typeof t === "number"))];
+  for (const turn of turns) {
+    const prompt = deps.store.getTurnPrompt(s.sessionId, turn);
+    if (prompt?.toLowerCase().includes(lower)) {
+      const page = pages.findIndex((p) => p.blocks.some((b) => b.turn === turn));
+      const idx = prompt.toLowerCase().indexOf(lower);
+      const snippet = esc(prompt.slice(Math.max(0, idx - 40), idx + term.length + 40).replace(/\s+/g, " "));
+      hits.unshift({ page: page + 1 || 1, snippet: `👤 ${snippet.replace(new RegExp(esc(term), "gi"), (x) => `<mark>${x}</mark>`)}`, turn });
+    }
   }
   if (!hits.length) {
     await send(`🔍 Sin resultados para <code>${esc(term)}</code>.`);
     return true;
   }
-  // Refine page numbers using paginateTranscript if available.
   const lines = [`🔍 <b>${hits.length} resultado(s)</b> para <code>${esc(term)}</code>:`];
   const seen = new Set<number>();
+  const buttons: Array<{ text: string; callback_data: string }> = [];
   for (const h of hits.slice(0, 20)) {
     if (seen.has(h.page)) continue;
     seen.add(h.page);
-    lines.push(`📄 Pág. ${h.page}: …${h.snippet}…`);
+    const where = h.turn ? `Turno ${h.turn}` : `Pág. ${h.page}`;
+    lines.push(`📄 ${where}: …${h.snippet}…`);
+    if (buttons.length < 12) buttons.push({ text: `${where}`, callback_data: `tpagep:${s.sessionId}:${h.page - 1}` });
   }
   if (hits.length > 20) lines.push(`<i>… y ${hits.length - 20} más.</i>`);
-  lines.push("");
-  lines.push("<i>Usa los botones ◀/▶ de la tarjeta para ir a la página.</i>");
-  await send(lines.join("\n"));
+  await send(lines.join("\n") + "\n<i>Toca un turno para ir directamente.</i>", buttons.length ? { reply_markup: { inline_keyboard: [buttons] } } : undefined);
   return true;
 }

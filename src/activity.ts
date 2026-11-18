@@ -283,3 +283,19 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   const hint = expanded ? " ▴" : " ▾";
   return `<p>${prefix}${parts.join(" · ")}${hint}</p>\n${renderBody(kept)}`;
 }
+
+/**
+ * P1.2: a three-line pipeline of the latest real actions. Durations and the
+ * spinner come from the same entries as the expandable detail, so the rail
+ * never invents progress. The full detail stays behind ▾ Detalles.
+ */
+export function renderActionRail(a: TurnActivity | undefined, now = Date.now()): string {
+  const entries = (a?.entries ?? []).filter((e) => e.kind !== "thought").slice(-3);
+  if (!entries.length) return "";
+  const lines = entries.map((e) => {
+    const status = e.ok === true ? "✅" : e.ok === false ? "❌" : e.open ? "⏳" : "·";
+    const detail = e.detail.trim() ? ` <code>${esc(truncate(e.detail.trim().replace(/[\r\n]/g, " "), 48))}</code>` : "";
+    return `${status} ${ICONS[e.kind]} <b>${esc(e.label)}</b>${detail} · ${fmtDuration(e.durationMs ?? Math.max(0, now - e.at))}`;
+  });
+  return `⚡ <b>Últimas acciones</b>\n${lines.join("\n")}`;
+}

@@ -1,16 +1,19 @@
-import type { ChatSession } from "./types.js";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ChatSession, CardView } from "./types.js";
 import type { SessionStore } from "./store.js";
 import { pendingEditsKey } from "./store.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { clampText, colorDiff, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
+import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import type { DashboardManager } from "./dashboard.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
-import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
+import { closeOpen, createTurnActivity, renderActionRail, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
 import { capDiff, detectTestRun, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
 
@@ -76,6 +79,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
     if (activityBlock) {
       lines.push(activityBlock);
+      // P1.2: the rail is the collapsed, always-visible view. Expanded detail
+      // already shows every action, so do not repeat it. Low verbosity keeps
+      // the card tiny and skips the rail and all details.
+      if (settings.showActionRail && settings.cardVerbosity !== "low" && !s.activityExpanded) {
+        const rail = renderActionRail(s.activity);
+        if (rail) lines.push(`<blockquote>${rail}</blockquote>`);
+      }
     } else {
       // Fallback for sessions created before per-turn activity was tracked.
       const thinking = renderThinkingBottom(s, settings);
@@ -161,21 +171,27 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     if (!transcript) return;
     const settings = getSettings(chatId);
     const unified = settings.displayMode === "unified";
-    if (s.statusFinished) {
+    const reading = s.readingMode === true;
+    const compact = settings.compactCard && !s.cardMenuExpanded && !reading;
+    s.cardView = { compact, reading, showResources: !unified, unified } satisfies CardView;
+    // P1.1: the compact card keeps the receipt readable but never blows past
+    // the 1.200-character budget; detail lives in ▾ Más / ▾ Detalles.
+    const cap = (html: string) => compact ? clampText(html, 650) : html;
+    if (reading) {
+      await transcript.publish(chatId, s, { ...s.cardView, extraTop: "", working: false });
+    } else if (s.statusFinished) {
       await transcript.publish(chatId, s, {
-        extraTop: renderDoneStrip(s, settings),
+        ...s.cardView,
+        extraTop: cap(renderDoneStrip(s, settings)),
         working: false,
-        showResources: !unified,
-        unified,
       });
     } else {
       const parts = renderLiveParts(s, settings, unified);
       await transcript.publish(chatId, s, {
-        extraTop: parts.top,
-        extraBottom: parts.bottom,
+        ...s.cardView,
+        extraTop: cap(parts.top),
+        extraBottom: cap(parts.bottom),
         working: true,
-        showResources: !unified,
-        unified,
       });
     }
     if (unified && dashboard) {
@@ -200,6 +216,9 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.toolCallDetails = [];
     s.activity = createTurnActivity();
     s.activityExpanded = false;
+    s.readingMode = false;
+    s.cardMenuExpanded = false;
+    s.lastViewedTurn = undefined;
     if (s.resourcesCollapsed === undefined) s.resourcesCollapsed = true;
     s.turnOutputTokens = 0;
     s.turnFirstStreamedAt = undefined;
@@ -620,21 +639,40 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     return lines.join("\n");
   };
 
-  const finishedKeyboard = (editDetails: ChatSession["toolCallDetails"], expandedEditIndex: number | undefined, target: ChatSession, messageId?: number): Array<Array<{ text: string; callback_data: string }>> => {
-    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+  const finishedKeyboard = (editDetails: ChatSession["toolCallDetails"], expandedEditIndex: number | undefined, target: ChatSession, messageId?: number): Array<Array<{ text: string; callback_data?: string; copy_text?: { text: string } }>> => {
+    const keyboard: Array<Array<{ text: string; callback_data?: string; copy_text?: { text: string } }>> = [];
     editDetails.forEach((detail: ChatSession["toolCallDetails"][number], index: number) => {
       const file = relativeEditPath(target, extractEditFile(detail.input) ?? `edit ${index + 1}`);
       const label = expandedEditIndex === index ? `✏️ ${file} ▾` : `✏️ ${file}`;
       keyboard.push([{ text: label.slice(0, 64), callback_data: `edit:${index}` }]);
     });
     if (editDetails.length && messageId !== undefined) {
-      keyboard.push([{ text: "📄 Diffs completos", callback_data: `edits:full:${messageId}` }]);
+      keyboard.push([
+        { text: "📄 Diffs completos", callback_data: `edits:full:${messageId}` },
+        { text: "📦 Descargar .patch", callback_data: `patch:${messageId}` },
+      ]);
+      const plain = plainDiff(editDetails, "unified", target.directory);
+      const native = copyTextButton(0, "📋 Copiar diff", plain);
+      if (native) keyboard.push([native]);
     }
     keyboard.push([
       { text: "🧠 Modelo", callback_data: `panel:ms:${target.sessionId}` },
       { text: "📂 Sesiones", callback_data: "panel:sessions" },
     ]);
     return keyboard;
+  };
+
+  /** P1.4: a plain unified patch assembled from the turn's edit snapshots. */
+  const plainDiff = (
+    editDetails: ChatSession["toolCallDetails"],
+    style: ChatSettings["diffStyle"],
+    directory?: string,
+  ): string => {
+    const blocks = editDetails.map((detail) => {
+      const file = relativeEditPath({ directory } as ChatSession, extractEditFile(detail.input) ?? "edit");
+      return formatEditDiff(detail.input, style, directory).trim() || `--- ${file}\n+++ ${file}`;
+    });
+    return blocks.join("\n\n") + "\n";
   };
 
   /** Expanded-file toggle for edit messages, keyed by chatId:messageId. */
@@ -692,27 +730,75 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     const resolved = resolveEditsFor(chatId, messageId);
     if (!resolved) return false;
     const settings = getSettings(chatId);
+    // P1.4: PR-style review — one summary table with +/− counts, then the
+    // per-file diffs and their actions.
+    const rows = resolved.edits.map((detail) => {
+      const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? "edit");
+      const { added, removed } = editStats(detail.input);
+      return `<tr><td><code>${esc(file)}</code></td><td>+${added}</td><td>−${removed}</td></tr>`;
+    });
+    const table = `<table><tr><th>Archivo</th><th>+</th><th>−</th></tr>${rows.join("")}</table>`;
+    const keyboard = finishedKeyboard(resolved.edits, undefined, resolved.s as ChatSession, messageId);
     const parts: string[] = [];
     for (const detail of resolved.edits) {
       const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? "edit");
       const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
       parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`);
     }
-    const full = `${resolved.header}\n<b>Diffs completos</b> (${resolved.edits.length})\n\n${parts.join("\n\n")}`;
-    const opts = threadOpts(threadId ?? resolved.threadId);
+    const full = `${resolved.header}\n<b>Revisión de cambios</b> (${resolved.edits.length})\n${table}\n\n${parts.join("\n\n")}`;
+    const fallback = resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession);
+    const reviewKeyboard = finishedKeyboard(resolved.edits, undefined, fallback, messageId);
+    reviewKeyboard.push([{ text: "📦 Descargar .patch", callback_data: `patch:${messageId}` }]);
+    const plain = plainDiff(resolved.edits, "unified", resolved.directory);
+    const nativeCopy = copyTextButton(0, "📋 Copiar diff", plain);
+    if (nativeCopy) reviewKeyboard.push([nativeCopy]);
+    else reviewKeyboard.push([{ text: "📋 Copiar diff", callback_data: `copy:diff:${fallback.sessionId}:${messageId}` }]);
+    const opts = { ...threadOpts(threadId ?? resolved.threadId), reply_markup: { inline_keyboard: reviewKeyboard } };
     if (full.length <= 3800) {
       await tg.sendRichMessage(chatId, full, opts).catch((err) => console.warn("[status]", err?.message ?? err));
     } else {
       let remaining = full;
+      let first = true;
       while (remaining.length > 3800) {
         let cut = remaining.lastIndexOf("\n", 3800);
         if (cut < 1900) cut = 3800;
-        await tg.sendRichMessage(chatId, remaining.slice(0, cut), opts).catch((err) => console.warn("[status]", err?.message ?? err));
+        await tg.sendRichMessage(chatId, remaining.slice(0, cut), first ? opts : threadOpts(threadId ?? resolved.threadId)).catch((err) => console.warn("[status]", err?.message ?? err));
+        first = false;
         remaining = remaining.slice(cut).trimStart();
       }
-      if (remaining) await tg.sendRichMessage(chatId, remaining, opts).catch((err) => console.warn("[status]", err?.message ?? err));
+      if (remaining) await tg.sendRichMessage(chatId, remaining, first ? opts : threadOpts(threadId ?? resolved.threadId)).catch((err) => console.warn("[status]", err?.message ?? err));
     }
     return true;
+  };
+
+  /** P1.4: resolve a persisted edit snapshot into a plain patch (for copy). */
+  const plainDiffFor = (chatId: number, messageId: number): string | undefined => {
+    const resolved = resolveEditsFor(chatId, messageId);
+    if (!resolved) return undefined;
+    return plainDiff(resolved.edits, "unified", resolved.directory);
+  };
+
+  /** P1.4: send the turn's edits as a ready-to-apply .patch document. */
+  const sendPatch = async (chatId: number, messageId: number, threadId?: number): Promise<boolean> => {
+    const resolved = resolveEditsFor(chatId, messageId);
+    if (!resolved) return false;
+    const settings = getSettings(chatId);
+    const body = plainDiff(resolved.edits, "unified", resolved.directory);
+    try {
+      const dir = join(tmpdir(), "opencode", "exports");
+      mkdirSync(dir, { recursive: true });
+      const name = `${sessionHeader(resolved.s).replace(/<[^>]+>/g, "").trim().replace(/[^\w-]+/g, "-").slice(0, 40) || "session"}-${messageId}.patch`;
+      const path = join(dir, name.replace(/[^\w.-]/g, "_"));
+      writeFileSync(path, body, "utf8");
+      await tg.sendDocument(chatId, path, name, `📦 <b>Patch</b> · ${resolved.edits.length} archivo(s)\n<i>Aplica con: git apply archivo.patch</i>`, {
+        ...threadOpts(threadId ?? resolved.threadId),
+        parse_mode: "HTML",
+      });
+      return true;
+    } catch (err) {
+      console.warn("[status] patch failed", err);
+      return false;
+    }
   };
 
   /**
@@ -746,5 +832,5 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     return true;
   };
 
-  return { startStatus, updateStatus, finishStatus, publishCard, showEditDiff, showEditDetail, sendFullDiffs };
+  return { startStatus, updateStatus, finishStatus, publishCard, showEditDiff, showEditDetail, sendFullDiffs, sendPatch, plainDiffFor };
 }

@@ -7,7 +7,7 @@ export async function cmd_forms(deps: BotDeps, chatId: number, threadId: number 
   if (text === "/forms") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     try {
@@ -38,13 +38,13 @@ export async function cmd_formreply(deps: BotDeps, chatId: number, threadId: num
   if (text.startsWith("/formreply ")) {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     const rest = text.slice(11).trim();
     const spaceIdx = rest.indexOf(" ");
     if (spaceIdx === -1) {
-      await send("usage: /formreply <form_id> <json>");
+      await send("Uso: /formreply <form_id> <json>");
       return true;
     }
     const formId = rest.slice(0, spaceIdx).trim();

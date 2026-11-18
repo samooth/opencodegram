@@ -93,21 +93,21 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       list = list.filter((s: SessionRow) => getSessionStatus(s.id ?? "") === "busy");
     }
     if (!list.length) {
-      await sendOrEditRich(chatId, messageId, "no sessions found.", threadOpts(threadId));
+      await sendOrEditRich(chatId, messageId, "No se encontraron sesiones.", threadOpts(threadId));
       return;
     }
     const total = list.length;
     const start = page * pageSize;
     const slice = list.slice(start, start + pageSize);
     const lines = slice.map((s: SessionRow, i: number) => {
-      const title = esc(s.title ?? "(untitled)");
+      const title = esc(s.title ?? "(sin título)");
       const directory = esc(projectLabel(s.location?.directory ?? s.directory));
       const dirSuffix = directory ? ` · ${directory}` : "";
       return `<tr><td>${start + i + 1}</td><td><b>${title}</b></td><td><code>${esc(s.id ?? "")}</code></td><td>${dirSuffix}</td></tr>`;
     });
     const table = `<table><tr><th>#</th><th>Title</th><th>ID</th><th>Dir</th></tr>${lines.join("")}</table>`;
     const keyboard: InlineKeyboard = slice.map((s: SessionRow) => {
-      const title = (s.title ?? "(untitled)").slice(0, 40);
+      const title = (s.title ?? "(sin título)").slice(0, 40);
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
       const label = `🗑 ${(title + dirSuffix).slice(0, 58)}`;
@@ -135,7 +135,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const pageSize = 8;
     const list = (await oc.listSessionsCached()) as SessionRow[];
     if (!list.length) {
-      await sendOrEditRich(chatId, messageId, "no sessions found. Use /new to create one.", threadOpts(threadId));
+      await sendOrEditRich(chatId, messageId, "No se encontraron sesiones. Usa /new para crear una.", threadOpts(threadId));
       return;
     }
     // Filter by chat: a session belongs to every chat it was used from, so we
@@ -159,7 +159,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       });
     }
     if (!filtered.length) {
-      const text = onlyRunning ? "no running sessions." : filterChatId !== undefined ? "no sessions for this chat." : "no sessions found.";
+      const text = onlyRunning ? "No hay sesiones en ejecución." : filterChatId !== undefined ? "No hay sesiones en este chat." : "No se encontraron sesiones.";
       await sendOrEditRich(chatId, messageId, text, threadOpts(threadId));
       return;
     }
@@ -172,7 +172,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       return st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
     };
     const keyboard: InlineKeyboard = slice.map((s: SessionRow) => {
-      const title = (s.title ?? "(untitled)").slice(0, 36);
+      const title = (s.title ?? "(sin título)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
       const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
       const dirSuffix = directory ? ` · ${directory}` : "";
@@ -209,7 +209,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const directory = s?.directory ?? config.OPENCODE_DIRECTORY;
     const cmds = (await oc.listCommands(directory)) as CommandRow[];
     if (!cmds.length) {
-      await tg.sendRichMessage(chatId, "no commands available.", threadOpts(threadId));
+      await tg.sendRichMessage(chatId, "No hay comandos disponibles.", threadOpts(threadId));
       return;
     }
     const tableRows = cmds.map((c: CommandRow) => `<tr><td><code>/${esc(c.name ?? "")}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");

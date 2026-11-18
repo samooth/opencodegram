@@ -50,7 +50,7 @@ export async function cmd_vcs(deps: BotDeps, chatId: number, threadId: number | 
       return true;
     }
 
-    await send("usage: /vcs [status|diff [--cached] [path]|log]");
+    await send("Uso: /vcs [status|diff [--cached] [path]|log]");
     return true;
   }
   return false;
@@ -82,7 +82,7 @@ export async function cmd_branches(deps: BotDeps, chatId: number, threadId: numb
     if (subcommand === "switch" || subcommand === "checkout" || subcommand === "use") {
       const branch = parts.slice(2).join(" ");
       if (!branch) {
-        await send("usage: /branch switch <name>");
+        await send("Uso: /branch switch <name>");
         return true;
       }
       try {
@@ -110,7 +110,7 @@ export async function cmd_stage(deps: BotDeps, chatId: number, threadId: number 
   if (text === "/stage" || text.startsWith("/stage ")) {
     const path = text.slice(6).trim();
     if (!path) {
-      await send("usage: /stage <path>");
+      await send("Uso: /stage <path>");
       return true;
     }
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -131,7 +131,7 @@ export async function cmd_unstage(deps: BotDeps, chatId: number, threadId: numbe
   if (text === "/unstage" || text.startsWith("/unstage ")) {
     const path = text.slice(8).trim();
     if (!path) {
-      await send("usage: /unstage <path>");
+      await send("Uso: /unstage <path>");
       return true;
     }
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -152,13 +152,13 @@ export async function cmd_commit(deps: BotDeps, chatId: number, threadId: number
   if (text === "/commit" || text.startsWith("/commit ")) {
     const rest = text.slice(7).trim();
     if (!rest) {
-      await send("usage: /commit <message>");
+      await send("Uso: /commit <message>");
       return true;
     }
     if (rest.startsWith("confirm ")) {
       const message = rest.slice(8).trim();
       if (!message) {
-        await send("usage: /commit confirm <message>");
+        await send("Uso: /commit confirm <message>");
         return true;
       }
       const s = await C.restoreActiveSession(chatId, threadId);
@@ -219,7 +219,7 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
     if (subcommand === "create" || subcommand === "add") {
       const name = args[1];
       if (!name) {
-        await send("usage: /worktree create <name> [branch]");
+        await send("Uso: /worktree create <name> [branch]");
         return true;
       }
       const branch = args[2];
@@ -241,7 +241,7 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
       if (args[1] === "confirm") {
         const target = args.slice(2).join(" ");
         if (!target) {
-          await send("usage: /worktree remove confirm <directory>");
+          await send("Uso: /worktree remove confirm <directory>");
           return true;
         }
         try {
@@ -256,7 +256,7 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
       }
       const target = args.slice(1).join(" ");
       if (!target) {
-        await send("usage: /worktree remove <directory>");
+        await send("Uso: /worktree remove <directory>");
         return true;
       }
       await send(`Remove worktree <code>${esc(target)}</code>?\nReply /worktree remove confirm ${esc(target)} to proceed.`);
@@ -266,11 +266,11 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
     if (subcommand === "switch" || subcommand === "use" || subcommand === "cd") {
       const target = args.slice(1).join(" ");
       if (!target) {
-        await send("usage: /worktree switch <directory>");
+        await send("Uso: /worktree switch <directory>");
         return true;
       }
       if (!s) {
-        await send("no active session.");
+        await send("No hay sesión activa.");
         return true;
       }
       try {
@@ -293,7 +293,7 @@ export async function cmd_worktree(deps: BotDeps, chatId: number, threadId: numb
       return true;
     }
 
-    await send("usage: /worktree [list|create <name> [branch]|remove <directory>|switch <directory>]");
+    await send("Uso: /worktree [list|create <name> [branch]|remove <directory>|switch <directory>]");
     return true;
   }
   return false;

@@ -10,7 +10,7 @@ export async function cmd_file(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/file" || text.startsWith("/file ")) {
     const rawPath = text.slice("/file".length).trim();
     if (!rawPath) {
-      await send("usage: /file <path> (relative to the session directory)");
+      await send("Uso: /file <path> (relative to the session directory)");
       return true;
     }
     const s = await C.restoreActiveSession(chatId, threadId);
@@ -56,7 +56,7 @@ export async function cmd_find(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/find" || text.startsWith("/find ")) {
     const { query, hidden } = parseFindArgs(text.slice(5).trim());
     if (!query) {
-      await send("usage: /find <text> [-a]");
+      await send("Uso: /find <text> [-a]");
       return true;
     }
     try {
@@ -103,7 +103,7 @@ export async function cmd_read(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/read" || text.startsWith("/read ")) {
     const raw = text.slice(5).trim();
     if (!raw) {
-      await send("usage: /read <path> [start_line | summary]");
+      await send("Uso: /read <path> [start_line | summary]");
       return true;
     }
     if (raw.toLowerCase().endsWith(" summary")) {

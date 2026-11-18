@@ -24,7 +24,7 @@ export async function cmd_mcp(deps: BotDeps, chatId: number, threadId: number | 
     if (subcommand === "connect") {
       const name = args[1];
       if (!name) {
-        await send("usage: /mcp connect <name>");
+        await send("Uso: /mcp connect <name>");
         return true;
       }
       try {
@@ -40,7 +40,7 @@ export async function cmd_mcp(deps: BotDeps, chatId: number, threadId: number | 
     if (subcommand === "disconnect") {
       const name = args[1];
       if (!name) {
-        await send("usage: /mcp disconnect <name>");
+        await send("Uso: /mcp disconnect <name>");
         return true;
       }
       try {
@@ -56,7 +56,7 @@ export async function cmd_mcp(deps: BotDeps, chatId: number, threadId: number | 
     if (subcommand === "remove" || subcommand === "rm") {
       const name = args[1];
       if (!name) {
-        await send("usage: /mcp remove <name>");
+        await send("Uso: /mcp remove <name>");
         return true;
       }
       try {
@@ -88,7 +88,7 @@ export async function cmd_mcp(deps: BotDeps, chatId: number, threadId: number | 
     if (subcommand === "read") {
       const uri = args.slice(1).join(" ");
       if (!uri) {
-        await send("usage: /mcp read <uri>");
+        await send("Uso: /mcp read <uri>");
         return true;
       }
       try {
@@ -108,7 +108,7 @@ export async function cmd_mcp(deps: BotDeps, chatId: number, threadId: number | 
       return true;
     }
 
-    await send("usage: /mcp [list|connect <name>|disconnect <name>|remove <name>|resources|read <uri>]");
+    await send("Uso: /mcp [list|connect <name>|disconnect <name>|remove <name>|resources|read <uri>]");
     return true;
   }
   return false;

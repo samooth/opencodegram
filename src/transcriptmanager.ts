@@ -1,8 +1,8 @@
 import type { TelegramClient } from "./telegram.js";
-import type { ChatSession } from "./types.js";
+import type { CardView, ChatSession } from "./types.js";
 import type { InlineButton, InlineKeyboard } from "./apitypes.js";
 import type { SessionStore } from "./store.js";
-import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader } from "./util.js";
+import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, truncate } from "./util.js";
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { extractEditFile } from "./editutil.js";
 import {
@@ -34,6 +34,17 @@ export type TranscriptDeps = {
   /** System indicators rendered at the bottom of every message. */
   renderResources?: (s: ChatSession) => string;
 };
+
+/** Publish options: card view plus the optional status strips. */
+export type PublishOpts = Partial<CardView> & {
+  extraTop?: string;
+  extraBottom?: string;
+  working?: boolean;
+};
+
+const DEFAULT_VIEW: CardView = { compact: false, reading: false, showResources: true, unified: false };
+
+const viewOf = (s: ChatSession, opts?: PublishOpts): CardView & PublishOpts => ({ ...DEFAULT_VIEW, ...(s.cardView ?? {}), ...(opts ?? {}) });
 
 export type TranscriptManager = ReturnType<typeof createTranscriptManager>;
 
@@ -130,18 +141,41 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     });
   };
 
-  /** Render the current page of the transcript. */
+  /** Distinct turns present in the transcript, oldest first. */
+  const turnsOf = (s: ChatSession): number[] => [...new Set(blocksOf(s)
+    .map((b) => b.turn)
+    .filter((t): t is number => typeof t === "number"))].sort((a, b) => a - b);
+
+  const turnOfPage = (page: { blocks: TranscriptBlock[] } | undefined): number | undefined =>
+    page?.blocks.find((b) => typeof b.turn === "number")?.turn;
+
+  /** P1.3: one-line summary for the turn picker and the "antes…" recap. */
+  const turnSummary = (s: ChatSession, turn?: number): string => {
+    const wanted = turn ?? s.turnSeq;
+    const blocks = blocksOf(s).filter((b) => wanted === undefined || b.turn === wanted);
+    const answer = blocks.find((b) => b.kind === "answer")?.text.trim().split(/\r?\n/).filter(Boolean)[0];
+    if (answer) return truncate(answer.replace(/[*_`>#]/g, ""), 100);
+    const names = [...new Set(blocks.flatMap((b) => (b.toolCalls ?? []).map((t) => t.name)))];
+    if (names.length) return `Herramientas: ${names.slice(0, 3).join(", ")}`;
+    const prompt = store.lastPromptBySession.get(s.sessionId);
+    return prompt ? truncate(prompt, 100) : "sin detalle";
+  };
+
+  /** Render the current page of the transcript, with the optional status strip. */
   const renderPage = (
     s: ChatSession,
-    opts: { extraTop?: string; extraBottom?: string; showResources?: boolean } = {},
+    opts: PublishOpts = {},
   ): { html: string; page: number; total: number } | undefined => {
-    const LAYOUT_LIMIT = 3900;
+    const view = viewOf(s, opts);
+    // P1.1: compact cards fit a phone screen (≤1.200 chars); reading mode and
+    // the expanded view keep the original 3.900-char budget.
+    const LAYOUT_LIMIT = view.compact ? 1200 : 3900;
     const all = blocksOf(s);
     const pages = paginateTranscript(all);
     const header = `<h3>${sessionHeader(s).trimEnd()}</h3>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
-    const resources = opts.showResources === false || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
-    const extraTop = opts.extraTop ?? "";
+    const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
+    const extraTop = view.compact ? clampText(opts.extraTop ?? "", 600) : (opts.extraTop ?? "");
     const extraBottom = opts.extraBottom ?? "";
 
     /**
@@ -178,7 +212,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // that point, so the card shows the live strip alone instead of repeating
     // the previous turn's page. ◀ still browses the full history via the
     // keyboard, which is built over all pages.
-    if (s.transcriptFollow !== false && !s.statusFinished && s.turnSeq !== undefined) {
+    if (!view.reading && s.transcriptFollow !== false && !s.statusFinished && s.turnSeq !== undefined) {
       const hasTurnBlocks = all.some((b) => b.turn === s.turnSeq);
       if (!hasTurnBlocks) {
         return { html: fit([header], []), page: Math.max(0, pages.length - 1), total: pages.length };
@@ -190,9 +224,23 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
-    const indicator = page.total > 1 ? `<i>📄 ${page.index + 1}/${page.total}</i>` : "";
+    // P1.3: navigate by turn, not by raw block-page count.
+    const turns = turnsOf(s);
+    const pageTurn = turnOfPage(page);
+    const totalTurns = turns.length || (s.turnSeq ?? 0);
+    const indicator = pageTurn && totalTurns
+      ? `<i>🎯 Turno ${pageTurn}/${totalTurns}</i>`
+      : page.total > 1 ? `<i>📄 ${page.index + 1}/${page.total}</i>` : "";
+    // Mini "previously on…" (two lines) when the user jumps to another turn.
+    let recap = "";
+    if (s.lastViewedTurn !== undefined && pageTurn && s.lastViewedTurn !== pageTurn) {
+      const previous = turnSummary(s, s.lastViewedTurn);
+      if (previous && previous !== "sin detalle") {
+        recap = `<blockquote expandable>📺 <b>Antes…</b> ${esc(previous)}</blockquote>`;
+      }
+    }
     return {
-      html: fit([header, indicator].filter(Boolean), page.blocks),
+      html: fit([header, indicator, recap].filter(Boolean), page.blocks),
       page: page.index,
       total: page.total,
     };
@@ -308,37 +356,43 @@ ${body}
   };
 
   /** Keyboard for the session card. */
+  const navRow = (s: ChatSession, page: number, total: number): InlineButton[] => {
+    const nav: InlineButton[] = [];
+    if (page > 0) nav.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
+    // Middle button opens the page picker (jump to page N).
+    nav.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
+    if (page < total - 1) nav.push({ text: "▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
+    return nav;
+  };
+
   const cardKeyboard = (
     chatId: number,
     s: ChatSession,
     page: number,
     total: number,
-    opts?: { working?: boolean; unified?: boolean },
+    opts?: PublishOpts,
   ): InlineKeyboard => {
     const keyboard: InlineKeyboard = [];
+    const view = viewOf(s, opts);
     const activity = s.activity;
     const hasActivity = !!activity && activity.thoughts + activity.reads + activity.searches + activity.edits + activity.shells + activity.tools > 0;
     if (total > 1) {
-      const nav: InlineButton[] = [];
-      if (page > 0) nav.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
-      // Middle button opens the page picker (jump to page N).
-      nav.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
-      if (page < total - 1) nav.push({ text: "▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
-      keyboard.push(nav);
-      if (s.transcriptFollow === false && page < total - 1) {
+      keyboard.push(navRow(s, page, total));
+      // P1.3: once the user is away from the latest page, offer a jump back.
+      if (page < total - 1) {
         keyboard.push([{ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
       }
     }
 
     // Edits live inside the card; the snapshot survives turns and restarts.
-    const edits = !opts?.working && s.transcriptMessageId
+    const edits = !view.working && s.transcriptMessageId
       ? store.getPendingEditsSnapshot(chatId, s.transcriptMessageId)?.edits ?? []
       : [];
 
     // 1) Primary action for the current state. This is always the first row so
     // the user never has to scroll to act on a long answer.
     const primary: InlineButton[] = [];
-    if (opts?.working) {
+    if (view.working) {
       primary.push({ text: "⏹ Detener", callback_data: "panel:stop" });
       if (hasActivity) primary.push({
         text: s.activityExpanded ? "▴ Ocultar" : "▾ Detalles",
@@ -362,13 +416,13 @@ ${body}
 
     // 2) Secondary toggles: detail and resources. The activity toggle moves to
     // the primary row while working; finished cards keep it here.
-    if (!(opts?.working && hasActivity) && hasActivity) {
+    if (!(view.working && hasActivity) && hasActivity) {
       keyboard.push([{
         text: s.activityExpanded ? "▴ Ocultar detalles" : "▾ Ver detalles",
         callback_data: `activity:${s.sessionId}`,
       }]);
     }
-    if (!opts?.unified) {
+    if (!view.unified) {
       keyboard.push([{
         text: s.resourcesCollapsed ? "📊 Recursos ▴" : "📊 Recursos ▾",
         callback_data: `resources:${s.sessionId}`,
@@ -377,7 +431,7 @@ ${body}
 
     // 3) Copy prompt and the last shell command (private clipboard button only
     // when it fits; groups and long texts fall back to a code block).
-    if (!opts?.working) {
+    if (!view.working) {
       const copyPrompt = copyTextButton(chatId, "📋 Copiar prompt", store.lastPromptBySession.get(s.sessionId));
       if (copyPrompt) keyboard.push([copyPrompt]);
       const lastShell = [...(s.toolCallDetails ?? [])].reverse().find((d) => isShellTool(d.name));
@@ -409,7 +463,7 @@ ${body}
     if (readButtons.length) keyboard.push(readButtons);
 
     // 4) Per-file edit buttons + the full diff entry point.
-    if (!opts?.working) {
+    if (!view.working) {
       for (let idx = Math.max(0, edits.length - 3); idx < edits.length; idx++) {
         const raw = extractEditFile(edits[idx]?.input) ?? `edit ${idx + 1}`;
         const label = raw.split("/").pop() ?? raw;
@@ -424,7 +478,7 @@ ${body}
     }
 
     // 5) Export always available; copy fallback for groups or long answers.
-    if (!opts?.working) {
+    if (!view.working) {
       const tools: InlineButton[] = [];
       const nativeCopy = copyTextButton(chatId, "📋 Copiar", s.lastFinalText);
       if (s.lastFinalText && !nativeCopy) {
@@ -434,7 +488,7 @@ ${body}
       keyboard.push(tools);
     }
 
-    if (!opts?.unified) {
+    if (!view.unified) {
       keyboard.push([
         { text: "🧠 Modelos", callback_data: `panel:ms:${s.sessionId}` },
         { text: "📂 Sesiones", callback_data: "panel:sessions" },
@@ -448,6 +502,53 @@ ${body}
   };
 
   /**
+   * P1.1: the default card is compact — primary action, turn navigation and a
+   * single ▾ Más entry point (≤3 rows). ▾ Más reveals the full keyboard, and
+   * 📖 Leer switches the same message to a clean, paginated reading view.
+   */
+  const compactCardKeyboard = (
+    chatId: number,
+    s: ChatSession,
+    page: number,
+    total: number,
+    opts?: PublishOpts,
+  ): InlineKeyboard => {
+    const view = viewOf(s, opts);
+    if (view.reading) {
+      const rows: InlineKeyboard = [[{ text: "⬅ Volver", callback_data: `back:${s.sessionId}` }]];
+      if (total > 1) {
+        const nav = navRow(s, page, total);
+        if (page < total - 1) nav.push({ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` });
+        rows.push(nav);
+      }
+      return rows;
+    }
+    if (!view.compact || s.cardMenuExpanded) return cardKeyboard(chatId, s, page, total, opts);
+    const full = cardKeyboard(chatId, s, page, total, opts);
+    // cardKeyboard starts with navigation; lift the state's primary row to the
+    // top so the compact card still follows "one obvious action first".
+    const primary = full.find((row) => row.some((b) =>
+      b.callback_data === "panel:stop" ||
+      b.callback_data === `retry:${s.sessionId}` ||
+      b.callback_data === `viewfull:${s.sessionId}` ||
+      b.callback_data === `edits:full:${s.transcriptMessageId}` ||
+      b.callback_data === `panel:ms:${s.sessionId}` ||
+      b.copy_text !== undefined,
+    )) ?? [];
+    const rows: InlineKeyboard = [primary];
+    if (total > 1) {
+      const nav = navRow(s, page, total);
+      if (page < total - 1) nav.push({ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` });
+      rows.push(nav);
+    }
+    const more: InlineButton[] = [];
+    if (s.lastFinalText) more.push({ text: "📖 Leer", callback_data: `read:${s.sessionId}` });
+    more.push({ text: "▾ Más", callback_data: `menu:${s.sessionId}` });
+    rows.push(more);
+    return rows.filter((row) => row.length > 0);
+  };
+
+  /**
    * Push the current page to Telegram, editing the existing card when
    * possible so no new message is created.
    * Publishes are serialized per session: Telegram cancels an edit when a
@@ -456,13 +557,13 @@ ${body}
   const publishNow = async (
     chatId: number,
     s: ChatSession,
-    opts?: { extraTop?: string; extraBottom?: string; working?: boolean; showResources?: boolean; unified?: boolean },
+    opts?: PublishOpts,
   ): Promise<void> => {
-    const rendered = renderPage(s, { extraTop: opts?.extraTop, extraBottom: opts?.extraBottom, showResources: opts?.showResources });
+    const rendered = renderPage(s, opts);
     if (!rendered) return;
-    const cleanHtml = renderPage(s, { extraTop: opts?.extraTop, extraBottom: opts?.extraBottom, showResources: false })?.html ?? rendered.html;
+    const cleanHtml = renderPage(s, { ...opts, showResources: false })?.html ?? rendered.html;
     const tgOpts = threadOptsFor(s);
-    const keyboard = { inline_keyboard: cardKeyboard(chatId, s, rendered.page, rendered.total, opts) };
+    const keyboard = { inline_keyboard: compactCardKeyboard(chatId, s, rendered.page, rendered.total, opts) };
     if (s.transcriptMessageId) {
       const ok = await tg
         .editRichMessage(chatId, s.transcriptMessageId, rendered.html, { ...tgOpts, reply_markup: keyboard })
@@ -500,7 +601,7 @@ ${body}
   const publish = async (
     chatId: number,
     s: ChatSession,
-    opts?: { extraTop?: string; extraBottom?: string; working?: boolean; showResources?: boolean; unified?: boolean },
+    opts?: PublishOpts,
   ): Promise<void> => {
     const key = s.sessionId;
     const previous = publishQueue.get(key) ?? Promise.resolve();
@@ -521,7 +622,11 @@ ${body}
     const clamped = Math.min(Math.max(0, page), pages.length - 1);
     s.transcriptPage = clamped;
     s.transcriptFollow = clamped === pages.length - 1;
-    await publish(chatId, s);
+    const shownTurn = turnOfPage(pages[clamped]);
+    if (shownTurn !== undefined) s.lastViewedTurn = shownTurn;
+    // Keep the compact/reading view when navigating: goToPage must not replace
+    // the status strip with a bare working card.
+    await publish(chatId, s, { ...s.cardView });
   };
 
   /**
@@ -821,7 +926,7 @@ ${body}
     await tg.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(() => {});
   };
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, pagePickerKeyboard, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat, cleanupCard };
+  return { addBlock, publish, goToPage, renderPage, cardKeyboard, compactCardKeyboard, pagePickerKeyboard, turnSummary, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat, cleanupCard };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };

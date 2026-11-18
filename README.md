@@ -35,13 +35,9 @@ with per-topic isolation, rich status cards and inline keyboards.
   for web debugging). OpenCode pinned to 2.3.0.
 - **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
   fork/subagent badges and background-subagent counts.
-- **Tests** — 319 Bun tests across 37 files + TypeScript typecheck.
-- **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
-  (real browser via extension) and always-on Playwright MCP (headless Chromium
-  for web debugging). OpenCode pinned to 2.3.0.
-- **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
-  fork/subagent badges and background-subagent counts.
-- **Tests** — 290 Bun tests across 35 files + TypeScript typecheck.
+- **Web app** — `/web` opens a private Mission Control page (token-protected)
+  with live session and metric data; groups get inline buttons only.
+- **Tests** — 345 Bun tests across 39 files + TypeScript typecheck.
 
 ## Quick start
 

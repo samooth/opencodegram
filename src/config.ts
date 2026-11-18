@@ -19,6 +19,11 @@ const schema = z.object({
   DEBUG: z.string().optional(),
   OPS_PORT: z.coerce.number().int().positive().default(9090),
   OPS_HOST: z.string().default("127.0.0.1"),
+  /** P2: shared token for the private Mission Control web app (disabled if unset). */
+  WEB_APP_TOKEN: z.string().min(8).optional(),
+  WEB_APP_TITLE: z.string().default("Mission Control"),
+  /** Public base URL for the private web app (defaults to the ops host/port). */
+  WEB_APP_URL: z.string().url().optional(),
   DISK_GUARD_MIN_FREE_MB: z.coerce.number().int().positive().default(2048),
   AUTO_RETRY_ENABLED: z.string().optional().default("true").transform((v) => v === "true" || v === "1"),
   AUTO_RETRY_MAX_ATTEMPTS: z.coerce.number().int().min(0).default(3),

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { SettingsStore, DEFAULT_SETTINGS } from "../src/settings.js";
+import { SettingsStore, DEFAULT_SETTINGS, CARD_PRESETS, withPreset } from "../src/settings.js";
 
 const TEST_ROOT = "/tmp/opencode";
 
@@ -64,5 +64,30 @@ describe("SettingsStore", () => {
     const store = new SettingsStore(dataDir);
     (store as any).settings.set(100, { cardBehavior: "bogus" });
     expect(store.get(100).cardBehavior).toBe("fixed");
+  });
+
+  test("style presets are persisted per chat and normalize unknown names", () => {
+    const store = new SettingsStore(dataDir);
+    expect(store.get(100).cardPreset).toBe("balanced");
+    const minimal = store.applyPreset(100, "minimal");
+    expect(minimal.cardPreset).toBe("minimal");
+    expect(minimal.showThinking).toBe(false);
+    expect(minimal.cardVerbosity).toBe("low");
+    expect(store.get(200).cardPreset).toBe("balanced");
+    const reloaded = new SettingsStore(dataDir);
+    expect(reloaded.get(100).cardPreset).toBe("minimal");
+    expect(reloaded.get(100).showTools).toBe(false);
+    expect(reloaded.applyPreset(100, "bogus" as never).cardPreset).toBe("balanced");
+  });
+
+  test("presets override the relevant flags without touching unrelated ones", () => {
+    const store = new SettingsStore(dataDir);
+    store.set(100, "previewLines", 80);
+    const terminal = withPreset(store.get(100), "terminal");
+    expect(terminal.cardPreset).toBe("terminal");
+    expect(terminal.diffStyle).toBe("unified");
+    expect(terminal.shellExpanded).toBe(true);
+    expect(terminal.previewLines).toBe(80);
+    expect(CARD_PRESETS).toContain("verbose");
   });
 });

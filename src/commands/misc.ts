@@ -8,11 +8,51 @@ import { ctx } from "./shared.js";
 
 export async function cmd_start(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
-  if (text === "/start" || text === "/help") {
+  const onboarding = deps.settings.get(chatId).onboardingStep ?? 0;
+  if (text === "/start") {
+    // P2: progressive onboarding — a short demo first, then one tip each time.
+    const tips = [
+      "👋 <b>Bienvenido a opencodegram</b>\n\nDemo rápida: escribe un mensaje y verás un card con estado, acciones y recibo.\n\nPrueba <code>/status</code> para abrir el panel.",
+      "💡 <b>Tip 1:</b> en el card, <code>▾ Más</code> abre todos los controles y <code>📖 Leer</code> muestra el historial paginado.",
+      "💡 <b>Tip 2:</b> con <code>/settings</code> eliges un estilo (Minimal, Balanceado, Detallado, Terminal) y activas la celebración 🎉.",
+      "✅ <b>Ya estás listo.</b> Usa <code>/commands</code> para descubrir todo.",
+    ];
+    const tip = tips[Math.min(onboarding, tips.length - 1)];
+    deps.settings.set?.(chatId, "onboardingStep", Math.min(onboarding + 1, tips.length - 1));
+    await send(tip);
+    return true;
+  }
+  if (text === "/help") {
     await C.sendPanel(chatId, threadId);
     return true;
   }
   return false;
+}
+
+/** P2: private entry point for Mission Control. Groups only get buttons. */
+export async function cmd_web(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  if (text !== "/web") return false;
+  const token = deps.config.WEB_APP_TOKEN;
+  if (!token) {
+    await send("🎛 La web app no está configurada. Define <code>WEB_APP_TOKEN</code> en el entorno del bot.");
+    return true;
+  }
+  if (chatId < 0) {
+    // Groups: only inline buttons — no web links or tokens are shared here.
+    await send("🎛 Mission Control solo está disponible en chat privado. Aquí tienes los controles:", {
+      reply_markup: { inline_keyboard: [[
+        { text: "📊 Estado", callback_data: "panel:status" },
+        { text: "📂 Sesiones", callback_data: "panel:sessions" },
+      ]] },
+    });
+    return true;
+  }
+  const base = deps.config.WEB_APP_URL ?? `http://${deps.config.OPS_HOST}:${deps.config.OPS_PORT}`;
+  const url = `${base.replace(/\/$/, "")}/app?token=${encodeURIComponent(token)}`;
+  await send(`🎛 <b>${esc(deps.config.WEB_APP_TITLE || "Mission Control")}</b>\n<i>Panel privado con estado de sesiones y métricas en vivo.</i>`, {
+    reply_markup: { inline_keyboard: [[{ text: "🌐 Abrir Mission Control", url }]] },
+  });
+  return true;
 }
 
 export async function cmd_commands(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
@@ -63,7 +103,7 @@ export async function cmd_agents(deps: BotDeps, chatId: number, threadId: number
   if (text === "/agents" || text === "/agent") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     const directory = s.directory ?? C.config.OPENCODE_DIRECTORY;
@@ -102,12 +142,12 @@ export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number
   if (text.startsWith("/skill ")) {
     let s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("no active session. Usa /sessions para activar una o envía un mensaje para crearla.", { reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] } });
+      await send("Usa /sessions para activar una o envía un mensaje para crearla.", { reply_markup: { inline_keyboard: [[{ text: "📂 Sessions", callback_data: "panel:sessions" }, { text: "➕ New", callback_data: "panel:new" }]] } });
       return true;
     }
     const id = text.slice(7).trim();
     if (!id) {
-      await send("usage: /skill <id>");
+      await send("Uso: /skill <id>");
       return true;
     }
     try {
@@ -126,7 +166,7 @@ export async function cmd_retry(deps: BotDeps, chatId: number, threadId: number 
   if (text === "/retry" || text.startsWith("/retry ")) {
     const s = await C.resolveSessionForRetry(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     // Allow an explicit prompt: /retry <text>. Otherwise reuse the session's
@@ -190,7 +230,7 @@ export async function cmd_todos(deps: BotDeps, chatId: number, threadId: number 
   if (text === "/todos" || text.startsWith("/todos ")) {
     const s = await C.resolveSessionForRetry(chatId, threadId);
     if (!s) {
-      await send("no active session.");
+      await send("No hay sesión activa.");
       return true;
     }
     const todos = C.store.getTodos(s.sessionId);

@@ -1,6 +1,14 @@
 import type { TranscriptBlock } from "./transcript.js";
 import type { TurnActivity } from "./activity.js";
 
+/** How the session card is currently rendered (compact/reading/normal). */
+export type CardView = {
+  compact: boolean;
+  reading: boolean;
+  showResources: boolean;
+  unified: boolean;
+};
+
 export type ChatSession = {
   sessionId: string;
   directory?: string;
@@ -28,6 +36,10 @@ export type ChatSession = {
   compactionSummary?: string;
   compactionError?: string;
   cpuHistory?: number[];
+  /** P1.5: Unicode sparkline history of GPU utilisation. */
+  gpuHistory?: number[];
+  /** Accumulated session cost reported by OpenCode, when available. */
+  cost?: number;
   cardTheme?: "auto" | "light" | "dark";
   /** Parent session id when this session is a fork/subagent. */
   parentId?: string;
@@ -77,6 +89,14 @@ export type ChatSession = {
   transcriptPage?: number;
   /** True while the user has not navigated away from the latest page. */
   transcriptFollow?: boolean;
+  /** Last turn shown in the card; used for the two-line "antes…" recap. */
+  lastViewedTurn?: number;
+  /** Full keyboard shown after the user taps ▾ Más on a compact card. */
+  cardMenuExpanded?: boolean;
+  /** Reading mode shows only the paginated transcript on the same message. */
+  readingMode?: boolean;
+  /** Last view configuration published by status.publishCard. */
+  cardView?: CardView;
   /** Increments on every turn start; transcript blocks are tagged with it. */
   turnSeq?: number;
   /** Cumulative tool-call counters for the session (dashboard/stats). */

@@ -128,19 +128,20 @@ describe("handleCommand routing", () => {
     expect(await handleCommand(h.deps, 100, 10, "/read", h.send)).toBe(true);
     expect(await handleCommand(h.deps, 100, 10, "/file", h.send)).toBe(true);
     expect(h.sends).toEqual([
-      "usage: /find <text> [-a]",
-      "usage: /read <path> [start_line | summary]",
-      "usage: /file <path> (relative to the session directory)",
+      "Uso: /find <text> [-a]",
+      "Uso: /read <path> [start_line | summary]",
+      "Uso: /file <path> (relative to the session directory)",
     ]);
   });
 
   test("routes existing commands and falls through for prompts", async () => {
     const h = harness();
     expect(await handleCommand(h.deps, 100, 10, "/start", h.send)).toBe(true);
+    expect(h.sends.join("\n")).toContain("Bienvenido a opencodegram");
     expect(await handleCommand(h.deps, 100, 10, "/commands", h.send)).toBe(true);
     expect(await handleCommand(h.deps, 100, 10, "/stop", h.send)).toBe(true);
-    expect(h.calls).toEqual(["panel", "commands"]);
-    expect(h.sends).toEqual(["no active session"]);
+    expect(h.calls).toEqual(["commands"]);
+    expect(h.sends.join("\n")).toContain("No hay sesión activa");
     expect(await handleCommand(h.deps, 100, 10, "please review this", h.send)).toBe(false);
   });
 

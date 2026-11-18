@@ -129,7 +129,7 @@ export async function downloadAttachments(
  * Outcome of resolving the session for a message.
  * - `session`: the session that must receive the message.
  * - `asked`: true when the user was asked to pick a session (group with
- *   several candidates), so the caller must not print "no active session".
+ *   several candidates), so the caller must not print "No hay sesión activa".
  */
 export type SessionResolution = { session?: ChatSession; asked?: boolean };
 

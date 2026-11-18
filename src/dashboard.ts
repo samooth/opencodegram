@@ -1,3 +1,4 @@
+import type { OpenCodeBridge } from "./opencode.js";
 import type { InlineButton, InlineKeyboard } from "./apitypes.js";
 import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
@@ -11,6 +12,8 @@ export type DashboardDeps = {
   store: SessionStore;
   settings: SettingsStore;
   threadOptsFor: (s: ChatSession | undefined) => Record<string, unknown>;
+  /** Optional: used to read the accumulated session cost from OpenCode. */
+  oc?: OpenCodeBridge;
 };
 
 export type DashboardManager = ReturnType<typeof createDashboardManager>;
@@ -40,7 +43,28 @@ function turnProgressLine(s: ChatSession): string {
   return `⏳ <b>Progreso</b>: ${elapsedText}${speed}`;
 }
 
-export function createDashboardManager({ tg, store, settings, threadOptsFor }: DashboardDeps) {
+export function createDashboardManager({ tg, store, settings, threadOptsFor, oc }: DashboardDeps) {
+  /** P1.5: refresh the accumulated cost from OpenCode (cached per session). */
+  const costCache = new Map<string, { at: number; cost: number }>();
+  async function refreshCost(s: ChatSession): Promise<void> {
+    if (!oc) return;
+    const cached = costCache.get(s.sessionId);
+    if (cached && Date.now() - cached.at < 60_000) {
+      s.cost = cached.cost;
+      return;
+    }
+    try {
+      const res = await oc.client.session.get({ sessionID: s.sessionId });
+      const detail = ((res as { data?: unknown })?.data ?? res) as { cost?: number };
+      if (typeof detail.cost === "number" && Number.isFinite(detail.cost)) {
+        s.cost = detail.cost;
+        costCache.set(s.sessionId, { at: Date.now(), cost: detail.cost });
+      }
+    } catch {
+      // Cost is optional telemetry: never fail the dashboard for it.
+    }
+  }
+
   function render(s: ChatSession, chatId: number, opts?: { working?: boolean }): { html: string; keyboard: InlineKeyboard } {
     const st = settings.get(chatId);
     const header = sessionHeader(s, undefined, settings.get(chatId).showSessionNameInStatus).trimEnd();
@@ -62,6 +86,9 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
       "<hr/>",
       toolStatsLine(s),
     ];
+    if (typeof s.cost === "number" && Number.isFinite(s.cost)) {
+      lines.push(`💲 <b>Coste acumulado</b>: <code>$${s.cost.toFixed(4)}</code>`);
+    }
     if (opts?.working) {
       const progress = turnProgressLine(s);
       if (progress) lines.push(progress);
@@ -89,6 +116,7 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
     const st = settings.get(chatId);
     if (st.displayMode !== "unified") return;
     const existing = store.getDashboard(chatId, threadId);
+    await refreshCost(s);
     const rendered = render(s, chatId, opts);
     const tgOpts = { ...threadOptsFor(s), reply_markup: { inline_keyboard: rendered.keyboard } };
 
@@ -127,6 +155,7 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor }: D
     if (st.displayMode !== "unified") return;
     const existing = store.getDashboard(chatId, threadId);
     if (!existing || existing.sessionId !== s.sessionId) return;
+    await refreshCost(s);
     const rendered = render(s, chatId, opts);
     await tg
       .editRichMessage(chatId, existing.messageId, rendered.html, {
