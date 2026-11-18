@@ -92,13 +92,32 @@ describe("P1.1 compact card and reading mode", () => {
     expect(kb.flat().some((b) => b.callback_data === "menu:ses_p1")).toBe(true);
   });
 
+  test("keeps Detalles and Recursos one tap away in the compact card", () => {
+    const { transcript } = makeHarness();
+    const a = createTurnActivity();
+    a.thoughts = 1;
+    const s = makeSession({
+      lastFinalText: "respuesta",
+      activity: a,
+      cardView: { compact: true, reading: false, showResources: true, unified: false },
+    });
+    const kb = transcript.compactCardKeyboard(7, s, 0, 2);
+    expect(kb.length).toBeLessThanOrEqual(3);
+    const flat = kb.flat();
+    expect(flat.some((b) => b.text === "▾ Detalles" && b.callback_data === "activity:ses_p1")).toBe(true);
+    expect(flat.some((b) => b.text === "📊 Recursos ▾" && b.callback_data === "resources:ses_p1")).toBe(true);
+    expect(flat.some((b) => b.text === "📖 Leer")).toBe(true);
+    expect(flat.some((b) => b.text === "▾ Más")).toBe(true);
+  });
+
   test("the overflow menu reveals the full keyboard on the same card", () => {
     const { transcript } = makeHarness();
     const s = makeSession({ lastFinalText: "respuesta", cardView: { compact: true, reading: false, showResources: true, unified: false }, cardMenuExpanded: true });
     const full = transcript.cardKeyboard(7, s, 0, 4);
     const expanded = transcript.compactCardKeyboard(7, s, 0, 4);
-    expect(expanded).toEqual(full);
+    expect(expanded).not.toEqual(full);
     expect(expanded.flat().some((b) => b.text === "📂 Sesiones")).toBe(true);
+    expect(expanded.flat().some((b) => b.text === "▴ Menos" && b.callback_data === "menu:ses_p1")).toBe(true);
   });
 
   test("reading mode swaps to Volver without creating a new message", async () => {

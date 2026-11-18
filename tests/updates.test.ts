@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { processUpdate } from "../src/updates.js";
+import { dispatchPolledUpdate, processUpdate } from "../src/updates.js";
 import { SessionStore } from "../src/store.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -38,5 +38,26 @@ describe("processUpdate", () => {
     } as any;
     await processUpdate(deps, { update_id: 1 } as any);
     expect(true).toBe(true);
+  });
+
+  test("a slow callback never blocks the polling loop", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const deps = {
+      config: {},
+      store,
+      tg: { answerCallbackQuery: async () => {} },
+      files: { handleCallback: () => new Promise<void>(() => {}) },
+    } as any;
+    const update = {
+      update_id: 2,
+      callback_query: {
+        id: "cb1",
+        from: { id: 1 },
+        message: { chat: { id: 7 }, message_id: 9 },
+        data: "read:ses_x",
+      },
+    } as any;
+    // Callback updates are handed off, never awaited by the poller.
+    expect(dispatchPolledUpdate(deps, update)).toBeUndefined();
   });
 });

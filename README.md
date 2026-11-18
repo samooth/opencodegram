@@ -37,7 +37,7 @@ with per-topic isolation, rich status cards and inline keyboards.
   fork/subagent badges and background-subagent counts.
 - **Web app** — `/web` opens a private Mission Control page (token-protected)
   with live session and metric data; groups get inline buttons only.
-- **Tests** — 348 Bun tests across 39 files + TypeScript typecheck.
+- **Tests** — 350 Bun tests across 39 files + TypeScript typecheck.
 
 ## Quick start
 

@@ -26,6 +26,20 @@ export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Prom
   }
 }
 
+/**
+ * Dispatch one polled update. Callback queries are fire-and-forget: Telegram
+ * expires a callback query within seconds, so awaiting a slow handler in the
+ * polling loop makes later taps answer with "query is too old" and the button
+ * looks frozen. Messages stay ordered because they carry conversation state.
+ */
+export function dispatchPolledUpdate(deps: BotDeps, update: TelegramUpdate): Promise<void> | undefined {
+  if (update.callback_query) {
+    void processUpdate(deps, update);
+    return undefined;
+  }
+  return processUpdate(deps, update);
+}
+
 /** Telegram long-polling loop. Dispatches callbacks and messages. */
 export async function startPolling(deps: BotDeps): Promise<void> {
   const { tg, metrics, store } = deps;
@@ -79,7 +93,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
       }
       saveOffset(offset);
       metrics?.inc("updates");
-      await processUpdate(deps, u);
+      await dispatchPolledUpdate(deps, u);
     }
   }
 }

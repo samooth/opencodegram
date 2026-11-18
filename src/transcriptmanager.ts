@@ -523,7 +523,12 @@ ${body}
       }
       return rows;
     }
-    if (!view.compact || s.cardMenuExpanded) return cardKeyboard(chatId, s, page, total, opts);
+    if (!view.compact || s.cardMenuExpanded) {
+      if (!view.compact || view.reading) return cardKeyboard(chatId, s, page, total, opts);
+      const expanded = cardKeyboard(chatId, s, page, total, opts);
+      expanded.push([{ text: "▴ Menos", callback_data: `menu:${s.sessionId}` }]);
+      return expanded;
+    }
     const full = cardKeyboard(chatId, s, page, total, opts);
     // cardKeyboard starts with navigation; lift the state's primary row to the
     // top so the compact card still follows "one obvious action first".
@@ -542,6 +547,22 @@ ${body}
       rows.push(nav);
     }
     const more: InlineButton[] = [];
+    // P1.1 regresion fix: the two everyday toggles stay one tap away in the
+    // compact card; only the long tail lives behind ▾ Más.
+    const a = s.activity;
+    const hasActivity = !!a && a.thoughts + a.reads + a.searches + a.edits + a.shells + a.tools > 0;
+    if (hasActivity) {
+      more.push({
+        text: s.activityExpanded ? "▴ Ocultar" : "▾ Detalles",
+        callback_data: `activity:${s.sessionId}`,
+      });
+    }
+    if (!view.unified) {
+      more.push({
+        text: s.resourcesCollapsed ? "📊 Recursos ▴" : "📊 Recursos ▾",
+        callback_data: `resources:${s.sessionId}`,
+      });
+    }
     if (s.lastFinalText) more.push({ text: "📖 Leer", callback_data: `read:${s.sessionId}` });
     more.push({ text: "▾ Más", callback_data: `menu:${s.sessionId}` });
     rows.push(more);
