@@ -172,7 +172,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const LAYOUT_LIMIT = view.compact ? 1200 : 3900;
     const all = blocksOf(s);
     const pages = paginateTranscript(all);
-    const header = `<h3>${sessionHeader(s).trimEnd()}</h3>`;
+    const header = `<p>${sessionHeader(s)}</p>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
     const extraTop = view.compact ? clampText(opts.extraTop ?? "", 600) : (opts.extraTop ?? "");
@@ -185,7 +185,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
      */
     const fit = (headParts: string[], blocks: TranscriptBlock[]): string => {
       const tailParts = [extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
-      const headFixed = [...headParts, extraTop].filter(Boolean).join("\n\n");
+      const headFixed = [...headParts, extraTop].filter(Boolean).join("<br/>");
       const tailFixed = tailParts.join("\n\n");
       // Account for the joins, the `<hr/>` separator and the truncation ellipsis.
       const budget = Math.max(0, LAYOUT_LIMIT - headFixed.length - tailFixed.length - 20);

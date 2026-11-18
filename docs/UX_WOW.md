@@ -7,7 +7,7 @@
 ## Estado
 
 **P0, P1 y P2 completados** (18 nov 2026). Validado con `bun run typecheck`,
-`bun test` (358 tests en 39 archivos) y `bun run build`.
+`bun test` (359 tests en 39 archivos) y `bun run build`.
 
 ## Principios
 

@@ -123,7 +123,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
     return {
-      top: lines.join("\n\n"),
+      top: lines.join("<br/>"),
       // Indicators (resources) and buttons are appended by publishCard below
       // extraBottom, so they stay at the very bottom of the card.
       bottom: "",
@@ -157,7 +157,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       if (other) parts.push(`${other} herramientas`);
       lines.push(`<p><i>🔧 ${parts.join(" · ")}</i></p>`);
     }
-    return lines.join("\n");
+    return lines.join("<br/>");
   };
 
   /**

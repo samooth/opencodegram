@@ -205,13 +205,19 @@ export function sessionHeader(session?: { sessionId?: string; topicTitle?: strin
   const sid = (session?.sessionId ?? fallbackId ?? "").trim();
   if (!sid) return "";
   const short = sid.slice(0, 8);
-  if (!showName) return `📌 <code>${esc(short)}</code>\n\n`;
+  // Telegram rich HTML collapses bare "\n"; use explicit <br/> separators.
+  // Session name and model get their own lines for readability.
+  if (!showName) return `📌 <code>${esc(short)}</code><br/><br/>`;
   let name = (session?.topicTitle ?? "").trim();
   if (!name && session?.directory) name = session.directory.split("/").filter(Boolean).pop() || "";
   if (!name) name = sid.slice(0, 16);
-  const model = session?.model?.id ? ` · 🧠 ${esc(session.model.providerID ?? "")}/${esc(session.model.id)}${session.model.variant ? ` (${esc(session.model.variant)})` : ""}` : "";
-  const fork = session?.parentId ? ` 🔀 fork <code>${esc(session.parentId.slice(0, 8))}</code>` : "";
-  return `📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>${model}${fork}\n\n`;
+  const parts = [`📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>`];
+  const model = session?.model?.id
+    ? `🧠 <code>${esc(session.model.providerID ?? "")}/${esc(session.model.id)}</code>${session.model.variant ? ` (${esc(session.model.variant)})` : ""}`
+    : "";
+  if (model) parts.push(model);
+  if (session?.parentId) parts.push(`🔀 fork <code>${esc(session.parentId.slice(0, 8))}</code>`);
+  return parts.join("<br/>") + "<br/><br/>";
 }
 
 export function toolIcon(name: string): string {

@@ -8,6 +8,8 @@ import { DEFAULT_SETTINGS } from "../src/settings.js";
 import { createTurnActivity, recordThought, recordTool, finishTool } from "../src/activity.js";
 import { renderResourceBlock } from "../src/resources.js";
 import { webAppHtml, createOpsServer } from "../src/ops.js";
+import { sessionHeader } from "../src/util.js";
+import { renderTurnReceipt } from "../src/status-render.js";
 import type { ChatSession } from "../src/types.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -59,6 +61,25 @@ function assertAccessible(html: string, label: string) {
   // esc() escapes user content; nothing should inject a raw script.
   expect(html).not.toContain("<script>");
 }
+
+describe("message layout", () => {
+  test("session name, model and receipt lines are separated with <br/>", () => {
+    const s = makeSession({
+      topicTitle: "opencodegram",
+      model: { id: "hy4-flash-free", providerID: "opencode", variant: "high" },
+    });
+    const header = sessionHeader(s);
+    expect(header).toContain("📌 <b>opencodegram</b> · <code>ses_gold</code><br/>🧠 <code>opencode/hy4-flash-free</code> (high)");
+    const receipt = renderTurnReceipt({
+      stopped: false,
+      telemetry: ["⏱ 40s", "35% ctx"],
+      test: { command: "bun test", ok: true, count: 3 },
+    });
+    expect(receipt).toContain("✅ <b>Listo</b><br/><i>⏱ 40s · 35% ctx</i>");
+    expect(receipt).toContain("<br/>🧪 <code>bun test</code> · 3 ✓");
+    expect(receipt).not.toMatch(/\n/);
+  });
+});
 
 describe("callback ack", () => {
   test("the same tap is answered once even if several handlers call back", async () => {
