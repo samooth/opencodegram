@@ -134,6 +134,30 @@ describe("handleCommand routing", () => {
     ]);
   });
 
+  test("/stop closes the turn with finishStatus, not a working republish", async () => {
+    const { cmd_stop } = await import("../src/commands/sessions.js");
+    const calls: string[] = [];
+    const s = { sessionId: "ses_stop", stopped: false, statusMessageId: 12, statusTimer: setInterval(() => {}, 100000) } as any;
+    clearInterval(s.statusTimer);
+    s.statusTimer = undefined;
+    const deps = {
+      config: {},
+      store: { getActiveSession: () => s },
+      sessions: { restoreActiveSession: async () => s },
+      oc: { interrupt: async () => {} },
+      status: {
+        finishStatus: async () => { calls.push("finish"); },
+        updateStatus: async () => { calls.push("update"); },
+      },
+      panels: {},
+      autoretry: {},
+    } as any;
+    const send: SendFn = async () => {};
+    expect(await cmd_stop(deps, 100, undefined, "/stop", send)).toBe(true);
+    expect(s.stopped).toBe(true);
+    expect(calls).toEqual(["finish"]);
+  });
+
   test("routes existing commands and falls through for prompts", async () => {
     const h = harness();
     expect(await handleCommand(h.deps, 100, 10, "/start", h.send)).toBe(true);

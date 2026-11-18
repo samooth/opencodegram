@@ -63,6 +63,21 @@ export function resolveRepoDirectory(config: Config | Record<string, unknown>, n
   return full;
 }
 
+export function confineSessionDirectory(config: Config | Record<string, unknown>, input?: string): string {
+  const root = resolve(getReposDirectory(config) ?? (config as Config).OPENCODE_DIRECTORY ?? process.cwd());
+  if (!input) return root;
+  const expanded = input.replace(/^~(?=\/|$)/, process.env.HOME ?? process.env.USERPROFILE ?? "");
+  const full = resolve(root, expanded);
+  if (full === root || full.startsWith(root + sep)) {
+    try {
+      if (statSync(full).isDirectory()) return full;
+    } catch {
+      // fall through to the configured root
+    }
+  }
+  return root;
+}
+
 export function createSessionManager({ config, tg, oc, store, settings, dashboard, topicsEnabled, finishStatus, cleanupCard }: SessionsDeps) {
   const {
     sessionsByChat,
@@ -167,17 +182,10 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
         : directoryInput
           ? directoryInput.directory ?? directoryInput.dir ?? directoryInput.path ?? directoryInput.repo
           : undefined;
-    if (normalizedDir) {
-      const reposRoot = getReposDirectory(config);
-      if (reposRoot && !normalizedDir.includes(sep) && !normalizedDir.startsWith("/") && !normalizedDir.startsWith("~")) {
-        // Treat a bare repo name as a folder under the configured repos directory.
-        directory = resolve(reposRoot, normalizedDir);
-      } else {
-        directory = resolve(normalizedDir.replace(/^~(?=\/|$)/, process.env.HOME ?? process.env.USERPROFILE ?? ""));
-      }
-    } else {
-      directory = config.OPENCODE_DIRECTORY ?? process.cwd();
-    }
+    // Any user-supplied directory is confined to REPOS_DIRECTORY (or the
+    // configured OpenCode directory). Without this, `/new /` or `/new ~/.ssh`
+    // would make the whole filesystem "inside" the session's safe path.
+    directory = confineSessionDirectory(config, normalizedDir);
     let model: { id: string; providerID: string; variant?: string } | undefined;
     try {
       const sessions = await oc.client.session.list();

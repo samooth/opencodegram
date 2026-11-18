@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../src/store.js";
-import { createSessionManager } from "../src/sessions.js";
+import { createSessionManager, confineSessionDirectory } from "../src/sessions.js";
 import { createTurnActivity, recordThought } from "../src/activity.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -40,6 +40,23 @@ function makeHarness() {
   const sessions = createSessionManager({ config: { OPENCODE_DIRECTORY: root } as any, tg, oc, store, topicsEnabled: false, finishStatus, cleanupCard });
   return { store, tg, oc, sessions, cleaned };
 }
+
+describe("confineSessionDirectory", () => {
+  test("accepts a repo name under REPOS_DIRECTORY and rejects absolute escapes", () => {
+    mkdirSync(join(root, "repos", "proyecto"), { recursive: true });
+    const config = { REPOS_DIRECTORY: join(root, "repos"), OPENCODE_DIRECTORY: root } as any;
+    expect(confineSessionDirectory(config, "proyecto")).toBe(join(root, "repos", "proyecto"));
+    expect(confineSessionDirectory(config, "/etc")).toBe(join(root, "repos"));
+    expect(confineSessionDirectory(config, "~/.ssh")).toBe(join(root, "repos"));
+    expect(confineSessionDirectory(config, "../../etc")).toBe(join(root, "repos"));
+    expect(confineSessionDirectory(config)).toBe(join(root, "repos"));
+  });
+
+  test("falls back to the configured directory when no repo root exists", () => {
+    const config = { OPENCODE_DIRECTORY: root } as any;
+    expect(confineSessionDirectory(config, "/etc")).toBe(root);
+  });
+});
 
 describe("sessions restoreActiveSession", () => {
   test("returns undefined when no binding exists for the route", async () => {

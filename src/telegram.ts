@@ -87,6 +87,11 @@ export class TelegramClient {
     return Date.now() < until;
   }
 
+  /** Milliseconds timestamp until which editMessageText is suppressed by 429 backoff. */
+  editBackoffUntil(chatId: number): number {
+    return this.editBackoff.get(chatId) ?? 0;
+  }
+
   private setEditBackoff(chatId: number, ms: number): void {
     const until = Date.now() + ms;
     const prev = this.editBackoff.get(chatId) ?? 0;

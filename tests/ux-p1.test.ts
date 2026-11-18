@@ -158,6 +158,20 @@ describe("P1.3 turn navigation", () => {
     expect(html).not.toContain("📄");
   });
 
+  test("goToPage shows the 'Antes…' recap from the turn being left", async () => {
+    const { transcript, edited } = makeHarness();
+    const s = makeSession({ transcriptMessageId: 55, transcriptPage: 1 });
+    s.turnSeq = 1;
+    transcript.addBlock(s, "answer", "<p>resultado anterior</p>", "resultado anterior");
+    s.turnSeq = 2;
+    transcript.addBlock(s, "answer", "<p>resultado nuevo</p>", "resultado nuevo");
+    await transcript.goToPage(7, s, 0);
+    const html = String(edited.at(-1)?.[2] ?? "");
+    expect(html).toContain("Antes…");
+    expect(html).toContain("resultado nuevo");
+    expect(s.lastViewedTurn).toBe(1);
+  });
+
   test("navigating to another turn adds a two-line 'antes…' recap", async () => {
     const { transcript } = makeHarness();
     const s = makeSession();
@@ -235,6 +249,48 @@ describe("P1.4 PR-style diff review", () => {
     expect(await status.sendPatch(7, 555)).toBe(true);
     expect(sent[0][2]).toMatch(/\.patch$/);
     expect(sent[0][3]).toContain("git apply");
+  });
+});
+
+describe("audit fixes", () => {
+  test("startStatus clears the previous turn's detail message", async () => {
+    const store = { lastPromptBySession: new Map(), getTodos: () => [], beginTurn: () => {} } as any;
+    const transcript = {
+      publish: async () => 1,
+      addBlock: () => {},
+      refloat: async () => 1,
+    } as any;
+    const status = createStatusManager({
+      tg: {} as any,
+      threadOptsFor: () => ({}),
+      getSettings: () => DEFAULT_SETTINGS,
+      pendingEdits: new Map(),
+      rememberCot: () => {},
+      rememberStatusMessage: () => {},
+      forgetStatusMessage: () => {},
+      store,
+      transcript,
+    } as any);
+    const s = makeSession({ detailMessageId: 999 });
+    await status.startStatus(7, s);
+    expect(s.detailMessageId).toBeUndefined();
+  });
+
+  test("a 429 backoff does not mark the page as published", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const edits: any[] = [];
+    const tg = {
+      editMessageReplyMarkup: async () => ({}),
+      sendRichMessage: async () => ({ message_id: 1 }),
+      editRichMessage: async (...args: any[]) => { edits.push(args); return undefined; },
+      editBackoffUntil: () => Date.now() + 5000,
+    } as any;
+    const transcript = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession({ transcriptMessageId: 55, transcriptPage: 0 });
+    transcript.addBlock(s, "answer", "<p>nuevo</p>", "nuevo");
+    await transcript.publish(7, s, { extraTop: "recibo", working: false });
+    expect(edits).toHaveLength(0);
+    expect(s.transcriptPage).toBe(0);
   });
 });
 

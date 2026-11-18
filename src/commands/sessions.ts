@@ -64,9 +64,10 @@ export async function cmd_stop(deps: BotDeps, chatId: number, threadId: number |
       }
       cancelAutoRetry(s.sessionId);
       await C.oc.interrupt(s.sessionId);
-      if (s.statusMessageId) {
-        await C.updateStatus(chatId, s, true).catch(() => {});
-      }
+      // Close the turn like the ⏹ Detener button does: finishStatus renders
+      // "⏹ Detenido" and removes the Stop button. updateStatus would republish
+      // a still-working card with the Stop button intact.
+      await C.finishStatus(chatId, s).catch(() => {});
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }

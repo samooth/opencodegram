@@ -569,6 +569,8 @@ ${body}
     return rows.filter((row) => row.length > 0);
   };
 
+  const publishTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
   /**
    * Push the current page to Telegram, editing the existing card when
    * possible so no new message is created.
@@ -582,6 +584,21 @@ ${body}
   ): Promise<void> => {
     const rendered = renderPage(s, opts);
     if (!rendered) return;
+    // During a 429 backoff editMessageText is a no-op. Do NOT mark the page as
+    // published: keep the old state and retry once the backoff expires.
+    const until = (tg as unknown as { editBackoffUntil?: (chatId: number) => number }).editBackoffUntil?.(chatId) ?? 0;
+    if (until > Date.now()) {
+      const key = `${chatId}:${s.sessionId}`;
+      if (!publishTimers.has(key)) {
+        const timer = setTimeout(() => {
+          publishTimers.delete(key);
+          void publish(chatId, s, opts).catch(() => {});
+        }, Math.max(50, until - Date.now() + 100));
+        if (typeof timer.unref === "function") timer.unref();
+        publishTimers.set(key, timer);
+      }
+      return;
+    }
     const cleanHtml = renderPage(s, { ...opts, showResources: false })?.html ?? rendered.html;
     const tgOpts = threadOptsFor(s);
     const keyboard = { inline_keyboard: compactCardKeyboard(chatId, s, rendered.page, rendered.total, opts) };
@@ -641,13 +658,19 @@ ${body}
     const pages = paginateTranscript(blocksOf(s));
     if (!pages.length) return;
     const clamped = Math.min(Math.max(0, page), pages.length - 1);
+    const shownTurn = turnOfPage(pages[clamped]);
+    // renderPage shows "Antes…" when lastViewedTurn differs from the page's
+    // turn. Capture the turn we are leaving, render with it, then move the
+    // marker after publishing so the recap appears only once.
+    const currentIndex = s.transcriptPage ?? pages.length - 1;
+    const previousTurn = s.lastViewedTurn ?? turnOfPage(pages[currentIndex]);
+    s.lastViewedTurn = previousTurn;
     s.transcriptPage = clamped;
     s.transcriptFollow = clamped === pages.length - 1;
-    const shownTurn = turnOfPage(pages[clamped]);
-    if (shownTurn !== undefined) s.lastViewedTurn = shownTurn;
     // Keep the compact/reading view when navigating: goToPage must not replace
     // the status strip with a bare working card.
     await publish(chatId, s, { ...s.cardView });
+    if (shownTurn !== undefined) s.lastViewedTurn = shownTurn;
   };
 
   /**

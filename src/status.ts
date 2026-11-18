@@ -219,6 +219,9 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.readingMode = false;
     s.cardMenuExpanded = false;
     s.lastViewedTurn = undefined;
+    // A detail drill-down belongs to one turn's edit snapshot. Keeping the old
+    // message id makes later turns edit that stale message with new diffs.
+    s.detailMessageId = undefined;
     if (s.resourcesCollapsed === undefined) s.resourcesCollapsed = true;
     s.turnOutputTokens = 0;
     s.turnFirstStreamedAt = undefined;
