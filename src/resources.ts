@@ -98,16 +98,14 @@ export function readMemoryPercent(): number {
   return percent;
 }
 
-/** P1.5: Unicode sparkline from a bounded history of 0–100 samples. */
-export function sparkline(values: number[] | undefined, max = 100): string {
-  const data = (values ?? []).slice(-16);
-  if (!data.length) return "";
-  const glyphs = "▁▂▃▄▅▆▇█";
-  return data.map((v) => {
-    const clamped = Math.max(0, Math.min(max, v));
-    const idx = Math.min(glyphs.length - 1, Math.floor((clamped / max) * glyphs.length));
-    return glyphs[idx];
-  }).join("");
+/** Compact token label for the CTX line: 354k, 128k, 1M. */
+function compactTokens(value: number): string {
+  if (value >= 1_000_000) {
+    const rounded = Math.round((value / 1_000_000) * 10) / 10;
+    return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}M`;
+  }
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(value);
 }
 
 /**
@@ -136,25 +134,23 @@ export function renderResourceBlock(s: ChatSession, opts: { history?: number } =
   const memBar = progressBar(memPercent, 10, theme);
   const memTrend = s.memHistory.length >= 2 ? (s.memHistory[s.memHistory.length - 2] > memPercent ? " ↓" : s.memHistory[s.memHistory.length - 2] < memPercent ? " ↑" : "") : "";
   const resourceLines: string[] = [];
-  resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend} ${sparkline(s.cpuHistory)}`);
-  resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend} ${sparkline(s.memHistory)}`);
+  resourceLines.push(`CPU ${cpuBar} ${cpuPercent}%${cpuTrend}`);
+  resourceLines.push(`RAM ${memBar} ${memPercent}%${memTrend}`);
   const usage = contextUsage(s.lastContextTokens, s.contextWindow);
   if (usage) {
-    // Never clamp: >100% is a real signal (stale window or over-limit context).
+    // Same bar as CPU/RAM; the compact total and the percentage go at the end.
+    const ctxBar = progressBar(Math.min(100, usage.percent), 10, theme);
     const flag = usage.over ? "⚠ " : "";
-    resourceLines.push(`CTX ${flag}${usage.percent}% (${s.lastContextTokens!.toLocaleString()} / ${s.contextWindow!.toLocaleString()} tok)`);
+    resourceLines.push(`CTX ${ctxBar} ${compactTokens(s.lastContextTokens!)} / ${compactTokens(s.contextWindow!)} (${flag}${usage.percent}%)`);
   } else if (typeof s.lastContextTokens === "number" && s.lastContextTokens > 0) {
-    resourceLines.push(`CTX ${s.lastContextTokens.toLocaleString()} tok`);
+    resourceLines.push(`CTX ${compactTokens(s.lastContextTokens)}`);
   }
   const gpu = gpuNow;
   if (gpu) {
     const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
     const vramBar = progressBar(vramPercent, 10, s.cardTheme ?? "auto");
     const tempStr = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
-    resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}${tempStr} ${sparkline(s.gpuHistory)}`);
-    if (!s.gpuHistory) s.gpuHistory = [];
-    s.gpuHistory.push(gpu.util);
-    while (s.gpuHistory.length > limit) s.gpuHistory.shift();
+    resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}${tempStr}`);
     resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
     resourceLines.push(`Load ${progressBar(gpu.util, 10, s.cardTheme ?? "auto")} ${gpu.util}%`);
   }

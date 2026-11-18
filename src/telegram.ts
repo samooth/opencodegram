@@ -3,6 +3,15 @@ import { noteTelegramFailure, noteTelegramSuccess } from "./ratethrottle.js";
 
 const API = "https://api.telegram.org";
 
+/** Calls that must answer a human tap quickly; no internal retry storm. */
+const INTERACTIVE_METHODS = new Set([
+  "answerCallbackQuery",
+  "editMessageText",
+  "editMessageReplyMarkup",
+  "sendMessage",
+  "deleteMessage",
+]);
+
 /** Fatal chat-level errors: the chat cannot receive anything anymore. */
 function chatIsGone(description: string): boolean {
   return /chat not found|chat not exists|chat was upgraded|bot was kicked|bot was blocked|kicked from the group chat/i.test(description);
@@ -103,7 +112,12 @@ export class TelegramClient {
     const chatId = Number((body as { chat_id?: unknown } | undefined)?.chat_id);
     // Timeout: long-poll (getUpdates) gets body.timeout + 10s; others 30s.
     const bodyTimeout = Number((body as { timeout?: unknown } | undefined)?.timeout);
-    const timeoutMs = Number.isFinite(bodyTimeout) && bodyTimeout > 0 ? (bodyTimeout + 10) * 1000 : 30000;
+    // Interactive calls (toasts, card edits, /ls answers) must fail fast: a
+    // 30 s timeout plus five retries can hold a tap for minutes.
+    const interactive = INTERACTIVE_METHODS.has(method);
+    const timeoutMs = interactive
+      ? 10_000
+      : Number.isFinite(bodyTimeout) && bodyTimeout > 0 ? (bodyTimeout + 10) * 1000 : 30000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let res: Response;
@@ -157,7 +171,7 @@ export class TelegramClient {
       // getUpdates uses long-polling and must keep retrying through outages.
       // getUpdates is handled by the poll loop (with its own backoff); do not
       // retry internally, otherwise a single outage stalls polling for minutes.
-      const maxAttempts = method === "getUpdates" ? 1 : 5;
+      const maxAttempts = method === "getUpdates" ? 1 : interactive ? 1 : 5;
       if (isRetryableTransient && attempt < maxAttempts) {
         const wait = Math.min(30000, 1000 * Math.pow(2, attempt));
         if (method !== "getUpdates") {
@@ -166,7 +180,7 @@ export class TelegramClient {
         await new Promise((r) => setTimeout(r, wait));
         return this.call<T>(method, body, attempt + 1);
       }
-      if (json.error_code === 429 && attempt < 3 && !isEdit) {
+      if (json.error_code === 429 && attempt < 3 && !isEdit && !interactive) {
         const wait = (json.parameters?.retry_after ?? 1) * 1000;
         await new Promise((r) => setTimeout(r, wait));
         return this.call<T>(method, body, attempt + 1);
@@ -393,7 +407,18 @@ export class TelegramClient {
     return this.call<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
   }
 
+  private answeredCallbacks = new Set<string>();
+
   answerCallbackQuery(callbackQueryId: string, text?: string, opts: { show_alert?: boolean } = {}): Promise<boolean> {
+    // A callback query can only be answered once. Several code paths answer
+    // the same tap; the duplicates surface as "query is too old" and make the
+    // UI look stuck. Drop them here, centrally, for every caller.
+    if (this.answeredCallbacks.has(callbackQueryId)) return Promise.resolve(true);
+    this.answeredCallbacks.add(callbackQueryId);
+    if (this.answeredCallbacks.size > 5000) {
+      const oldest = this.answeredCallbacks.values().next().value;
+      if (oldest !== undefined) this.answeredCallbacks.delete(oldest);
+    }
     return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text, ...opts });
   }
 

@@ -7,7 +7,7 @@
 ## Estado
 
 **P0, P1 y P2 completados** (18 nov 2026). Validado con `bun run typecheck`,
-`bun test` (356 tests en 39 archivos) y `bun run build`.
+`bun test` (358 tests en 39 archivos) y `bun run build`.
 
 ## Principios
 
@@ -88,7 +88,7 @@
 
 ### P1.5 Mission control
 - [x] Chips de sesión con estado real (🟢/⚪/🔴) y tap para conectar.
-- [x] Sparklines Unicode para CPU/RAM/GPU.
+- [ ] Sparklines Unicode para CPU/RAM/GPU — desactivadas a petición del usuario; se conservan barras y flecha de tendencia.
 - [x] Coste acumulado si el modelo expone precios.
 
 ### P1.6 Presets de estilo

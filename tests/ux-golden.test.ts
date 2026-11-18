@@ -6,7 +6,7 @@ import { createTranscriptManager } from "../src/transcriptmanager.js";
 import { createStatusManager } from "../src/status.js";
 import { DEFAULT_SETTINGS } from "../src/settings.js";
 import { createTurnActivity, recordThought, recordTool, finishTool } from "../src/activity.js";
-import { sparkline, renderResourceBlock } from "../src/resources.js";
+import { renderResourceBlock } from "../src/resources.js";
 import { webAppHtml, createOpsServer } from "../src/ops.js";
 import type { ChatSession } from "../src/types.js";
 
@@ -59,6 +59,18 @@ function assertAccessible(html: string, label: string) {
   // esc() escapes user content; nothing should inject a raw script.
   expect(html).not.toContain("<script>");
 }
+
+describe("callback ack", () => {
+  test("the same tap is answered once even if several handlers call back", async () => {
+    const { TelegramClient } = await import("../src/telegram.js");
+    const client = new TelegramClient("token");
+    const calls: any[] = [];
+    (client as any).call = async (method: string, body: unknown) => { calls.push({ method, body }); return true; };
+    await client.answerCallbackQuery("cb-1");
+    await client.answerCallbackQuery("cb-1", "otro toast");
+    expect(calls).toHaveLength(1);
+  });
+});
 
 describe("P2 golden UX states", () => {
   test("working card: state, telemetry, compact activity and primary action", async () => {
@@ -193,14 +205,23 @@ describe("P1.5 resources and web app", () => {
   test("CTX never clamps an over-limit window; it flags it", () => {
     const s = makeSession({ lastContextTokens: 247_758, contextWindow: 200_000, cpuHistory: [23], memHistory: [57] });
     const text = renderResourceBlock(s, { history: 12 }).replace(/<[^>]+>/g, "");
-    expect(text).toContain("CTX ⚠ 124% (247,758 / 200,000 tok)");
-    expect(text).not.toContain("CTX 100%");
+    expect(text).toContain("CTX ");
+    expect(text).toContain("248k / 200k (⚠ 124%)");
+    expect(text).not.toContain("CTX ⚠ 124% (247,758");
   });
 
-  test("sparkline maps samples to Unicode blocks and stays bounded", () => {
-    expect(sparkline([])).toBe("");
-    expect(sparkline([0, 100])).toBe("▁█");
-    expect(sparkline(Array.from({ length: 30 }, (_, i) => i * 3))).toHaveLength(16);
+  test("resource indicators have no decorative sparkline tail", () => {
+    const s = makeSession({ cpuHistory: [23], memHistory: [57] });
+    const text = renderResourceBlock(s, { history: 12 }).replace(/<[^>]+>/g, "");
+    expect(text).not.toMatch(/[▁▂▃▄▅▆▇█]/);
+    expect(text).toMatch(/^CPU [▓░●○]/m);
+    expect(text).toMatch(/^RAM [▓░●○]/m);
+  });
+
+  test("CTX uses a bar, compact totals and a trailing percentage", () => {
+    const s = makeSession({ lastContextTokens: 353_983, contextWindow: 1_048_576 });
+    const text = renderResourceBlock(s, { history: 12 }).replace(/<[^>]+>/g, "");
+    expect(text).toContain("CTX ▓▓▓░░░░░░░ 354k / 1M (34%)");
   });
 
   test("web app escapes the title and hides the token in the HTML", () => {

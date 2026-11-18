@@ -36,8 +36,6 @@ export type ChatSession = {
   compactionSummary?: string;
   compactionError?: string;
   cpuHistory?: number[];
-  /** P1.5: Unicode sparkline history of GPU utilisation. */
-  gpuHistory?: number[];
   /** Accumulated session cost reported by OpenCode, when available. */
   cost?: number;
   cardTheme?: "auto" | "light" | "dark";

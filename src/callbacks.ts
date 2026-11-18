@@ -102,7 +102,7 @@ async function handleCardView(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
   else if (action === "back") s.readingMode = false;
   else s.cardMenuExpanded = !s.cardMenuExpanded;
   await deps.tg.answerCallbackQuery(cq.id, action === "read" ? "📖 Leyendo…" : action === "back" ? "⬅ Volviendo…" : "⚙️ Opciones").catch((err) => console.warn("[callbacks]", err?.message ?? err));
-  await deps.status.publishCard(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  void deps.status.publishCard(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
 /**

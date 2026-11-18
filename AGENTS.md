@@ -129,7 +129,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (356 tests across 39 files):
+`bun test` covers (358 tests across 39 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -161,7 +161,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/ux-p1.test.ts` — compact card and reading mode, live action rail,
   turn navigation, PR-style diff review and `.patch` export.
 - `tests/ux-golden.test.ts` — golden card states, accessibility checks,
-  sparklines and the private web app.
+  resource indicators and the private web app.
 - `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
