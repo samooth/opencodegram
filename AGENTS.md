@@ -125,13 +125,15 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (280 tests across 34 files):
+`bun test` covers (290 tests across 35 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
 - `tests/files.test.ts`, `tests/md-lifecycle.test.ts` — path confinement,
   symlinks, list/find/read, `/file` and create/edit/delete lifecycle of an md file.
 - `tests/filebrowser.test.ts` — listing, navigation, preview, search, expiry, documents.
+- `tests/ops.test.ts` — health/metrics endpoints, `/ready` failure and a busy ops
+  port that must not crash the daemon.
 - `tests/commands.test.ts` — command dispatch, usage, safe `/file`.
 - `tests/util.test.ts` — `:15` retry timing, mention normalization, parsing.
 - `tests/autoretry.test.ts` — bounded auto-retry, stale-prompt guard.
@@ -157,7 +159,9 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/editutil.test.ts` — edit detection, unified diffs and apply_patch parsing.
 - `tests/todos.test.ts` — per-session TODO persistence and checklist rendering.
 - `tests/picker.test.ts` — session picker ordering and empty state.
-- `tests/messages.test.ts` — group media gating and command routing.
+- `tests/messages.test.ts` — group media gating (photos/documents/voice in
+  groups and private chats), commands addressed to other bots and an
+  end-to-end `/ls` through the real file browser.
 - `tests/resources.test.ts` — resource-block rendering and cache.
 - `tests/readcache.test.ts` — text-read LRU cache.
 - `tests/tok-speed.test.ts` — accumulated turn tokens and streamed-window speed.

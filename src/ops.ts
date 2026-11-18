@@ -13,6 +13,10 @@ import { readGpuInfo } from "./resources.js";
 export type OpsServer = {
   url: string;
   stop: () => void;
+  /** Reason the HTTP listener could not bind (e.g. EADDRINUSE), if any. */
+  error: () => string | undefined;
+  /** Actual bound port (useful when listening on port 0). */
+  port: () => number | undefined;
 };
 
 export function createOpsServer(deps: {
@@ -29,6 +33,9 @@ export function createOpsServer(deps: {
   const guardPath = config.DISK_GUARD_PATH ?? process.cwd();
   const minFreeBytes = config.DISK_GUARD_MIN_FREE_MB * 1024 * 1024;
   let lastDiskAlert = 0;
+  let listening = false;
+  let boundPort: number | undefined;
+  let listenError: string | undefined;
 
   function diskInfo() {
     try {
@@ -113,15 +120,28 @@ export function createOpsServer(deps: {
     response.end("Not found");
   });
 
+  // A busy port (another instance, a leftover process) must not crash the
+  // daemon: the bot keeps working, only the health/metrics endpoints are off.
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    listenError = err.code === "EADDRINUSE"
+      ? `port ${port} already in use on ${host}`
+      : (err.message || String(err));
+    console.warn(`[ops] health endpoint disabled: ${listenError}`);
+  });
   server.listen(port, host, () => {
-    // Server started.
+    const address = server.address();
+    if (address && typeof address === "object") boundPort = address.port;
+    listening = true;
   });
 
   return {
     url: `http://${host}:${port}`,
+    error: () => listenError,
+    port: () => boundPort,
     stop: () => {
       clearInterval(interval);
-      server.close();
+      if (listening) server.close();
+      listening = false;
     },
   };
 }

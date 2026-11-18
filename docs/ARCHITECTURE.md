@@ -118,11 +118,13 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (280 tests across 34 files):
+`bun test` runs the Bun suite in `tests/` (290 tests across 35 files):
 
 - `store.test.ts` — route/tab isolation, persistence and retirement.
 - `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.
 - `filebrowser.test.ts` — listing, navigation, preview, search, expiry and documents.
+- `ops.test.ts` — health/metrics endpoints, `/ready` failure and a busy port
+  that must not crash the daemon.
 - `commands.test.ts` — command dispatch, usage and safe `/file`.
 - `util.test.ts` — `:15` retry timing, mention normalization and parsing.
 - `autoretry.test.ts` — bounded auto-retry and stale-prompt guard.
@@ -135,7 +137,8 @@
 - `summary.test.ts` — file summaries, search and tree rendering.
 - `editutil.test.ts`, `todos.test.ts`, `picker.test.ts`, `messages.test.ts`,
   `resources.test.ts`, `readcache.test.ts`, `tok-speed.test.ts` — diffs, TODOs,
-  picker, media gating, resources, read cache and token-speed calculation.
+  picker, media gating (including `/ls` end-to-end), resources, read cache and
+  token-speed calculation.
 
 `bun run typecheck` checks `src/` with `tsc --noEmit`.
 
