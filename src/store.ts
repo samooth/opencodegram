@@ -767,9 +767,10 @@ export class SessionStore {
     for (const [sid, cid] of this.chatBySession) if (cid === chatId) affected.add(sid);
     for (const [sid, info] of this.deliveryBySession) if (info.chatId === chatId) affected.add(sid);
     for (const sid of affected) {
+      // threadBySession is the binding the startup migration uses to rebuild
+      // routes; clearing it is what prevents the dead chat from coming back.
+      // chatBySession/lastChats stay as memory only (tests and /sync rely on it).
       this.threadBySession.delete(sid);
-      this.chatBySession.delete(sid);
-      this.lastChatBySession.delete(sid);
       this.deliveryBySession.delete(sid);
       const cs = this.sessionsById.get(sid);
       if (cs) {
@@ -778,8 +779,6 @@ export class SessionStore {
       }
     }
     this.saveThreads();
-    this.saveChats();
-    this.saveLastChats();
     this.saveDelivery();
     this.saveLastInteracted();
     this.saveActiveSessions();
