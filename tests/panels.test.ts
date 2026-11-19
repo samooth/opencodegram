@@ -13,8 +13,9 @@ afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
 function makeDeps() {
   const store = new SessionStore(join(root, "data"));
+  const sent: any[] = [];
   const tg = {
-    sendRichMessage: async () => ({ message_id: 1 }),
+    sendRichMessage: async (...args: any[]) => { sent.push(args); return { message_id: 1 }; },
     editRichMessage: async () => ({ message_id: 1 }),
     answerCallbackQuery: async () => {},
   } as any;
@@ -39,10 +40,17 @@ function makeDeps() {
     routeKey: store.routeKey,
     metrics: { inc: () => {}, recordError: () => {} } as any,
   });
-  return { panels, store };
+  return { panels, store, sent };
 }
 
 describe("panels", () => {
+  test("sendPanel exposes the settings button", async () => {
+    const { panels, sent } = makeDeps();
+    await panels.sendPanel(123, 456);
+    const keyboard = sent[0][2].reply_markup.inline_keyboard.flat();
+    expect(keyboard.some((b: any) => b.text === "⚙️ Ajustes" && b.callback_data === "panel:settings")).toBe(true);
+  });
+
   test("sendPanel does not throw", async () => {
     const { panels } = makeDeps();
     await panels.sendPanel(123, 456);
