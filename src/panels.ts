@@ -164,8 +164,21 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       return;
     }
     const total = filtered.length;
+    const directoryOf = (s: SessionRow): string => s.location?.directory ?? s.directory ?? "";
+    const folderOf = (s: SessionRow): string => directoryOf(s).split("/").filter(Boolean).pop() ?? "(sin carpeta)";
+    // Group sessions by the folder they belong to, then by title, so the
+    // listing reads like a repository browser instead of a flat timestamp list.
+    filtered = [...filtered].sort((a, b) => {
+      const byFolder = folderOf(a).localeCompare(folderOf(b));
+      return byFolder || (a.title ?? "").localeCompare(b.title ?? "");
+    });
     const start = page * pageSize;
     const slice = filtered.slice(start, start + pageSize);
+    const groups = new Map<string, SessionRow[]>();
+    for (const s of slice) {
+      const folder = folderOf(s);
+      groups.set(folder, [...(groups.get(folder) ?? []), s]);
+    }
     const activeId = getActiveSession(chatId, threadId)?.sessionId;
     const statusIcon = (id: string) => {
       const st = getSessionStatus ? getSessionStatus(id) : undefined;
@@ -174,10 +187,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const keyboard: InlineKeyboard = slice.map((s: SessionRow) => {
       const title = (s.title ?? "(sin título)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
-      const directory = (s.location?.directory ?? s.directory ?? "").split("/").pop() ?? "";
-      const dirSuffix = directory ? ` · ${directory}` : "";
       const mark = activeId && activeId === s.id ? " ✓" : "";
-      const label = `${statusIcon(s.id ?? "")} ${title}${model}${dirSuffix}${mark}`.slice(0, 64);
+      const label = `${statusIcon(s.id ?? "")} ${title}${model}${mark}`.slice(0, 64);
       return [{ text: label, callback_data: `use:${s.id ?? ""}` }];
     });
     const nav: InlineButton[] = [];
@@ -194,10 +205,20 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     keyboard.push(filterRow);
     if (mode !== "all") keyboard.push([{ text: "◀ Todas", callback_data: "sessions:filter:all" }]);
     keyboard.push([{ text: "➕ Nueva sesión", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    const activeLine = activeId ? `\nActiva: <code>${esc(activeId.slice(0, 8))}</code>` : "";
-    const scopeLine = filterChatId !== undefined ? "\n<i>Mostrando sesiones de este chat</i>" : "";
-    const crumb = `<i>🏠 Panel › 📂 Sesiones${mode !== "all" ? ` › ${mode}` : ""}</i>\n`;
-    await sendOrEditRich(chatId, messageId, `${crumb}<b>Sessions</b> (${start + 1}-${Math.min(start + pageSize, total)} of ${total})${activeLine}${scopeLine}\n<i>Selecciona una sesión:</i>`, {
+    const groupedLines: string[] = [];
+    for (const [folder, sessions] of groups) {
+      groupedLines.push(`📁 <b>${esc(folder)}</b>`);
+      for (const s of sessions) {
+        const title = esc((s.title ?? "(sin título)").slice(0, 60));
+        const model = s.model ? ` · <code>${esc(s.model.providerID ?? "")}/${esc(s.model.id ?? "")}</code>` : "";
+        groupedLines.push(`  ${statusIcon(s.id ?? "")} ${title}${model}`);
+      }
+    }
+    const activeLine = activeId ? `<i>Activa: <code>${esc(activeId.slice(0, 8))}</code></i>` : "";
+    const scopeLine = filterChatId !== undefined ? `<i>Sesiones de este chat</i>` : "";
+    const crumb = `<i>🏠 Panel › 📂 Sesiones${mode !== "all" ? ` › ${mode}` : ""}</i>`;
+    const header = [crumb, `<b>Sesiones</b> (${start + 1}-${Math.min(start + pageSize, total)} de ${total})`, activeLine, scopeLine].filter(Boolean).join("<br/>");
+    await sendOrEditRich(chatId, messageId, `${header}<br/>${groupedLines.join("<br/>")}`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });
