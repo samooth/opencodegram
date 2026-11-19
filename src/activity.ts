@@ -297,5 +297,5 @@ export function renderActionRail(a: TurnActivity | undefined, now = Date.now()):
     const detail = e.detail.trim() ? ` <code>${esc(truncate(e.detail.trim().replace(/[\r\n]/g, " "), 48))}</code>` : "";
     return `${status} ${ICONS[e.kind]} <b>${esc(e.label)}</b>${detail} · ${fmtDuration(e.durationMs ?? Math.max(0, now - e.at))}`;
   });
-  return `⚡ <b>Últimas acciones</b>\n${lines.join("\n")}`;
+  return `⚡ <b>Últimas acciones</b><br/>${lines.join("<br/>")}`;
 }

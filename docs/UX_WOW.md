@@ -7,7 +7,7 @@
 ## Estado
 
 **P0, P1 y P2 completados** (18 nov 2026). Validado con `bun run typecheck`,
-`bun test` (359 tests en 39 archivos) y `bun run build`.
+`bun test` (362 tests en 39 archivos) y `bun run build`.
 
 ## Principios
 
@@ -72,7 +72,7 @@
 - [x] `⬅ Volver` restaura el panel sin crear mensajes nuevos.
 
 ### P1.2 Rail de últimas 3 acciones
-- [x] Pipeline en vivo: `✅ Leer…`, `✅ Editar…`, `⏳ bun test`.
+- [x] Pipeline en vivo: `✅ Leer…`, `✅ Editar…`, `⏳ bun test` (en el detalle compacto; se retiró el rail duplicado).
 - [x] Sin progreso falso: tiempo real, última acción y tokens.
 - [x] El detalle completo sigue en `▾ Detalles`.
 

@@ -63,7 +63,7 @@ describe("P1.2 live action rail", () => {
     expect(renderActionRail(a)).toBe("");
   });
 
-  test("the live card includes the rail when enabled", async () => {
+  test("the live card shows actions once, without a duplicate rail", async () => {
     const published: any[] = [];
     const transcript = { publish: async (_c: number, _s: ChatSession, opts: any) => { published.push(opts); return 1; } } as any;
     const store = { lastPromptBySession: new Map(), getTodos: () => [], beginTurn: () => {} } as any;
@@ -76,8 +76,8 @@ describe("P1.2 live action rail", () => {
     const s = makeSession({ activity: createTurnActivity() });
     recordTool(s.activity!, "bash", "bun test", { at: 1000 });
     await status.publishCard(7, s);
-    expect(published[0].extraTop).toContain("Últimas acciones");
-    expect(published[0].extraTop).toContain("bun test");
+    expect(published[0].extraTop).toContain("Shell (1)");
+    expect(published[0].extraTop).not.toContain("Últimas acciones");
   });
 });
 

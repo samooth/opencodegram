@@ -40,6 +40,8 @@ export type PublishOpts = Partial<CardView> & {
   extraTop?: string;
   extraBottom?: string;
   working?: boolean;
+  /** The final answer is already in the strip; do not repeat it in the page. */
+  hideAnswer?: boolean;
 };
 
 const DEFAULT_VIEW: CardView = { compact: false, reading: false, showResources: true, unified: false };
@@ -172,7 +174,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const LAYOUT_LIMIT = view.compact ? 1200 : 3900;
     const all = blocksOf(s);
     const pages = paginateTranscript(all);
-    const header = `<p>${sessionHeader(s)}</p>`;
+    const header = `<p>${sessionHeader(s).replace(/(?:<br\/>)+$/, "")}</p>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
     const extraTop = view.compact ? clampText(opts.extraTop ?? "", 600) : (opts.extraTop ?? "");
@@ -185,7 +187,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
      */
     const fit = (headParts: string[], blocks: TranscriptBlock[]): string => {
       const tailParts = [extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
-      const headFixed = [...headParts, extraTop].filter(Boolean).join("<br/>");
+      const headFixed = [...headParts, extraTop].filter(Boolean).join("");
       const tailFixed = tailParts.join("\n\n");
       // Account for the joins, the `<hr/>` separator and the truncation ellipsis.
       const budget = Math.max(0, LAYOUT_LIMIT - headFixed.length - tailFixed.length - 20);
@@ -224,13 +226,16 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
+    const shownBlocks = view.hideAnswer
+      ? page.blocks.filter((b) => b.kind !== "answer")
+      : page.blocks;
     // P1.3: navigate by turn, not by raw block-page count.
     const turns = turnsOf(s);
     const pageTurn = turnOfPage(page);
     const totalTurns = turns.length || (s.turnSeq ?? 0);
     const indicator = pageTurn && totalTurns
-      ? `<i>🎯 Turno ${pageTurn}/${totalTurns}</i>`
-      : page.total > 1 ? `<i>📄 ${page.index + 1}/${page.total}</i>` : "";
+      ? `<p><i>🎯 Turno ${pageTurn}/${totalTurns}</i></p>`
+      : page.total > 1 ? `<p><i>📄 ${page.index + 1}/${page.total}</i></p>` : "";
     // Mini "previously on…" (two lines) when the user jumps to another turn.
     let recap = "";
     if (s.lastViewedTurn !== undefined && pageTurn && s.lastViewedTurn !== pageTurn) {
@@ -240,7 +245,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       }
     }
     return {
-      html: fit([header, indicator, recap].filter(Boolean), page.blocks),
+      html: fit([header, indicator, recap].filter(Boolean), shownBlocks),
       page: page.index,
       total: page.total,
     };

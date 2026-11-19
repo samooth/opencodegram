@@ -32,6 +32,7 @@ export const PRESET_SETTINGS: Record<CardPreset, Partial<ChatSettings>> = {
   minimal: {
     compactCard: true,
     showActionRail: false,
+    showFinalInCard: false,
     cardVerbosity: "low",
     showThinking: false,
     showTools: false,
@@ -48,6 +49,7 @@ export const PRESET_SETTINGS: Record<CardPreset, Partial<ChatSettings>> = {
   balanced: {
     compactCard: true,
     showActionRail: true,
+    showFinalInCard: true,
     cardVerbosity: "medium",
     showThinking: true,
     showTools: true,
@@ -64,6 +66,7 @@ export const PRESET_SETTINGS: Record<CardPreset, Partial<ChatSettings>> = {
   verbose: {
     compactCard: false,
     showActionRail: true,
+    showFinalInCard: true,
     cardVerbosity: "high",
     showThinking: true,
     showTools: true,
@@ -81,6 +84,7 @@ export const PRESET_SETTINGS: Record<CardPreset, Partial<ChatSettings>> = {
   terminal: {
     compactCard: true,
     showActionRail: true,
+    showFinalInCard: true,
     cardVerbosity: "medium",
     diffStyle: "unified",
     showShell: true,
@@ -141,6 +145,8 @@ export type ChatSettings = {
   compactCard: boolean;
   /** P1.2: show the last three actions as a live pipeline. */
   showActionRail: boolean;
+  /** Show the final answer directly in the finished card by default. */
+  showFinalInCard: boolean;
   /** P2: react with 🎉 when a turn finishes successfully. */
   celebrateOnDone: boolean;
   /** P2: onboarding step already shown to this chat. */
@@ -180,6 +186,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   cardPreset: "balanced",
   compactCard: true,
   showActionRail: true,
+  showFinalInCard: true,
   celebrateOnDone: false,
   onboardingStep: 0,
 };
@@ -301,6 +308,7 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   cardPreset: "🎛 Estilo",
   compactCard: "📏 Card compacto",
   showActionRail: "⚡ Rail de acciones",
+  showFinalInCard: "💬 Respuesta en el card",
   celebrateOnDone: "🎉 Celebración",
   onboardingStep: "🎓 Onboarding",
 };
@@ -309,7 +317,7 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
   const sections: Array<{ title: string; emoji: string; keys: Array<keyof ChatSettings> }> = [
     { title: "Modo y entrega", emoji: "🧩", keys: ["displayMode", "cardBehavior", "longAnswerDelivery", "longAnswerThreshold", "cardPreset"] },
     { title: "Accesibilidad y feedback", emoji: "♿", keys: ["celebrateOnDone"] },
-    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle", "compactCard", "showActionRail", "celebrateOnDone"] },
+    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle", "compactCard", "showActionRail", "showFinalInCard", "celebrateOnDone"] },
     { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded", "showToolInput"] },
     { title: "Archivos", emoji: "📁", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
     { title: "Voz", emoji: "🎤", keys: ["voiceTranscription"] },
@@ -424,6 +432,7 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     "showSessionNameInStatus",
     "compactCard",
     "showActionRail",
+    "showFinalInCard",
     "celebrateOnDone",
   ];
   // Two buttons per row for compactness.

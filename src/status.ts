@@ -13,7 +13,7 @@ import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.
 import type { DashboardManager } from "./dashboard.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
-import { closeOpen, createTurnActivity, renderActionRail, renderActivity } from "./activity.js";
+import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
 import { capDiff, detectTestRun, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
 
@@ -79,13 +79,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
     if (activityBlock) {
       lines.push(activityBlock);
-      // P1.2: the rail is the collapsed, always-visible view. Expanded detail
-      // already shows every action, so do not repeat it. Low verbosity keeps
-      // the card tiny and skips the rail and all details.
-      if (settings.showActionRail && settings.cardVerbosity !== "low" && !s.activityExpanded) {
-        const rail = renderActionRail(s.activity);
-        if (rail) lines.push(`<blockquote>${rail}</blockquote>`);
-      }
     } else {
       // Fallback for sessions created before per-turn activity was tracked.
       const thinking = renderThinkingBottom(s, settings);
@@ -123,7 +116,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     }
     return {
-      top: lines.join("<br/>"),
+      top: lines.join(""),
       // Indicators (resources) and buttons are appended by publishCard below
       // extraBottom, so they stay at the very bottom of the card.
       bottom: "",
@@ -149,6 +142,11 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     if (s.detached) lines.push("<p><i>🔀 Esta sesión quedó en segundo plano.</i></p>");
     const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), s.activityExpanded === true);
     if (doneActivity) lines.push(doneActivity);
+    if (settings.showFinalInCard && s.lastFinalText?.trim()) {
+      // The answer is the whole point of the turn: show it above the fold.
+      // Long answers stay reachable via 📄 Respuesta / 📖 Leer.
+      lines.push(`<h4>💬 Respuesta</h4>\n${markdownToHtml(s.lastFinalText.trim().slice(0, 1600))}`);
+    }
     if (settings.showTools && !s.activity && s.toolCallDetails.length) {
       const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;
       const other = s.toolCallDetails.length - shell;
@@ -157,7 +155,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       if (other) parts.push(`${other} herramientas`);
       lines.push(`<p><i>🔧 ${parts.join(" · ")}</i></p>`);
     }
-    return lines.join("<br/>");
+    return lines.join("");
   };
 
   /**
@@ -176,7 +174,10 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.cardView = { compact, reading, showResources: !unified, unified } satisfies CardView;
     // P1.1: the compact card keeps the receipt readable but never blows past
     // the 1.200-character budget; detail lives in ▾ Más / ▾ Detalles.
-    const cap = (html: string) => compact ? clampText(html, 650) : html;
+    // With the answer already in the strip, skip the duplicate answer block
+    // in the transcript page (the full answer stays reachable via 📖 Leer).
+    const hideAnswer = settings.showFinalInCard && !!s.lastFinalText?.trim() && !reading;
+    const cap = (html: string) => compact && !hideAnswer ? clampText(html, 650) : html;
     if (reading) {
       await transcript.publish(chatId, s, { ...s.cardView, extraTop: "", working: false });
     } else if (s.statusFinished) {
@@ -184,6 +185,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         ...s.cardView,
         extraTop: cap(renderDoneStrip(s, settings)),
         working: false,
+        hideAnswer,
       });
     } else {
       const parts = renderLiveParts(s, settings, unified);

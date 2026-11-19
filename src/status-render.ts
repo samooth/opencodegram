@@ -402,6 +402,6 @@ export function renderTurnReceipt(input: TurnReceiptInput): string {
     const count = input.test.count !== undefined ? ` · ${input.test.count} ${mark}` : ` ${mark}`;
     lines.push(`🧪 <code>${esc(input.test.command)}</code>${count}`);
   }
-  return lines.join("<br/>");
+  return `<p>${lines.join("<br/>")}</p>`;
 }
 

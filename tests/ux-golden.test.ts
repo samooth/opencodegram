@@ -62,6 +62,36 @@ function assertAccessible(html: string, label: string) {
   expect(html).not.toContain("<script>");
 }
 
+describe("final answer in card", () => {
+  test("the finished card shows the answer by default without extra blank separators", async () => {
+    const { status, published } = makeHarness();
+    const s = makeSession({ statusFinished: true, lastFinalText: "Esta es la respuesta final." });
+    await status.publishCard(7, s);
+    const html = published[0].extraTop;
+    expect(html).toContain("💬 Respuesta");
+    expect(html).toContain("Esta es la respuesta final.");
+    expect(html).not.toContain("<br/><br/>");
+    expect(published[0].hideAnswer).toBe(true);
+  });
+
+  test("the setting can disable the answer in the card", async () => {
+    const { status, published } = makeHarness({ ...DEFAULT_SETTINGS, showFinalInCard: false });
+    const s = makeSession({ statusFinished: true, lastFinalText: "Esta es la respuesta final." });
+    await status.publishCard(7, s);
+    expect(published[0].extraTop).not.toContain("💬 Respuesta");
+    expect(published[0].hideAnswer).toBe(false);
+  });
+
+  test("hideAnswer drops the duplicate answer block from the page", () => {
+    const store = new SessionStore(join(root, "data"));
+    const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
+    const s = makeSession();
+    tm.addBlock(s, "answer", "<p>texto duplicado</p>", "texto duplicado");
+    expect(tm.renderPage(s)!.html).toContain("texto duplicado");
+    expect(tm.renderPage(s, { hideAnswer: true })!.html).not.toContain("texto duplicado");
+  });
+});
+
 describe("message layout", () => {
   test("session name, model and receipt lines are separated with <br/>", () => {
     const s = makeSession({
@@ -107,8 +137,8 @@ describe("P2 golden UX states", () => {
     const html = published[0].extraTop;
     expect(html).toContain("⏳ Trabajando…");
     expect(html).toContain("⏱ 12s");
-    expect(html).toContain("Últimas acciones");
-    expect(html).toContain("✅ ✏️");
+    expect(html).toContain("Edición</b> · 1.0s ✅");
+    expect(html).not.toContain("Últimas acciones");
     expect(published[0].working).toBe(true);
     assertAccessible(html, "working");
   });
