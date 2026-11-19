@@ -110,6 +110,26 @@ describe("P1.1 compact card and reading mode", () => {
     expect(flat.some((b) => b.text === "▾ Más")).toBe(true);
   });
 
+  test("only one Detalles toggle appears in the compact keyboard", () => {
+    const { transcript } = makeHarness();
+    const a = createTurnActivity();
+    a.thoughts = 2;
+    const s = makeSession({ activity: a, cardView: { compact: true, reading: false, showResources: true, unified: false } });
+    const kb = transcript.compactCardKeyboard(7, s, 0, 1, { working: true });
+    const toggles = kb.flat().filter((b) => b.text === "▾ Detalles" || b.text === "▴ Ocultar");
+    expect(toggles).toHaveLength(1);
+  });
+
+  test("an embedded answer is not trimmed by the compact budget", () => {
+    const { transcript } = makeHarness();
+    const s = makeSession({ cardView: { compact: true, reading: false, showResources: false, unified: false } });
+    const answer = "inicio " + "x".repeat(1400) + " FINAL";
+    transcript.addBlock(s, "answer", `<p>${answer}</p>`, answer);
+    const out = transcript.renderPage(s, { extraTop: `<p>${answer}</p>`, answerInCard: true, hideAnswer: true })!;
+    expect(out.html).toContain("FINAL");
+    expect(out.html.length).toBeGreaterThan(1200);
+  });
+
   test("the overflow menu reveals the full keyboard on the same card", () => {
     const { transcript } = makeHarness();
     const s = makeSession({ lastFinalText: "respuesta", cardView: { compact: true, reading: false, showResources: true, unified: false }, cardMenuExpanded: true });

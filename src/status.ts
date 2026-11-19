@@ -137,16 +137,17 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       test,
       telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
     })];
+    if (settings.showFinalInCard && s.lastFinalText?.trim()) {
+      // The answer is the whole point of the turn: show it right below the
+      // receipt, before the activity detail. Long answers stay reachable via
+      // 📄 Respuesta / 📖 Leer.
+      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(s.lastFinalText.trim().slice(0, 2200))}`);
+    }
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<p><i>🔀 Esta sesión quedó en segundo plano.</i></p>");
     const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), s.activityExpanded === true);
     if (doneActivity) lines.push(doneActivity);
-    if (settings.showFinalInCard && s.lastFinalText?.trim()) {
-      // The answer is the whole point of the turn: show it above the fold.
-      // Long answers stay reachable via 📄 Respuesta / 📖 Leer.
-      lines.push(`<h4>💬 Respuesta</h4>\n${markdownToHtml(s.lastFinalText.trim().slice(0, 1600))}`);
-    }
     if (settings.showTools && !s.activity && s.toolCallDetails.length) {
       const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;
       const other = s.toolCallDetails.length - shell;
@@ -186,6 +187,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         extraTop: cap(renderDoneStrip(s, settings)),
         working: false,
         hideAnswer,
+        answerInCard: hideAnswer,
       });
     } else {
       const parts = renderLiveParts(s, settings, unified);

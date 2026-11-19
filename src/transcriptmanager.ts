@@ -40,6 +40,8 @@ export type PublishOpts = Partial<CardView> & {
   extraTop?: string;
   extraBottom?: string;
   working?: boolean;
+  /** The final answer lives in the strip, so the page must not trim it away. */
+  answerInCard?: boolean;
   /** The final answer is already in the strip; do not repeat it in the page. */
   hideAnswer?: boolean;
 };
@@ -171,13 +173,19 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const view = viewOf(s, opts);
     // P1.1: compact cards fit a phone screen (≤1.200 chars); reading mode and
     // the expanded view keep the original 3.900-char budget.
-    const LAYOUT_LIMIT = view.compact ? 1200 : 3900;
+    // Normally the compact card fits a phone screen (≤1.200 chars). When the
+    // final answer is embedded, raise the budget so clampText never cuts it.
+    const LAYOUT_LIMIT = view.answerInCard ? 3900 : view.compact ? 1200 : 3900;
     const all = blocksOf(s);
     const pages = paginateTranscript(all);
     const header = `<p>${sessionHeader(s).replace(/(?:<br\/>)+$/, "")}</p>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
-    const extraTop = view.compact ? clampText(opts.extraTop ?? "", 600) : (opts.extraTop ?? "");
+    // Compact mode caps the status strip, but an embedded final answer must
+    // pass through intact — that is the whole reason for showing it.
+    const extraTop = view.compact && !view.answerInCard
+      ? clampText(opts.extraTop ?? "", 600)
+      : (opts.extraTop ?? "");
     const extraBottom = opts.extraBottom ?? "";
 
     /**
@@ -410,7 +418,10 @@ ${body}
       primary.push({ text: "▶️ Continuar", callback_data: `retry:${s.sessionId}` });
       primary.push({ text: "📥 Historial", callback_data: `histfmt:${s.sessionId}` });
     } else {
-      if (s.lastFinalText) primary.push({ text: "📄 Respuesta", callback_data: `viewfull:${s.sessionId}` });
+      if (s.lastFinalText) primary.push({
+        text: view.answerInCard ? "📄 Ver completo" : "📄 Respuesta",
+        callback_data: `viewfull:${s.sessionId}`,
+      });
       if (edits.length && s.transcriptMessageId) {
         primary.push({ text: "✏️ Cambios", callback_data: `edits:full:${s.transcriptMessageId}` });
       }
@@ -556,7 +567,10 @@ ${body}
     // compact card; only the long tail lives behind ▾ Más.
     const a = s.activity;
     const hasActivity = !!a && a.thoughts + a.reads + a.searches + a.edits + a.shells + a.tools > 0;
-    if (hasActivity) {
+    // The working/error primary row already carries a Detalles toggle; never
+    // add a second one here.
+    const detailsInPrimary = primary.some((b) => b.callback_data === `activity:${s.sessionId}`);
+    if (hasActivity && !detailsInPrimary) {
       more.push({
         text: s.activityExpanded ? "▴ Ocultar" : "▾ Detalles",
         callback_data: `activity:${s.sessionId}`,
