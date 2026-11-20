@@ -304,7 +304,6 @@ export async function cmd_cancel(deps: BotDeps, chatId: number, threadId: number
 
 export async function cmd_permissions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
-  if (!text.startsWith("/permissions")) return false;
   const routeKey = deps.store.routeKey(chatId, threadId);
   const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
   const isAdmin = deps.permissions
@@ -317,34 +316,21 @@ export async function cmd_permissions(deps: BotDeps, chatId: number, threadId: n
   const parts = text.trim().split(/\s+/);
   const store = deps.permissions;
   if (parts.length === 1) {
-    const p = store ? store.get(routeKey) : { allowedUsers: [], adminUsers: [], readOnly: false, inherit: true };
-    const lines = [
-      `🔐 <b>Permisos del thread</b> <code>${esc(routeKey)}</code>`,
-      `Lectura: ${p.readOnly ? "solo lectura" : "escritura permitida"}`,
-      `Heredar allowlist: ${p.inherit ? "sí" : "no"}`,
-      `Operadores: ${p.allowedUsers.length ? p.allowedUsers.join(", ") : "(global)"}`,
-      `Admins: ${p.adminUsers.length ? p.adminUsers.join(", ") : "(global admin)"}`,
-      "",
-      "Uso:",
-      "<code>/permissions readonly on|off</code>",
-      "<code>/permissions inherit on|off</code>",
-      "<code>/permissions add &lt;id&gt; [operator|admin]</code>",
-      "<code>/permissions remove &lt;id&gt;</code>",
-    ];
-    const kb = [[{ text: p.readOnly ? "🔓 Permitir escritura" : "🔒 Solo lectura", callback_data: `permthread:readonly:${p.readOnly ? "off" : "on"}` }]];
-    await send(lines.join("\n"), { reply_markup: { inline_keyboard: kb } });
+    if (!store) { await send("Permisos no disponibles."); return true; }
+    const panel = store.renderPanel(routeKey, globalAdmin);
+    await send(panel.html, { reply_markup: { inline_keyboard: panel.keyboard } });
     return true;
   }
   if (parts[1] === "readonly" && parts[2]) {
     const v = parts[2] === "on";
     store?.setReadOnly(routeKey, v);
-    await send(`🔒 Solo lectura: ${v ? "sí" : "no"}`);
+    await send("🔒 Solo lectura: " + (v ? "sí" : "no"));
     return true;
   }
   if (parts[1] === "inherit" && parts[2]) {
     const v = parts[2] === "on";
     store?.set(routeKey, { inherit: v });
-    await send(`Heredar allowlist: ${v ? "sí" : "no"}`);
+    await send("Heredar allowlist: " + (v ? "sí" : "no"));
     return true;
   }
   if (parts[1] === "add" && parts[2]) {
@@ -352,14 +338,14 @@ export async function cmd_permissions(deps: BotDeps, chatId: number, threadId: n
     if (!Number.isFinite(id) || id <= 0) { await send("ID inválido."); return true; }
     const role = parts[3] === "admin" ? "admin" : "operator";
     store?.addUser(routeKey, id, role);
-    await send(`✅ Añadido ${id} como ${role}.`);
+    await send("✅ Añadido " + id + " como " + role + ".");
     return true;
   }
   if (parts[1] === "remove" && parts[2]) {
     const id = Number(parts[2]);
     if (!Number.isFinite(id) || id <= 0) { await send("ID inválido."); return true; }
     store?.removeUser(routeKey, id);
-    await send(`🗑 Eliminado ${id}.`);
+    await send("🗑 Eliminado " + id + ".");
     return true;
   }
   await send("Uso: /permissions [readonly on|off | inherit on|off | add <id> [operator|admin] | remove <id>]");

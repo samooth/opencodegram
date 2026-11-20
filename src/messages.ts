@@ -577,6 +577,30 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     return;
   }
 
+  // If we are awaiting a user id for permission add, capture it.
+  const permAddKey = routeKey(chatId, replyThread);
+  if (msg.text && deps.awaitingPermissionAdd?.has(permAddKey)) {
+    const pending = deps.awaitingPermissionAdd.get(permAddKey)!;
+    deps.awaitingPermissionAdd.delete(permAddKey);
+    const parts = msg.text.trim().split(/\s+/);
+    const id = Number(parts[0]);
+    const role = parts[1] === "admin" ? "admin" : "operator";
+    if (!deps.permissions) { await send("Permisos no disponibles."); return; }
+    const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
+    const isAdm = deps.permissions.isAdmin(permAddKey, userId, globalAdmin);
+    if (!isAdm) { await send("Solo admin."); return; }
+    if (!Number.isFinite(id) || id <= 0) {
+      await send("ID inválido. Formato: <code>&lt;id&gt; [operator|admin]</code>");
+      return;
+    }
+    deps.permissions.addUser(permAddKey, id, role);
+    await send(`✅ Añadido ${id} como ${role}.`);
+    // Re-show the panel.
+    const panel = deps.permissions.renderPanel(permAddKey, globalAdmin);
+    await send(panel.html, { reply_markup: { inline_keyboard: panel.keyboard } });
+    return;
+  }
+
   // Download attachments.
   let downloadResult: DownloadedAttachments;
   try {

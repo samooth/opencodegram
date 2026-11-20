@@ -39,6 +39,7 @@ const PREFIXES = [
   "panel:",
   "perm:",
   "permthread:",
+  "permui:",
   "use:",
   "spick:",
   "del:",
@@ -758,6 +759,57 @@ async function handlePermThread(deps: BotDeps, cq: TelegramCallbackQuery, chatId
   }
 }
 
+/** Button-driven granular permissions for the current thread. */
+async function handlePermUI(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  if (!data.startsWith("permui:")) return;
+  if (!deps.permissions) {
+    await deps.tg.answerCallbackQuery(cq.id, "Permisos no disponibles.").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  const routeKey = deps.store.routeKey(chatId, threadId);
+  const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
+  const userId = cq.from?.id;
+  const isAdmin = deps.permissions.isAdmin(routeKey, userId, globalAdmin);
+  if (!isAdmin) {
+    await deps.tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  const action = data.slice("permui:".length);
+  if (action === "readonly:on" || action === "readonly:off") {
+    const value = action.endsWith("on");
+    deps.permissions.setReadOnly(routeKey, value);
+    await deps.tg.answerCallbackQuery(cq.id, value ? "🔒 Solo lectura" : "🔓 Escritura permitida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  } else if (action === "inherit:on" || action === "inherit:off") {
+    const value = action.endsWith("on");
+    deps.permissions.set(routeKey, { inherit: value });
+    await deps.tg.answerCallbackQuery(cq.id, value ? "🔗 Heredar: sí" : "🔗 Heredar: no").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  } else if (action.startsWith("remove:")) {
+    const id = Number(action.slice("remove:".length));
+    if (Number.isFinite(id) && id > 0) {
+      deps.permissions.removeUser(routeKey, id);
+      await deps.tg.answerCallbackQuery(cq.id, `🗑 ${id}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    }
+  } else if (action === "add") {
+    deps.awaitingPermissionAdd?.set(routeKey, { chatId, threadId });
+    await deps.tg.answerCallbackQuery(cq.id, "Responde con: <id> [operator|admin]").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.sendRichMessage(chatId, "Responde con el ID y rol, p. ej. <code>123456 operator</code> o <code>999999 admin</code>.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  } else if (action === "refresh") {
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  } else {
+    await deps.tg.answerCallbackQuery(cq.id, "Acción desconocida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  // Re-render the panel in the same message.
+  if (messageId !== undefined) {
+    const panel = deps.permissions.renderPanel(routeKey, deps.config.ADMIN_TELEGRAM_USER_ID);
+    await deps.tg.editRichMessage(chatId, messageId, panel.html, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: panel.keyboard },
+    }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
+}
+
 async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const { tg, panels, sessions, files, oc, store, settings } = deps;
   // The pinned dashboard (M1) must not be replaced by panel views.
@@ -774,6 +826,26 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     await tg.sendRichMessage(chatId, renderSettings(chatId, s), {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: settingsKeyboard(s) },
+    });
+    return;
+  }
+  if (data === "panel:permissions") {
+    await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    if (!deps.permissions) {
+      await tg.sendRichMessage(chatId, "Permisos no disponibles.", threadOpts(threadId));
+      return;
+    }
+    const routeKey = deps.store.routeKey(chatId, threadId);
+    const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
+    const isAdmin = deps.permissions.isAdmin(routeKey, cq.from?.id, globalAdmin);
+    if (!isAdmin) {
+      await tg.sendRichMessage(chatId, "Solo el admin puede gestionar permisos.", threadOpts(threadId));
+      return;
+    }
+    const panel = deps.permissions.renderPanel(routeKey, globalAdmin);
+    await tg.sendRichMessage(chatId, panel.html, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: panel.keyboard },
     });
     return;
   }
@@ -1126,6 +1198,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "histfmt:": handleHistoryFormatPicker,
   "ops:": handleOps,
   "permthread:": handlePermThread,
+  "permui:": handlePermUI,
   "panel:": handlePanel,
   "perm:": handlePerm,
   "spick:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {

@@ -1,18 +1,15 @@
-import { mkdirSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import { readJsonSafe, writeJsonAtomic } from "./persist.js";
+import { readJsonSafe } from "./persist.js";
 import { logger } from "./logger.js";
 
 export type ThreadRole = "viewer" | "operator" | "admin";
 
 export type ThreadPermissions = {
-  /** Users who may send prompts in this thread/topic. */
   allowedUsers: number[];
-  /** Users who may manage settings, sessions and dangerous commands. */
   adminUsers: number[];
-  /** When true, nobody may prompt; the thread is read-only. */
   readOnly: boolean;
-  /** When allowedUsers is empty, fall back to the global allowlist. */
   inherit: boolean;
 };
 
@@ -23,28 +20,86 @@ export const DEFAULT_THREAD_PERMISSIONS: ThreadPermissions = {
   inherit: true,
 };
 
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS permissions (
+  route_key TEXT PRIMARY KEY,
+  read_only INTEGER NOT NULL DEFAULT 0,
+  inherit INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS permission_users (
+  route_key TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  PRIMARY KEY (route_key, user_id)
+);
+`;
+
 export class PermissionStore {
-  private readonly file: string;
-  private readonly map = new Map<string, Partial<ThreadPermissions>>();
+  private readonly db: Database;
+  private readonly jsonFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     mkdirSync(dataDir, { recursive: true });
-    this.file = join(dataDir, "permissions.json");
-    this.load();
+    this.db = new Database(join(dataDir, "permissions.db"));
+    this.db.run("PRAGMA journal_mode = WAL;");
+    this.db.run(SCHEMA);
+    this.jsonFile = join(dataDir, "permissions.json");
+    this.migrateJson();
+  }
+
+  private migrateJson(): void {
+    if (!existsSync(this.jsonFile)) return;
+    try {
+      const parsed = readJsonSafe<Record<string, Partial<ThreadPermissions>>>(this.jsonFile, "permissions");
+      if (parsed) {
+        const tx = this.db.transaction(() => {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (!k) continue;
+            this.db.run("INSERT OR REPLACE INTO permissions (route_key, read_only, inherit) VALUES (?, ?, ?)",
+              k, v?.readOnly ? 1 : 0, v?.inherit === false ? 0 : 1);
+            for (const u of v?.allowedUsers ?? []) {
+              this.db.run("INSERT OR REPLACE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", k, u, "operator");
+            }
+            for (const u of v?.adminUsers ?? []) {
+              this.db.run("INSERT OR REPLACE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", k, u, "admin");
+            }
+          }
+        });
+        tx();
+      }
+      renameSync(this.jsonFile, `${this.jsonFile}.migrated`);
+    } catch (err) {
+      logger.error("permissions", "json migration failed", err);
+    }
   }
 
   get(routeKey: string): ThreadPermissions {
-    const p = this.map.get(routeKey) ?? {};
-    const merged = { ...DEFAULT_THREAD_PERMISSIONS, ...p };
-    if (!Array.isArray(merged.allowedUsers)) merged.allowedUsers = [];
-    if (!Array.isArray(merged.adminUsers)) merged.adminUsers = [];
-    return merged;
+    const row = this.db.query("SELECT read_only, inherit FROM permissions WHERE route_key = ?").get(routeKey) as { read_only: number; inherit: number } | null;
+    const users = this.db.query("SELECT user_id, role FROM permission_users WHERE route_key = ?").all(routeKey) as { user_id: number; role: string }[];
+    return {
+      allowedUsers: users.filter((u) => u.role === "operator").map((u) => u.user_id),
+      adminUsers: users.filter((u) => u.role === "admin").map((u) => u.user_id),
+      readOnly: row?.read_only === 1,
+      inherit: row ? row.inherit === 1 : true,
+    };
   }
 
   set(routeKey: string, perms: Partial<ThreadPermissions>): ThreadPermissions {
-    const current = this.map.get(routeKey) ?? {};
-    this.map.set(routeKey, { ...current, ...perms });
-    this.save();
+    const cur = this.get(routeKey);
+    const next = { ...cur, ...perms };
+    const tx = this.db.transaction(() => {
+      this.db.run("INSERT OR REPLACE INTO permissions (route_key, read_only, inherit) VALUES (?, ?, ?)",
+        routeKey, next.readOnly ? 1 : 0, next.inherit ? 1 : 0);
+      if (perms.allowedUsers) {
+        this.db.run("DELETE FROM permission_users WHERE route_key = ? AND role = 'operator'", routeKey);
+        for (const u of next.allowedUsers) this.db.run("INSERT OR REPLACE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", routeKey, u, "operator");
+      }
+      if (perms.adminUsers) {
+        this.db.run("DELETE FROM permission_users WHERE route_key = ? AND role = 'admin'", routeKey);
+        for (const u of next.adminUsers) this.db.run("INSERT OR REPLACE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", routeKey, u, "admin");
+      }
+    });
+    tx();
     return this.get(routeKey);
   }
 
@@ -79,29 +134,46 @@ export class PermissionStore {
     const p = this.get(routeKey);
     p.allowedUsers = p.allowedUsers.filter((u) => u !== userId);
     p.adminUsers = p.adminUsers.filter((u) => u !== userId);
-    return this.set(routeKey, p);
+    // delete rows directly to handle both roles
+    this.db.run("DELETE FROM permission_users WHERE route_key = ? AND user_id = ?", routeKey, userId);
+    return this.get(routeKey);
   }
 
   setReadOnly(routeKey: string, value: boolean): ThreadPermissions {
     return this.set(routeKey, { readOnly: value });
   }
 
-  private save(): void {
-    try {
-      const obj: Record<string, Partial<ThreadPermissions>> = {};
-      for (const [k, v] of this.map) obj[k] = v;
-      writeJsonAtomic(this.file, obj, false);
-    } catch (err) {
-      logger.error("permissions", "save failed", err);
-    }
+  listUsers(routeKey: string): Array<{ userId: number; role: ThreadRole }> {
+    const users = this.db.query("SELECT user_id, role FROM permission_users WHERE route_key = ?").all(routeKey) as { user_id: number; role: string }[];
+    return users.map((u) => ({ userId: u.user_id, role: (u.role === "admin" ? "admin" : "operator") }));
   }
 
-  private load(): void {
-    const parsed = readJsonSafe<Record<string, Partial<ThreadPermissions>>>(this.file, "permissions");
-    if (!parsed) return;
-    for (const [k, v] of Object.entries(parsed)) {
-      if (k) this.map.set(k, v ?? {});
+  /** Render a button-driven panel for the current thread. */
+  renderPanel(routeKey: string, globalAdmin?: number): { html: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
+    const p = this.get(routeKey);
+    const lines = [
+      `🔐 <b>Permisos del thread</b>`,
+      `<code>${routeKey}</code>`,
+      "",
+      `Modo: ${p.readOnly ? "🔒 solo lectura" : "✏️ escritura permitida"}`,
+      `Heredar allowlist: ${p.inherit ? "sí" : "no"}`,
+      `Operadores: ${p.allowedUsers.length ? p.allowedUsers.join(", ") : "(global)"}`,
+      `Admins: ${p.adminUsers.length ? p.adminUsers.join(", ") : "(global admin)"}`,
+    ];
+    const users = this.listUsers(routeKey);
+    if (users.length) {
+      lines.push("", "<b>Usuarios:</b>");
+      for (const u of users) lines.push(`• ${u.userId} — ${u.role}`);
     }
+    const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+    keyboard.push([{ text: p.readOnly ? "🔓 Permitir escritura" : "🔒 Solo lectura", callback_data: `permui:readonly:${p.readOnly ? "off" : "on"}` }]);
+    keyboard.push([{ text: p.inherit ? "🔗 Heredar: sí" : "🔗 Heredar: no", callback_data: `permui:inherit:${p.inherit ? "off" : "on"}` }]);
+    for (const u of users) {
+      keyboard.push([{ text: `🗑 ${u.userId} (${u.role})`, callback_data: `permui:remove:${u.userId}` }]);
+    }
+    keyboard.push([{ text: "➕ Añadir usuario", callback_data: "permui:add" }]);
+    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    return { html: lines.join("\n"), keyboard };
   }
 }
 

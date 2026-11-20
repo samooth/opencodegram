@@ -247,6 +247,7 @@ async function main() {
     pendingFormsById: new Map(),
     pendingConfirmations: new Map(),
     awaitingReason: new Map(),
+    awaitingPermissionAdd: new Map(),
     modelListByChat,
     pendingModelByChat,
     pendingGroupPrompts: new Map(),

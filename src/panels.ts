@@ -471,7 +471,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const keyboard = [
       [{ text: "📂 Sesiones", callback_data: "panel:sessions" }, { text: "🧠 Modelos", callback_data: "panel:models" }, { text: "📁 Archivos", callback_data: "panel:files" }],
       [{ text: "➕ Nueva", callback_data: "panel:new" }, { text: "⚡ Comandos", callback_data: "panel:commands" }, { text: "📊 Estado", callback_data: "panel:status" }],
-      [{ text: "⏹ Detener", callback_data: "panel:stop" }, { text: "⚙️ Ajustes", callback_data: "panel:settings" }, { text: "❓ Ayuda", callback_data: "panel:help" }],
+      [{ text: "⏹ Detener", callback_data: "panel:stop" }, { text: "⚙️ Ajustes", callback_data: "panel:settings" }, { text: "🔐 Permisos", callback_data: "panel:permissions" }, { text: "❓ Ayuda", callback_data: "panel:help" }],
     ];
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }

@@ -66,6 +66,8 @@ export type BotDeps = {
   files: FileBrowser;
   /** Per-thread/topic permission store (granular ACLs). */
   permissions?: PermissionStore;
+  /** Pending permission-add capture keyed by route key. */
+  awaitingPermissionAdd?: Map<string, { chatId: number; threadId?: number }>;
   settings: SettingsStore;
   metrics: MetricsStore;
   ops?: OpsServer;
