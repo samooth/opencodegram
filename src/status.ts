@@ -56,13 +56,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    */
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
     const lines: string[] = [];
-    // 0. CoT first — the reasoning explains everything that follows, so it
-    // sits above the state header instead of after the partial answer.
-    if (!unified && settings.showCot && s.cotBuffer?.trim()) {
-      lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})
-${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
-    }
-    // 1. State next — "still working" is the most important signal at a glance.
+    // CoT belongs to the finished card only. While working it is partial and
+    // truncated, which reads as noise above the live state.
+    // 1. State — "still working" is the most important signal at a glance.
     lines.push(
       s.stopped
         ? "<h4>⏹ Detenido</h4>"
