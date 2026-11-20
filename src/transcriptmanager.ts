@@ -42,8 +42,6 @@ export type PublishOpts = Partial<CardView> & {
   working?: boolean;
   /** The final answer lives in the strip, so the page must not trim it away. */
   answerInCard?: boolean;
-  /** The final answer is already in the strip; do not repeat it in the page. */
-  hideAnswer?: boolean;
 };
 
 const DEFAULT_VIEW: CardView = { compact: false, reading: false, showResources: true, unified: false };
@@ -177,15 +175,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // final answer is embedded, raise the budget so clampText never cuts it.
     const LAYOUT_LIMIT = view.answerInCard ? 3900 : view.compact ? 1200 : 3900;
     const all = blocksOf(s);
-    let pages = paginateTranscript(all);
-    // When the answer is embedded in the strip, pages holding only the answer
-    // block would render empty. Drop them so the last page keeps content.
-    if (view.hideAnswer) {
-      const withoutAnswers = pages.map((p) => ({ ...p, blocks: p.blocks.filter((b) => b.kind !== "answer") }));
-      const nonEmpty = withoutAnswers.filter((p) => p.blocks.length > 0);
-      const kept = nonEmpty.length ? nonEmpty : withoutAnswers.slice(-1);
-      pages = kept.map((p, i) => ({ ...p, index: i, total: kept.length }));
-    }
+    const pages = paginateTranscript(all);
     const header = `<p>${sessionHeader(s).replace(/(?:<br\/>)+$/, "")}</p>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
@@ -242,9 +232,6 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
-    const shownBlocks = view.hideAnswer
-      ? page.blocks.filter((b) => b.kind !== "answer")
-      : page.blocks;
     // P1.3: navigate by turn, not by raw block-page count.
     const turns = turnsOf(s);
     const pageTurn = turnOfPage(page);
@@ -261,7 +248,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       }
     }
     return {
-      html: fit([header, indicator, recap].filter(Boolean), shownBlocks),
+      html: fit([header, indicator, recap].filter(Boolean), page.blocks),
       page: page.index,
       total: page.total,
     };

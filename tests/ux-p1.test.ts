@@ -125,7 +125,7 @@ describe("P1.1 compact card and reading mode", () => {
     const s = makeSession({ cardView: { compact: true, reading: false, showResources: false, unified: false } });
     const answer = "inicio " + "x".repeat(1400) + " FINAL";
     transcript.addBlock(s, "answer", `<p>${answer}</p>`, answer);
-    const out = transcript.renderPage(s, { extraTop: `<p>${answer}</p>`, answerInCard: true, hideAnswer: true })!;
+    const out = transcript.renderPage(s, { extraTop: `<p>${answer}</p>`, answerInCard: true })!;
     expect(out.html).toContain("FINAL");
     expect(out.html.length).toBeGreaterThan(1200);
   });

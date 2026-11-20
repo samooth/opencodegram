@@ -71,7 +71,7 @@ describe("final answer in card", () => {
     expect(html).toContain("💬 Respuesta");
     expect(html).toContain("Esta es la respuesta final.");
     expect(html).not.toContain("<br/><br/>");
-    expect(published[0].hideAnswer).toBe(true);
+    expect(published[0].answerInCard).toBe(true);
   });
 
   test("the setting can disable the answer in the card", async () => {
@@ -79,16 +79,15 @@ describe("final answer in card", () => {
     const s = makeSession({ statusFinished: true, lastFinalText: "Esta es la respuesta final." });
     await status.publishCard(7, s);
     expect(published[0].extraTop).not.toContain("💬 Respuesta");
-    expect(published[0].hideAnswer).toBe(false);
+    expect(published[0].answerInCard).toBe(false);
   });
 
-  test("hideAnswer drops the duplicate answer block from the page", () => {
+  test("the answer block stays in the page to avoid an empty last page", () => {
     const store = new SessionStore(join(root, "data"));
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
     const s = makeSession();
     tm.addBlock(s, "answer", "<p>texto duplicado</p>", "texto duplicado");
-    expect(tm.renderPage(s)!.html).toContain("texto duplicado");
-    expect(tm.renderPage(s, { hideAnswer: true })!.html).not.toContain("texto duplicado");
+    expect(tm.renderPage(s, { answerInCard: true })!.html).toContain("texto duplicado");
   });
 });
 

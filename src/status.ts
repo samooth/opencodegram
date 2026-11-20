@@ -186,7 +186,6 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         ...s.cardView,
         extraTop: cap(renderDoneStrip(s, settings)),
         working: false,
-        hideAnswer,
         answerInCard: hideAnswer,
       });
     } else {
