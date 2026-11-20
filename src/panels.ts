@@ -123,6 +123,9 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       reply_markup: { inline_keyboard: keyboard },
     });
   }
+  /** Two-level session picker state, keyed by the message being edited. */
+  const sessionViews = new Map<string, { folders: string[]; folder?: string; mode: string }>();
+
   async function showSessions(
     chatId: number,
     page = 0,
@@ -130,12 +133,24 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     threadId?: number,
     filterChatId?: number,
     onlyRunning?: boolean,
-    _opts?: { userId?: number },
+    _opts?: { folderIndex?: number; back?: boolean; userId?: number },
   ): Promise<void> {
     const pageSize = 8;
+    // Level 0 shows only folder buttons; level 1 shows the sessions of the
+    // chosen folder. Everything lives in the SAME message, and tapping a
+    // session connects it right there (use: callback).
+    const viewKey = messageId !== undefined ? `${chatId}:${messageId}` : undefined;
+    let view = viewKey ? sessionViews.get(viewKey) : undefined;
+    if (_opts?.back) view = undefined;
+    if (!view) view = { folders: [], mode: filterChatId !== undefined ? "group" : onlyRunning ? "running" : "all" };
+    if (viewKey) sessionViews.set(viewKey, view);
+
     const list = (await oc.listSessionsCached()) as SessionRow[];
     if (!list.length) {
-      await sendOrEditRich(chatId, messageId, "No se encontraron sesiones. Usa /new para crear una.", threadOpts(threadId));
+      await sendOrEditRich(chatId, messageId, "📂", {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: [[{ text: "➕ Nueva", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]] },
+      });
       return;
     }
     // Filter by chat: a session belongs to every chat it was used from, so we
@@ -159,31 +174,51 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       });
     }
     if (!filtered.length) {
-      const text = onlyRunning ? "No hay sesiones en ejecución." : filterChatId !== undefined ? "No hay sesiones en este chat." : "No se encontraron sesiones.";
-      await sendOrEditRich(chatId, messageId, text, threadOpts(threadId));
+      await sendOrEditRich(chatId, messageId, "📂", {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: [[{ text: "➕ Nueva", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]] },
+      });
       return;
     }
-    const total = filtered.length;
     const directoryOf = (s: SessionRow): string => s.location?.directory ?? s.directory ?? "";
     const folderOf = (s: SessionRow): string => directoryOf(s).split("/").filter(Boolean).pop() ?? "(sin carpeta)";
-    // Group sessions by the folder they belong to, then by title, so the
-    // listing reads like a repository browser instead of a flat timestamp list.
-    filtered = [...filtered].sort((a, b) => {
-      const byFolder = folderOf(a).localeCompare(folderOf(b));
-      return byFolder || (a.title ?? "").localeCompare(b.title ?? "");
-    });
-    const start = page * pageSize;
-    const slice = filtered.slice(start, start + pageSize);
-    const groups = new Map<string, SessionRow[]>();
-    for (const s of slice) {
-      const folder = folderOf(s);
-      groups.set(folder, [...(groups.get(folder) ?? []), s]);
-    }
-    const activeId = getActiveSession(chatId, threadId)?.sessionId;
+    filtered = [...filtered].sort((a, b) => folderOf(a).localeCompare(folderOf(b)) || (a.title ?? "").localeCompare(b.title ?? ""));
+    const folders = [...new Set(filtered.map(folderOf))].sort((a, b) => a.localeCompare(b));
+    view.folders = folders;
+    if (_opts?.folderIndex !== undefined) view.folder = folders[_opts.folderIndex];
+
     const statusIcon = (id: string) => {
       const st = getSessionStatus ? getSessionStatus(id) : undefined;
       return st === "busy" ? "🔴" : st === "retry" ? "🟡" : st === "idle" ? "🟢" : "⚪";
     };
+    const footer = (): Array<Array<{ text: string; callback_data: string }>> => [
+      [{ text: "➕ Nueva", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }],
+    ];
+
+    // Level 0: folder names only, no prose.
+    if (!view.folder) {
+      const keyboard: InlineKeyboard = folders.map((folder, i) => [
+        { text: `📁 ${folder}`.slice(0, 64), callback_data: `sessions:folder:${i}` },
+      ]);
+      keyboard.push(...footer());
+      await sendOrEditRich(chatId, messageId, "📂", {
+        ...threadOpts(threadId),
+        reply_markup: { inline_keyboard: keyboard },
+      });
+      return;
+    }
+
+    // Level 1: sessions of that folder, still in the same message.
+    const inFolder = filtered.filter((s) => folderOf(s) === view.folder);
+    if (!inFolder.length) {
+      view.folder = undefined;
+      await showSessions(chatId, 0, messageId, threadId, filterChatId, onlyRunning, _opts);
+      return;
+    }
+    const total = inFolder.length;
+    const start = page * pageSize;
+    const slice = inFolder.slice(start, start + pageSize);
+    const activeId = getActiveSession(chatId, threadId)?.sessionId;
     const keyboard: InlineKeyboard = slice.map((s: SessionRow) => {
       const title = (s.title ?? "(sin título)").slice(0, 36);
       const model = s.model ? ` · ${s.model.providerID}/${s.model.id}` : "";
@@ -192,33 +227,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       return [{ text: label, callback_data: `use:${s.id ?? ""}` }];
     });
     const nav: InlineButton[] = [];
-    const mode = onlyRunning ? "running" : filterChatId !== undefined ? "group" : "all";
-    if (page > 0) nav.push({ text: "◀ Anterior", callback_data: `sessions:page:${page - 1}:${mode}` });
-    if (start + pageSize < total) nav.push({ text: "Siguiente ▶", callback_data: `sessions:page:${page + 1}:${mode}` });
+    if (page > 0) nav.push({ text: "◀", callback_data: `sessions:page:${page - 1}:${view.mode}` });
+    if (start + pageSize < total) nav.push({ text: "▶", callback_data: `sessions:page:${page + 1}:${view.mode}` });
     if (nav.length) keyboard.push(nav);
-    // Filters keep the current scope so pagination and filters compose.
-    const filterRow = [
-      { text: mode === "all" ? "✅ All" : "📋 All", callback_data: "sessions:filter:all" },
-      { text: mode === "running" ? "✅ Running" : "🔴 Running", callback_data: "sessions:filter:running" },
-      { text: mode === "group" ? "✅ Group" : "📁 Group", callback_data: "sessions:filter:group" },
-    ];
-    keyboard.push(filterRow);
-    if (mode !== "all") keyboard.push([{ text: "◀ Todas", callback_data: "sessions:filter:all" }]);
-    keyboard.push([{ text: "➕ Nueva sesión", callback_data: "panel:new" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    const groupedLines: string[] = [];
-    for (const [folder, sessions] of groups) {
-      groupedLines.push(`📁 <b>${esc(folder)}</b>`);
-      for (const s of sessions) {
-        const title = esc((s.title ?? "(sin título)").slice(0, 60));
-        const model = s.model ? ` · <code>${esc(s.model.providerID ?? "")}/${esc(s.model.id ?? "")}</code>` : "";
-        groupedLines.push(`  ${statusIcon(s.id ?? "")} ${title}${model}`);
-      }
-    }
-    const activeLine = activeId ? `<i>Activa: <code>${esc(activeId.slice(0, 8))}</code></i>` : "";
-    const scopeLine = filterChatId !== undefined ? `<i>Sesiones de este chat</i>` : "";
-    const crumb = `<i>🏠 Panel › 📂 Sesiones${mode !== "all" ? ` › ${mode}` : ""}</i>`;
-    const header = [crumb, `<b>Sesiones</b> (${start + 1}-${Math.min(start + pageSize, total)} de ${total})`, activeLine, scopeLine].filter(Boolean).join("<br/>");
-    await sendOrEditRich(chatId, messageId, `${header}<br/>${groupedLines.join("<br/>")}`, {
+    keyboard.push([{ text: "◀ Carpetas", callback_data: "sessions:back" }]);
+    keyboard.push(...footer());
+    await sendOrEditRich(chatId, messageId, `📁 <b>${esc(view.folder)}</b>`, {
       ...threadOpts(threadId),
       reply_markup: { inline_keyboard: keyboard },
     });

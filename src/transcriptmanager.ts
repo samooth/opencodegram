@@ -177,7 +177,15 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // final answer is embedded, raise the budget so clampText never cuts it.
     const LAYOUT_LIMIT = view.answerInCard ? 3900 : view.compact ? 1200 : 3900;
     const all = blocksOf(s);
-    const pages = paginateTranscript(all);
+    let pages = paginateTranscript(all);
+    // When the answer is embedded in the strip, pages holding only the answer
+    // block would render empty. Drop them so the last page keeps content.
+    if (view.hideAnswer) {
+      const withoutAnswers = pages.map((p) => ({ ...p, blocks: p.blocks.filter((b) => b.kind !== "answer") }));
+      const nonEmpty = withoutAnswers.filter((p) => p.blocks.length > 0);
+      const kept = nonEmpty.length ? nonEmpty : withoutAnswers.slice(-1);
+      pages = kept.map((p, i) => ({ ...p, index: i, total: kept.length }));
+    }
     const header = `<p>${sessionHeader(s).replace(/(?:<br\/>)+$/, "")}</p>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
@@ -430,18 +438,13 @@ ${body}
     }
     if (primary.length) keyboard.push(primary);
 
-    // 2) Secondary toggles: detail and resources. The activity toggle moves to
-    // the primary row while working; finished cards keep it here.
+    // 2) Secondary toggles: detail. The activity toggle moves to the primary
+    // row while working; finished cards keep it here. Resources moved to the
+    // icon footer below.
     if (!(view.working && hasActivity) && hasActivity) {
       keyboard.push([{
         text: s.activityExpanded ? "▴ Ocultar detalles" : "▾ Ver detalles",
         callback_data: `activity:${s.sessionId}`,
-      }]);
-    }
-    if (!view.unified) {
-      keyboard.push([{
-        text: s.resourcesCollapsed ? "📊 Recursos ▴" : "📊 Recursos ▾",
-        callback_data: `resources:${s.sessionId}`,
       }]);
     }
 
@@ -493,22 +496,26 @@ ${body}
       }
     }
 
-    // 5) Export always available; copy fallback for groups or long answers.
+    // 5) Copy fallback for groups or long answers. Export lives in the footer.
     if (!view.working) {
-      const tools: InlineButton[] = [];
       const nativeCopy = copyTextButton(chatId, "📋 Copiar", s.lastFinalText);
       if (s.lastFinalText && !nativeCopy) {
-        tools.push({ text: "📋 Copiar respuesta", callback_data: `copy:answer:${s.sessionId}` });
+        keyboard.push([{ text: "📋 Copiar respuesta", callback_data: `copy:answer:${s.sessionId}` }]);
       }
-      tools.push({ text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` });
-      keyboard.push(tools);
     }
 
+    // Footer: navigation/export on one row; model, resources and settings as
+    // icon-only buttons on the next, keeping the card short.
     if (!view.unified) {
       keyboard.push([
-        { text: "🧠 Modelos", callback_data: `panel:ms:${s.sessionId}` },
-        { text: "📂 Sesiones", callback_data: "panel:sessions" },
         { text: "🏠 Panel", callback_data: "panel:home" },
+        { text: "📂 Sesiones", callback_data: "panel:sessions" },
+        { text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` },
+      ]);
+      keyboard.push([
+        { text: "🧠", callback_data: `panel:ms:${s.sessionId}` },
+        { text: s.resourcesCollapsed ? "📊 ▾" : "📊 ▴", callback_data: `resources:${s.sessionId}` },
+        { text: "⚙️", callback_data: "panel:settings" },
       ]);
     } else {
       keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);

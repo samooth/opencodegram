@@ -229,23 +229,14 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   const visible = a.entries.slice(-maxEntries);
   const blocks: ActivityBlock[] = [];
 
+  // Every shell call of the turn goes into ONE terminal-like block, no matter
+  // where it happened, so the card reads like a session transcript.
+  const shells = visible.filter((e) => e.kind === "shell");
+
   let i = 0;
   while (i < visible.length) {
     const e = visible[i];
-    if (e.kind === "shell") {
-      // Consecutive shell calls share ONE terminal-like block, as in the card's
-      // 🖥 Shell section: `$ command` lines inside a single expandable quote.
-      const run: ActivityEntry[] = [];
-      while (i < visible.length && visible[i].kind === "shell") run.push(visible[i++]);
-      const last = run[run.length - 1];
-      const status = last.ok === true ? " ✅" : last.ok === false ? " ❌" : expanded && run.some((x) => x.open) ? " ⏳" : "";
-      const duration = fmtDuration(last.durationMs ?? Math.max(0, now - last.at));
-      const commands = run
-        .map((r) => `<p><code>$ ${esc(truncate(r.detail.trim() || r.label, detailCap || 80))}</code></p>`)
-        .join("");
-      blocks.push({ head: `${ICONS.shell} Shell (${run.length}) · ${duration}${status}`, detail: commands });
-      continue;
-    }
+    if (e.kind === "shell") { i++; continue; }
     if (e.kind === "read" || e.kind === "search") {
       const run: ActivityEntry[] = [];
       while (i < visible.length && (visible[i].kind === "read" || visible[i].kind === "search")) run.push(visible[i++]);
@@ -262,6 +253,15 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
     }
     blocks.push({ head: entryHead(e, now, expanded), detail: detailPara(e.detail, detailCap) });
     i++;
+  }
+  if (shells.length) {
+    const last = shells[shells.length - 1];
+    const status = last.ok === true ? " ✅" : last.ok === false ? " ❌" : expanded && shells.some((x) => x.open) ? " ⏳" : "";
+    const duration = fmtDuration(last.durationMs ?? Math.max(0, now - last.at));
+    const commands = shells
+      .map((r) => `<p><code>$ ${esc(truncate(r.detail.trim() || r.label, detailCap || 80))}</code></p>`)
+      .join("");
+    blocks.push({ head: `${ICONS.shell} Shell (${shells.length}) · ${duration}${status}`, detail: commands });
   }
 
   // One expandable block per row gives a native +/- affordance for each thought,

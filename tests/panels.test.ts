@@ -16,7 +16,7 @@ function makeDeps(sessions: any[] = []) {
   const sent: any[] = [];
   const tg = {
     sendRichMessage: async (...args: any[]) => { sent.push(args); return { message_id: 1 }; },
-    editRichMessage: async () => ({ message_id: 1 }),
+    editRichMessage: async (...args: any[]) => { sent.push(args); return { message_id: 1 }; },
     answerCallbackQuery: async () => {},
   } as any;
   const oc = {
@@ -44,19 +44,38 @@ function makeDeps(sessions: any[] = []) {
 }
 
 describe("panels", () => {
-  test("showSessions groups sessions by folder", async () => {
+  test("showSessions lists folder buttons and then sessions in the same message", async () => {
     const sessions = [
       { id: "ses_a", title: "beta", directory: "/repos/proyecto-b", model: { providerID: "p", id: "m" } },
       { id: "ses_b", title: "alpha", directory: "/repos/proyecto-a" },
       { id: "ses_c", title: "gamma", directory: "/repos/proyecto-b" },
     ];
     const { panels, sent } = makeDeps(sessions);
-    await panels.showSessions(123, undefined, 0);
-    const html = sent[0][1];
-    expect(html).toContain("📁 <b>proyecto-a</b>");
-    expect(html).toContain("📁 <b>proyecto-b</b>");
-    expect(html.indexOf("proyecto-a")).toBeLessThan(html.indexOf("proyecto-b"));
-    expect(html.indexOf("alpha")).toBeLessThan(html.indexOf("beta"));
+    const htmlOf = (a: any[]) => (typeof a[1] === "number" ? a[2] : a[1]);
+    const markupOf = (a: any[]) => (typeof a[1] === "number" ? a[3] : a[2]).reply_markup;
+    await panels.showSessions(123, 0);
+    let keyboard = markupOf(sent[0]).inline_keyboard;
+    expect(htmlOf(sent[0])).toBe("📂");
+    expect(keyboard.flat().some((b: any) => b.text === "📁 proyecto-a")).toBe(true);
+    expect(keyboard.flat().some((b: any) => b.text === "📁 proyecto-b")).toBe(true);
+    // Tapping a folder renders its sessions as buttons in the same message.
+    await panels.showSessions(123, 0, 5, undefined, undefined, undefined, { folderIndex: 1 });
+    keyboard = markupOf(sent[1]).inline_keyboard;
+    expect(htmlOf(sent[1])).toContain("proyecto-b");
+    expect(keyboard.flat().some((b: any) => b.callback_data === "use:ses_a")).toBe(true);
+    expect(keyboard.flat().some((b: any) => b.callback_data === "use:ses_c")).toBe(true);
+    expect(keyboard.flat().some((b: any) => b.text === "◀ Carpetas")).toBe(true);
+  });
+
+  test("showSessions back returns to the folder list", async () => {
+    const sessions = [{ id: "ses_a", title: "beta", directory: "/repos/proyecto-b" }];
+    const { panels, sent } = makeDeps(sessions);
+    const htmlOf = (a: any[]) => (typeof a[1] === "number" ? a[2] : a[1]);
+    const markupOf = (a: any[]) => (typeof a[1] === "number" ? a[3] : a[2]).reply_markup;
+    await panels.showSessions(123, 0, 5, undefined, undefined, undefined, { folderIndex: 0 });
+    await panels.showSessions(123, 0, 5, undefined, undefined, undefined, { back: true });
+    expect(htmlOf(sent[1])).toBe("📂");
+    expect(markupOf(sent[1]).inline_keyboard.flat().some((b: any) => b.text === "📁 proyecto-b")).toBe(true);
   });
 
   test("sendPanel exposes the settings button", async () => {

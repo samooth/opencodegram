@@ -848,6 +848,17 @@ async function handleSessions(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
     else await deps.panels.showSessions(chatId, 0, cq.message?.message_id, threadId);
     return;
   }
+  const folderMatch = data.match(/^sessions:folder:(\d+)$/);
+  if (folderMatch) {
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.panels.showSessions(chatId, 0, cq.message?.message_id, threadId, undefined, undefined, { folderIndex: Number(folderMatch[1]) });
+    return;
+  }
+  if (data === "sessions:back") {
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.panels.showSessions(chatId, 0, cq.message?.message_id, threadId, undefined, undefined, { back: true });
+    return;
+  }
   const pageMatch = data.match(/^sessions:page:(\d+)(?::(all|running|group))?$/);
   if (pageMatch) {
     const page = parseInt(pageMatch[1], 10);
