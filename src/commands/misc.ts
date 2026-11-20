@@ -146,9 +146,10 @@ export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number
     }
     const rows = (skills as Named[]).map((k) => `<tr><td><b>${esc(k.name ?? k.id ?? "")}</b></td><td>${esc(truncate(k.description ?? "", 90))}</td></tr>`).join("");
     const table = `<table><tr><th>Skill</th><th>Description</th></tr>${rows}</table>`;
+    const json = JSON.stringify((skills as Named[]).map((k) => ({ id: k.id ?? k.name ?? "", name: k.name ?? k.id ?? "" })), null, 2);
     const keyboard = (skills as Named[]).map((k) => [{ text: k.name ?? k.id ?? "", callback_data: `skill:${k.id ?? ""}` }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-    await send(`<b>Skills</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
+    await send(`<b>Skills</b>\n\n${table}\n\n<pre>${esc(json)}</pre>`, { reply_markup: { inline_keyboard: keyboard } });
     return true;
   }
   if (text.startsWith("/skill ")) {
@@ -164,8 +165,7 @@ export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number
     }
     try {
       await C.oc.loadSkill(s.sessionId, id);
-      await send(`Loaded skill <b>${esc(id)}</b>.`);
-    } catch (err) {
+      await send(`Loaded skill <b>${esc(id)}</b>.\\n<pre>{ "id": "${esc(id)}" }</pre>`);    } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
     return true;
