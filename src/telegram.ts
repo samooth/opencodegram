@@ -422,16 +422,16 @@ export class TelegramClient {
   private answeredCallbacks = new Set<string>();
 
   answerCallbackQuery(callbackQueryId: string, text?: string, opts: { show_alert?: boolean } = {}): Promise<boolean> {
-    // A callback query can only be answered once. Several code paths answer
-    // the same tap; the duplicates surface as "query is too old" and make the
-    // UI look stuck. Drop them here, centrally, for every caller.
     if (this.answeredCallbacks.has(callbackQueryId)) return Promise.resolve(true);
-    this.answeredCallbacks.add(callbackQueryId);
-    if (this.answeredCallbacks.size > 5000) {
-      const oldest = this.answeredCallbacks.values().next().value;
-      if (oldest !== undefined) this.answeredCallbacks.delete(oldest);
-    }
-    return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text, ...opts });
+    const result = this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text, ...opts });
+    result.then(() => {
+      this.answeredCallbacks.add(callbackQueryId);
+      if (this.answeredCallbacks.size > 5000) {
+        const oldest = this.answeredCallbacks.values().next().value;
+        if (oldest !== undefined) this.answeredCallbacks.delete(oldest);
+      }
+    }).catch(() => { /* allow retry on network failure */ });
+    return result;
   }
 
   createForumTopic(chatId: number, name: string, iconEmojiId?: string): Promise<{ message_thread_id: number; name: string }> {

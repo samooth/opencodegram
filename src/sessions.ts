@@ -23,6 +23,8 @@ export type SessionsDeps = {
   finishStatus: (chatId: number, s: ChatSession) => Promise<unknown>;
   /** Remove resources and buttons from a card that is no longer active. */
   cleanupCard?: (chatId: number, messageId: number) => Promise<void>;
+  /** Drop pending publish timers for a retired session. */
+  clearPublishTimers?: (sessionId: string) => void;
 };
 
 export type SessionManager = ReturnType<typeof createSessionManager>;
@@ -86,7 +88,7 @@ export function confineSessionDirectory(config: Config | Record<string, unknown>
   return root;
 }
 
-export function createSessionManager({ config, tg, oc, store, settings, dashboard, topicsEnabled, finishStatus, cleanupCard }: SessionsDeps) {
+export function createSessionManager({ config, tg, oc, store, settings, dashboard, topicsEnabled, finishStatus, cleanupCard, clearPublishTimers }: SessionsDeps) {
   const {
     sessionsByChat,
     sessionsByThread,
@@ -137,6 +139,8 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
       }
     }
     if (interrupt) await oc.interrupt(previous.sessionId).catch(() => {});
+    // Drop any pending backoff retry for this session.
+    clearPublishTimers?.(previous.sessionId);
     // A finished card left behind by a tab switch becomes static history: strip
     // its live indicators and buttons so only the active card carries controls.
     if (!forget && !live && previous.transcriptMessageId) {

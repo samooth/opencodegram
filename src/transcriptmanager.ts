@@ -613,7 +613,7 @@ ${body}
     // published: keep the old state and retry once the backoff expires.
     const until = (tg as unknown as { editBackoffUntil?: (chatId: number) => number }).editBackoffUntil?.(chatId) ?? 0;
     if (until > Date.now()) {
-      const key = `${chatId}:${s.sessionId}`;
+      const key = s.sessionId;
       if (!publishTimers.has(key)) {
         const timer = setTimeout(() => {
           publishTimers.delete(key);
@@ -1010,7 +1010,7 @@ ${body}
     await tg.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(() => {});
   };
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, compactCardKeyboard, pagePickerKeyboard, turnSummary, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat, cleanupCard };
+  return { addBlock, publish, goToPage, renderPage, cardKeyboard, compactCardKeyboard, pagePickerKeyboard, turnSummary, clearPublishTimers: (sessionId: string) => { for (const key of [...publishTimers.keys()]) if (key === sessionId) { const t = publishTimers.get(key); if (t) clearTimeout(t); publishTimers.delete(key); } }, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat, cleanupCard };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };

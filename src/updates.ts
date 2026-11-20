@@ -40,12 +40,9 @@ const chatQueues = new Map<string, Promise<void>>();
  * Messages are serialized per chat/topic so conversation state stays ordered.
  */
 export function dispatchPolledUpdate(deps: BotDeps, update: TelegramUpdate): void {
-  if (update.callback_query) {
-    void processUpdate(deps, update);
-    return;
-  }
-  const chatId = update.message?.chat?.id ?? 0;
-  const key = `${chatId}:${update.message?.message_thread_id ?? 0}`;
+  const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id ?? 0;
+  const threadId = update.callback_query?.message?.message_thread_id ?? update.message?.message_thread_id ?? 0;
+  const key = `${chatId}:${threadId}`;
   const previous = chatQueues.get(key) ?? Promise.resolve();
   const next = previous.then(() => processUpdate(deps, update)).catch(() => {});
   chatQueues.set(key, next);

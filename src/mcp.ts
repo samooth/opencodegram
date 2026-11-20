@@ -118,7 +118,14 @@ export async function readMcpResource(uri: string, directory?: string): Promise<
       if (host === "localhost" || host.endsWith(".localhost")) return { error: "Blocked host." };
       const resolved = await lookup(host);
       if (blocked(resolved.address)) return { error: "Blocked host (private/loopback)." };
-      const response = await fetch(uri, { redirect: "error" });
+      // Pin DNS to the already-validated IP so a re-resolution cannot swap it
+      // for a private address (DNS rebinding). TLS cert validation is preserved.
+      const { default: http } = await import("node:http");
+      const { default: https } = await import("node:https");
+      const pinnedAgent = parsed.protocol === "https:"
+        ? new https.Agent({ lookup: (_h, _o, cb) => cb(null, resolved.address, resolved.family) })
+        : new http.Agent({ lookup: (_h, _o, cb) => cb(null, resolved.address, resolved.family) });
+      const response = await fetch(uri, { redirect: "error", agent: pinnedAgent } as RequestInit);
       if (!response.ok) return { error: `HTTP ${response.status}` };
       const contentType = response.headers.get("content-type") ?? "";
       const reader = response.body?.getReader();

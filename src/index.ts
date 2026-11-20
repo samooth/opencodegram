@@ -122,6 +122,7 @@ async function main() {
     oc,
     store,
     cleanupCard: transcript.cleanupCard,
+    clearPublishTimers: transcript.clearPublishTimers,
     settings,
     dashboard,
     topicsEnabled,
