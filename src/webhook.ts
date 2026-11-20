@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import type { BotDeps } from "./context.js";
 import { processUpdate } from "./updates.js";
 import type { TelegramUpdate } from "./telegram.js";
@@ -23,7 +24,11 @@ export function createWebhookServer(deps: BotDeps): WebhookServer {
     if (request.method === "POST" && url.pathname === path) {
       const providedSecret = request.headers["x-telegram-bot-api-secret-token"];
       // Fail closed: a webhook without a configured secret is not allowed.
-      if (!secret || providedSecret !== secret) {
+      const provided = Array.isArray(providedSecret) ? providedSecret[0] : providedSecret;
+      const secretOk =
+        !!secret && typeof provided === "string" && provided.length === secret.length &&
+        timingSafeEqual(Buffer.from(provided), Buffer.from(secret));
+      if (!secretOk) {
         response.statusCode = 403;
         response.end("Forbidden");
         return;

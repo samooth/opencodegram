@@ -19,7 +19,7 @@ import { createPanels } from "./panels.js";
 import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
 import { startEventLoop } from "./events.js";
-import { startPolling, requestStopPolling } from "./updates.js";
+import { startPolling, requestStopPolling, drainPolledUpdates } from "./updates.js";
 import { createWebhookServer } from "./webhook.js";
 import type { BotDeps } from "./context.js";
 import { BOT_COMMANDS } from "./botcommands.js";
@@ -293,7 +293,9 @@ async function main() {
     requestStopPolling();
     // The transcript save is debounced (2 s); without an explicit flush the
     // last turn (including the final answer) is lost on shutdown.
-    shutdownPromise = store.flushTranscripts().catch((err) => console.warn("[shutdown] transcript flush failed", err?.message ?? err));
+    shutdownPromise = Promise.allSettled([store.flushTranscripts(), drainPolledUpdates()])
+      .then(() => undefined)
+      .catch((err) => console.warn("[shutdown] drain failed", err?.message ?? err));
     return shutdownPromise;
   };
   process.on("SIGINT", () => { void stopAll().finally(() => process.exit(0)); });

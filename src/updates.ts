@@ -124,3 +124,9 @@ function loadOffset(file: string, botId?: number): number {
     return 0;
   }
 }
+
+/** Wait for in-flight update handlers to finish (used on shutdown). */
+export async function drainPolledUpdates(): Promise<void> {
+  const pending = [...chatQueues.values()];
+  await Promise.allSettled(pending);
+}
