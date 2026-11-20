@@ -64,6 +64,10 @@ Main modules:
 | --- | --- |
 | `index.ts` | Config, clients, dependency wiring, command menu |
 | `context.ts` | Shared `BotDeps` |
+| `config.ts` | Zod-validated environment configuration |
+| `doctor.ts` | Startup diagnostics (`bun run doctor`) |
+| `opencode.ts` | OpenCode HTTP bridge (client, models, sessions, cost) |
+| `persist.ts` | Atomic JSON read/write helpers |
 | `store.ts` | Route tables and JSON persistence (`data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
@@ -80,7 +84,8 @@ Main modules:
 | `events.ts` | OpenCode event stream to Telegram, artifacts, retries, final-answer delivery |
 | `panels.ts` | Panel, sessions, models and commands views |
 | `callbacks.ts` | Inline buttons, settings/profiles and permission decisions |
-| `commands.ts` | Slash commands and `KNOWN_COMMANDS` |
+| `commands.ts` | Re-export of `commands/*` handlers and `KNOWN_COMMANDS` |
+| `commands/*` | Handler modules (sessions, files, vcs, forms, mcp, misc, shared) |
 | `messages.ts` | Access control, media download, prompts, command dispatch |
 | `updates.ts` | Polling loop, update dispatch, offset persistence |
 | `telegram.ts` | Telegram client (messages, rich text, documents, pin/unpin) |
