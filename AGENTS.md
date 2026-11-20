@@ -54,7 +54,7 @@ temporary files small and clean them up.
 - `WEB_APP_TITLE` (default `Mission Control`)
 - `WEB_APP_URL` (optional public URL used by `/web` in private chats)
 
-OpenCode 2.2.x runs locally. The daemon reads `.env` automatically under Bun.
+OpenCode 2.3.0 runs locally. The daemon reads `.env` automatically under Bun.
 
 ## Architecture
 

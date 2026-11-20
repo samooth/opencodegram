@@ -3,7 +3,7 @@
 ## Requirements
 
 - Bun
-- OpenCode 2.2.x running locally
+- OpenCode 2.3.0 running locally
 - Telegram bot token
 - Optional: `ffmpeg` and a Whisper-compatible CLI for voice notes
 

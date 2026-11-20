@@ -108,6 +108,7 @@ documents.
   manage and switch worktrees.
 - `/forms`, `/formreply <form_id> <json>` — pending forms and answers. Forms with
   options also get inline buttons for selecting and submitting answers.
+- `/web` — private Mission Control page (token-protected); groups get inline buttons only.
 - `/commands` — OpenCode command table plus this bot command list.
 - Any other text — prompt the active session.
 - Any other `/name args` — run the OpenCode command in the active session.
