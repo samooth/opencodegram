@@ -53,18 +53,41 @@
 - Code quality: zero `any` in `src`, structured logging, unified save/load
   helpers, no silent `answerCallbackQuery` failures.
 
-## Next
+## 0.3.0 (plan)
 
-1. **Multi-user roles** – viewer/operator/admin ACLs, approver groups, audit UI.
-2. **Mini App** – diffs, file tree and approvals in a richer Telegram WebApp.
-3. **Automatic session summary** – generate a short topic title from the turn
-   result.
-4. **`/retry` with turn selection** – replay a specific past turn.
-5. **`/search` over user prompts** – currently only answer blocks are searched.
-6. **Graceful degradation when OpenCode is down** – notify and retry instead of hanging.
+### A. Robustez y observabilidad
+- [ ] Graceful degradation si OpenCode cae: notificar, reintentar y no colgar.
+- [ ] Daemon persistente para Whisper (diseñar según entorno).
+- [ ] Coalescing de deltas (publicar cada 500 ms en vez de cada delta).
+- [ ] Caché LRU de lecturas recientes para no repetir I/O.
+- [ ] Exportar rango de turnos (desde/hasta turno N).
+- [ ] Métricas de latencia de transcripción.
+- [ ] Ampliar logging: cubrir los `.catch` restantes en rutas de archivo/media.
 
-## Suggested order
+### B. UX del card y sesiones
+- [ ] Secciones colapsables por sesión (no globales).
+- [ ] `/retry` con selección de turno.
+- [ ] `/search` sobre prompts de usuario (hoy solo bloques).
+- [ ] Resumen automático de sesión para el título del topic.
+- [ ] Modo solo lectura para grupos.
+- [ ] Preview de imágenes en el card.
+- [ ] Progreso de descarga para archivos grandes.
+- [ ] Paginación de botones del card (>56 páginas).
+- [ ] Adaptación de tema claro/oscuro a preferencias de Telegram.
 
-The file browser, artifacts, voice notes (including streaming), MCP status,
-worktrees, VCS actions and browser tooling are shipped. Next: automatic
-summaries, `/retry` turn picker and prompt search.
+### C. Seguridad (residuales)
+- [ ] Mitigar DNS rebinding en `/mcp read` (fijar IP tras lookup).
+- [ ] Reintentar acks fallidos por red.
+- [ ] Códigos de un solo uso para la web app privada en lugar de token en URL.
+- [ ] Auth opcional en `/health`/`/metrics` cuando `OPS_HOST != 127.0.0.1`.
+
+### D. Arquitectura y limpieza
+- [ ] Reducir más `status.ts` (extraer helpers restantes).
+- [ ] Validar paths en `downloadOne` (whitelist de extensiones).
+- [ ] Rate limiting por usuario (opt-in, ya existe flag global).
+- [ ] Documentar módulos `config/doctor/opencode/persist` y `commands/*` en AGENTS.md.
+
+### Siguiente orden sugerido
+Graceful degradation → resumen automático → `/retry` con turno → `/search` sobre prompts → caché LRU → daemon Whisper.
+
+## Next (legacy)
