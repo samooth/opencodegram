@@ -802,12 +802,12 @@ async function handlePermUI(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
     const id = Number(action.slice("remove:".length));
     if (Number.isFinite(id) && id > 0) {
       deps.permissions.removeUser(routeKey, id);
-      await deps.tg.answerCallbackQuery(cq.id, `🗑 ${id}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await deps.tg.answerCallbackQuery(cq.id, `🗑 ${deps.permissions.label(id)}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
   } else if (action === "add") {
     deps.awaitingPermissionAdd?.set(routeKey, { chatId, threadId });
-    await deps.tg.answerCallbackQuery(cq.id, "Responde con: <id> [operator|admin]").catch((err) => console.warn("[callbacks]", err?.message ?? err));
-    await deps.tg.sendRichMessage(chatId, "Responde con el ID y rol, p. ej. <code>123456 operator</code> o <code>999999 admin</code>.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.answerCallbackQuery(cq.id, "Responde con: @usuario [operator|admin]").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.sendRichMessage(chatId, "Responde con <code>@usuario</code> (o el ID) y el rol, p. ej. <code>@juan operator</code> o <code>123456 admin</code>. El usuario debe haber escrito al bot o pulsado un botón antes para que conozca su @username.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   } else if (action === "refresh") {
     await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -1364,6 +1364,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const { createNewSession } = sessions;
 
   const userId = cq.from?.id;
+  if (userId !== undefined && cq.from?.username) deps.permissions?.rememberUser(userId, cq.from.username);
   const allowedUsers = new Set<number>();
   if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);
   if (config.ALLOWED_TELEGRAM_USER_IDS) {

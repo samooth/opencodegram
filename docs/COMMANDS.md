@@ -35,7 +35,10 @@ usuario` and `🗄 Datos`). The argument forms below remain as a fallback.
   - **Shell, files, voice, resources**: shell/tool input, auto artifacts, preview lines, diff style, voice transcription, resource usage/history.
   - In unified mode, M2 streams the latest thought at the bottom and long answers can be opened in full with **`📄 Ver completo`** (or delivered as separate rich-text messages, split at markdown section boundaries).
 - `/permissions` — granular ACLs for the current thread/topic (admin only):
-  `readonly on|off`, `inherit on|off`, `add <id> [operator|admin]`, `remove <id>`.
+  `readonly on|off`, `inherit on|off`, `add @usuario|id [operator|admin]`,
+  `remove @usuario|id`. Users are shown as `@username` in the panel; the bot
+  learns usernames from messages/buttons. Replying to someone with
+  `/permissions add [operator|admin]` grants the role to that person directly.
 - `⚡ Comandos` (in `🏠 Panel`) lists OpenCode **and** bot commands as inline
   buttons (`botcmd:`), so no slash command needs to be typed to discover or run
   a feature. Dangerous commands are deliberately excluded from buttons.

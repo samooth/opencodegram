@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS permission_users (
   PRIMARY KEY (route_key, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_permission_users_route ON permission_users(route_key);
+CREATE TABLE IF NOT EXISTS known_users (
+  user_id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_known_users_username ON known_users(username);
 `;
 
 const databases = new Map<string, Database>();

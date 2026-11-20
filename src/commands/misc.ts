@@ -335,21 +335,24 @@ export async function cmd_permissions(deps: BotDeps, chatId: number, threadId: n
     return true;
   }
   if (parts[1] === "add" && parts[2]) {
-    const id = Number(parts[2]);
-    if (!Number.isFinite(id) || id <= 0) { await send("ID inválido."); return true; }
+    const id = store?.resolveUser(parts[2]);
+    if (id === undefined) {
+      await send(`No conozco a <code>${esc(parts[2])}</code>. Pídele que escriba al bot y vuelve a intentarlo, o usa su ID numérico.`);
+      return true;
+    }
     const role = parts[3] === "admin" ? "admin" : "operator";
     store?.addUser(routeKey, id, role);
-    await send("✅ Añadido " + id + " como " + role + ".");
+    await send("✅ Añadido " + (store?.label(id) ?? String(id)) + " como " + role + ".");
     return true;
   }
   if (parts[1] === "remove" && parts[2]) {
-    const id = Number(parts[2]);
-    if (!Number.isFinite(id) || id <= 0) { await send("ID inválido."); return true; }
+    const id = store?.resolveUser(parts[2]);
+    if (id === undefined) { await send("Usuario no reconocido. Usa @username conocido o el ID numérico."); return true; }
     store?.removeUser(routeKey, id);
-    await send("🗑 Eliminado " + id + ".");
+    await send("🗑 Eliminado " + (store?.label(id) ?? String(id)) + ".");
     return true;
   }
-  await send("Uso: /permissions [readonly on|off | inherit on|off | add <id> [operator|admin] | remove <id>]");
+  await send("Uso: /permissions [readonly on|off | inherit on|off | add @usuario|id [operator|admin] | remove @usuario|id]");
   return true;
 }
 

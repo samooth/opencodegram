@@ -69,6 +69,40 @@ describe("PermissionStore", () => {
     expect(reloaded.get("1:2").readOnly).toBe(true);
   });
 
+  test("resolves @usernames to numeric IDs", () => {
+    const s = new PermissionStore(join(root, "data"));
+    s.rememberUser(123, "@Juan_Perez");
+    expect(s.resolveUser("@juan_perez")).toBe(123);
+    expect(s.resolveUser("Juan_Perez")).toBe(123);
+    expect(s.resolveUser("123")).toBe(123);
+    expect(s.resolveUser("@desconocido")).toBeUndefined();
+  });
+
+  test("labels users with their username when known", () => {
+    const s = new PermissionStore(join(root, "data"));
+    s.rememberUser(123, "juan");
+    s.addUser("1:2", 123, "operator");
+    expect(s.label(123)).toBe("@juan");
+    expect(s.label(999)).toBe("999");
+    const panel = s.renderPanel("1:2");
+    expect(panel.html).toContain("@juan");
+  });
+
+  test("username mapping persists across instances", () => {
+    const dataDir = join(root, "data");
+    new PermissionStore(dataDir).rememberUser(77, "ana");
+    expect(new PermissionStore(dataDir).resolveUser("@ana")).toBe(77);
+  });
+
+  test("panel shows @username on remove buttons", () => {
+    const s = new PermissionStore(join(root, "data"));
+    s.rememberUser(42, "maria");
+    s.addUser("1:2", 42, "operator");
+    const kb = s.renderPanel("1:2").keyboard.flat();
+    const remove = kb.find((b) => b.callback_data === "permui:remove:42");
+    expect(remove?.text).toContain("@maria");
+  });
+
   test("buildGlobalAllowed parses config", () => {
     const g = buildGlobalAllowed({ ADMIN_TELEGRAM_USER_ID: 5, ALLOWED_TELEGRAM_USER_IDS: "1,2,x" });
     expect(g.has(5)).toBe(true);

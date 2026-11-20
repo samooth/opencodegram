@@ -69,7 +69,7 @@ Main modules:
 | `index.ts` | Config, clients, dependency wiring, command menu |
 | `context.ts` | Shared `BotDeps` |
 | `db.ts` | Single SQLite database (`data/opencodegram.db`) for all persisted state, with JSON migration/mirror and panel renderer |
-| `permissions.ts` | Per-thread/topic permission store and granular ACLs (SQLite-backed) |
+| `permissions.ts` | Per-thread/topic ACLs (SQLite-backed), @username resolution and button panel |
 | `config.ts` | Zod-validated environment configuration |
 | `doctor.ts` | Startup diagnostics (`bun run doctor`) |
 | `opencode.ts` | OpenCode HTTP bridge (client, models, sessions, cost) |
@@ -140,7 +140,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (395 tests across 42 files):
+`bun test` covers (400 tests across 42 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -176,7 +176,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
 - `tests/botcommands.test.ts` — no duplicate bot commands in the Telegram menu.
-- `tests/permissions.test.ts` — per-thread ACLs, roles, read-only and persistence.
+- `tests/permissions.test.ts` — per-thread ACLs, roles, read-only, @username resolution and persistence.
 - `tests/db.test.ts` — SQLite migration (JSON + legacy `permissions.db`), persistence, JSON mirror and stats.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
 - `tests/transcribe.test.ts` — voice transcription config and execution.
@@ -207,7 +207,8 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 All persisted state lives in a single SQLite database, `data/opencodegram.db`
 (WAL mode), keyed by state name in `kv_state` plus relational `permissions` and
-`permission_users` tables. `data/` is ignored by git. The legacy `data/*.json`
+`permission_users` tables, plus `known_users` for the @usernames seen in
+updates. `data/` is ignored by git. The legacy `data/*.json`
 files are kept as a readable mirror and as a migration source: they are imported
 at startup (`importAllJson`), and a later external edit of a JSON file wins and
 is re-imported. A legacy standalone `permissions.db` is imported once and

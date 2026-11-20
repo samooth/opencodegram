@@ -433,6 +433,12 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const { routeKey } = store;
 
   const userId = msg.from?.id;
+  // Learn Telegram usernames so /permissions and its buttons accept @name.
+  if (userId !== undefined && msg.from?.username) deps.permissions?.rememberUser(userId, msg.from.username);
+  const replyFrom = msg.reply_to_message?.from as { id: number; username?: string } | undefined;
+  if (replyFrom?.id !== undefined && replyFrom.username) {
+    deps.permissions?.rememberUser(replyFrom.id, replyFrom.username);
+  }
   // Ignore the bot's own messages and service-only updates (topic created,
   // pinned, etc.) which have no text/caption/media and would otherwise be
   // processed as prompts or rejected as "Not authorized".
@@ -583,18 +589,18 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     const pending = deps.awaitingPermissionAdd.get(permAddKey)!;
     deps.awaitingPermissionAdd.delete(permAddKey);
     const parts = msg.text.trim().split(/\s+/);
-    const id = Number(parts[0]);
     const role = parts[1] === "admin" ? "admin" : "operator";
     if (!deps.permissions) { await send("Permisos no disponibles."); return; }
     const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
     const isAdm = deps.permissions.isAdmin(permAddKey, userId, globalAdmin);
     if (!isAdm) { await send("Solo admin."); return; }
-    if (!Number.isFinite(id) || id <= 0) {
-      await send("ID inválido. Formato: <code>&lt;id&gt; [operator|admin]</code>");
+    const id = deps.permissions.resolveUser(parts[0]);
+    if (id === undefined) {
+      await send(`No conozco a <code>${esc(parts[0])}</code>. Pídele que escriba al bot (o responde a su mensaje) y vuelve a intentarlo, o usa su ID numérico.`);
       return;
     }
     deps.permissions.addUser(permAddKey, id, role);
-    await send(`✅ Añadido ${id} como ${role}.`);
+    await send(`✅ Añadido ${deps.permissions.label(id)} como ${role}.`);
     // Re-show the panel.
     const panel = deps.permissions.renderPanel(permAddKey, globalAdmin);
     await send(panel.html, { reply_markup: { inline_keyboard: panel.keyboard } });
@@ -767,6 +773,14 @@ export async function handleTextMessage(
   if (!msg.text) return;
   let text = (msg.text ?? msg.caption ?? "").trim();
   text = normalizeCommandText(text, me.username);
+
+  // Replying to someone with "/permissions add [role]" grants that person the
+  // role without having to know their ID or username.
+  const permAddReply = text.match(/^\/permissions\s+add\s*(operator|admin)?\s*$/i);
+  if (permAddReply && msg.reply_to_message?.from?.id !== undefined) {
+    const role = permAddReply[1]?.toLowerCase() === "admin" ? "admin" : "operator";
+    text = `/permissions add ${msg.reply_to_message.from.id} ${role}`;
+  }
 
   if (await handleCommand(deps, chatId, replyThread, text, send, userId)) return;
 

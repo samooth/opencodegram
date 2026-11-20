@@ -29,7 +29,7 @@ action is reachable from a button, so typing slash commands is optional.
 - **Forms & tool approvals** — interactive forms with option buttons;
   allow/reject and reject-with-reason for tool permissions. Granular
   per-thread/topic ACLs (viewer/operator/admin, read-only) are managed
-  separately from `/permissions` or the panel.
+  separately from `/permissions` or the panel, using `@username` or numeric IDs.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — per-chat profiles and toggles for display/delivery, thinking,
   tools, shell, previews, artifacts, voice, compact final, card theme and
@@ -49,7 +49,7 @@ action is reachable from a button, so typing slash commands is optional.
 - **Web app** — `/web` opens a private Mission Control page (enabled only when
   `WEB_APP_TOKEN` is set) with live session and metric data; groups get inline
   buttons only.
-- **Tests** — 395 Bun tests across 42 files + TypeScript typecheck + build.
+- **Tests** — 400 Bun tests across 42 files + TypeScript typecheck + build.
 
 ## Quick start
 

@@ -165,6 +165,40 @@ export class PermissionStore {
     return users.map((u) => ({ userId: u.user_id, role: (u.role === "admin" ? "admin" : "operator") }));
   }
 
+  /** Remember a Telegram username so permissions can be managed with @name. */
+  rememberUser(userId: number, username?: string | null): void {
+    const clean = (username ?? "").replace(/^@/, "").trim().toLowerCase();
+    if (!clean || !Number.isFinite(userId) || userId <= 0) return;
+    this.db.run(
+      "INSERT INTO known_users (user_id, username, updated_at) VALUES (?, ?, ?) " +
+      "ON CONFLICT(user_id) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at",
+      userId, clean, Date.now(),
+    );
+  }
+
+  /** Resolve a numeric ID or a previously seen @username to a user ID. */
+  resolveUser(token: string | undefined): number | undefined {
+    const t = (token ?? "").trim().replace(/^@/, "");
+    if (!t) return undefined;
+    if (/^\d+$/.test(t)) {
+      const n = Number(t);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    }
+    const row = this.db.query("SELECT user_id FROM known_users WHERE username = ?").get(t.toLowerCase()) as { user_id: number } | null;
+    return row?.user_id;
+  }
+
+  usernameFor(userId: number): string | undefined {
+    const row = this.db.query("SELECT username FROM known_users WHERE user_id = ?").get(userId) as { username: string } | null;
+    return row?.username;
+  }
+
+  /** Human label for a user: @username when known, numeric ID otherwise. */
+  label(userId: number): string {
+    const name = this.usernameFor(userId);
+    return name ? `@${name}` : String(userId);
+  }
+
   /** Render a button-driven panel for the current thread. */
   renderPanel(routeKey: string, globalAdmin?: number): { html: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
     const p = this.get(routeKey);
@@ -174,19 +208,20 @@ export class PermissionStore {
       "",
       `Modo: ${p.readOnly ? "🔒 solo lectura" : "✏️ escritura permitida"}`,
       `Heredar allowlist: ${p.inherit ? "sí" : "no"}`,
-      `Operadores: ${p.allowedUsers.length ? p.allowedUsers.join(", ") : "(global)"}`,
-      `Admins: ${p.adminUsers.length ? p.adminUsers.join(", ") : "(global admin)"}`,
+      `Operadores: ${p.allowedUsers.length ? p.allowedUsers.map((u) => this.label(u)).join(", ") : "(global)"}`,
+      `Admins: ${p.adminUsers.length ? p.adminUsers.map((u) => this.label(u)).join(", ") : "(global admin)"}`,
     ];
     const users = this.listUsers(routeKey);
     if (users.length) {
       lines.push("", "<b>Usuarios:</b>");
-      for (const u of users) lines.push(`• ${u.userId} — ${u.role}`);
+      for (const u of users) lines.push(`• ${this.label(u.userId)} — ${u.role}`);
     }
+    lines.push("", "<i>Añade con @username o con el ID numérico.</i>");
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     keyboard.push([{ text: p.readOnly ? "🔓 Permitir escritura" : "🔒 Solo lectura", callback_data: `permui:readonly:${p.readOnly ? "off" : "on"}` }]);
     keyboard.push([{ text: p.inherit ? "🔗 Heredar: sí" : "🔗 Heredar: no", callback_data: `permui:inherit:${p.inherit ? "off" : "on"}` }]);
     for (const u of users) {
-      keyboard.push([{ text: `🗑 ${u.userId} (${u.role})`, callback_data: `permui:remove:${u.userId}` }]);
+      keyboard.push([{ text: `🗑 ${this.label(u.userId)} (${u.role})`, callback_data: `permui:remove:${u.userId}` }]);
     }
     keyboard.push([{ text: "➕ Añadir usuario", callback_data: "permui:add" }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);

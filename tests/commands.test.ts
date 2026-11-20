@@ -189,4 +189,23 @@ describe("handleCommand routing", () => {
       expect(KNOWN_COMMANDS.has(name)).toBe(true);
     }
   });
+
+  test("/permissions add accepts @username", async () => {
+    const { PermissionStore } = await import("../src/permissions.js");
+    const perms = new PermissionStore(join(root, "data"));
+    perms.rememberUser(321, "carlos");
+    const sends: string[] = [];
+    const deps = {
+      config: { ADMIN_TELEGRAM_USER_ID: 1 },
+      store: { routeKey: (c: number, t?: number) => `${c}:${t ?? 0}` },
+      permissions: perms,
+      sessions: {},
+      panels: {},
+      files: {},
+    } as any;
+    const send: SendFn = async (html: string) => { sends.push(html); return {}; };
+    await handleCommand(deps, 123, undefined, "/permissions add @carlos operator", send, 1);
+    expect(perms.get("123:0").allowedUsers).toContain(321);
+    expect(sends[0]).toContain("@carlos");
+  });
 });
