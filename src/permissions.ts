@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { getDatabase } from "./db.js";
 import { readJsonSafe } from "./persist.js";
 import { logger } from "./logger.js";
 
@@ -20,31 +21,47 @@ export const DEFAULT_THREAD_PERMISSIONS: ThreadPermissions = {
   inherit: true,
 };
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS permissions (
-  route_key TEXT PRIMARY KEY,
-  read_only INTEGER NOT NULL DEFAULT 0,
-  inherit INTEGER NOT NULL DEFAULT 1
-);
-CREATE TABLE IF NOT EXISTS permission_users (
-  route_key TEXT NOT NULL,
-  user_id INTEGER NOT NULL,
-  role TEXT NOT NULL,
-  PRIMARY KEY (route_key, user_id)
-);
-`;
-
 export class PermissionStore {
-  private readonly db: Database;
+  private readonly db: ReturnType<typeof getDatabase>;
+  private readonly dataDir: string;
   private readonly jsonFile: string;
 
   constructor(dataDir = join(process.cwd(), "data")) {
     mkdirSync(dataDir, { recursive: true });
-    this.db = new Database(join(dataDir, "permissions.db"));
-    this.db.run("PRAGMA journal_mode = WAL;");
-    this.db.run(SCHEMA);
+    // Permissions live in the same SQLite database as every other state key.
+    this.db = getDatabase(dataDir);
+    this.dataDir = dataDir;
     this.jsonFile = join(dataDir, "permissions.json");
     this.migrateJson();
+    this.migrateLegacyDb();
+  }
+
+  /** Import the standalone `permissions.db` used by 0.3.x, if present. */
+  private migrateLegacyDb(): void {
+    const legacy = join(this.dataDir, "permissions.db");
+    if (!existsSync(legacy)) return;
+    try {
+      const old = new Database(legacy);
+      const rows = old.query("SELECT route_key, read_only, inherit FROM permissions").all() as Array<{ route_key: string; read_only: number; inherit: number }>;
+      const users = old.query("SELECT route_key, user_id, role FROM permission_users").all() as Array<{ route_key: string; user_id: number; role: string }>;
+      const tx = this.db.transaction(() => {
+        for (const r of rows) {
+          this.db.run("INSERT OR IGNORE INTO permissions (route_key, read_only, inherit) VALUES (?, ?, ?)", r.route_key, r.read_only, r.inherit);
+        }
+        for (const u of users) {
+          this.db.run("INSERT OR IGNORE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", u.route_key, u.user_id, u.role);
+        }
+      });
+      tx();
+      old.close();
+      for (const suffix of ["", "-wal", "-shm"]) {
+        const file = `${legacy}${suffix}`;
+        if (existsSync(file)) renameSync(file, `${file}.migrated`);
+      }
+      logger.info("permissions", "legacy permissions.db imported into the central database");
+    } catch (err) {
+      logger.error("permissions", "legacy db migration failed", err);
+    }
   }
 
   private migrateJson(): void {

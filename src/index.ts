@@ -14,6 +14,7 @@ import { SettingsStore } from "./settings.js";
 import { MetricsStore } from "./metrics.js";
 import { createOpsServer } from "./ops.js";
 import { PermissionStore } from "./permissions.js";
+import { importAllJson } from "./db.js";
 import { createPanels } from "./panels.js";
 import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
@@ -76,6 +77,10 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const store = new SessionStore();
+  // Bring every legacy JSON state file into the single SQLite database before
+  // the daemon starts serving updates.
+  const importedKeys = importAllJson(store.dataDir);
+  if (importedKeys) console.log(`[opencodegram] imported ${importedKeys} JSON state files into SQLite`);
   const permissions = new PermissionStore(store.dataDir);
   // Fail fast with a helpful hint if the data directory is not writable
   // (common in Docker when ./data is owned by root instead of uid 1000).

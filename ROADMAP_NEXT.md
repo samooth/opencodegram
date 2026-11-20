@@ -87,7 +87,19 @@
 - [ ] Rate limiting por usuario (opt-in, ya existe flag global).
 - [ ] Documentar módulos `config/doctor/opencode/persist` y `commands/*` en AGENTS.md.
 
+### E. SQLite + UX 100% por botones (0.4.0) — completado
+- [x] Crear `src/db.ts`: una sola BD `data/opencodegram.db` (WAL) con tabla `kv_state` para estado JSON y esquema relacional de permisos.
+- [x] Helper `jsonRead`/`jsonWrite` con migración transparente desde `data/*.json` (espejo JSON como backup, external edits ganan).
+- [x] Migrar `permissions.ts` a la BD central (incluye importación de `permissions.db` 0.3.x y `permissions.json`).
+- [x] Migrar `settings.ts`, `store.ts` y `updates.ts` al helper SQLite.
+- [x] Tests `tests/db.test.ts`: migración JSON/DB legada, persistencia entre instancias, espejo y estadísticas (8 tests).
+- [x] Panel "🗄 Datos" accesible por botón desde el panel principal (sin `/comandos`).
+- [x] Callbacks `db:info`, `db:refresh`, `db:vacuum` (admin), `db:back` con render en el mismo mensaje.
+- [x] Convertir los comandos del bot en botones `botcmd:` dentro de `⚡ Comandos` (peligrosos excluidos).
+- [x] Documentar BD y panel por botones en README/AGENTS/ARCHITECTURE/COMMANDS.
+- [x] Validar `typecheck && test && build` (388 tests), recargar daemon y commitear.
+
 ### Siguiente orden sugerido
-Graceful degradation → resumen automático → `/retry` con turno → `/search` sobre prompts → caché LRU → daemon Whisper.
+SQLite + botones → graceful degradation → resumen automático → `/retry` con turno → `/search` sobre prompts → daemon Whisper.
 
 ## Next (legacy)

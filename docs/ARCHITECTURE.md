@@ -12,7 +12,8 @@
 | --- | --- |
 | `index.ts` | Config, clients, dependency wiring, command menu |
 | `context.ts` | `BotDeps` shared by update handlers |
-| `store.ts` | Route tables and JSON persistence (`data/*.json`) |
+| `db.ts` | Single SQLite database (`data/opencodegram.db`) with JSON import/mirror and the `🗄 Datos` panel renderer |
+| `store.ts` | Route tables and SQLite persistence (JSON mirror in `data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
@@ -85,8 +86,9 @@
 ## Polling and runtime state
 
 - Telegram updates are consumed via long polling (`getUpdates`) by a single
-  process. The confirmed update offset is persisted in `data/telegram_offset.json`
-  together with the bot identity (`botId`).
+  process. The confirmed update offset is persisted in the SQLite `kv_state`
+  table (mirrored to `data/telegram_offset.json`) together with the bot identity
+  (`botId`).
 - On startup, if the stored `botId` differs from the current bot, the offset is
   reset to `0` and a warning is logged. This prevents polling from stalling when
   the bot/token is changed while reusing persisted `data/` (Telegram `update_id`
@@ -118,8 +120,9 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (375 tests across 40 files):
+`bun test` runs the Bun suite in `tests/` (388 tests across 41 files):
 
+- `db.test.ts` — SQLite migration (JSON + legacy `permissions.db`), persistence across instances, JSON mirror and stats.
 - `store.test.ts` — route/tab isolation, persistence and retirement.
 - `files.test.ts` — path confinement, symlinks, list/find/read and `/file`.
 - `filebrowser.test.ts` — listing, navigation, preview, search, expiry and documents.

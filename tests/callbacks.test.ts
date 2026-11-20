@@ -226,4 +226,52 @@ describe("handleCallback", () => {
     await handleCallback(deps, cq);
     expect(opened).toEqual(["/workspace/src/x.ts"]);
   });
+
+  test("db:info renders the SQLite panel in the same message", async () => {
+    const deps = makeDeps();
+    const edits: Array<{ html: string; markup: any }> = [];
+    deps.tg.editRichMessage = async (_chatId: number, _messageId: number, html: string, opts: any) => {
+      edits.push({ html, markup: opts.reply_markup });
+      return { message_id: 5 };
+    };
+    const cq = { id: "db1", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "db:info" } as any;
+    await handleCallback(deps, cq);
+    expect(edits).toHaveLength(1);
+    expect(edits[0].html).toContain("Base de datos");
+    expect(edits[0].html).toContain("SQLite");
+    const data = edits[0].markup.inline_keyboard.flat().map((b: any) => b.callback_data);
+    expect(data).toContain("db:refresh");
+    expect(data).toContain("db:vacuum");
+  });
+
+  test("botcmd: runs bot commands from an inline button", async () => {
+    const deps = makeDeps();
+    let called = 0;
+    deps.panels.showCommands = async () => { called++; };
+    const cq = { id: "bc1", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "botcmd:commands" } as any;
+    await handleCallback(deps, cq);
+    expect(called).toBe(1);
+  });
+
+  test("botcmd: refuses dangerous commands", async () => {
+    const deps = makeDeps();
+    const answers: string[] = [];
+    deps.tg.answerCallbackQuery = async (_id: string, text?: string) => { answers.push(text ?? ""); };
+    const cq = { id: "bc2", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "botcmd:delete" } as any;
+    await handleCallback(deps, cq);
+    expect(answers[0]).toContain("Escribe el comando manualmente");
+  });
+
+  test("db:vacuum is denied to non-admins", async () => {
+    const deps = makeDeps();
+    deps.config.ALLOWED_TELEGRAM_USER_IDS = "2";
+    const answers: string[] = [];
+    let edits = 0;
+    deps.tg.answerCallbackQuery = async (_id: string, text?: string) => { answers.push(text ?? ""); };
+    deps.tg.editRichMessage = async () => { edits++; return { message_id: 5 }; };
+    const cq = { id: "db2", from: { id: 2 }, message: { chat: { id: 123 }, message_id: 5 }, data: "db:vacuum" } as any;
+    await handleCallback(deps, cq);
+    expect(answers[0]).toContain("Solo admin");
+    expect(edits).toBe(0);
+  });
 });

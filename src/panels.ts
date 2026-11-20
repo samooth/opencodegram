@@ -12,6 +12,7 @@ import type { MetricsStore } from "./metrics.js";
 import { esc, sessionHeader, threadOpts, projectLabel, clampText } from "./util.js";
 import { formatBytes } from "./files/index.js";
 import { BOT_COMMANDS } from "./botcommands.js";
+import { isDangerousCommand } from "./dangerous.js";
 import type { InlineKeyboard, InlineButton } from "./apitypes.js";
 import { readGpuInfo } from "./resources.js";
 import { describeThrottles, throttleTotals } from "./ratethrottle.js";
@@ -249,10 +250,18 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     }
     const tableRows = cmds.map((c: CommandRow) => `<tr><td><code>/${esc(c.name ?? "")}</code></td><td>${esc(c.description ?? "")}</td></tr>`).join("");
     const table = `<table><tr><th>Command</th><th>Description</th></tr>${tableRows}</table>`;
+    const botCmds: Array<[string, string]> = BOT_COMMANDS.map((c) => [`/${c.command}`, c.description]);
     const keyboard = cmds.map((c: CommandRow) => [{ text: `/${c.name ?? ""}`, callback_data: `cmd:${c.name ?? ""}` }]);
+    // Bot commands are one tap away too: the goal is to never type a slash
+    // command just to discover or trigger a feature. Dangerous ones are left
+    // out and must still be typed explicitly.
+    const botButtons: Array<{ text: string; callback_data: string }> = botCmds
+      .map(([c]) => c.slice(1))
+      .filter((name) => name && !isDangerousCommand(name))
+      .map((name) => ({ text: `/${name}`, callback_data: `botcmd:${name}` }));
+    for (let i = 0; i < botButtons.length; i += 2) keyboard.push(botButtons.slice(i, i + 2));
     keyboard.push([{ text: "📂 Sesiones", callback_data: "panel:sessions" }, { text: "🧠 Modelos", callback_data: "panel:models" }]);
     keyboard.push([{ text: "📊 Estado", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    const botCmds: Array<[string, string]> = BOT_COMMANDS.map((c) => [`/${c.command}`, c.description]);
 
     const botRows = botCmds.map(([c, d]) => `<tr><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`).join("");
     const botTable = `<table><tr><th>Bot command</th><th>Description</th></tr>${botRows}</table>`;
@@ -472,6 +481,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       [{ text: "📂 Sesiones", callback_data: "panel:sessions" }, { text: "🧠 Modelos", callback_data: "panel:models" }, { text: "📁 Archivos", callback_data: "panel:files" }],
       [{ text: "➕ Nueva", callback_data: "panel:new" }, { text: "⚡ Comandos", callback_data: "panel:commands" }, { text: "📊 Estado", callback_data: "panel:status" }],
       [{ text: "⏹ Detener", callback_data: "panel:stop" }, { text: "⚙️ Ajustes", callback_data: "panel:settings" }, { text: "🔐 Permisos", callback_data: "panel:permissions" }, { text: "❓ Ayuda", callback_data: "panel:help" }],
+      [{ text: "🗄 Datos", callback_data: "db:info" }],
     ];
     await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }

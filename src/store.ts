@@ -8,7 +8,7 @@ import { TRANSCRIPT_MAX_BLOCKS, TRANSCRIPT_MAX_THINKING_BLOCKS, TRANSCRIPT_MAX_T
 import { esc, clampText } from "./util.js";
 import { renderResourceBlock, ensureGpuCache } from "./resources.js";
 import { logger } from "./logger.js";
-import { readJsonSafe, writeJsonAtomic } from "./persist.js";
+import { jsonRead, jsonWrite } from "./db.js";
 
 /** Persisted edit snapshots kept for the "full diff" buttons. */
 const PENDING_EDITS_MAX = 200;
@@ -340,7 +340,7 @@ export class SessionStore {
     try {
       const obj: Record<string, { chatId: number; threadId?: number; messageId: number }> = {};
       for (const [sid, info] of this.statusMessageBySession) obj[sid] = info;
-      writeJsonAtomic(this.statusMessagesFile, obj);
+      jsonWrite(this.statusMessagesFile, obj);
     } catch (err) {
       logger.error("store", "[statusMessages] save failed", err);
     }
@@ -473,7 +473,7 @@ export class SessionStore {
     try {
       const obj: Record<string, TodoItem[]> = {};
       for (const [sid, todos] of this.todosBySession) obj[sid] = todos;
-      writeJsonAtomic(this.todosFile, obj, false);
+      jsonWrite(this.todosFile, obj, false);
     } catch (err) {
       logger.error("store", "[todos] save failed", err);
     }
@@ -487,7 +487,7 @@ export class SessionStore {
         for (const [t, p] of map) inner[String(t)] = p;
         obj[sid] = inner;
       }
-      writeJsonAtomic(this.turnPromptsFile, obj, false);
+      jsonWrite(this.turnPromptsFile, obj, false);
     } catch (err) {
       logger.error("store", "[turnPrompts] save failed", err);
     }
@@ -609,7 +609,7 @@ export class SessionStore {
     try {
       const obj: Record<string, Array<{ label: string; text: string }>> = {};
       for (const [chatId, buttons] of this.customButtonsByChat) obj[String(chatId)] = buttons;
-      writeJsonAtomic(this.buttonsFile, obj);
+      jsonWrite(this.buttonsFile, obj);
     } catch (err) {
       logger.error("store", "[buttons] save failed", err);
     }
@@ -619,7 +619,7 @@ export class SessionStore {
     try {
       const obj: Record<string, { sessionId: string; edits?: EditDetail[] }> = {};
       for (const [key, snap] of this.pendingEditsByMessage) obj[key] = snap;
-      writeJsonAtomic(this.pendingEditsFile, obj);
+      jsonWrite(this.pendingEditsFile, obj);
     } catch (err) {
       logger.error("store", "[pendingEdits] save failed", err);
     }
@@ -795,7 +795,7 @@ export class SessionStore {
     try {
       const obj: Record<string, { sessionId: string; chatId: number; threadId?: number; messageId: number }> = {};
       for (const [key, value] of this.dashboardByRoute) obj[key] = value;
-      writeJsonAtomic(this.dashboardFile, obj);
+      jsonWrite(this.dashboardFile, obj);
     } catch (err) {
       logger.error("store", "[dashboard] save failed", err);
     }
@@ -941,7 +941,7 @@ export class SessionStore {
     try {
       const obj: Record<string, T> = {};
       for (const [k, v] of entries) obj[k] = v;
-      writeJsonAtomic(file, obj, pretty);
+      jsonWrite(file, obj, pretty);
     } catch (err) {
       logger.error("store", `${tag} save failed`, err);
     }
@@ -951,7 +951,7 @@ export class SessionStore {
     try {
       const obj: Record<string, number> = {};
       for (const [k, v] of map) obj[k] = v;
-      writeJsonAtomic(file, obj);
+      jsonWrite(file, obj);
     } catch (err) {
       logger.error("store", `${tag} save failed`, err);
     }
@@ -1167,7 +1167,7 @@ export class SessionStore {
     // pruned to the newest ones so a legacy file cannot keep the map (and its
     // rewrite) unbounded.
     {
-      const parsed = readJsonSafe<Record<string, string | { sessionId: string; edits?: EditDetail[] }>>(this.pendingEditsFile, "store");
+      const parsed = jsonRead<Record<string, string | { sessionId: string; edits?: EditDetail[] }>>(this.pendingEditsFile, "store");
       if (parsed) {
         const entries = Object.entries(parsed)
           .map(([key, value]) => {

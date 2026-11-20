@@ -22,16 +22,23 @@
 - `/models`, `/model` — model picker, free models first, variant selection.
 - `/agents`, `/agent` — agent picker; `/goal` — run the goal agent (multi-step tasks).
 
-## Settings
+## Settings and permissions
+
+Both commands simply open a **button panel**: every toggle, role and maintenance
+action can be performed by tapping buttons (including `🔐 Permisos`, `➕ Añadir
+usuario` and `🗄 Datos`). The argument forms below remain as a fallback.
 
 - `/settings` — show and toggle bot behavior per chat (with quick profiles):
-- `/permissions` — granular ACLs for the current thread/topic (admin only):
-  readonly on|off, inherit on|off, add <id> [operator|admin], remove <id>.
   - **Mode & delivery**: `displayMode` (`unified` pinned dashboard M1 + conversation M2, or `flexible`), card behavior (`fija (edita en sitio)` / `única (borra anterior)` / `nueva (conserva anterior)`: each turn gets its own card created immediately with live streaming; `fija` keeps editing the same card), long-answer delivery (`en tarjeta` / `mensaje aparte` / `auto`) and threshold.
   - **Profiles**: `Unificado`, `Unificado+msg`, `Flexible`.
   - **Visualization**: thinking/tools/COT/latest thought & tool, token speed, partial text, compact final, session name/topic options.
   - **Shell, files, voice, resources**: shell/tool input, auto artifacts, preview lines, diff style, voice transcription, resource usage/history.
   - In unified mode, M2 streams the latest thought at the bottom and long answers can be opened in full with **`📄 Ver completo`** (or delivered as separate rich-text messages, split at markdown section boundaries).
+- `/permissions` — granular ACLs for the current thread/topic (admin only):
+  `readonly on|off`, `inherit on|off`, `add <id> [operator|admin]`, `remove <id>`.
+- `⚡ Comandos` (in `🏠 Panel`) lists OpenCode **and** bot commands as inline
+  buttons (`botcmd:`), so no slash command needs to be typed to discover or run
+  a feature. Dangerous commands are deliberately excluded from buttons.
 
 ## Operations
 

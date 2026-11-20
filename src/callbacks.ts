@@ -1,4 +1,5 @@
 import { isDangerousCommand } from "./dangerous.js";
+import { handleCommand } from "./commands.js";
 import type { InlineKeyboard } from "./apitypes.js";
 import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files/index.js";
@@ -12,6 +13,7 @@ import { splitMarkdown } from "./transcript.js";
 import { extractEditFile } from "./editutil.js";
 import { getActivityReadPath } from "./transcriptmanager.js";
 import { buildGlobalAllowed } from "./permissions.js";
+import { dbStats, renderDbPanel, vacuum } from "./db.js";
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { showSessionPicker } from "./messages.js";
 import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "./util.js";
@@ -40,6 +42,7 @@ const PREFIXES = [
   "perm:",
   "permthread:",
   "permui:",
+  "db:",
   "use:",
   "spick:",
   "del:",
@@ -56,6 +59,7 @@ const PREFIXES = [
   "connect:",
   "sessions:",
   "cmd:",
+  "botcmd:",
   "tpage:",
   "tpagep:",
   "tpick:",
@@ -810,6 +814,39 @@ async function handlePermUI(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   }
 }
 
+/** Button-driven SQLite overview: stats, refresh and admin-only compaction. */
+async function handleDb(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const action = data.slice("db:".length);
+  if (action === "back") {
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.panels.sendPanel(chatId, threadId);
+    return;
+  }
+  const admin = isRouteAdmin(deps, chatId, threadId, cq.from?.id);
+  if (action === "vacuum" && !admin) {
+    await deps.tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  if (action === "vacuum") {
+    try {
+      vacuum(deps.store.dataDir);
+      await deps.tg.answerCallbackQuery(cq.id, "🧹 Base de datos compactada").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    } catch (err) {
+      await deps.tg.answerCallbackQuery(cq.id, `❌ ${String(err)}`).catch((warn) => console.warn("[callbacks]", warn?.message ?? warn));
+      return;
+    }
+  } else {
+    await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
+  const panel = renderDbPanel(dbStats(deps.store.dataDir), admin);
+  const opts = { ...threadOpts(threadId), reply_markup: { inline_keyboard: panel.keyboard } };
+  if (messageId !== undefined) {
+    await deps.tg.editRichMessage(chatId, messageId, panel.html, opts).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  } else {
+    await deps.tg.sendRichMessage(chatId, panel.html, opts).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
+}
+
 async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const { tg, panels, sessions, files, oc, store, settings } = deps;
   // The pinned dashboard (M1) must not be replaced by panel views.
@@ -979,6 +1016,25 @@ async function handleSessions(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
     else if (mode === "group") await deps.panels.showSessions(chatId, page, cq.message?.message_id, threadId, chatId);
     else await deps.panels.showSessions(chatId, page, cq.message?.message_id, threadId);
     return;
+  }
+}
+
+/** Run a bot command from an inline button (no slash command required). */
+async function handleBotCommand(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const name = data.slice("botcmd:".length).trim();
+  if (!name) return;
+  if (isDangerousCommand(name)) {
+    await deps.tg.answerCallbackQuery(cq.id, "Escribe el comando manualmente").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.sendRichMessage(chatId, "⚠️ Por seguridad, ejecuta este comando escribiéndolo.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  await deps.tg.answerCallbackQuery(cq.id, `/${esc(name)}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const send = (html: string, opts?: Record<string, unknown>) => deps.tg.sendRichMessage(chatId, html, { ...threadOpts(threadId), ...(opts ?? {}) });
+  try {
+    await handleCommand(deps, chatId, threadId, `/${name}`, send, cq.from?.id);
+  } catch (err) {
+    console.error("[botcmd]", name, err);
+    await send(`❌ ${esc(String(err))}`).catch((warn) => console.warn("[callbacks]", warn?.message ?? warn));
   }
 }
 
@@ -1199,6 +1255,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "ops:": handleOps,
   "permthread:": handlePermThread,
   "permui:": handlePermUI,
+  "db:": handleDb,
   "panel:": handlePanel,
   "perm:": handlePerm,
   "spick:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {
@@ -1258,6 +1315,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "connect:": handleConnect,
   "sessions:": handleSessions,
   "cmd:": handleCmd,
+  "botcmd:": handleBotCommand,
   "profile:": handleProfile,
   "viewfull:": handleViewFull,
 };

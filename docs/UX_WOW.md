@@ -6,8 +6,19 @@
 
 ## Estado
 
-**P0, P1 y P2 completados** (18 nov 2026). Validado con `bun run typecheck`,
-`bun test` (375 tests en 40 archivos) y `bun run build`.
+**P0, P1 y P2 completados** (18 nov 2026). Extensión 0.4.0 (20 nov 2026):
+estado centralizado en SQLite y panel gestionable casi íntegramente por botones.
+
+Validado con `bun run typecheck`, `bun test` (388 tests en 41 archivos) y
+`bun run build`.
+
+### Extensión 0.4.0 — SQLite + botones
+
+- [x] Una sola BD `data/opencodegram.db` para todo el estado persistente.
+- [x] Migración automática de `data/*.json` y del `permissions.db` legado.
+- [x] `🏠 Panel` → sesiones, modelos, archivos, estado, ajustes, permisos,
+  datos y ayuda; `⚡ Comandos` convierte los comandos del bot en botones.
+- [x] `🗄 Datos` muestra estadísticas SQLite y permite compactar (admin).
 
 ## Principios
 

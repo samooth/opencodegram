@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { handleCallback } from "./callbacks.js";
 import { handleMessage } from "./messages.js";
 import { POLL_BACKOFF_MS } from "./constants.js";
-import { readJsonSafe, writeJsonAtomic } from "./persist.js";
+import { jsonRead, jsonWrite } from "./db.js";
 
 let stopRequested = false;
 export function requestStopPolling(): void { stopRequested = true; }
@@ -61,7 +61,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
 
   const saveOffset = (value: number) => {
     try {
-      writeJsonAtomic(offsetFile, { offset: value, botId }, false);
+      jsonWrite(offsetFile, { offset: value, botId }, false);
     } catch (err) {
       console.error("[poll] could not persist offset", err);
     }
@@ -111,7 +111,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
 
 function loadOffset(file: string, botId?: number): number {
   try {
-    const parsed = readJsonSafe<{ offset?: unknown; botId?: unknown }>(file, "poll");
+    const parsed = jsonRead<{ offset?: unknown; botId?: unknown }>(file, "poll");
     if (!parsed) return 0;
     const storedBotId = Number(parsed?.botId);
     if (botId && Number.isFinite(storedBotId) && storedBotId > 0 && storedBotId !== botId) {

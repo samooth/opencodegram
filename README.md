@@ -37,7 +37,7 @@ with per-topic isolation, rich status cards and inline keyboards.
   fork/subagent badges and background-subagent counts.
 - **Web app** — `/web` opens a private Mission Control page (token-protected)
   with live session and metric data; groups get inline buttons only.
-- **Tests** — 375 Bun tests across 40 files + TypeScript typecheck.
+- **Tests** — 388 Bun tests across 41 files + TypeScript typecheck.
 
 ## Quick start
 
@@ -123,11 +123,18 @@ bun run typecheck
 
 - Admin-only bot; in groups it responds to commands, mentions to the configured
   bot username, or replies to the bot.
-- Runtime state lives in `data/` (ignored by git), including the Telegram
-  polling offset (`telegram_offset.json`). The offset is stored with the bot
-  identity and reset automatically if the bot/token changes, so switching to a
-  different bot while keeping `data/` does not stall polling. If you run an
-  older version and hit this, remove `data/telegram_offset.json` and restart.
+- Runtime state lives in a single SQLite database, `data/opencodegram.db`
+  (ignored by git). Legacy `data/*.json` files are imported on first read and
+  kept as a readable mirror; a standalone `permissions.db` from older versions
+  is imported once too. Telegram polling offset (`telegram_offset.json`) is
+  stored with the bot identity and reset automatically if the bot/token changes,
+  so switching to a different bot while keeping `data/` does not stall polling.
+  If you run an older version and hit this, remove `data/telegram_offset.json`
+  and restart.
+- Almost everything is reachable from inline buttons: `🏠 Panel` → sessions,
+  models, files, status, settings, granular permissions and the `🗄 Datos`
+  SQLite overview (with admin-only VACUUM). `⚡ Comandos` exposes both OpenCode
+  and bot commands as buttons, so typing `/comandos` is rarely necessary.
 - Telegram long polling requires a single consumer per token and no webhook.
   If updates stop arriving, check `getWebhookInfo` (clear the webhook if set)
   and ensure no other instance is polling the same token. In Docker, `.env`

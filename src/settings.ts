@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { esc } from "./util.js";
 import { logger } from "./logger.js";
-import { readJsonSafe, writeJsonAtomic } from "./persist.js";
+import { jsonRead, jsonWrite } from "./db.js";
 
 export type DiffStyle = "simple" | "unified";
 /** Where the session card lives and whether its previous messages are preserved. */
@@ -256,7 +256,7 @@ export class SettingsStore {
     try {
       const obj: Record<string, Partial<ChatSettings>> = {};
       for (const [chatId, settings] of this.settings) obj[String(chatId)] = settings;
-      writeJsonAtomic(this.file, obj);
+      jsonWrite(this.file, obj);
     } catch (err) {
       // Settings are a convenience; never break the bot, but do not hide the
       // failure: a full disk would silently lose every toggle.
@@ -265,7 +265,7 @@ export class SettingsStore {
   }
 
   private load(): void {
-    const parsed = readJsonSafe<Record<string, Partial<ChatSettings>>>(this.file, "settings");
+    const parsed = jsonRead<Record<string, Partial<ChatSettings>>>(this.file, "settings");
     if (!parsed) return;
     for (const [chatId, settings] of Object.entries(parsed)) {
       const id = Number(chatId);

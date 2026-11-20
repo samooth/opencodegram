@@ -64,12 +64,13 @@ Main modules:
 | --- | --- |
 | `index.ts` | Config, clients, dependency wiring, command menu |
 | `context.ts` | Shared `BotDeps` |
-| `permissions.ts` | Per-thread/topic permission store and granular ACLs |
+| `db.ts` | Single SQLite database (`data/opencodegram.db`) for all persisted state, with JSON migration/mirror and panel renderer |
+| `permissions.ts` | Per-thread/topic permission store and granular ACLs (SQLite-backed) |
 | `config.ts` | Zod-validated environment configuration |
 | `doctor.ts` | Startup diagnostics (`bun run doctor`) |
 | `opencode.ts` | OpenCode HTTP bridge (client, models, sessions, cost) |
-| `persist.ts` | Atomic JSON read/write helpers |
-| `store.ts` | Route tables and JSON persistence (`data/*.json`) |
+| `persist.ts` | Low-level atomic JSON helpers (legacy file migration source) |
+| `store.ts` | Route tables and SQLite persistence (JSON mirror in `data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
@@ -135,7 +136,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (375 tests across 40 files):
+`bun test` covers (388 tests across 41 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -171,6 +172,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
 - `tests/permissions.test.ts` — per-thread ACLs, roles, read-only and persistence.
+- `tests/db.test.ts` — SQLite migration (JSON + legacy `permissions.db`), persistence, JSON mirror and stats.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
 - `tests/transcribe.test.ts` — voice transcription config and execution.
 - `tests/promptdedupe.test.ts` — stripping restated prompts from reasoning.
@@ -213,14 +215,22 @@ Esquema rápido:
 
 ## Runtime state
 
-`data/` is ignored by git and contains persisted runtime state, including route
-bindings and mappings (`active.json`, `threads.json`, `chats.json`,
-`messages.json`, `delivery.json`, `last*`, `topicTitles.json`), Telegram polling
-offset/identity (`telegram_offset.json`), session data (`transcripts/` — one
-JSON file per session, `turnPrompts.json`, `todos.json`, `statusMessages.json`,
-`dashboard.json`, `cot.json`, `pendingEdits.json`, `buttons.json`), per-chat
-settings (`settings.json`) and logs (`audit.log`, `sessions.log`; both rotate at
-1 MB to `.1`).
+All persisted state lives in a single SQLite database, `data/opencodegram.db`
+(WAL mode), keyed by state name in `kv_state` plus relational `permissions` and
+`permission_users` tables. `data/` is ignored by git. The legacy `data/*.json`
+files are kept as a readable mirror and as a migration source: on first read
+they are imported into SQLite, and a later external edit of a JSON file wins and
+is re-imported. A legacy standalone `permissions.db` is imported once and
+renamed to `.migrated`. The mirrors cover route bindings and mappings
+(`active.json`, `threads.json`, `chats.json`, `messages.json`, `delivery.json`,
+`last*`, `topicTitles.json`), polling offset (`telegram_offset.json`), session
+data (`transcripts/` — one JSON file per session, `turnPrompts.json`,
+`todos.json`, `statusMessages.json`, `dashboard.json`, `cot.json`,
+`pendingEdits.json`, `buttons.json`) and per-chat settings (`settings.json`).
+Logs (`audit.log`, `sessions.log`) stay on disk and rotate at 1 MB to `.1`.
+
+The `🗄 Datos` button in the panel shows SQLite stats and lets an admin compact
+the database (VACUUM) without typing a command.
 
 `telegram_offset.json` stores the confirmed update offset and the bot `botId`;
 on startup the offset is reset if the bot identity changes, so switching bots
