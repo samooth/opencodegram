@@ -42,6 +42,8 @@ export type PublishOpts = Partial<CardView> & {
   working?: boolean;
   /** The final answer lives in the strip, so the page must not trim it away. */
   answerInCard?: boolean;
+  /** Block kinds rendered in the status strip instead of the page (no duplicates). */
+  hideKinds?: Array<import("./transcript.js").TranscriptKind>;
 };
 
 const DEFAULT_VIEW: CardView = { compact: false, reading: false, showResources: true, unified: false };
@@ -169,7 +171,9 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // Normally the compact card fits a phone screen (≤1.200 chars). When the
     // final answer is embedded, raise the budget so clampText never cuts it.
     const LAYOUT_LIMIT = view.answerInCard ? 3900 : view.compact ? 1200 : 3900;
-    const all = blocksOf(s);
+    const all = opts.hideKinds?.length
+      ? blocksOf(s).filter((b) => !opts.hideKinds!.includes(b.kind))
+      : blocksOf(s);
     let pages = paginateTranscript(all);
     // When the answer is embedded in the strip, pages that end up holding only
     // the answer block would render as an empty extra page. Drop them so the

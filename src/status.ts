@@ -127,38 +127,55 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
   };
 
 
-  /** Summary shown once the turn is over. */
+  /** Last reasoning chunk accumulated for this turn (COT segments are joined with ---). */
+  const lastReasoning = (s: ChatSession): string => {
+    const cot = s.cotBuffer?.trim() ?? "";
+    if (!cot) return "";
+    return (cot.split(/\n\n---\n\n/).pop() ?? "").trim();
+  };
+
+  /**
+   * Finished card strip. The reading order follows /settings:
+   * Razonamiento → Pensamiento → Respuesta, with the "Listo" receipt as a
+   * compact footer so the answer is never buried under a status badge.
+   */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
+    const lines: string[] = [];
+
+    // 1) Razonamiento (the reasoning that explains the answer).
+    const reasoning = lastReasoning(s);
+    if (settings.showThinking && reasoning) {
+      lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-3500))}</blockquote>`);
+    }
+
+    // 2) Pensamiento (compact activity: thoughts, reads, tools).
+    if (settings.showThinking || settings.showLatestThought) {
+      const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), s.activityExpanded === true);
+      if (doneActivity) lines.push(doneActivity);
+    }
+
+    // 3) Respuesta (the whole point of the turn).
+    if (settings.showFinalInCard && s.lastFinalText?.trim()) {
+      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(s.lastFinalText.trim().slice(0, 2200))}`);
+    }
+
+    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
+    if (todosBlock) lines.push(todosBlock);
+    if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
+
+    // 4) Receipt last: "✅ Listo" as a small footer, not a headline.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     const edits = summarizeEdits(s, s.toolCallDetails);
     const test = detectTestRun(s.toolCallDetails);
-    const lines: string[] = [renderTurnReceipt({
+    lines.push(renderTurnReceipt({
       stopped: s.stopped,
       error: s.lastTurnError,
       prompt,
       edits: edits.files ? edits : undefined,
       test,
       telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
-    })];
-    if (settings.showFinalInCard && s.lastFinalText?.trim()) {
-      // The answer is the whole point of the turn: show it right below the
-      // receipt, before the activity detail. Long answers stay reachable via
-      // 📄 Respuesta / 📖 Leer.
-      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(s.lastFinalText.trim().slice(0, 2200))}`);
-    }
-    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
-    if (todosBlock) lines.push(todosBlock);
-    if (s.detached) lines.push("<p><i>🔀 Esta sesión quedó en segundo plano.</i></p>");
-    const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), s.activityExpanded === true);
-    if (doneActivity) lines.push(doneActivity);
-    if (settings.showTools && !s.activity && s.toolCallDetails.length) {
-      const shell = s.toolCallDetails.filter((d) => isShellTool(d.name)).length;
-      const other = s.toolCallDetails.length - shell;
-      const parts: string[] = [];
-      if (shell) parts.push(`${shell} shell`);
-      if (other) parts.push(`${other} herramientas`);
-      lines.push(`<p><i>🔧 ${parts.join(" · ")}</i></p>`);
-    }
+    }));
+
     return lines.join("");
   };
 
@@ -191,6 +208,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
         extraTop: cap(renderDoneStrip(s, settings)),
         working: false,
         answerInCard: hideAnswer,
+        // Reasoning and speed are already in the strip; never print them twice.
+        hideKinds: ["thinking", "meta"],
       });
     } else {
       const parts = renderLiveParts(s, settings, unified);
@@ -610,12 +629,17 @@ ${chunk}</blockquote>`,
       lines.push(`<blockquote expandable>🧾 COT (${target.cotCount ?? 0})
 ${esc(cot)}</blockquote>`);
     }
-    lines.push(target.stopped ? "⏹ <b>Detenido</b>" : "✅ <b>Listo</b>");
+    // Reading order: Razonamiento → Pensamiento → Respuesta. The receipt goes
+    // at the very end so the answer is the last thing the user reads.
     if (!settings.compactFinal) {
       if (inlineThinking && settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
         const r = target.reasoningBuffer.trim();
         lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Razonamiento
 ${esc(r)}</blockquote>`);
+      }
+      if (settings.showThinking || settings.showLatestThought) {
+        const activityBlock = renderActivity(target.activity, settings.cardVerbosity, true, Date.now(), target.activityExpanded === true);
+        if (activityBlock) lines.push(activityBlock);
       }
       const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
       const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
@@ -652,11 +676,18 @@ ${esc(r)}</blockquote>`);
 ${esc(sum.slice(0, 2000))}</blockquote>`);
       else lines.push(`📦 <b>Compaction</b>: ${esc(sum)}`);
     }
+    if (settings.showFinalInCard && target.lastFinalText?.trim()) {
+      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(target.lastFinalText.trim().slice(0, 2200))}`);
+    }
     let resourceBlock = "";
     if (settings.showResourceUsage) {
       target.cardTheme = settings.cardTheme;
       resourceBlock = renderResourceBlock(target, { history: settings.resourceHistory });
       lines.push(resourceBlock);
+    }
+    // Receipt as a quiet footer, after the answer and the indicators.
+    lines.push(target.stopped ? "⏹ <b>Detenido</b>" : "✅ <b>Listo</b>");
+    if (settings.showResourceUsage) {
       const full = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
       if (full.length > 3900 && resourceBlock) {
         const without = full.replace(resourceBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd();

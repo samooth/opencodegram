@@ -306,3 +306,52 @@ describe("P1.5 resources and web app", () => {
     }
   });
 });
+
+describe("finished card reading order", () => {
+  test("Razonamiento → Pensamiento → Respuesta, with the receipt last", async () => {
+    const activity = createTurnActivity();
+    recordThought(activity, "analizando el problema");
+    const { status, published } = makeHarness({
+      ...DEFAULT_SETTINGS,
+      showThinking: true,
+      showLatestThought: true,
+      showFinalInCard: true,
+    });
+    const s = makeSession({
+      statusFinished: true,
+      cotBuffer: "pensamiento de la primera parte\n\n---\n\nrazonamiento final del turno",
+      lastFinalText: "Esta es la respuesta final.",
+      activity,
+      promptStartTime: Date.now() - 5000,
+      turnFinishedAt: Date.now(),
+    });
+    await status.publishCard(7, s);
+    const html = published[0].extraTop as string;
+    const reasoning = html.indexOf("🧠 Razonamiento");
+    const thinking = html.indexOf("Pensamiento");
+    const answer = html.indexOf("💬 Respuesta");
+    const done = html.indexOf("✅ <b>Listo</b>");
+    expect(reasoning).toBeGreaterThanOrEqual(0);
+    expect(thinking).toBeGreaterThan(reasoning);
+    expect(answer).toBeGreaterThan(thinking);
+    expect(done).toBeGreaterThan(answer);
+  });
+
+  test("settings disable each block", async () => {
+    const { status, published } = makeHarness({
+      ...DEFAULT_SETTINGS,
+      showThinking: false,
+      showLatestThought: false,
+      showFinalInCard: false,
+    });
+    const s = makeSession({
+      statusFinished: true,
+      cotBuffer: "razonamiento oculto",
+      lastFinalText: "respuesta oculta",
+    });
+    await status.publishCard(7, s);
+    const html = published[0].extraTop as string;
+    expect(html).not.toContain("🧠 Razonamiento");
+    expect(html).toContain("✅ <b>Listo</b>");
+  });
+});
