@@ -517,12 +517,19 @@ export function renderStatsPanel(data: StatsData, opts: StatsPanelOpts): {
       );
     }
     if (data.models.length > 5) lines.push(`<i>… y ${data.models.length - 5} modelos más en el reporte HTML.</i>`);
-    if (data.providers.length > 1) {
-      lines.push("", "<b>Proveedores</b>");
-      for (const p of data.providers.slice(0, 4)) {
+    if (data.providers.length) {
+      lines.push("", "<b>🌐 Proveedores</b>");
+      for (const p of data.providers.slice(0, 5)) {
         const share = t.turns ? (p.turns / t.turns) * 100 : 0;
-        lines.push(`<i>${esc(p.providerID)} ${bar(share)} ${pct(share)} · ${turnsLabel(p.turns)}</i>`);
+        const models = data.models.filter((m) => m.providerID === p.providerID).length;
+        lines.push(
+          `<blockquote expandable><b>${esc(p.providerID)}</b> · ${models} ${models === 1 ? "modelo" : "modelos"}`,
+          `${bar(share)} <b>${pct(share)}</b> del tráfico · ${turnsLabel(p.turns)}`,
+          `<i>✅ ${pct(p.successRate)} · ⏱ ${fmtMs(p.avgMs)} (p95 ${fmtMs(p.p95Ms)}) · ⚡ ${p.tokPerSec.toFixed(1)} tok/s · 💵 ${fmtCost(p.cost)}</i>`,
+          `<i>🧠 ${fmtTokens(p.outputTokens)} salida · ${fmtTokens(p.inputTokens)} entrada · 🔧 ${int(p.toolCalls)}${p.toolFailures ? ` (${int(p.toolFailures)}✗)` : ""}</i></blockquote>`,
+        );
       }
+      if (data.providers.length > 5) lines.push(`<i>… y ${data.providers.length - 5} proveedores más en el reporte HTML.</i>`);
     }
   }
   lines.push("", "<i>📄 El reporte HTML es un archivo único, responsive y sin dependencias externas.</i>");

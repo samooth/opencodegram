@@ -49,6 +49,9 @@ describe("model statistics", () => {
       expect(panel.html).toContain("kilo/beam-free");
       expect(panel.html).toContain("<table compact striped>");
       expect(panel.html).toContain("<b>100%</b>");
+      expect(panel.html).toContain("<b>🌐 Proveedores</b>");
+      expect(panel.html).toContain("1 modelo");
+      expect(panel.html).toContain("del tráfico");
       expect(panel.keyboard.length).toBeGreaterThanOrEqual(3);
       expect(panel.keyboard.some((row) => row.some((b) => b.callback_data.startsWith("stats:export:")))).toBe(true);
     } finally { rmSync(root, { recursive: true, force: true }); }
