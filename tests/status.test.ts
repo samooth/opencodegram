@@ -44,4 +44,19 @@ describe("status finishStatus", () => {
     expect(s.statusFinished).toBe(true);
     expect(s.statusMessageId).toBeUndefined();
   });
+
+  test("startStatus shows activity detail when a think/shell/tool toggle is on", async () => {
+    const status = createStatusManager({
+      tg: { editRichMessage: async () => ({ message_id: 1 }), sendRichMessage: async () => ({ message_id: 2 }) } as any,
+      threadOptsFor: () => ({}),
+      getSettings: () => ({ showThinking: false, showShell: false, showTools: true }) as any,
+      pendingEdits: new Map(),
+      rememberCot: () => {},
+      rememberStatusMessage: () => {},
+      forgetStatusMessage: () => {},
+    });
+    const s = makeSession({ activityExpanded: false });
+    await status.startStatus(7, s);
+    expect(s.activityExpanded).toBe(true);
+  });
 });

@@ -37,8 +37,8 @@ pm2 logs opencodegram
 4. Commit with a concise message.
 5. Report to the user in Spanish.
 
-Do not delete large directories without explicit permission. Keep commits and
-temporary files small and clean them up.
+Nunca borres nada sin autorización explícita. Mantén los commits y los archivos
+temporales pequeños y límpialos al terminar.
 
 ## Environment
 
@@ -46,6 +46,8 @@ temporary files small and clean them up.
 
 - `TELEGRAM_BOT_TOKEN`
 - `ADMIN_TELEGRAM_USER_ID` (the admin user; defaults to none if unset)
+- `ALLOWED_TELEGRAM_USER_IDS` (optional comma-separated allowlist; without
+  either this or `ADMIN_TELEGRAM_USER_ID` the bot ignores all messages)
 - `OPENCODE_BASE_URL` (default `http://127.0.0.1:49374`)
 - `OPENCODE_DIRECTORY` (optional session directory)
 - `REPOS_DIRECTORY` (optional folder containing repositories; enables choosing a repo when creating a session)
@@ -53,6 +55,8 @@ temporary files small and clean them up.
   `OPS_HOST:OPS_PORT/app?token=…`; disabled when unset)
 - `WEB_APP_TITLE` (default `Mission Control`)
 - `WEB_APP_URL` (optional public URL used by `/web` in private chats)
+- `WEBHOOK_MODE`, `WEBHOOK_URL`, `WEBHOOK_SECRET`, `WEBHOOK_PORT`, `WEBHOOK_PATH`
+  (optional webhook mode; long polling remains the default)
 
 OpenCode 2.3.0 runs locally. The daemon reads `.env` automatically under Bun.
 
@@ -136,7 +140,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (388 tests across 41 files):
+`bun test` covers (394 tests across 42 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -171,6 +175,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
   resource indicators and the private web app.
 - `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
+- `tests/botcommands.test.ts` — no duplicate bot commands in the Telegram menu.
 - `tests/permissions.test.ts` — per-thread ACLs, roles, read-only and persistence.
 - `tests/db.test.ts` — SQLite migration (JSON + legacy `permissions.db`), persistence, JSON mirror and stats.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
@@ -193,33 +198,18 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 - Preserve HTML escaping with `esc`.
 - Use `threadOpts(threadId)` for topic replies.
 - Handle errors per update so one bad update does not stop the bot.
-- In groups, respond only to commands, mentions to the configured bot username, or replies to
-  the bot.
+- In groups, respond only to commands addressed to the bot, mentions of its own
+  username (detected automatically from Telegram), or replies to the bot.
 - Free models first; show provider/model and variant where relevant.
 - User-facing responses should be in Spanish.
-
-## Offloading (zig-ai) — casos y plan
-
-Casos de residencia VRAM/RAM/NVMe y plan de flexibilidad total:
-`/ai/repos/2026/zig-ai/CASOS.md` y `/ai/repos/2026/zig-ai/PLAN_CASOS.md`.
-
-Esquema rápido:
-- A capas densas parciales (VRAM+RAM) — layer streaming.
-- B pesos VRAM, KV RAM — `--kv-offload`.
-- C MoE hot VRAM / cold RAM-NVMe — `offload_cache`.
-- D pipeline híbrido por capa.
-- E todo en NVMe.
-- F KV en NVMe (contextos gigantes).
-- G multi-GPU.
-- H presupuesto adaptativo por prioridad.
 
 ## Runtime state
 
 All persisted state lives in a single SQLite database, `data/opencodegram.db`
 (WAL mode), keyed by state name in `kv_state` plus relational `permissions` and
 `permission_users` tables. `data/` is ignored by git. The legacy `data/*.json`
-files are kept as a readable mirror and as a migration source: on first read
-they are imported into SQLite, and a later external edit of a JSON file wins and
+files are kept as a readable mirror and as a migration source: they are imported
+at startup (`importAllJson`), and a later external edit of a JSON file wins and
 is re-imported. A legacy standalone `permissions.db` is imported once and
 renamed to `.migrated`. The mirrors cover route bindings and mappings
 (`active.json`, `threads.json`, `chats.json`, `messages.json`, `delivery.json`,
@@ -232,8 +222,11 @@ Logs (`audit.log`, `sessions.log`) stay on disk and rotate at 1 MB to `.1`.
 The `🗄 Datos` button in the panel shows SQLite stats and lets an admin compact
 the database (VACUUM) without typing a command.
 
-`telegram_offset.json` stores the confirmed update offset and the bot `botId`;
-on startup the offset is reset if the bot identity changes, so switching bots
-while keeping `data/` does not stall polling.
+`telegram_offset.json` stores the confirmed update offset and the numeric bot
+`botId`; on startup the offset is reset if that ID changes, so switching bots
+while keeping `data/` does not stall polling. Regenerating the token of the same
+bot does **not** reset the offset — the token is not stored or compared. To force
+a reset, edit `offset` to `0` in the JSON mirror (keep `botId`); the file wins and
+is re-imported into SQLite on the next start.
 
 Do not commit runtime state.

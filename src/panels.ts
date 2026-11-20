@@ -460,7 +460,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }, s?.sessionId);
   }
 
-  async function sendPanel(chatId: number, threadId?: number): Promise<void> {
+  async function renderPanel(chatId: number, threadId?: number): Promise<{ html: string; keyboard: InlineKeyboard }> {
     let s = getActiveSession(chatId, threadId);
     if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
     const [ocInfo, sessionCount] = await Promise.all([
@@ -483,7 +483,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       [{ text: "⏹ Detener", callback_data: "panel:stop" }, { text: "⚙️ Ajustes", callback_data: "panel:settings" }, { text: "🔐 Permisos", callback_data: "panel:permissions" }, { text: "❓ Ayuda", callback_data: "panel:help" }],
       [{ text: "🗄 Datos", callback_data: "db:info" }],
     ];
-    await tg.sendRichMessage(chatId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+    return { html: text, keyboard };
+  }
+
+  async function sendPanel(chatId: number, threadId?: number): Promise<void> {
+    const { html, keyboard } = await renderPanel(chatId, threadId);
+    await tg.sendRichMessage(chatId, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
   }
 
   /**
@@ -519,5 +524,5 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     return { html: clampText(text, 3900), keyboard };
   }
 
-  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, sendPanel, renderOps, providerListByChat, selectedProviderByChat, modelTargetSessionByScope, modelPanels, userScope };
+  return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, renderPanel, sendPanel, renderOps, providerListByChat, selectedProviderByChat, modelTargetSessionByScope, modelPanels, userScope };
 }

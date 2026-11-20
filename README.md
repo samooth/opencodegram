@@ -3,7 +3,8 @@
 Telegram control plane for OpenCode.
 
 Control sessions, models, files, diffs, forms and permissions from Telegram,
-with per-topic isolation, rich status cards and inline keyboards.
+with per-topic isolation, rich status cards and inline keyboards. Almost every
+action is reachable from a button, so typing slash commands is optional.
 
 ## Features
 
@@ -20,34 +21,51 @@ with per-topic isolation, rich status cards and inline keyboards.
   errors and copy answer/prompt/command buttons. Exports to HTML, Markdown,
   JSON-LD and JSONL (fine-tuning) with per-turn user prompts.
 - **Models** — free models first, variant selection, agent picker.
-- **Files** — `/ls`, `/find`, `/read`, `/zip`, `/file`; safe path confinement;
-  inline preview and document sends.
+- **Files** — `/ls`, `/find`, `/read`, `/tree`, `/zip`, `/file`; safe path
+  confinement; inline preview and document sends.
 - **Media** — photos, documents, audio, voice and video; voice transcription
-  via whisper.cpp or a bundled HuggingFace Whisper wrapper (auto language
-  detection).
-- **Forms & permissions** — interactive forms with option buttons, allow/reject,
-  reject-with-reason.
+  via a whisper.cpp-compatible CLI, a bundled HuggingFace Whisper wrapper (auto
+  language detection), or a persistent SSE daemon (`WHISPER_DAEMON_URL`).
+- **Forms & tool approvals** — interactive forms with option buttons;
+  allow/reject and reject-with-reason for tool permissions. Granular
+  per-thread/topic ACLs (viewer/operator/admin, read-only) are managed
+  separately from `/permissions` or the panel.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
-- **Settings** — profiles and toggles for display/delivery, thinking, tools,
-  shell, previews, artifacts, voice, compact final, card theme, verbosity, collapsible resources, compact activity summary (`+3 pensamientos · 3 lecturas · 1 herramienta`, one collapsible row per thought/edit/tool, edits inside the same card with per-file buttons) and streaming transcription.
+- **Settings** — per-chat profiles and toggles for display/delivery, thinking,
+  tools, shell, previews, artifacts, voice, compact final, card theme and
+  verbosity, plus a collapsible resource block and a compact activity summary
+  (`3 pensamientos · 3 lecturas · 1 herramienta ▾`, expandable in the same card
+  with per-file diff/read buttons).
+- **SQLite & button-driven UI** — all persisted state lives in a single
+  `data/opencodegram.db` (legacy JSON files are imported and kept as a mirror).
+  `🏠 Panel` exposes sessions, models, files, status, settings, permissions and
+  a `🗄 Datos` SQLite overview with admin-only VACUUM. `⚡ Comandos` turns both
+  OpenCode and bot commands into buttons.
 - **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
   (real browser via extension) and always-on Playwright MCP (headless Chromium
   for web debugging). OpenCode pinned to 2.3.0.
 - **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
   fork/subagent badges and background-subagent counts.
-- **Web app** — `/web` opens a private Mission Control page (token-protected)
-  with live session and metric data; groups get inline buttons only.
-- **Tests** — 388 Bun tests across 41 files + TypeScript typecheck.
+- **Web app** — `/web` opens a private Mission Control page (enabled only when
+  `WEB_APP_TOKEN` is set) with live session and metric data; groups get inline
+  buttons only.
+- **Tests** — 394 Bun tests across 42 files + TypeScript typecheck + build.
 
 ## Quick start
 
+Requires Bun and a reachable OpenCode HTTP server at `OPENCODE_BASE_URL`
+(default `http://127.0.0.1:49374`). The Docker stack below starts both services.
+
 ```bash
 cp .env.example .env
-# edit .env: TELEGRAM_BOT_TOKEN, ADMIN_TELEGRAM_USER_ID, OPENCODE_BASE_URL
+# set TELEGRAM_BOT_TOKEN and ADMIN_TELEGRAM_USER_ID (or ALLOWED_TELEGRAM_USER_IDS)
 bun install
 bun run doctor
 bun run dev
 ```
+
+Without `ADMIN_TELEGRAM_USER_ID` or `ALLOWED_TELEGRAM_USER_IDS` the bot ignores
+every message.
 
 ## Docker
 
@@ -62,10 +80,11 @@ docker compose up -d
 docker compose logs -f
 ```
 
-After changing `.env`, recreate the bot container (restart alone is not enough):
+After changing `.env`, recreate the affected containers (restart alone is not
+enough; provider keys are consumed by `opencode` too):
 
 ```bash
-docker compose up -d --force-recreate bot
+docker compose up -d --force-recreate bot opencode
 ```
 
 See [docs/SETUP.md](docs/SETUP.md) for provider keys, voice notes, webhooks and
@@ -79,27 +98,31 @@ pm2 logs opencodegram
 pm2 reload opencodegram
 ```
 
-The app reads `.env` automatically under Bun. For PM2, export the variables or
-add them to `ecosystem.config.cjs`.
+The app reads `.env` automatically under Bun; `ecosystem.config.cjs` already
+sets `env_file: ".env"`. Extra process-level variables can be added to its
+`env` block.
 
 ## Commands
 
 | Group | Commands |
 | --- | --- |
-| Sessions | `/start`, `/help`, `/status`, `/session`, `/sessions`, `/running`, `/use`, `/new`, `/stop`, `/abort`, `/retry`, `/cancel` |
-| Models | `/models`, `/model`, `/agents`, `/agent` |
-| Files | `/file`, `/ls`, `/find`, `/read`, `/zip` |
-| Session tools | `/diff`, `/context`, `/sync`, `/compact`, `/usage`, `/todos` |
-| Project | `/vcs`, `/worktrees`, `/worktree`, `/forms`, `/formreply`, `/mcp` |
-| Chat | `/settings`, `/commands`, `/ops`, `/buttons`, `/unlink`, `/fork`, `/rename`, `/archive`, `/unarchive`, `/delete` |
+| Sessions | `/start`, `/help`, `/status`, `/session`, `/sessions`, `/running`, `/use`, `/new`, `/stop`, `/abort`, `/retry`, `/cancel`, `/fork`, `/rename`, `/archive`, `/unarchive`, `/delete`, `/deletesessions` |
+| Models | `/models`, `/model`, `/agents`, `/agent`, `/skill`, `/skills` |
+| Files | `/file`, `/ls`, `/find`, `/read`, `/tree`, `/zip` |
+| Session tools | `/diff`, `/context`, `/sync`, `/compact`, `/usage`, `/todos`, `/search` |
+| Project | `/vcs`, `/branches`, `/branch`, `/stage`, `/unstage`, `/commit`, `/worktrees`, `/worktree`, `/forms`, `/formreply`, `/mcp` |
+| Chat | `/settings`, `/permissions`, `/commands`, `/ops`, `/web`, `/buttons`, `/unlink` |
 
-Full reference: [docs/COMMANDS.md](docs/COMMANDS.md).
+Full reference: [docs/COMMANDS.md](docs/COMMANDS.md). All of them can also be
+launched from `🏠 Panel` → `⚡ Comandos` as buttons; dangerous commands are
+intentionally excluded from buttons.
 
 ## Tests
 
 ```bash
 bun test
 bun run typecheck
+bun run build
 ```
 
 ## Documentation
@@ -116,26 +139,35 @@ bun run typecheck
   directory.
 - External symlinks are shown but cannot be opened.
 - Documents are capped at 45 MB.
-- Rate limits retry at `:15` of the next hour.
+- Rate limits retry at `:15` of the current hour (or the next one if already
+  past `:15`).
 - Per-update error isolation keeps one bad update from stopping the bot.
 
 ## Notes
 
-- Admin-only bot; in groups it responds to commands, mentions to the configured
-  bot username, or replies to the bot.
+- Access control: by default only `ADMIN_TELEGRAM_USER_ID` and the IDs in
+  `ALLOWED_TELEGRAM_USER_IDS` may interact. In groups the bot responds to
+  commands addressed to it, mentions of its own username (detected
+  automatically from Telegram, not configured in `.env`), or replies to the
+  bot. Per-thread/topic ACLs can grant operator/admin roles or set read-only
+  mode.
 - Runtime state lives in a single SQLite database, `data/opencodegram.db`
-  (ignored by git). Legacy `data/*.json` files are imported on first read and
-  kept as a readable mirror; a standalone `permissions.db` from older versions
-  is imported once too. Telegram polling offset (`telegram_offset.json`) is
-  stored with the bot identity and reset automatically if the bot/token changes,
-  so switching to a different bot while keeping `data/` does not stall polling.
-  If you run an older version and hit this, remove `data/telegram_offset.json`
-  and restart.
+  (ignored by git). Legacy `data/*.json` files are imported at startup and kept
+  as a readable mirror; an external edit of a JSON file wins and is re-imported.
+  A standalone `permissions.db` from older versions is imported once. Telegram
+  polling offset (`telegram_offset.json`) is stored in that database together
+  with the numeric bot ID; the offset resets automatically when the bot ID
+  changes, so switching bots while keeping `data/` does not stall polling. The
+  token itself is not compared. To force a reset, stop the bot, set `offset` to
+  `0` in `data/telegram_offset.json` (keep `botId`) and start it again: the
+  edited file wins and is re-imported into SQLite.
 - Almost everything is reachable from inline buttons: `🏠 Panel` → sessions,
   models, files, status, settings, granular permissions and the `🗄 Datos`
   SQLite overview (with admin-only VACUUM). `⚡ Comandos` exposes both OpenCode
-  and bot commands as buttons, so typing `/comandos` is rarely necessary.
-- Telegram long polling requires a single consumer per token and no webhook.
-  If updates stop arriving, check `getWebhookInfo` (clear the webhook if set)
-  and ensure no other instance is polling the same token. In Docker, `.env`
-  changes require recreating the container (`docker compose up -d --force-recreate`).
+  and bot commands as buttons, so typing `/commands` is rarely necessary.
+- Telegram long polling requires a single consumer per token. Webhook mode is
+  also supported (`WEBHOOK_MODE=true`, see [docs/SETUP.md](docs/SETUP.md)) and
+  replaces polling. If updates stop arriving, check `getWebhookInfo` (clear the
+  webhook if set) and ensure no other instance is polling the same token. In
+  Docker, `.env` changes require recreating the container
+  (`docker compose up -d --force-recreate`).

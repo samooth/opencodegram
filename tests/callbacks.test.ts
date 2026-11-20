@@ -99,13 +99,17 @@ describe("handleCallback", () => {
     const { SettingsStore } = await import("../src/settings.js");
     const settings = new SettingsStore(join(root, "data"));
     deps.settings = settings;
-    const edits: string[] = [];
-    deps.tg.editRichMessage = async (_chatId: number, _messageId: number, html: string) => { edits.push(html); return { message_id: 1 }; };
+    const edits: Array<{ html: string; opts: any }> = [];
+    deps.tg.editRichMessage = async (_chatId: number, _messageId: number, html: string, opts: any) => { edits.push({ html, opts }); return { message_id: 1 }; };
     const cq = { id: "15", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "preset:minimal" } as any;
     await handleCallback(deps, cq);
     expect(settings.get(123).cardPreset).toBe("minimal");
     expect(settings.get(123).showThinking).toBe(false);
-    expect(edits[0]).toContain("Estilo");
+    // Compact view: preset label visible, no long settings description, back button present.
+    expect(edits[0].html).toContain("Minimal");
+    expect(edits[0].html).not.toContain("<blockquote");
+    const data = edits[0].opts.reply_markup.inline_keyboard.flat().map((b: any) => b.callback_data);
+    expect(data).toContain("settings:back");
   });
 
   test("panel:stop closes the turn instead of only republishing the card", async () => {
@@ -225,6 +229,50 @@ describe("handleCallback", () => {
     const cq = { id: "6", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 77 }, data: "editfile:0" } as any;
     await handleCallback(deps, cq);
     expect(opened).toEqual(["/workspace/src/x.ts"]);
+  });
+
+  test("panel:settings edits the existing message with buttons only", async () => {
+    const deps = makeDeps();
+    const edits: Array<{ html: string; opts: any }> = [];
+    let sends = 0;
+    deps.tg.editRichMessage = async (_chatId: number, _messageId: number, html: string, opts: any) => { edits.push({ html, opts }); return { message_id: 5 }; };
+    deps.tg.sendRichMessage = async () => { sends++; return { message_id: 9 }; };
+    const cq = { id: "st1", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "panel:settings" } as any;
+    await handleCallback(deps, cq);
+    expect(edits).toHaveLength(1);
+    expect(sends).toBe(0);
+    expect(edits[0].html).not.toContain("<blockquote");
+    const data = edits[0].opts.reply_markup.inline_keyboard.flat().map((b: any) => b.callback_data);
+    expect(data).toContain("settings:back");
+  });
+
+  test("settings:back restores the panel in the same message", async () => {
+    const deps = makeDeps();
+    deps.panels.renderPanel = async () => ({ html: "<b>OpenCodegram</b>", keyboard: [[{ text: "🏠", callback_data: "panel:home" }]] });
+    const edits: string[] = [];
+    deps.tg.editRichMessage = async (_chatId: number, _messageId: number, html: string) => { edits.push(html); return { message_id: 5 }; };
+    const cq = { id: "st2", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "settings:back" } as any;
+    await handleCallback(deps, cq);
+    expect(edits).toEqual(["<b>OpenCodegram</b>"]);
+  });
+
+  test("toggling a detail setting expands the active card immediately", async () => {
+    const deps = makeDeps();
+    const { SettingsStore } = await import("../src/settings.js");
+    const settings = new SettingsStore(join(root, "data"));
+    settings.set(123, "showThinking", false);
+    settings.set(123, "showShell", false);
+    settings.set(123, "showTools", false);
+    deps.settings = settings;
+    const s = { sessionId: "ses_detail", activityExpanded: false } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    deps.store.rememberActiveRoute(123, undefined, s.sessionId);
+    let publishes = 0;
+    deps.status.publishCard = async () => { publishes++; };
+    const cq = { id: "st3", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "set:showTools:true" } as any;
+    await handleCallback(deps, cq);
+    expect(s.activityExpanded).toBe(true);
+    expect(publishes).toBe(1);
   });
 
   test("db:info renders the SQLite panel in the same message", async () => {

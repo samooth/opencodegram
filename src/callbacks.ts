@@ -5,7 +5,7 @@ import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files/index.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import * as mcp from "./mcp.js";
-import { CARD_PRESETS, isSettingsKey, LABELS, PRESET_LABELS, renderSettings, settingsKeyboard } from "./settings.js";
+import { CARD_PRESETS, isSettingsKey, LABELS, PRESET_LABELS, renderSettingsPanel, settingsKeyboard } from "./settings.js";
 import type { CardPreset, ChatSettings } from "./settings.js";
 import type { TelegramCallbackQuery } from "./telegram.js";
 import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
@@ -43,6 +43,7 @@ const PREFIXES = [
   "permthread:",
   "permui:",
   "db:",
+  "settings:",
   "use:",
   "spick:",
   "del:",
@@ -641,6 +642,16 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   else parsedValue = value === "true";
   const settings = deps.settings.set(chatId, key, parsedValue);
 
+  // Thinking/shell/tool toggles control the active card directly: applying one
+  // immediately updates the detail state instead of waiting for the next turn.
+  if (key === "showThinking" || key === "showShell" || key === "showTools") {
+    const active = deps.store.getActiveSession(chatId, threadId);
+    if (active) {
+      active.activityExpanded = settings.showThinking || settings.showShell || settings.showTools;
+      void deps.status.publishCard(chatId, active).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    }
+  }
+
   if (key === "displayMode") {
     if (parsedValue === "unified") {
       const s = deps.store.getActiveSession(chatId, threadId) ?? (await deps.sessions.restoreActiveSession(chatId, threadId).catch(() => undefined));
@@ -654,7 +665,7 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   await deps.tg.answerCallbackQuery(cq.id, `${LABELS[key]} → ${String(parsedValue)}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId !== undefined) {
     await deps.tg
-      .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+      .editRichMessage(chatId, messageId, renderSettingsPanel(chatId, settings), {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: settingsKeyboard(settings) },
       })
@@ -673,7 +684,7 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     await deps.tg.answerCallbackQuery(cq.id, `${LABELS.previewLines} → ${next}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (messageId !== undefined) {
       await deps.tg
-        .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+        .editRichMessage(chatId, messageId, renderSettingsPanel(chatId, settings), {
           ...threadOpts(threadId),
           reply_markup: { inline_keyboard: settingsKeyboard(settings) },
         })
@@ -689,7 +700,7 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     await deps.tg.answerCallbackQuery(cq.id, `${LABELS.resourceHistory} → ${next}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (messageId !== undefined) {
       await deps.tg
-        .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+        .editRichMessage(chatId, messageId, renderSettingsPanel(chatId, settings), {
           ...threadOpts(threadId),
           reply_markup: { inline_keyboard: settingsKeyboard(settings) },
         })
@@ -705,7 +716,7 @@ async function handleCycle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     await deps.tg.answerCallbackQuery(cq.id, `${LABELS.longAnswerThreshold} → ${next}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     if (messageId !== undefined) {
       await deps.tg
-        .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+        .editRichMessage(chatId, messageId, renderSettingsPanel(chatId, settings), {
           ...threadOpts(threadId),
           reply_markup: { inline_keyboard: settingsKeyboard(settings) },
         })
@@ -728,7 +739,7 @@ async function handlePreset(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   await deps.tg.answerCallbackQuery(cq.id, `🎛 Estilo: ${PRESET_LABELS[preset]}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId !== undefined) {
     await deps.tg
-      .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+      .editRichMessage(chatId, messageId, renderSettingsPanel(chatId, settings), {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: settingsKeyboard(settings) },
       })
@@ -814,6 +825,22 @@ async function handlePermUI(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   }
 }
 
+/** ◀ Volver: close the settings view and restore the panel in the same message. */
+async function handleSettingsBack(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  if (data !== "settings:back") return;
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const panel = await deps.panels.renderPanel(chatId, threadId).catch((err) => {
+    console.warn("[callbacks] panel render failed", err?.message ?? err);
+    return undefined;
+  });
+  if (!panel) return;
+  const dash = deps.store.getDashboard(chatId, threadId);
+  const editId = dash && dash.messageId === messageId ? undefined : messageId;
+  const opts = { ...threadOpts(threadId), reply_markup: { inline_keyboard: panel.keyboard } };
+  if (editId !== undefined) await deps.tg.editRichMessage(chatId, editId, panel.html, opts).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  else await deps.tg.sendRichMessage(chatId, panel.html, opts).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
 /** Button-driven SQLite overview: stats, refresh and admin-only compaction. */
 async function handleDb(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   const action = data.slice("db:".length);
@@ -860,10 +887,10 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
   if (data === "panel:settings") {
     await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     const s = settings.get(chatId);
-    await tg.sendRichMessage(chatId, renderSettings(chatId, s), {
-      ...threadOpts(threadId),
-      reply_markup: { inline_keyboard: settingsKeyboard(s) },
-    });
+    const opts = { ...threadOpts(threadId), reply_markup: { inline_keyboard: settingsKeyboard(s) } };
+    // Replace the tapped message instead of stacking a new settings message.
+    if (editId !== undefined) await tg.editRichMessage(chatId, editId, renderSettingsPanel(chatId, s), opts);
+    else await tg.sendRichMessage(chatId, renderSettingsPanel(chatId, s), opts);
     return;
   }
   if (data === "panel:permissions") {
@@ -1095,7 +1122,7 @@ async function handleProfile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   await deps.tg.answerCallbackQuery(cq.id, `Perfil: ${name}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId !== undefined) {
     await deps.tg
-      .editRichMessage(chatId, messageId, renderSettings(chatId, settings), {
+      .editRichMessage(chatId, messageId, renderSettingsPanel(chatId, settings), {
         ...threadOpts(threadId),
         reply_markup: { inline_keyboard: settingsKeyboard(settings) },
       })
@@ -1256,6 +1283,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "permthread:": handlePermThread,
   "permui:": handlePermUI,
   "db:": handleDb,
+  "settings:": handleSettingsBack,
   "panel:": handlePanel,
   "perm:": handlePerm,
   "spick:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {

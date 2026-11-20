@@ -22,7 +22,6 @@ export const BOT_COMMANDS = [
   { command: "commands", description: "List OpenCode commands" },
   { command: "settings", description: "Bot settings and toggles" },
   { command: "permissions", description: "Granular permissions for this thread" },
-  { command: "permissions", description: "Granular permissions for this thread" },
   { command: "web", description: "Private Mission Control web app" },
   { command: "ops", description: "Admin: runtime health and metrics" },
   { command: "file", description: "Send a local file as a document" },
@@ -48,4 +47,4 @@ export const BOT_COMMANDS = [
   { command: "cancel", description: "Cancel pending action or active turn" },
   { command: "goal", description: "Keep working toward a session goal" },
   { command: "stop", description: "Stop the active turn" },
-];;
+];

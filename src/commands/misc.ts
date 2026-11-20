@@ -1,6 +1,6 @@
 type Named = { name?: string; id?: string; description?: string };
 import type { BotDeps, SendFn } from "../context.js";
-import { renderSettings, settingsKeyboard } from "../settings.js";
+import { renderSettingsPanel, settingsKeyboard } from "../settings.js";
 import { esc, truncate } from "../util.js";
 import { renderTodos } from "../todos.js";
 import { notePromptSent } from "../autoretry.js";
@@ -80,10 +80,11 @@ export async function cmd_ops(deps: BotDeps, chatId: number, threadId: number | 
   return true;
 }
 
-export async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {  const C = ctx(deps);
+export async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  const C = ctx(deps);
   if (text === "/settings") {
     const settings = C.settings.get(chatId);
-    await send(renderSettings(chatId, settings), { reply_markup: { inline_keyboard: settingsKeyboard(settings) } });
+    await send(renderSettingsPanel(chatId, settings), { reply_markup: { inline_keyboard: settingsKeyboard(settings) } });
     return true;
   }
   return false;

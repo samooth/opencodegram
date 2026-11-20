@@ -449,8 +449,16 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
     { text: `📈 History: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` },
   ]);
   keyboard.push([{ text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
-  keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+  // Back closes the settings view and restores the panel in the SAME message.
+  keyboard.unshift([{ text: "◀ Volver", callback_data: "settings:back" }]);
   return keyboard;
+}
+
+/** Compact settings view: buttons only, no long explanation block. */
+export function renderSettingsPanel(chatId: number, settings: ChatSettings): string {
+  const profile = settings.displayMode === "unified" ? "Unificado" : "Flexible";
+  const preset = PRESET_LABELS[settings.cardPreset] ?? PRESET_LABELS[DEFAULT_SETTINGS.cardPreset];
+  return `⚙️ <b>Ajustes</b> · <code>${chatId}</code>\n<i>${profile} · ${esc(preset)}</i>\n<i>Toca un botón para cambiarlo; ◀ Volver cierra este panel.</i>`;
 }
 
 export function isSettingsKey(value: string): value is keyof ChatSettings {

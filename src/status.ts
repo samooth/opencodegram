@@ -178,7 +178,8 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     // With the answer already in the strip, skip the duplicate answer block
     // in the transcript page (the full answer stays reachable via 📖 Leer).
     const hideAnswer = settings.showFinalInCard && !!s.lastFinalText?.trim() && !reading;
-    const cap = (html: string) => compact && !hideAnswer ? clampText(html, 650) : html;
+    // Expanded detail (chosen in Settings) must not be cut by the compact cap.
+    const cap = (html: string) => compact && !hideAnswer && s.activityExpanded !== true ? clampText(html, 650) : html;
     if (reading) {
       await transcript.publish(chatId, s, { ...s.cardView, extraTop: "", working: false });
     } else if (s.statusFinished) {
@@ -218,7 +219,10 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.toolCalls = [];
     s.toolCallDetails = [];
     s.activity = createTurnActivity();
-    s.activityExpanded = false;
+    // The thinking/shell/tool toggles are the user's choice to see those
+    // blocks. Honour them up front so the card never hides details behind
+    // "▾ Detalles" when the user already asked to see them in Settings.
+    s.activityExpanded = settings.showThinking || settings.showShell || settings.showTools;
     s.readingMode = false;
     s.cardMenuExpanded = false;
     s.lastViewedTurn = undefined;
