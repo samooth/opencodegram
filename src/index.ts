@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { mkdirSync, accessSync, constants } from "node:fs";
 import { appendFile, mkdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
