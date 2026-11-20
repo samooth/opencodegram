@@ -3,7 +3,7 @@ import { colorDiff, esc } from "../util.js";
 import { paginateTranscript } from "../transcript.js";
 import { buildDigestParts } from "../syncview.js";
 import { cancelAutoRetry } from "../autoretry.js";
-import { ctx } from "./shared.js";
+import { ctx, isRouteAdmin } from "./shared.js";
 
 export async function cmd_status(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
@@ -193,6 +193,13 @@ export async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: num
 
 export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
+  if (text === "/delete" || text.startsWith("/delete ") || text === "/deletesessions" || text.startsWith("/deletesessions ")) {
+    // Deleting sessions affects everyone in the route: admins only.
+    if (!isRouteAdmin(deps, chatId, threadId, userId)) {
+      await send("🗑 Solo un admin de este chat puede borrar sesiones.");
+      return true;
+    }
+  }
   if (text === "/deletesessions group" || text === "/delete sessions group" || text === "/deletesessions g") {
     await C.showDeleteSessions(chatId, 0, undefined, threadId, chatId);
     return true;
@@ -211,8 +218,8 @@ export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "🗑 Delete", callback_data: `delete:confirm:${s.sessionId}` },
-            { text: "Cancel", callback_data: "delete:cancel" },
+            { text: "🗑 Borrar", callback_data: `delconfirm:${s.sessionId}` },
+            { text: "Cancelar", callback_data: "panel:home" },
           ],
         ],
       },

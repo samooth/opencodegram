@@ -6,6 +6,7 @@ import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { clampText, contextUsage, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
+import { classifyFailure } from "./autoretry.js";
 
 export function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -388,8 +389,12 @@ export function renderTurnReceipt(input: TurnReceiptInput): string {
         : "✅ <b>Listo</b>",
   );
   if (input.error?.trim()) {
+    // A friendly classification first, then the raw detail: "Provider
+    // returned error" alone told the user nothing actionable.
+    const failure = classifyFailure(input.error);
+    if (failure.kind !== "unknown") lines.push(`<i>${esc(failure.label)}</i>`);
     const line = firstMeaningfulLine(input.error, 180);
-    if (line) lines.push(`<i>${esc(line)}</i>`);
+    if (line && line !== failure.label) lines.push(`<i>${esc(line)}</i>`);
   }
   if (input.telemetry.length) lines.push(`<i>${input.telemetry.join(" · ")}</i>`);
   if (input.prompt?.trim()) lines.push(`📝 <i>“${esc(truncate(input.prompt.trim(), 80))}”</i>`);

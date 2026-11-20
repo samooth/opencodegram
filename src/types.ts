@@ -67,6 +67,15 @@ export type ChatSession = {
   lastOutputTokens?: number;
   /** Accumulated output tokens across all steps of the current turn. */
   turnOutputTokens?: number;
+  /** Per-turn usage, accumulated across every step (for model statistics). */
+  turnInputTokens?: number;
+  turnReasoningTokens?: number;
+  turnCacheReadTokens?: number;
+  turnCacheWriteTokens?: number;
+  /** Cost reported by OpenCode for the current turn (USD). */
+  turnCost?: number;
+  /** True once this turn was written to turn_stats (idempotent upsert). */
+  statsRecordedTurn?: number;
   /** Compact per-turn activity counters and detail entries for the card. */
   activity?: TurnActivity;
   /** Whether the activity detail is currently shown inline on the card. */

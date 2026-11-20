@@ -7,7 +7,7 @@ import type { FormField, FormState, PermissionInfo } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
 import { closeThoughts, finishTool, recordThought, recordThoughtDelta, recordTool, updateToolDetail } from "./activity.js";
-import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon } from "./util.js";
+import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon, truncate } from "./util.js";
 import { splitBySections, splitMarkdown } from "./transcript.js";
 import { logger } from "./logger.js";
 import type { TodoItem } from "./todos.js";
@@ -15,9 +15,10 @@ import type { TodoItem } from "./todos.js";
 const MAX_ARTIFACT_CANDIDATES = 20;
 const MAX_ARTIFACTS = 5;
 import { formatBytes, MAX_DOCUMENT_BYTES, prepareDocument } from "./files/index.js";
-import { cancelAutoRetry, decideRetry, dispatchRetry, noteTurnCompleted, updateRetryPrompt } from "./autoretry.js";
+import { cancelAutoRetry, classifyFailure, decideRetry, dispatchRetry, noteTurnCompleted, updateRetryPrompt } from "./autoretry.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
+import { recordTurnStatFromSession } from "./stats.js";
 
 export type EventsDeps = {
   /** Telegram client used to send/edit messages. */
@@ -396,15 +397,25 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
   if (chatId === undefined) return;
   const s = _s0;
   if (!s) return;
-  const out = (e.data?.tokens as { output?: number } | undefined)?.output;
+  const usage = e.data?.tokens as
+    | { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } }
+    | undefined;
+  const out = usage?.output;
   if (typeof out === "number") {
     s.lastOutputTokens = out;
     // Accumulate across all steps of this turn (multi-step tool calls).
     s.turnOutputTokens = (s.turnOutputTokens ?? 0) + out;
   }
-  const inp = (e.data?.tokens as { input?: number } | undefined)?.input;
-  const cacheRead = ((e.data?.tokens as { cache?: { read?: number } } | undefined)?.cache?.read) ?? 0;
-  if (typeof inp === "number") s.lastContextTokens = inp + (typeof cacheRead === "number" ? cacheRead : 0);
+  const inp = usage?.input;
+  const cacheRead = usage?.cache?.read ?? 0;
+  const cacheWrite = usage?.cache?.write ?? 0;
+  if (typeof inp === "number") s.lastContextTokens = inp + cacheRead;
+  if (typeof inp === "number") s.turnInputTokens = (s.turnInputTokens ?? 0) + inp;
+  if (typeof usage?.reasoning === "number") s.turnReasoningTokens = (s.turnReasoningTokens ?? 0) + usage.reasoning;
+  s.turnCacheReadTokens = (s.turnCacheReadTokens ?? 0) + cacheRead;
+  s.turnCacheWriteTokens = (s.turnCacheWriteTokens ?? 0) + cacheWrite;
+  const cost = e.data?.cost;
+  if (typeof cost === "number") s.turnCost = (s.turnCost ?? 0) + cost;
   // "tool-calls" means the turn continues with another step; any other
   // finish reason (stop / length / error) is the real end of the turn.
   const finish = (e.data?.finish ?? e.data?.rawFinish) as string | undefined;
@@ -574,6 +585,17 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       pages: deps.transcript?.pageCount(s),
     });
     s.lastFinalText = finalText;
+    // Enrich the turn stat row with the final answer length (upsert).
+    try {
+      const promptText = deps.store.lastPromptBySession?.get?.(s.sessionId);
+      recordTurnStatFromSession(s, chatId, s.targetThreadId ?? s.threadId, {
+        outputChars: finalText.length,
+        promptChars: promptText?.length ?? 0,
+        dataDir: deps.store.dataDir,
+      });
+    } catch (err) {
+      console.warn("[stats] enrich failed", err);
+    }
     const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
     const answerHtml = markdownToHtml(finalText);
     const copyRow = `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
@@ -812,12 +834,11 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
   if (chatId !== undefined) {
     const msg = (e.data?.error as { message?: string } | undefined)?.message ?? "execution failed";
     const threadId = resolveThreadId(sessionId);
-    const isRateLimit = /rate limit|quota/i.test(msg);
-    // OpenCode 2.3.0 retries exhausted rate limits internally (#59816). If the
-    // error already mentions a retry/backoff, don't stack our own notice.
-    const ocAlreadyRetrying = /retr(y|ying)|backoff|will retry|retrying in/i.test(msg);
-    const hint = isRateLimit ? "\n\nTry switching model with /models." : "";
-    if (ocAlreadyRetrying) {
+    // "Provider returned error" and network hiccups are transient too. The
+    // classifier keeps deterministic errors (auth/model/context) out of the
+    // retry loop while letting rate limits and 5xx/network failures back in.
+    const failure = classifyFailure(msg);
+    if (failure.ocAlreadyRetrying) {
       logger.info("events", "execution.failed.oc_retrying", { sessionId, msg: msg.slice(0, 120) });
     }
     const autoRetry = config?.AUTO_RETRY_ENABLED ?? true;
@@ -829,11 +850,11 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
       s.lastTurnError = msg;
       await finishStatus(chatId, s).catch((err) => console.warn("[events] finishStatus failed", err?.message ?? err));
     }
-    if (sessionId && !isRateLimit) cancelAutoRetry(sessionId);
+    if (sessionId && !failure.retryable) cancelAutoRetry(sessionId);
 
     // Retry only prompts sent by this process and only up to
     // AUTO_RETRY_MAX_ATTEMPTS. Stale prompts restored from disk are ignored.
-    const decision = autoRetry && isRateLimit && !ocAlreadyRetrying && sessionId && promptForRetry
+    const decision = autoRetry && failure.retryable && !failure.ocAlreadyRetrying && sessionId && promptForRetry
       ? decideRetry(sessionId as string, promptForRetry as string, config)
       : ({ action: "none" } as const);
 
@@ -861,31 +882,52 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
         const existing = retryMessageBySession.get(sid);
         if (existing) {
           await tg
-            .editRichMessage(existing.chatId, existing.messageId, `⏳ Retry ${decision.attempt}/${decision.maxAttempts} sent; waiting for the model…`)
+            .editRichMessage(existing.chatId, existing.messageId, `${failure.label}\n⏳ Reintento ${decision.attempt}/${decision.maxAttempts} enviado; esperando al modelo…`)
             .catch((err) => console.warn("[events]", err?.message ?? err));
         }
       });
       const existingRetryMsg = retryMessageBySession.get(sid);
-      const retryText = `⏳ <b>Rate limited</b>\nRetrying in ${Math.round(decision.delay / 1000)}s (attempt ${decision.attempt}/${decision.maxAttempts})…`;
+      const retryText = `${failure.label}\n⏳ Reintentando en ${Math.round(decision.delay / 1000)}s (intento ${decision.attempt}/${decision.maxAttempts})…\n<i>${esc(failure.hint)}</i>`;
       let sent: { message_id?: number } | null = null;
       if (existingRetryMsg) {
         await tg.editRichMessage(existingRetryMsg.chatId, existingRetryMsg.messageId, retryText).catch((err) => console.warn("[events]", err?.message ?? err));
         sent = { message_id: existingRetryMsg.messageId };
       } else {
-        sent = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + retryText, threadOpts(threadId)).catch(() => null);
+        sent = await tg.sendRichMessage(chatId, sessionHeader(s ?? null, sessionId) + retryText, threadOpts(threadId)).catch(() => null);
       }
       if (sent?.message_id) retryMessageBySession.set(sid, { chatId, threadId, messageId: sent.message_id });
     } else if (decision.action === "exhausted") {
       const sid = sessionId as string;
       await tg.sendRichMessage(
         chatId,
-        sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}\n\n⛔ Auto-retry limit reached (${decision.attempts}/${decision.maxAttempts}). Use /retry to try again manually.`,
-        { ...threadOpts(threadId), reply_markup: { inline_keyboard: [[{ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${sessionId}` }, { text: "📂 Sesiones", callback_data: "panel:sessions" }]] } },
+        sessionHeader(s ?? null, sessionId) + `${failure.label}\n⛔ Reintentos automáticos agotados (${decision.attempts}/${decision.maxAttempts}).\n<i>${esc(failure.hint)}</i>`,
+        {
+          ...threadOpts(threadId),
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "🔁 Reintentar", callback_data: `retry:${sessionId}` },
+              { text: "🧠 Cambiar modelo", callback_data: `panel:ms:${sessionId}` },
+            ], [{ text: "📂 Sesiones", callback_data: "panel:sessions" }]],
+          },
+        },
       ).catch((err) => console.warn("[events] exhausted notice failed", err?.message ?? err));
       retryMessageBySession.delete(sid);
       cancelAutoRetry(sid);
     } else if (decision.action === "none") {
-      await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ ${esc(msg)}${esc(hint)}`, threadOpts(threadId)).catch((err) => console.warn("[events] failure notice failed", err?.message ?? err));
+      await tg.sendRichMessage(
+        chatId,
+        sessionHeader(s ?? null, sessionId) +
+          `${failure.label}\n<blockquote expandable>${esc(truncate(msg, 600))}</blockquote>\n<i>${esc(failure.hint)}</i>`,
+        {
+          ...threadOpts(threadId),
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "🔁 Reintentar", callback_data: `retry:${sessionId}` },
+              { text: "🧠 Cambiar modelo", callback_data: `panel:ms:${sessionId}` },
+            ]],
+          },
+        },
+      ).catch((err) => console.warn("[events] failure notice failed", err?.message ?? err));
       if (sessionId) retryMessageBySession.delete(sessionId);
     }
     // "wait": a retry is already pending for this prompt; avoid duplicate events.

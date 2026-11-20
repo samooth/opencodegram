@@ -207,6 +207,8 @@ export function sessionHeader(session?: { sessionId?: string; topicTitle?: strin
   const short = sid.slice(0, 8);
   // Telegram rich HTML collapses bare "\n"; use explicit <br/> separators.
   // Session name and model get their own lines for readability.
+  // Without a session object the id is all we know: show it once, short.
+  if (!session) return `📌 <code>${esc(short)}</code><br/><br/>`;
   if (!showName) return `📌 <code>${esc(short)}</code><br/><br/>`;
   let name = (session?.topicTitle ?? "").trim();
   if (!name && session?.directory) name = session.directory.split("/").filter(Boolean).pop() || "";

@@ -413,6 +413,8 @@ async function startPrompt(
 // Simple per-user rate limiter: max N messages per minute.
 const userMessageTimes = new Map<number, number[]>();
 let lastCleanup = 0;
+/** How long a "add user" capture stays armed. */
+const PERMISSION_ADD_TTL_MS = 5 * 60_000;
 
 function isRateLimited(userId: number, limit: number): boolean {
   const now = Date.now();
@@ -433,12 +435,6 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const { routeKey } = store;
 
   const userId = msg.from?.id;
-  // Learn Telegram usernames so /permissions and its buttons accept @name.
-  if (userId !== undefined && msg.from?.username) deps.permissions?.rememberUser(userId, msg.from.username);
-  const replyFrom = msg.reply_to_message?.from as { id: number; username?: string } | undefined;
-  if (replyFrom?.id !== undefined && replyFrom.username) {
-    deps.permissions?.rememberUser(replyFrom.id, replyFrom.username);
-  }
   // Ignore the bot's own messages and service-only updates (topic created,
   // pinned, etc.) which have no text/caption/media and would otherwise be
   // processed as prompts or rejected as "Not authorized".
@@ -449,6 +445,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     lastCleanup = now;
     for (const [k, v] of deps.pendingConfirmations ?? []) if (v.expires < now) deps.pendingConfirmations.delete(k);
     for (const [k, v] of deps.pendingGroupPrompts ?? []) if (now - v.at > 10 * 60_000) deps.pendingGroupPrompts.delete(k);
+    for (const [k, v] of deps.awaitingPermissionAdd ?? []) if (now - v.at > PERMISSION_ADD_TTL_MS) deps.awaitingPermissionAdd?.delete(k);
     if (userMessageTimes.size > 1000) {
       const cutoff = now - 60_000;
       for (const [uid, times] of userMessageTimes) {
@@ -470,17 +467,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   if (isService && !hasContent) return;
   const chatId = msg.chat.id;
   const replyThread = msg.message_thread_id;
-  const globalAllowed = deps.permissions ? buildGlobalAllowed(deps.config) : (() => {
-    const out = new Set<number>();
-    if (deps.config.ADMIN_TELEGRAM_USER_ID) out.add(deps.config.ADMIN_TELEGRAM_USER_ID);
-    if (deps.config.ALLOWED_TELEGRAM_USER_IDS) {
-      for (const part of deps.config.ALLOWED_TELEGRAM_USER_IDS.split(",")) {
-        const n = Number(part.trim());
-        if (Number.isFinite(n) && n > 0) out.add(n);
-      }
-    }
-    return out;
-  })();
+  const globalAllowed = buildGlobalAllowed(deps.config);
   const isAuthorized = deps.permissions
     ? deps.permissions.canPrompt(deps.store.routeKey(chatId, replyThread), userId, globalAllowed)
     : (globalAllowed.size > 0 && userId !== undefined && globalAllowed.has(userId));
@@ -489,6 +476,13 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     if (msg.chat.id < 0) return;
     await tg.sendRichMessage(msg.chat.id, "Not authorized.");
     return;
+  }
+  // Learn usernames only AFTER authorization: nobody outside the allowlist may
+  // seed or overwrite the @name -> ID map used by the permission UI.
+  if (userId !== undefined && msg.from?.username) deps.permissions?.rememberUser(userId, msg.from.username);
+  const replyFrom = msg.reply_to_message?.from as { id: number; username?: string } | undefined;
+  if (replyFrom?.id !== undefined && replyFrom.username) {
+    deps.permissions?.rememberUser(replyFrom.id, replyFrom.username);
   }
 
   // A new incoming message supersedes any pending auto-retry everywhere:
@@ -583,28 +577,37 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     return;
   }
 
-  // If we are awaiting a user id for permission add, capture it.
+  // If we are awaiting a user id for permission add, capture it. The capture
+  // belongs to the admin who opened it and expires, so it can never swallow a
+  // later message from another person. Slash commands are never captured.
   const permAddKey = routeKey(chatId, replyThread);
-  if (msg.text && deps.awaitingPermissionAdd?.has(permAddKey)) {
-    const pending = deps.awaitingPermissionAdd.get(permAddKey)!;
-    deps.awaitingPermissionAdd.delete(permAddKey);
-    const parts = msg.text.trim().split(/\s+/);
-    const role = parts[1] === "admin" ? "admin" : "operator";
-    if (!deps.permissions) { await send("Permisos no disponibles."); return; }
-    const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
-    const isAdm = deps.permissions.isAdmin(permAddKey, userId, globalAdmin);
-    if (!isAdm) { await send("Solo admin."); return; }
-    const id = deps.permissions.resolveUser(parts[0]);
-    if (id === undefined) {
-      await send(`No conozco a <code>${esc(parts[0])}</code>. Pídele que escriba al bot (o responde a su mensaje) y vuelve a intentarlo, o usa su ID numérico.`);
+  const pendingPermAdd = deps.awaitingPermissionAdd?.get(permAddKey);
+  if (msg.text && pendingPermAdd && !msg.text.trim().startsWith("/")) {
+    const fresh = Date.now() - pendingPermAdd.at <= PERMISSION_ADD_TTL_MS;
+    if (!fresh) {
+      deps.awaitingPermissionAdd?.delete(permAddKey);
+    } else if (pendingPermAdd.requestedBy !== userId) {
+      // Someone else is chatting in the thread: leave the capture for its owner.
+    } else {
+      deps.awaitingPermissionAdd?.delete(permAddKey);
+      const parts = msg.text.trim().split(/\s+/);
+      const role = parts[1] === "admin" ? "admin" : "operator";
+      if (!deps.permissions) { await send("Permisos no disponibles."); return; }
+      const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
+      const isAdm = deps.permissions.isAdmin(permAddKey, userId, globalAdmin);
+      if (!isAdm) { await send("Solo admin."); return; }
+      const id = deps.permissions.resolveUser(parts[0]);
+      if (id === undefined) {
+        await send(`No conozco a <code>${esc(parts[0])}</code>. Pídele que escriba al bot (o responde a su mensaje) y vuelve a intentarlo, o usa su ID numérico.`);
+        return;
+      }
+      deps.permissions.addUser(permAddKey, id, role);
+      await send(`✅ Añadido ${esc(deps.permissions.label(id))} como ${role}.`);
+      // Re-show the panel.
+      const panel = deps.permissions.renderPanel(permAddKey, globalAdmin);
+      await send(panel.html, { reply_markup: { inline_keyboard: panel.keyboard } });
       return;
     }
-    deps.permissions.addUser(permAddKey, id, role);
-    await send(`✅ Añadido ${deps.permissions.label(id)} como ${role}.`);
-    // Re-show the panel.
-    const panel = deps.permissions.renderPanel(permAddKey, globalAdmin);
-    await send(panel.html, { reply_markup: { inline_keyboard: panel.keyboard } });
-    return;
   }
 
   // Download attachments.

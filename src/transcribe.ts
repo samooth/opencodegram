@@ -1,7 +1,8 @@
 import { access, constants, readFile, rm } from "node:fs/promises";
-import { execFile } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, join, resolve } from "node:path";
 import type { Config } from "./config.js";
 
 const execFileAsync = promisify(execFile);
@@ -84,6 +85,147 @@ export function buildArgs(config: TranscriptionConfig, command: string, inputPat
   );
 }
 
+type Invocation = { command: string; args: string[]; env?: NodeJS.ProcessEnv };
+
+const invocationCache = new Map<string, Promise<Invocation>>();
+
+function isPythonScript(command: string): boolean {
+  if (extname(command).toLowerCase() === ".py") return true;
+  try {
+    const first = readFileSync(command, "utf8").split(/\r?\n/, 1)[0] ?? "";
+    return first.startsWith("#!") && /python/i.test(first);
+  } catch {
+    return false;
+  }
+}
+
+/** Python prefix lib dirs that contain libpython (pyenv needs them at runtime). */
+function pythonLibDirs(python: string): string[] {
+  const prefix = dirname(dirname(python));
+  const dirs: string[] = [];
+  for (const name of ["lib", "lib64"]) {
+    const dir = join(prefix, name);
+    try {
+      if (readdirSync(dir).some((f) => f.startsWith("libpython") && f.includes(".so"))) dirs.push(dir);
+    } catch {
+      // Not a pyenv-style prefix.
+    }
+  }
+  return dirs;
+}
+
+function pythonEnv(python: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const dirs = pythonLibDirs(python);
+  if (dirs.length) {
+    const current = (env.LD_LIBRARY_PATH ?? "").split(delimiter).filter(Boolean);
+    for (const dir of dirs.reverse()) {
+      if (!current.includes(dir)) current.unshift(dir);
+    }
+    env.LD_LIBRARY_PATH = current.join(delimiter);
+  }
+  return env;
+}
+
+async function pythonWorks(python: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  try {
+    await execFileAsync(python, ["-c", "import sys"], { timeout: 8_000, env });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function shebangPython(script: string): string | undefined {
+  try {
+    const first = readFileSync(script, "utf8").split(/\r?\n/, 1)[0] ?? "";
+    if (!first.startsWith("#!")) return undefined;
+    const parts = first.slice(2).trim().split(/\s+/);
+    if (/\/env$/.test(parts[0] ?? "") && parts[1]) return parts[1];
+    if (parts[0] && /python/i.test(parts[0])) return parts[0];
+  } catch {
+    // Ignore unreadable scripts; the caller reports a clearer error.
+  }
+  return undefined;
+}
+
+/**
+ * A `.py` transcriber must run through a working Python. Moving a pyenv prefix
+ * breaks the interpreter because it cannot find `libpythonX.Y.so`; adding the
+ * prefix lib dir to LD_LIBRARY_PATH fixes it without touching the system.
+ * VOICE_PYTHON is the explicit escape hatch.
+ */
+function resolvePython(candidate: string): string {
+  if (candidate.startsWith("/") && existsSync(candidate)) return candidate;
+  let resolved = candidate;
+  try {
+    const which = execFileSync("command", ["-v", candidate], { encoding: "utf8", shell: true }).trim();
+    if (which && existsSync(which)) resolved = which;
+  } catch {
+    // Fall through to the original candidate.
+  }
+  // pyenv shims are wrappers: resolve to the real interpreter so we can add
+  // its libpython directory to LD_LIBRARY_PATH (and pick up its packages).
+  if (resolved.includes("/.pyenv/shims/")) {
+    const pyenvRoot = resolved.split("/.pyenv/shims/")[0] + "/.pyenv";
+    try {
+      const real = execFileSync(pyenvRoot + "/bin/pyenv", ["which", candidate], {
+        encoding: "utf8",
+        env: { ...process.env, PYENV_ROOT: pyenvRoot },
+      }).trim();
+      if (real && existsSync(real)) resolved = real;
+    } catch {
+      // Keep the shim; pythonWorks will report the failure.
+    }
+  }
+  return resolved;
+}
+
+async function pythonInvocation(script: string, args: string[]): Promise<Invocation> {
+  const cached = invocationCache.get(script);
+  if (cached) {
+    const base = await cached;
+    return { ...base, args: [...base.args, ...args] };
+  }
+  const pending = (async (): Promise<Invocation> => {
+    const candidates = [
+      process.env.VOICE_PYTHON,
+      shebangPython(script),
+      "python3",
+      "/usr/bin/python3",
+      "/usr/local/bin/python3",
+    ].filter((c): c is string => !!c);
+    const seen = new Set<string>();
+    const failures: string[] = [];
+    for (const candidate of candidates) {
+      if (seen.has(candidate)) continue;
+      seen.add(candidate);
+      const resolved = resolvePython(candidate);
+      if (seen.has(resolved) && resolved !== candidate) continue;
+      seen.add(resolved);
+      const env = pythonEnv(resolved);
+      if (await pythonWorks(resolved, env)) {
+        return { command: resolved, args: [script], env };
+      }
+      failures.push(candidate);
+    }
+    throw new Error(
+      `No working Python found for ${script} (tried: ${failures.join(", ")}). ` +
+      "Set VOICE_PYTHON to a working interpreter or restore its libpython.",
+    );
+  })();
+  invocationCache.set(script, pending);
+  // A transient probe failure must not poison the cache forever.
+  pending.catch(() => invocationCache.delete(script));
+  const base = await pending;
+  return { ...base, args: [...base.args, ...args] };
+}
+
+async function buildInvocation(command: string, args: string[]): Promise<Invocation> {
+  if (isPythonScript(command)) return pythonInvocation(command, args);
+  return { command, args };
+}
+
 async function convertToWav(inputPath: string, timeoutMs: number): Promise<string> {
   const ffmpegExists = await commandExists("ffmpeg");
   if (!ffmpegExists) {
@@ -102,7 +244,11 @@ export async function transcribeFile(filePath: string, config: Config): Promise<
   const transcriptionConfig = loadTranscriptionConfig(config);
   const command = transcriptionConfig.transcriber;
   if (!command) throw new Error("VOICE_TRANSCRIBER is not configured");
-  if (!(await commandExists(command))) throw new Error(`Transcriber not found: ${command}`);
+  // A Python script does not need its own +x bit: we run it through a working
+  // interpreter (and add the pyenv lib dir when needed).
+  if (!(await commandExists(command)) && !(isPythonScript(command) && existsSync(command))) {
+    throw new Error(`Transcriber not found: ${command}`);
+  }
 
   const absoluteInput = resolve(filePath);
 
@@ -139,7 +285,11 @@ export async function transcribeFile(filePath: string, config: Config): Promise<
     }
 
     const args = buildArgs(transcriptionConfig, command, audioPath, outputBase);
-    const { stdout } = await execFileAsync(command, args, { timeout: transcriptionConfig.timeoutMs });
+    const invocation = await buildInvocation(command, args);
+    const { stdout } = await execFileAsync(invocation.command, invocation.args, {
+      timeout: transcriptionConfig.timeoutMs,
+      env: invocation.env,
+    });
     const outputTextPath = `${outputBase}.txt`;
 
     let transcript = "";
@@ -218,5 +368,7 @@ export function isTranscriptionEnabled(config: Config): boolean {
 export async function transcriptionAvailable(config: Config): Promise<boolean> {
   const transcriptionConfig = loadTranscriptionConfig(config);
   if (!transcriptionConfig.transcriber) return false;
-  return commandExists(transcriptionConfig.transcriber);
+  const command = transcriptionConfig.transcriber;
+  if (await commandExists(command)) return true;
+  return isPythonScript(command) && existsSync(command);
 }

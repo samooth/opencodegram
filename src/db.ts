@@ -43,8 +43,67 @@ CREATE TABLE IF NOT EXISTS known_users (
   username TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_known_users_username ON known_users(username);
+CREATE TABLE IF NOT EXISTS turn_stats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  turn_seq INTEGER NOT NULL DEFAULT 0,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER NOT NULL,
+  chat_id INTEGER NOT NULL,
+  thread_id INTEGER,
+  provider_id TEXT NOT NULL DEFAULT '',
+  model_id TEXT NOT NULL DEFAULT '',
+  variant TEXT,
+  status TEXT NOT NULL DEFAULT 'ok',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  first_token_ms INTEGER,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  cost REAL NOT NULL DEFAULT 0,
+  tool_calls INTEGER NOT NULL DEFAULT 0,
+  tool_failures INTEGER NOT NULL DEFAULT 0,
+  edit_files INTEGER NOT NULL DEFAULT 0,
+  added_lines INTEGER NOT NULL DEFAULT 0,
+  removed_lines INTEGER NOT NULL DEFAULT 0,
+  test_runs INTEGER NOT NULL DEFAULT 0,
+  test_ok INTEGER NOT NULL DEFAULT 0,
+  prompt_chars INTEGER NOT NULL DEFAULT 0,
+  output_chars INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(session_id, turn_seq, started_at)
+);
+CREATE INDEX IF NOT EXISTS idx_turn_stats_finished ON turn_stats(finished_at);
+CREATE INDEX IF NOT EXISTS idx_turn_stats_model ON turn_stats(provider_id, model_id);
+CREATE INDEX IF NOT EXISTS idx_turn_stats_chat ON turn_stats(chat_id, finished_at);
 `;
+
+/**
+ * Telegram usernames are unique at any given moment. The old schema only had a
+ * non-unique index, so a recycled @name could resolve to a stale account. The
+ * index is upgraded once, keeping the newest mapping for each username.
+ */
+function migrateKnownUsers(db: Database): void {
+  const idx = db.query("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_known_users_username'").get() as { sql: string } | null;
+  if (idx && /\bUNIQUE\b/i.test(idx.sql)) return;
+  const tx = db.transaction(() => {
+    // Keep only the most recently seen row per username before adding the
+    // uniqueness constraint.
+    db.run(`
+      DELETE FROM known_users WHERE rowid NOT IN (
+        SELECT rowid FROM (
+          SELECT rowid, ROW_NUMBER() OVER (
+            PARTITION BY username ORDER BY updated_at DESC, user_id DESC
+          ) AS rn FROM known_users
+        ) WHERE rn = 1
+      )
+    `);
+    db.run("DROP INDEX IF EXISTS idx_known_users_username");
+    db.run("CREATE UNIQUE INDEX idx_known_users_username ON known_users(username)");
+  });
+  tx();
+}
 
 const databases = new Map<string, Database>();
 
@@ -58,6 +117,7 @@ function dbForFile(file: string): Database {
   db.run("PRAGMA journal_mode = WAL;");
   db.run("PRAGMA busy_timeout = 5000;");
   db.run(SCHEMA);
+  migrateKnownUsers(db);
   databases.set(dir, db);
   return db;
 }

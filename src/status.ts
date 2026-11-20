@@ -13,6 +13,7 @@ import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.
 import type { DashboardManager } from "./dashboard.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
+import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
 import { capDiff, detectTestRun, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
@@ -55,7 +56,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    */
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
     const lines: string[] = [];
-    // 1. State first — "still working" is the most important signal at a glance.
+    // 0. CoT first — the reasoning explains everything that follows, so it
+    // sits above the state header instead of after the partial answer.
+    if (!unified && settings.showCot && s.cotBuffer?.trim()) {
+      lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})
+${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
+    }
+    // 1. State next — "still working" is the most important signal at a glance.
     lines.push(
       s.stopped
         ? "<h4>⏹ Detenido</h4>"
@@ -110,11 +117,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const tail = s.buffer.trim().slice(-cap);
       lines.push(`<p><i>💬 escribiendo…</i></p>\n<blockquote>${esc(tail)}</blockquote>`);
     }
-    // 8. COT last, collapsed.
-    if (!unified && settings.showCot && s.cotBuffer?.trim()) {
-      lines.push(`<blockquote expandable>🧾 COT (${s.cotCount ?? 0})
-${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
-    }
+    // COT is rendered once at the very top (step 0); do not duplicate it here.
     return {
       top: lines.join(""),
       // Indicators (resources) and buttons are appended by publishCard below
@@ -231,6 +234,11 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.detailMessageId = undefined;
     if (s.resourcesCollapsed === undefined) s.resourcesCollapsed = true;
     s.turnOutputTokens = 0;
+    s.turnInputTokens = 0;
+    s.turnReasoningTokens = 0;
+    s.turnCacheReadTokens = 0;
+    s.turnCacheWriteTokens = 0;
+    s.turnCost = 0;
     s.turnFirstStreamedAt = undefined;
     s.turnFinishedAt = undefined;
     s.lastTurnError = undefined;
@@ -445,6 +453,17 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     s.statusFinished = true;
     s.turnFinishedAt ??= Date.now();
     if (s.activity) closeOpen(s.activity);
+    // Persist one row per finished turn (idempotent upsert; text.ended may
+    // enrich it later with the final answer length).
+    try {
+      const promptText = store?.lastPromptBySession?.get?.(s.sessionId);
+      recordTurnStatFromSession(s, chatId, s.targetThreadId ?? s.threadId, {
+        promptChars: promptText?.length ?? 0,
+        dataDir: store?.dataDir,
+      });
+    } catch (err) {
+      console.warn("[stats] recordTurnStat failed", err);
+    }
     if (s.statusEditPromise) {
       await s.statusEditPromise.catch((err) => console.warn("[status]", err?.message ?? err));
       s.statusEditPromise = undefined;

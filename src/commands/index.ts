@@ -15,6 +15,7 @@ import * as vcsCmds from "./vcs.js";
 import * as formsCmds from "./forms.js";
 import * as mcpCmds from "./mcp.js";
 import * as miscCmds from "./misc.js";
+import * as statsCmds from "./stats.js";
 
 const {
   cmd_status, cmd_new, cmd_stop, cmd_fork, cmd_rename, cmd_archive, cmd_unarchive,
@@ -29,6 +30,7 @@ const {
   cmd_start, cmd_commands, cmd_web, cmd_settings, cmd_models, cmd_agents, cmd_skills,
   cmd_retry, cmd_buttons, cmd_ops, cmd_todos, cmd_unlink, cmd_cancel, cmd_permissions,
 } = miscCmds;
+const { cmd_stats } = statsCmds;
 
 export const KNOWN_COMMANDS = new Set([
   "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort", "search",
@@ -36,7 +38,7 @@ export const KNOWN_COMMANDS = new Set([
   "agent", "agents", "skill", "skills", "fork", "rename", "archive", "unarchive",
   "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry", "todos", "unlink", "cancel",
   "vcs", "mcp", "branches", "branch", "stage", "unstage", "commit", "worktrees",
-  "worktree", "usage", "forms", "formreply", "sync", "use",
+  "worktree", "usage", "forms", "formreply", "sync", "use", "stats",
 ]);
 
 export type CommandHandler = (
@@ -105,6 +107,7 @@ COMMANDS.set("cancel", cmd_cancel);
 COMMANDS.set("running", cmd_running_sessions);
 COMMANDS.set("sessions", cmd_running_sessions);
 COMMANDS.set("use", cmd_use);
+COMMANDS.set("stats", cmd_stats);
 
 export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean> {
   const name = text.startsWith("/") ? (text.slice(1).split(/\s/, 1)[0] ?? "") : "";

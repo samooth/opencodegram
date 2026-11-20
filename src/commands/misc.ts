@@ -4,7 +4,7 @@ import { renderSettingsPanel, settingsKeyboard } from "../settings.js";
 import { esc, truncate } from "../util.js";
 import { renderTodos } from "../todos.js";
 import { notePromptSent } from "../autoretry.js";
-import { ctx } from "./shared.js";
+import { ctx, isRouteAdmin } from "./shared.js";
 import { buildGlobalAllowed } from "../permissions.js";
 
 export async function cmd_start(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
@@ -87,6 +87,11 @@ export async function cmd_ops(deps: BotDeps, chatId: number, threadId: number | 
 export async function cmd_settings(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/settings") {
+    // Settings apply to the whole chat, so only its admins may change them.
+    if (!isRouteAdmin(deps, chatId, threadId, userId)) {
+      await send("⚙️ Solo un admin de este chat puede cambiar los ajustes.");
+      return true;
+    }
     const settings = C.settings.get(chatId);
     await send(renderSettingsPanel(chatId, settings), { reply_markup: { inline_keyboard: settingsKeyboard(settings) } });
     return true;
@@ -253,6 +258,11 @@ export async function cmd_todos(deps: BotDeps, chatId: number, threadId: number 
 export async function cmd_unlink(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/unlink" || text.startsWith("/unlink ")) {
+    // Unlinking interrupts every session bound to the group: admins only.
+    if (!isRouteAdmin(deps, chatId, threadId, userId)) {
+      await send("🔗 Solo un admin de este chat puede desvincular las sesiones.");
+      return true;
+    }
     if (chatId >= 0) {
       await send("⚠️ <code>/unlink</code> solo tiene sentido en grupos (desvincula las sesiones del chat).");
       return true;
@@ -278,6 +288,8 @@ export async function cmd_cancel(deps: BotDeps, chatId: number, threadId: number
   const C = ctx(deps);
   if (text === "/cancel") {
     const reasonKey = C.store.routeKey(chatId, threadId);
+    // Cancel any pending text capture for this route as well.
+    deps.awaitingPermissionAdd?.delete(reasonKey);
     // Cancel pending permission reason.
     if (deps.awaitingReason.has(reasonKey)) {
       const requestId = deps.awaitingReason.get(reasonKey)!;
@@ -362,11 +374,11 @@ export async function cmd_permissions(deps: BotDeps, chatId: number, threadId: n
 
 export async function cmd_buttons(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
-  const isAdmin = !!C.config.ADMIN_TELEGRAM_USER_ID && userId === C.config.ADMIN_TELEGRAM_USER_ID;
+  const isAdmin = isRouteAdmin(deps, chatId, threadId, userId);
   if (text === "/buttons" || text.startsWith("/buttons ")) {
     const args = text.slice("/buttons".length).trim();
     if (!isAdmin) {
-      await send("Solo el admin puede gestionar botones.");
+      await send("Solo un admin de este chat puede gestionar los botones.");
       return true;
     }
     if (args === "clear") {

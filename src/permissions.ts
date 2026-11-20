@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getDatabase } from "./db.js";
 import { readJsonSafe } from "./persist.js";
 import { logger } from "./logger.js";
+import { esc } from "./util.js";
 
 export type ThreadRole = "viewer" | "operator" | "admin";
 
@@ -68,17 +69,23 @@ export class PermissionStore {
     if (!existsSync(this.jsonFile)) return;
     try {
       const parsed = readJsonSafe<Record<string, Partial<ThreadPermissions>>>(this.jsonFile, "permissions");
-      if (parsed) {
+      // The JSON file is a legacy migration source only. If SQLite already has
+      // permission rows, importing again would overwrite live ACLs written by
+      // the bot (for example after a failed rename of the old file).
+      const existing = this.db.query(
+        "SELECT (SELECT COUNT(*) FROM permissions) + (SELECT COUNT(*) FROM permission_users) AS n",
+      ).get() as { n: number };
+      if (parsed && (existing?.n ?? 0) === 0) {
         const tx = this.db.transaction(() => {
           for (const [k, v] of Object.entries(parsed)) {
             if (!k) continue;
-            this.db.run("INSERT OR REPLACE INTO permissions (route_key, read_only, inherit) VALUES (?, ?, ?)",
+            this.db.run("INSERT OR IGNORE INTO permissions (route_key, read_only, inherit) VALUES (?, ?, ?)",
               k, v?.readOnly ? 1 : 0, v?.inherit === false ? 0 : 1);
             for (const u of v?.allowedUsers ?? []) {
-              this.db.run("INSERT OR REPLACE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", k, u, "operator");
+              this.db.run("INSERT OR IGNORE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", k, u, "operator");
             }
             for (const u of v?.adminUsers ?? []) {
-              this.db.run("INSERT OR REPLACE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", k, u, "admin");
+              this.db.run("INSERT OR IGNORE INTO permission_users (route_key, user_id, role) VALUES (?, ?, ?)", k, u, "admin");
             }
           }
         });
@@ -174,11 +181,17 @@ export class PermissionStore {
   rememberUser(userId: number, username?: string | null): void {
     const clean = (username ?? "").replace(/^@/, "").trim().toLowerCase();
     if (!clean || !Number.isFinite(userId) || userId <= 0) return;
-    this.db.run(
-      "INSERT INTO known_users (user_id, username, updated_at) VALUES (?, ?, ?) " +
-      "ON CONFLICT(user_id) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at",
-      userId, clean, Date.now(),
-    );
+    const tx = this.db.transaction(() => {
+      // A username belongs to a single account: if it moved (or a stale row
+      // survived), release it from the previous user before reusing it.
+      this.db.run("DELETE FROM known_users WHERE username = ? AND user_id <> ?", clean, userId);
+      this.db.run(
+        "INSERT INTO known_users (user_id, username, updated_at) VALUES (?, ?, ?) " +
+        "ON CONFLICT(user_id) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at",
+        userId, clean, Date.now(),
+      );
+    });
+    tx();
   }
 
   /** Resolve a numeric ID or a previously seen @username to a user ID. */
@@ -189,7 +202,11 @@ export class PermissionStore {
       const n = Number(t);
       return Number.isFinite(n) && n > 0 ? n : undefined;
     }
-    const row = this.db.query("SELECT user_id FROM known_users WHERE username = ?").get(t.toLowerCase()) as { user_id: number } | null;
+    // ORDER BY keeps the newest mapping even on databases migrated from the
+    // old non-unique index.
+    const row = this.db.query(
+      "SELECT user_id FROM known_users WHERE username = ? ORDER BY updated_at DESC LIMIT 1",
+    ).get(t.toLowerCase()) as { user_id: number } | null;
     return row?.user_id;
   }
 
@@ -207,26 +224,28 @@ export class PermissionStore {
   /** Render a button-driven panel for the current thread. */
   renderPanel(routeKey: string, globalAdmin?: number): { html: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
     const p = this.get(routeKey);
+    // Defense in depth: route keys and usernames come from Telegram, but they
+    // are interpolated into HTML, so escape them like every other user value.
     const lines = [
       `🔐 <b>Permisos del thread</b>`,
-      `<code>${routeKey}</code>`,
+      `<code>${esc(routeKey)}</code>`,
       "",
       `Modo: ${p.readOnly ? "🔒 solo lectura" : "✏️ escritura permitida"}`,
       `Heredar allowlist: ${p.inherit ? "sí" : "no"}`,
-      `Operadores: ${p.allowedUsers.length ? p.allowedUsers.map((u) => this.label(u)).join(", ") : "(global)"}`,
-      `Admins: ${p.adminUsers.length ? p.adminUsers.map((u) => this.label(u)).join(", ") : "(global admin)"}`,
+      `Operadores: ${p.allowedUsers.length ? p.allowedUsers.map((u) => esc(this.label(u))).join(", ") : "(global)"}`,
+      `Admins: ${p.adminUsers.length ? p.adminUsers.map((u) => esc(this.label(u))).join(", ") : "(global admin)"}`,
     ];
     const users = this.listUsers(routeKey);
     if (users.length) {
       lines.push("", "<b>Usuarios:</b>");
-      for (const u of users) lines.push(`• ${this.label(u.userId)} — ${u.role}`);
+      for (const u of users) lines.push(`• ${esc(this.label(u.userId))} — ${u.role}`);
     }
     lines.push("", "<i>Añade con @username o con el ID numérico.</i>");
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
     keyboard.push([{ text: p.readOnly ? "🔓 Permitir escritura" : "🔒 Solo lectura", callback_data: `permui:readonly:${p.readOnly ? "off" : "on"}` }]);
     keyboard.push([{ text: p.inherit ? "🔗 Heredar: sí" : "🔗 Heredar: no", callback_data: `permui:inherit:${p.inherit ? "off" : "on"}` }]);
     for (const u of users) {
-      keyboard.push([{ text: `🗑 ${this.label(u.userId)} (${u.role})`, callback_data: `permui:remove:${u.userId}` }]);
+      keyboard.push([{ text: `🗑 ${this.label(u.userId)} (${u.role})`.slice(0, 60), callback_data: `permui:remove:${u.userId}` }]);
     }
     keyboard.push([{ text: "➕ Añadir usuario", callback_data: "permui:add" }]);
     keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
@@ -239,8 +258,11 @@ export function buildGlobalAllowed(config: { ADMIN_TELEGRAM_USER_ID?: number; AL
   if (config.ADMIN_TELEGRAM_USER_ID) out.add(config.ADMIN_TELEGRAM_USER_ID);
   if (config.ALLOWED_TELEGRAM_USER_IDS) {
     for (const part of config.ALLOWED_TELEGRAM_USER_IDS.split(",")) {
-      const n = Number(part.trim());
-      if (Number.isFinite(n) && n > 0) out.add(n);
+      const raw = part.trim();
+      // Telegram IDs are positive integers; reject "1.5", "1e3" or negatives.
+      if (!/^\d+$/.test(raw)) continue;
+      const n = Number(raw);
+      if (Number.isSafeInteger(n) && n > 0) out.add(n);
     }
   }
   return out;

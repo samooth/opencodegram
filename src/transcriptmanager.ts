@@ -143,11 +143,6 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     });
   };
 
-  /** Distinct turns present in the transcript, oldest first. */
-  const turnsOf = (s: ChatSession): number[] => [...new Set(blocksOf(s)
-    .map((b) => b.turn)
-    .filter((t): t is number => typeof t === "number"))].sort((a, b) => a - b);
-
   const turnOfPage = (page: { blocks: TranscriptBlock[] } | undefined): number | undefined =>
     page?.blocks.find((b) => typeof b.turn === "number")?.turn;
 
@@ -244,10 +239,11 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
-    // P1.3: navigate by turn, not by raw block-page count.
-    const turns = turnsOf(s);
+    // P1.3: navigate by turn, not by raw block-page count. The denominator is
+    // the highest turn started (turnSeq), NOT the number of turns that happen
+    // to have transcript blocks; otherwise "Turno 606" showed "/104".
     const pageTurn = turnOfPage(page);
-    const totalTurns = turns.length || (s.turnSeq ?? 0);
+    const totalTurns = Math.max(s.turnSeq ?? 0, pageTurn ?? 0);
     const indicator = pageTurn && totalTurns
       ? `<p><i>🎯 Turno ${pageTurn}/${totalTurns}</i></p>`
       : page.total > 1 ? `<p><i>📄 ${page.index + 1}/${page.total}</i></p>` : "";
@@ -624,7 +620,17 @@ ${body}
       }
       return;
     }
-    const cleanHtml = renderPage(s, { ...opts, showResources: false })?.html ?? rendered.html;
+    // Rendering the page a second time just to strip resources is wasted CPU.
+    // When resources were already omitted (collapsed indicator or unified
+    // mode), the published HTML is exactly the clean one.
+    const hasResources = !(
+      s.resourcesCollapsed === true ||
+      opts?.showResources === false ||
+      s.cardView?.showResources === false
+    );
+    const cleanHtml = hasResources
+      ? (renderPage(s, { ...opts, showResources: false })?.html ?? rendered.html)
+      : rendered.html;
     const tgOpts = threadOptsFor(s);
     const keyboard = { inline_keyboard: compactCardKeyboard(chatId, s, rendered.page, rendered.total, opts) };
     if (s.transcriptMessageId) {

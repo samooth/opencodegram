@@ -114,8 +114,11 @@ function compactTokens(value: number): string {
  */
 const resourceCache = new WeakMap<ChatSession, { key: string; html: string }>();
 
+// `os.cpus()` builds an array of per-core objects; the count never changes.
+const CPU_COUNT = Math.max(1, os.cpus().length);
+
 export function renderResourceBlock(s: ChatSession, opts: { history?: number } = {}): string {
-  const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / os.cpus().length) * 100));
+  const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / CPU_COUNT) * 100));
   const memPercent = readMemoryPercent();
   const gpuNow = readGpuInfo();
   const theme = s.cardTheme ?? "auto";

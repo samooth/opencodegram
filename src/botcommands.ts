@@ -8,6 +8,7 @@ export const BOT_COMMANDS = [
   { command: "models", description: "List and switch models" },
   { command: "agents", description: "List and switch agents" },
   { command: "usage", description: "Show usage and cost stats" },
+  { command: "stats", description: "Model/provider performance stats and HTML report" },
   { command: "vcs", description: "Show VCS status" },
   { command: "mcp", description: "MCP servers and resources" },
   { command: "branches", description: "List branches" },

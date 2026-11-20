@@ -16,4 +16,12 @@ export function ctx(deps: BotDeps) {
   };
 }
 
+/** True when the user is the global admin or an admin of this route. */
+export function isRouteAdmin(deps: BotDeps, chatId: number, threadId: number | undefined, userId?: number): boolean {
+  if (deps.permissions) {
+    return deps.permissions.isAdmin(deps.store.routeKey(chatId, threadId), userId, deps.config.ADMIN_TELEGRAM_USER_ID);
+  }
+  return !!deps.config.ADMIN_TELEGRAM_USER_ID && userId === deps.config.ADMIN_TELEGRAM_USER_ID;
+}
+
 export type { BotDeps, SendFn };

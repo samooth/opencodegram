@@ -70,6 +70,77 @@ export type RetryDecision =
   | { action: "retry"; attempt: number; delay: number; maxAttempts: number }
   | { action: "exhausted"; attempts: number; maxAttempts: number };
 
+export type FailureKind = "rate-limit" | "provider" | "network" | "permanent" | "unknown";
+
+export type FailureInfo = {
+  kind: FailureKind;
+  retryable: boolean;
+  /** Short Spanish label for the error card. */
+  label: string;
+  /** One-line actionable hint shown under the error. */
+  hint: string;
+  /** OpenCode already announced its own retry/backoff. */
+  ocAlreadyRetrying: boolean;
+};
+
+/**
+ * Classify an execution failure. Rate limits, transient provider errors and
+ * network hiccups are retryable; auth/model/context errors are deterministic
+ * and must not be replayed. Unknown errors stay non-retryable on purpose:
+ * retrying a broken prompt only multiplies the damage.
+ */
+export function classifyFailure(message: string): FailureInfo {
+  const msg = message ?? "";
+  const ocAlreadyRetrying = /retr(y|ying)|backoff|will retry|retrying in/i.test(msg);
+  const permanent = /invalid api key|unauthori[sz]ed|forbidden|401|403|404|not found|does not exist|context (length|window)|maximum context|token limit|invalid request|bad request|\b400\b/i.test(msg);
+  const rateLimit = /rate[\s-]?limit|quota|too many requests|\b429\b|usage limit|free tier/i.test(msg);
+  const network = /econnreset|econnrefused|etimedout|enotfound|socket hang up|fetch failed|network error|connection (reset|refused|closed)/i.test(msg);
+  const provider = /provider returned error|provider error|overloaded|internal server error|bad gateway|service unavailable|gateway timeout|upstream|temporarily unavailable|try again later|server error|\b50[0234]\b/i.test(msg);
+  if (rateLimit) {
+    return {
+      kind: "rate-limit",
+      retryable: true,
+      label: "⏳ Límite o cuota del proveedor",
+      hint: "El modelo está saturado o alcanzaste la cuota. Reintento con espera; si persiste, cambia de modelo.",
+      ocAlreadyRetrying,
+    };
+  }
+  if (permanent) {
+    return {
+      kind: "permanent",
+      retryable: false,
+      label: "⛔ Error no recuperable",
+      hint: "Revisa el modelo, la clave del proveedor o el contexto de la sesión antes de reintentar.",
+      ocAlreadyRetrying,
+    };
+  }
+  if (network) {
+    return {
+      kind: "network",
+      retryable: true,
+      label: "🌐 Error de red",
+      hint: "No se pudo contactar con el proveedor. Reintento automáticamente.",
+      ocAlreadyRetrying,
+    };
+  }
+  if (provider) {
+    return {
+      kind: "provider",
+      retryable: true,
+      label: "🔌 Error temporal del proveedor",
+      hint: "El proveedor devolvió un error transitorio. Reintento con espera; si persiste, cambia de modelo.",
+      ocAlreadyRetrying,
+    };
+  }
+  return {
+    kind: "unknown",
+    retryable: false,
+    label: "❌ Error del turno",
+    hint: "El turno no se pudo completar. Revisa el detalle o reintenta manualmente.",
+    ocAlreadyRetrying,
+  };
+}
+
 /**
  * Decide what to do after a rate-limit failure.
  *

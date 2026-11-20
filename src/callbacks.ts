@@ -1,5 +1,6 @@
-import { isDangerousCommand } from "./dangerous.js";
+import { isDangerousCommand, isChatAdminCommand } from "./dangerous.js";
 import { handleCommand } from "./commands.js";
+import { isRouteAdmin } from "./commands/shared.js";
 import type { InlineKeyboard } from "./apitypes.js";
 import type { BotDeps } from "./context.js";
 import { fileErrorMessage } from "./files/index.js";
@@ -14,6 +15,7 @@ import { extractEditFile } from "./editutil.js";
 import { getActivityReadPath } from "./transcriptmanager.js";
 import { buildGlobalAllowed } from "./permissions.js";
 import { dbStats, renderDbPanel, vacuum } from "./db.js";
+import { collectStats, renderStatsPanel, writeStatsReport, type StatsPeriod, type StatsScope } from "./stats.js";
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { showSessionPicker } from "./messages.js";
 import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "./util.js";
@@ -31,18 +33,13 @@ type CallbackHandler = (
   data: string,
 ) => Promise<void>;
 
-function isRouteAdmin(deps: BotDeps, chatId: number, threadId: number | undefined, userId: number | undefined): boolean {
-  const routeKey = (deps.store.routeKey ?? ((c: number, t?: number) => `${c}:${t ?? 0}`))(chatId, threadId);
-  if (deps.permissions) return deps.permissions.isAdmin(routeKey, userId, deps.config.ADMIN_TELEGRAM_USER_ID);
-  return !!deps.config.ADMIN_TELEGRAM_USER_ID && userId === deps.config.ADMIN_TELEGRAM_USER_ID;
-}
-
 const PREFIXES = [
   "panel:",
   "perm:",
   "permthread:",
   "permui:",
   "db:",
+  "stats:",
   "settings:",
   "use:",
   "spick:",
@@ -88,7 +85,9 @@ async function handleTranscriptPage(deps: BotDeps, cq: TelegramCallbackQuery, ch
   if (!m) return;
   const sessionId = m[1];
   const page = parseInt(m[2], 10);
-  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  // Do not serialize the network round-trips: the card edit is the visible
+  // action, and waiting for the ack first made page taps feel slow.
+  void deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
     await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -282,8 +281,12 @@ async function handlePickerJump(deps: BotDeps, cq: TelegramCallbackQuery, chatId
   if (!m) return;
   const sessionId = m[1];
   const page = parseInt(m[2], 10);
-  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
-  if (cq.message?.message_id) await deps.tg.deleteMessage(chatId, cq.message.message_id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  // Ack and picker cleanup run in parallel with the card edit: they are not
+  // prerequisites for navigating and each one costs a Telegram round-trip.
+  void deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  if (cq.message?.message_id) {
+    void deps.tg.deleteMessage(chatId, cq.message.message_id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
   const s = deps.store.findSessionById(sessionId);
   if (!s || !deps.transcript) {
     await deps.tg.sendRichMessage(chatId, "⚠️ La sesión ya no está disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -294,7 +297,8 @@ async function handlePickerJump(deps: BotDeps, cq: TelegramCallbackQuery, chatId
   });
 }
 
-async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {  const m = data.match(/^perm:(allow|always|reject|rejectreason):(.+)$/);
+async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const m = data.match(/^perm:(allow|always|reject|rejectreason):(.+)$/);
   if (!m) return;
   const action = m[1];
   const requestId = m[2];
@@ -811,7 +815,9 @@ async function handlePermUI(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
       await deps.tg.answerCallbackQuery(cq.id, `🗑 ${deps.permissions.label(id)}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
   } else if (action === "add") {
-    deps.awaitingPermissionAdd?.set(routeKey, { chatId, threadId });
+    // Bind the capture to this admin and expire it: a stale "add user" prompt
+    // must never swallow a later message from someone else.
+    deps.awaitingPermissionAdd?.set(routeKey, { chatId, threadId, at: Date.now(), requestedBy: cq.from?.id ?? 0 });
     await deps.tg.answerCallbackQuery(cq.id, "Responde con: @usuario [operator|admin]").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, "Responde con <code>@usuario</code> (o el ID) y el rol, p. ej. <code>@juan operator</code> o <code>123456 admin</code>. El usuario debe haber escrito al bot o pulsado un botón antes para que conozca su @username.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
@@ -1065,6 +1071,10 @@ async function handleSessions(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
 async function handleBotCommand(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
   const name = data.slice("botcmd:".length).trim();
   if (!name) return;
+  if (isChatAdminCommand(name) && !isRouteAdmin(deps, chatId, threadId, cq.from?.id)) {
+    await deps.tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
   if (isDangerousCommand(name)) {
     await deps.tg.answerCallbackQuery(cq.id, "Escribe el comando manualmente").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     await deps.tg.sendRichMessage(chatId, "⚠️ Por seguridad, ejecuta este comando escribiéndolo.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -1361,7 +1371,57 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "botcmd:": handleBotCommand,
   "profile:": handleProfile,
   "viewfull:": handleViewFull,
+  "stats:": handleStats,
 };
+
+async function handleStats(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const { tg, store } = deps;
+  const isAdmin = isRouteAdmin(deps, chatId, threadId, cq.from?.id);
+  const parts = data.slice("stats:".length).split(":");
+  const action = parts[0];
+  await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+
+  let period: StatsPeriod = "7d";
+  let scope: StatsScope = "chat";
+  if (action === "period") {
+    period = (parts[1] as StatsPeriod) ?? "7d";
+  } else if (action === "scope") {
+    scope = (parts[1] as StatsScope) ?? "chat";
+    period = (parts[2] as StatsPeriod) ?? "7d";
+  } else if (action === "refresh") {
+    period = (parts[1] as StatsPeriod) ?? "7d";
+    scope = (parts[2] as StatsScope) ?? "chat";
+  } else if (action === "export") {
+    period = (parts[1] as StatsPeriod) ?? "7d";
+    scope = (parts[2] as StatsScope) ?? "chat";
+    if (scope === "all" && !isAdmin) {
+      await tg.sendRichMessage(chatId, "📊 Solo un admin puede exportar el histórico de todos los chats.", threadOpts(threadId)).catch(() => {});
+      return;
+    }
+    const data2 = collectStats({ period, scope, chatId, dataDir: store.dataDir });
+    const { path, filename } = writeStatsReport(data2, { period, scope });
+    await tg.sendDocument(chatId, path, filename, `📊 <b>Reporte de rendimiento</b>`, {
+      ...threadOpts(threadId),
+      parse_mode: "HTML",
+    }).catch((err) => console.warn("[callbacks] stats export failed", err?.message ?? err));
+    return;
+  }
+
+  if (scope === "all" && !isAdmin) scope = "chat";
+  const collected = collectStats({ period, scope, chatId, dataDir: store.dataDir });
+  const panel = renderStatsPanel(collected, { period, scope, isAdmin });
+  if (messageId !== undefined) {
+    await tg.editRichMessage(chatId, messageId, panel.html, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: panel.keyboard },
+    }).catch((err) => console.warn("[callbacks] stats render failed", err?.message ?? err));
+  } else {
+    await tg.sendRichMessage(chatId, panel.html, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: panel.keyboard },
+    }).catch((err) => console.warn("[callbacks] stats render failed", err?.message ?? err));
+  }
+}
 
 export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): Promise<void> {
   const { config, tg, oc, store, panels, sessions, pendingModelByChat } = deps;
@@ -1370,24 +1430,47 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   const { createNewSession } = sessions;
 
   const userId = cq.from?.id;
-  if (userId !== undefined && cq.from?.username) deps.permissions?.rememberUser(userId, cq.from.username);
-  const allowedUsers = new Set<number>();
-  if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);
-  if (config.ALLOWED_TELEGRAM_USER_IDS) {
-    for (const part of config.ALLOWED_TELEGRAM_USER_IDS.split(",")) {
-      const n = Number(part.trim());
-      if (Number.isFinite(n) && n > 0) allowedUsers.add(n);
-    }
-  }
-  if (allowedUsers.size === 0 || userId === undefined || !allowedUsers.has(userId)) {
+  const allowedUsers = buildGlobalAllowed(config);
+  const chatId = cq.message?.chat?.id ?? cq.from.id;
+  const threadId = cq.message?.message_thread_id;
+  // The global allowlist is the floor, but a user granted only through the
+  // per-thread ACL (operator/admin) must also reach the buttons; otherwise the
+  // granular permissions would only apply to typed prompts.
+  const routeKey = store.routeKey(chatId, threadId);
+  const admin = isRouteAdmin(deps, chatId, threadId, userId);
+  const threadAllowed = deps.permissions
+    ? deps.permissions.canPrompt(routeKey, userId, allowedUsers) || deps.permissions.isReadOnly(routeKey)
+    : false;
+  if (allowedUsers.size === 0 || userId === undefined || (!allowedUsers.has(userId) && !threadAllowed && !admin)) {
     await tg.answerCallbackQuery(cq.id, "No autorizado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
+  // Learn usernames only after authorization (the map drives @name grants).
+  if (userId !== undefined && cq.from?.username) deps.permissions?.rememberUser(userId, cq.from.username);
 
-  const chatId = cq.message?.chat?.id ?? cq.from.id;
   const cbData = cq.data ?? "";
-  const threadId = cq.message?.message_thread_id;
   const messageId = cq.message?.message_id;
+  // Chat-wide state changes (delete sessions, shared settings) belong to route
+  // admins only, no matter which button dispatched them.
+  const adminOnly = ["set:", "cycle:", "preset:", "profile:", "del:", "delsessions:", "delconfirm:"];
+  if (!admin && adminOnly.some((p) => cbData.startsWith(p))) {
+    await tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  // A read-only route may browse, but never mutate. Admins keep control so they
+  // can turn read-only off again (and manage permissions) from the same card.
+  if (!admin && deps.permissions?.isReadOnly(routeKey)) {
+    const mutating = [
+      "panel:stop", "panel:new", "retry:", "runcmd:", "botcmd:", "cmd:", "set:", "cycle:", "preset:",
+      "profile:", "model:", "agent:", "variant:", "qswitch:", "use:", "del:", "delsessions:", "delconfirm:",
+      "connect:", "mcp:", "stage:", "unstage:", "commit:", "branch:", "worktree:", "vcs:", "perm:",
+      "permui:", "permthread:", "formreply:", "goal:", "edit:", "edits:", "spick:",
+    ];
+    if (mutating.some((p) => cbData === p || cbData.startsWith(p))) {
+      await tg.answerCallbackQuery(cq.id, "🔒 Solo lectura").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      return;
+    }
+  }
 
   if (await deps.files.handleCallback(cq)) return;
 
