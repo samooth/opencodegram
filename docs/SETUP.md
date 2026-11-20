@@ -97,9 +97,9 @@ VOICE_TRANSCRIPTION_LANGUAGE=auto
 VOICE_TRANSCRIPTION_TIMEOUT_MS=120000
 ```
 
-The wrapper uses `/jardin/models/audio/whisper-small` by default; edit
-`MODEL_DIR` inside the script to change it. `auto` lets Whisper detect the
-language.
+The wrapper reads the model directory from `MODEL_DIR` (set it to your local
+Whisper model, for example `/path/to/models/whisper-small`). `auto` lets Whisper
+detect the language.
 
 If no transcriber is configured, voice notes fall back to being attached as
 audio. In groups, voice notes are processed when they reply to the bot (or when
