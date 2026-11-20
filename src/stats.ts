@@ -5,6 +5,7 @@ import { getDatabase } from "./db.js";
 import type { ChatSession } from "./types.js";
 import { detectTestRun, summarizeEdits } from "./status-render.js";
 import { esc } from "./util.js";
+import { toolCategory } from "./activity.js";
 
 /**
  * Model/provider performance statistics.
@@ -18,6 +19,37 @@ import { esc } from "./util.js";
 export type StatsPeriod = "7d" | "30d" | "all";
 export type StatsScope = "chat" | "all";
 export type TurnStatStatus = "ok" | "error" | "stopped";
+
+/** Counts and failures grouped by tool category. */
+export type ToolCounts = {
+  shell: { calls: number; failures: number };
+  edit: { calls: number; failures: number };
+  read: { calls: number; failures: number };
+  search: { calls: number; failures: number };
+  other: { calls: number; failures: number };
+};
+
+const emptyToolCounts = (): ToolCounts => ({
+  shell: { calls: 0, failures: 0 },
+  edit: { calls: 0, failures: 0 },
+  read: { calls: 0, failures: 0 },
+  search: { calls: 0, failures: 0 },
+  other: { calls: 0, failures: 0 },
+});
+
+/** Classify a turn's tool calls into shell/edit/read/search/other with failures. */
+export function countTools(details: Array<{ name: string; status?: string }> | undefined): ToolCounts {
+  const out = emptyToolCounts();
+  for (const d of details ?? []) {
+    const kind = toolCategory(d.name);
+    const bucket = kind === "shell" || kind === "edit" || kind === "read" || kind === "search"
+      ? out[kind]
+      : out.other;
+    bucket.calls += 1;
+    if (d.status === "failed") bucket.failures += 1;
+  }
+  return out;
+}
 
 export type TurnStatInput = {
   sessionId: string;
@@ -40,6 +72,7 @@ export type TurnStatInput = {
   cost?: number;
   toolCalls?: number;
   toolFailures?: number;
+  toolCounts?: ToolCounts;
   editFiles?: number;
   addedLines?: number;
   removedLines?: number;
@@ -71,6 +104,16 @@ export type TurnStatRow = {
   cost: number;
   tool_calls: number;
   tool_failures: number;
+  shell_calls: number;
+  shell_failures: number;
+  edit_calls: number;
+  edit_failures: number;
+  read_calls: number;
+  read_failures: number;
+  search_calls: number;
+  search_failures: number;
+  other_calls: number;
+  other_failures: number;
   edit_files: number;
   added_lines: number;
   removed_lines: number;
@@ -98,6 +141,11 @@ export type StatsSummary = {
   cost: number;
   toolCalls: number;
   toolFailures: number;
+  tools: ToolCounts;
+  /** Total wall-clock time across turns (ms) — the denominator for tool rates. */
+  activeMs: number;
+  /** Tool calls per minute of turn wall time. */
+  toolsPerMin: number;
   editFiles: number;
   addedLines: number;
   removedLines: number;
@@ -144,14 +192,18 @@ const num = (value: unknown): number => (typeof value === "number" && Number.isF
 export function recordTurnStat(input: TurnStatInput, dataDir?: string): void {
   const db = getDatabase(dataDir);
   const startedAt = input.startedAt;
+  const tc = input.toolCounts ?? emptyToolCounts();
   db.run(
     `INSERT INTO turn_stats (
       session_id, turn_seq, started_at, finished_at, chat_id, thread_id,
       provider_id, model_id, variant, status, duration_ms, first_token_ms,
       input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens,
-      cost, tool_calls, tool_failures, edit_files, added_lines, removed_lines,
+      cost, tool_calls, tool_failures,
+      shell_calls, shell_failures, edit_calls, edit_failures, read_calls, read_failures,
+      search_calls, search_failures, other_calls, other_failures,
+      edit_files, added_lines, removed_lines,
       test_runs, test_ok, prompt_chars, output_chars
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id, turn_seq, started_at) DO UPDATE SET
       finished_at = excluded.finished_at,
       status = excluded.status,
@@ -165,6 +217,16 @@ export function recordTurnStat(input: TurnStatInput, dataDir?: string): void {
       cost = excluded.cost,
       tool_calls = excluded.tool_calls,
       tool_failures = excluded.tool_failures,
+      shell_calls = excluded.shell_calls,
+      shell_failures = excluded.shell_failures,
+      edit_calls = excluded.edit_calls,
+      edit_failures = excluded.edit_failures,
+      read_calls = excluded.read_calls,
+      read_failures = excluded.read_failures,
+      search_calls = excluded.search_calls,
+      search_failures = excluded.search_failures,
+      other_calls = excluded.other_calls,
+      other_failures = excluded.other_failures,
       edit_files = excluded.edit_files,
       added_lines = excluded.added_lines,
       removed_lines = excluded.removed_lines,
@@ -192,6 +254,16 @@ export function recordTurnStat(input: TurnStatInput, dataDir?: string): void {
     Math.max(0, num(input.cost)),
     Math.max(0, Math.round(num(input.toolCalls))),
     Math.max(0, Math.round(num(input.toolFailures))),
+    Math.max(0, Math.round(num(tc.shell.calls))),
+    Math.max(0, Math.round(num(tc.shell.failures))),
+    Math.max(0, Math.round(num(tc.edit.calls))),
+    Math.max(0, Math.round(num(tc.edit.failures))),
+    Math.max(0, Math.round(num(tc.read.calls))),
+    Math.max(0, Math.round(num(tc.read.failures))),
+    Math.max(0, Math.round(num(tc.search.calls))),
+    Math.max(0, Math.round(num(tc.search.failures))),
+    Math.max(0, Math.round(num(tc.other.calls))),
+    Math.max(0, Math.round(num(tc.other.failures))),
     Math.max(0, Math.round(num(input.editFiles))),
     Math.max(0, Math.round(num(input.addedLines))),
     Math.max(0, Math.round(num(input.removedLines))),
@@ -236,6 +308,7 @@ type Mutable = {
   cost: number;
   toolCalls: number;
   toolFailures: number;
+  tools: ToolCounts;
   editFiles: number;
   added: number;
   removed: number;
@@ -243,6 +316,7 @@ type Mutable = {
   testOk: number;
   speedMs: number;
   speedOutput: number;
+  activeMs: number;
 };
 
 function mutable(key: string, providerID: string, modelID?: string, variant?: string): Mutable {
@@ -251,8 +325,8 @@ function mutable(key: string, providerID: string, modelID?: string, variant?: st
     turns: 0, ok: 0, errors: 0, stopped: 0,
     durationMs: 0, durations: [], firstTokens: [],
     input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0,
-    toolCalls: 0, toolFailures: 0, editFiles: 0, added: 0, removed: 0,
-    testRuns: 0, testOk: 0, speedMs: 0, speedOutput: 0,
+    toolCalls: 0, toolFailures: 0, tools: emptyToolCounts(), editFiles: 0, added: 0, removed: 0,
+    testRuns: 0, testOk: 0, speedMs: 0, speedOutput: 0, activeMs: 0,
   };
 }
 
@@ -275,6 +349,17 @@ function addRow(bucket: Mutable, row: TurnStatRow): void {
   bucket.cost += num(row.cost);
   bucket.toolCalls += num(row.tool_calls);
   bucket.toolFailures += num(row.tool_failures);
+  bucket.tools.shell.calls += num(row.shell_calls);
+  bucket.tools.shell.failures += num(row.shell_failures);
+  bucket.tools.edit.calls += num(row.edit_calls);
+  bucket.tools.edit.failures += num(row.edit_failures);
+  bucket.tools.read.calls += num(row.read_calls);
+  bucket.tools.read.failures += num(row.read_failures);
+  bucket.tools.search.calls += num(row.search_calls);
+  bucket.tools.search.failures += num(row.search_failures);
+  bucket.tools.other.calls += num(row.other_calls);
+  bucket.tools.other.failures += num(row.other_failures);
+  bucket.activeMs += Math.max(0, num(row.finished_at) - num(row.started_at));
   bucket.editFiles += num(row.edit_files);
   bucket.added += num(row.added_lines);
   bucket.removed += num(row.removed_lines);
@@ -316,6 +401,9 @@ function finalize(bucket: Mutable): StatsSummary {
     cost: bucket.cost,
     toolCalls: bucket.toolCalls,
     toolFailures: bucket.toolFailures,
+    tools: bucket.tools,
+    activeMs: bucket.activeMs,
+    toolsPerMin: bucket.activeMs > 0 ? (bucket.toolCalls / (bucket.activeMs / 60000)) : 0,
     editFiles: bucket.editFiles,
     addedLines: bucket.added,
     removedLines: bucket.removed,
@@ -505,15 +593,38 @@ export function renderStatsPanel(data: StatsData, opts: StatsPanelOpts): {
       `<tr><td>🧠 Salida</td><td><b>${fmtTokens(t.outputTokens)}</b></td><td>🔧 Herram.</td><td><b>${int(t.toolCalls)}${t.toolFailures ? ` (${int(t.toolFailures)}✗)` : ""}</b></td></tr>`,
       "</table>",
       "",
-      "<b>🏆 Top modelos</b>",
+      "<b>🏆 Modelos · herramientas por minuto</b>",
+      "<i>Sh=shell · Ed=edit · Le=read · Bu=search · Ot=otras · ✗=fallos · /min=llamadas por minuto de turno</i>",
+      "<table compact striped>",
+      "<tr><td>Modelo</td><td>tok/s</td><td>Sh</td><td>Ed</td><td>Le</td><td>Bu</td><td>Ot</td><td>✗</td><td>/min</td></tr>",
+    );
+    const toolCell = (calls: number, failures: number): string =>
+      `${int(calls)}${failures ? `<small>✗${int(failures)}</small>` : ""}`;
+    for (const m of data.models.slice(0, 6)) {
+      lines.push(
+        `<tr><td><code>${esc(modelName(m))}</code></td>`,
+        `<td>${m.tokPerSec.toFixed(1)}</td>`,
+        `<td>${toolCell(m.tools.shell.calls, m.tools.shell.failures)}</td>`,
+        `<td>${toolCell(m.tools.edit.calls, m.tools.edit.failures)}</td>`,
+        `<td>${toolCell(m.tools.read.calls, m.tools.read.failures)}</td>`,
+        `<td>${toolCell(m.tools.search.calls, m.tools.search.failures)}</td>`,
+        `<td>${toolCell(m.tools.other.calls, m.tools.other.failures)}</td>`,
+        `<td>${int(m.toolFailures)}</td>`,
+        `<td>${m.toolsPerMin.toFixed(1)}</td></tr>`,
+      );
+    }
+    lines.push("</table>");
+    lines.push(
+      "",
+      "<b>Detalle por modelo</b>",
     );
     for (const [idx, m] of data.models.slice(0, 5).entries()) {
       const medal = MEDALS[idx] ?? `${idx + 1}.`;
       lines.push(
         `<blockquote expandable>${medal} <code>${esc(modelName(m))}</code>`,
         `<b>${pct(m.successRate)}</b> ${bar(m.successRate)} · ${turnsLabel(m.turns)}`,
-        `<i>${turnsLabel(m.turns)} · ⏱ ${fmtMs(m.avgMs)} · ⚡ ${m.tokPerSec.toFixed(1)} tok/s · 💵 ${fmtCost(m.cost)}</i>`,
-        `<i>🔧 ${int(m.toolCalls)}${m.toolFailures ? ` (${int(m.toolFailures)}✗)` : ""} · ✏️ ${int(m.editFiles)} archivos · +${int(m.addedLines)}/−${int(m.removedLines)}</i></blockquote>`,
+        `<i>⏱ ${fmtMs(m.avgMs)} (p95 ${fmtMs(m.p95Ms)}) · ⚡ ${m.tokPerSec.toFixed(1)} tok/s · 💵 ${fmtCost(m.cost)}</i>`,
+        `<i>🔧 ${int(m.toolCalls)} (${int(m.toolFailures)}✗) · ${m.toolsPerMin.toFixed(1)} llam./min · ✏️ ${int(m.editFiles)} archivos · +${int(m.addedLines)}/−${int(m.removedLines)}</i></blockquote>`,
       );
     }
     if (data.models.length > 5) lines.push(`<i>… y ${data.models.length - 5} modelos más en el reporte HTML.</i>`);
@@ -716,6 +827,25 @@ function modelRows(models: ModelStats[]): string {
   </tr>`).join("");
 }
 
+function toolCellHtml(calls: number, failures: number): string {
+  return `${int(calls)}${failures ? ` <span class="pill bad">${int(failures)} ✗</span>` : ""}`;
+}
+
+/** Per-tool breakdown table: shell/edit/read/search/other calls, failures and rate. */
+function toolTableRows(models: ModelStats[]): string {
+  return models.map((m, idx) => `<tr>
+    <td data-label="Modelo"><span class="rank">${idx + 1}</span><code class="model">${h(modelName(m))}</code></td>
+    <td data-label="tok/s" data-value="${m.tokPerSec}">${m.tokPerSec ? m.tokPerSec.toFixed(1) : "—"}</td>
+    <td data-label="Shell" data-value="${m.tools.shell.calls}">${toolCellHtml(m.tools.shell.calls, m.tools.shell.failures)}</td>
+    <td data-label="Edit" data-value="${m.tools.edit.calls}">${toolCellHtml(m.tools.edit.calls, m.tools.edit.failures)}</td>
+    <td data-label="Read" data-value="${m.tools.read.calls}">${toolCellHtml(m.tools.read.calls, m.tools.read.failures)}</td>
+    <td data-label="Search" data-value="${m.tools.search.calls}">${toolCellHtml(m.tools.search.calls, m.tools.search.failures)}</td>
+    <td data-label="Otras" data-value="${m.tools.other.calls}">${toolCellHtml(m.tools.other.calls, m.tools.other.failures)}</td>
+    <td data-label="Fallos" data-value="${m.toolFailures}">${int(m.toolFailures)}</td>
+    <td data-label="llam./min" data-value="${m.toolsPerMin}">${m.toolsPerMin.toFixed(1)}</td>
+  </tr>`).join("");
+}
+
 function recentRows(rows: TurnStatRow[]): string {
   return rows.map((r) => {
     const status = r.status === "ok"
@@ -758,7 +888,8 @@ export function buildHtmlReport(data: StatsData, opts: ReportOpts): string {
     kpi("Velocidad", `${t.tokPerSec.toFixed(1)} tok/s`, `${fmtTokens(t.avgTokensPerTurn)} tokens/turno`),
     kpi("Tokens de salida", fmtTokens(t.outputTokens), `${fmtTokens(t.inputTokens)} entrada · ${fmtTokens(t.reasoningTokens)} razonamiento`),
     kpi("Coste", fmtCost(t.cost), `${fmtCost(t.costPerTurn)} por turno`),
-    kpi("Herramientas", int(t.toolCalls), `${int(t.toolFailures)} fallos · ${totalTests ? `${testsOk}/${totalTests} tests ok` : "sin tests"}`),
+    kpi("Herramientas", int(t.toolCalls), `${int(t.toolFailures)} fallos · ${t.toolsPerMin.toFixed(1)} llam./min`),
+    kpi("Herram. por tipo", `${int(t.tools.shell.calls)}/${int(t.tools.edit.calls)}/${int(t.tools.read.calls)}`, `shell/edit/read · ${int(t.tools.search.calls)} search · ${int(t.tools.other.calls)} otras`),
     kpi("Cambios", `${int(t.editFiles)} archivos`, `+${int(t.addedLines)} / −${int(t.removedLines)} líneas`),
   ].join("");
 
@@ -944,6 +1075,27 @@ footer b{color:var(--muted)}
   </section>
 
   <section class="panel">
+    <h2>Herramientas por modelo</h2>
+    <p class="hint">Llamadas por tipo (shell, edit, read, search y otras) con sus fallos. «llam./min» normaliza el uso por minuto de tiempo de turno para comparar modelos rápidos y lentos de forma justa.</p>
+    <div class="table-wrap">
+      <table class="sortable" id="toolTable">
+        <thead><tr>
+          <th data-sortable>Modelo</th>
+          <th data-sortable>tok/s</th>
+          <th data-sortable>Shell</th>
+          <th data-sortable>Edit</th>
+          <th data-sortable>Read</th>
+          <th data-sortable>Search</th>
+          <th data-sortable>Otras</th>
+          <th data-sortable>Fallos</th>
+          <th data-sortable>llam./min</th>
+        </tr></thead>
+        <tbody>${toolTableRows(data.models)}</tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>Ranking de modelos</h2>
     <p class="hint">Ordena por cualquier columna y filtra por nombre. p95 muestra la latencia del 5% más lento.</p>
     <div class="toolbar"><input id="modelFilter" type="search" placeholder="Filtrar por proveedor o modelo…" aria-label="Filtrar modelos"></div>
@@ -1116,6 +1268,7 @@ export function recordTurnStatFromSession(
       cost: s.turnCost,
       toolCalls: s.toolCallDetails?.length ?? 0,
       toolFailures,
+      toolCounts: countTools(s.toolCallDetails),
       editFiles: edits.files,
       addedLines: edits.added,
       removedLines: edits.removed,

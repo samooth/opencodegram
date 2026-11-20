@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS turn_stats (
   cost REAL NOT NULL DEFAULT 0,
   tool_calls INTEGER NOT NULL DEFAULT 0,
   tool_failures INTEGER NOT NULL DEFAULT 0,
+  shell_calls INTEGER NOT NULL DEFAULT 0,
+  shell_failures INTEGER NOT NULL DEFAULT 0,
+  edit_calls INTEGER NOT NULL DEFAULT 0,
+  edit_failures INTEGER NOT NULL DEFAULT 0,
+  read_calls INTEGER NOT NULL DEFAULT 0,
+  read_failures INTEGER NOT NULL DEFAULT 0,
+  search_calls INTEGER NOT NULL DEFAULT 0,
+  search_failures INTEGER NOT NULL DEFAULT 0,
+  other_calls INTEGER NOT NULL DEFAULT 0,
+  other_failures INTEGER NOT NULL DEFAULT 0,
   edit_files INTEGER NOT NULL DEFAULT 0,
   added_lines INTEGER NOT NULL DEFAULT 0,
   removed_lines INTEGER NOT NULL DEFAULT 0,
@@ -105,6 +115,34 @@ function migrateKnownUsers(db: Database): void {
   tx();
 }
 
+/**
+ * Add the per-tool breakdown columns to older `turn_stats` tables. SQLite
+ * cannot add several columns in one ALTER, so each is added if missing.
+ */
+function migrateTurnStatsColumns(db: Database): void {
+  const columns = new Set(
+    (db.query("PRAGMA table_info(turn_stats)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const additions: Record<string, string> = {
+    shell_calls: "INTEGER NOT NULL DEFAULT 0",
+    shell_failures: "INTEGER NOT NULL DEFAULT 0",
+    edit_calls: "INTEGER NOT NULL DEFAULT 0",
+    edit_failures: "INTEGER NOT NULL DEFAULT 0",
+    read_calls: "INTEGER NOT NULL DEFAULT 0",
+    read_failures: "INTEGER NOT NULL DEFAULT 0",
+    search_calls: "INTEGER NOT NULL DEFAULT 0",
+    search_failures: "INTEGER NOT NULL DEFAULT 0",
+    other_calls: "INTEGER NOT NULL DEFAULT 0",
+    other_failures: "INTEGER NOT NULL DEFAULT 0",
+  };
+  const tx = db.transaction(() => {
+    for (const [name, def] of Object.entries(additions)) {
+      if (!columns.has(name)) db.run(`ALTER TABLE turn_stats ADD COLUMN ${name} ${def}`);
+    }
+  });
+  tx();
+}
+
 const databases = new Map<string, Database>();
 
 /** Return the SQLite connection for the data directory that owns `file`. */
@@ -117,6 +155,7 @@ function dbForFile(file: string): Database {
   db.run("PRAGMA journal_mode = WAL;");
   db.run("PRAGMA busy_timeout = 5000;");
   db.run(SCHEMA);
+  migrateTurnStatsColumns(db);
   migrateKnownUsers(db);
   databases.set(dir, db);
   return db;
