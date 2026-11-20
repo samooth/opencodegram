@@ -120,7 +120,7 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (394 tests across 42 files):
+`bun test` runs the Bun suite in `tests/` (395 tests across 42 files):
 
 - `db.test.ts` — SQLite migration (JSON + legacy `permissions.db`), persistence across instances, JSON mirror and stats.
 - `store.test.ts` — route/tab isolation, persistence and retirement.

@@ -97,7 +97,7 @@
 - [x] Callbacks `db:info`, `db:refresh`, `db:vacuum` (admin), `db:back` con render en el mismo mensaje.
 - [x] Convertir los comandos del bot en botones `botcmd:` dentro de `⚡ Comandos` (peligrosos excluidos).
 - [x] Documentar BD y panel por botones en README/AGENTS/ARCHITECTURE/COMMANDS.
-- [x] Validar `typecheck && test && build` (394 tests), recargar daemon y commitear.
+- [x] Validar `typecheck && test && build` (395 tests), recargar daemon y commitear.
 
 ### Siguiente orden sugerido
 SQLite + botones → graceful degradation → resumen automático → `/retry` con turno → `/search` sobre prompts → daemon Whisper.

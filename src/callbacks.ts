@@ -825,19 +825,28 @@ async function handlePermUI(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   }
 }
 
-/** ◀ Volver: close the settings view and restore the panel in the same message. */
+/** ◀ Volver: restore the previous button view in the SAME message. */
 async function handleSettingsBack(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
   if (data !== "settings:back") return;
   await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  // Settings opened from a session card (⚙️): go back to that card, with its
+  // original buttons, by editing the very message we are sitting in.
+  if (messageId !== undefined) {
+    const sessionId = deps.store.findSessionByAnyMessage(chatId, messageId, threadId);
+    const s = sessionId ? deps.store.findSessionById(sessionId) : undefined;
+    if (s) {
+      await deps.status.publishCard(chatId, s).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      return;
+    }
+  }
+  // Settings opened from the home panel: restore that panel in place too.
   const panel = await deps.panels.renderPanel(chatId, threadId).catch((err) => {
     console.warn("[callbacks] panel render failed", err?.message ?? err);
     return undefined;
   });
   if (!panel) return;
-  const dash = deps.store.getDashboard(chatId, threadId);
-  const editId = dash && dash.messageId === messageId ? undefined : messageId;
   const opts = { ...threadOpts(threadId), reply_markup: { inline_keyboard: panel.keyboard } };
-  if (editId !== undefined) await deps.tg.editRichMessage(chatId, editId, panel.html, opts).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  if (messageId !== undefined) await deps.tg.editRichMessage(chatId, messageId, panel.html, opts).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   else await deps.tg.sendRichMessage(chatId, panel.html, opts).catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 

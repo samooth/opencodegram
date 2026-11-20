@@ -256,6 +256,21 @@ describe("handleCallback", () => {
     expect(edits).toEqual(["<b>OpenCodegram</b>"]);
   });
 
+  test("settings:back from a card restores the card buttons in the same message", async () => {
+    const deps = makeDeps();
+    const s = { sessionId: "ses_back", statusFinished: true } as any;
+    deps.store.sessionsById.set(s.sessionId, s);
+    deps.store.rememberMessageSession(123, 77, s.sessionId);
+    let publishes = 0;
+    let sends = 0;
+    deps.status.publishCard = async () => { publishes++; };
+    deps.tg.sendRichMessage = async () => { sends++; return { message_id: 9 }; };
+    const cq = { id: "st4", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 77 }, data: "settings:back" } as any;
+    await handleCallback(deps, cq);
+    expect(publishes).toBe(1);
+    expect(sends).toBe(0);
+  });
+
   test("toggling a detail setting expands the active card immediately", async () => {
     const deps = makeDeps();
     const { SettingsStore } = await import("../src/settings.js");
