@@ -1,5 +1,6 @@
 import { logger } from "./logger.js";
 import { isDangerousCommand } from "./dangerous.js";
+import { buildGlobalAllowed } from "./permissions.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { BotDeps, SendFn } from "./context.js";
@@ -461,15 +462,22 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const serviceMsg = msg as typeof msg & { forum_topic_created?: unknown; forum_topic_edited?: unknown; forum_topic_closed?: unknown; pinned_message?: unknown };
   const isService = !!(serviceMsg.forum_topic_created || serviceMsg.forum_topic_edited || serviceMsg.forum_topic_closed || serviceMsg.pinned_message);
   if (isService && !hasContent) return;
-  const allowedUsers = new Set<number>();
-  if (config.ADMIN_TELEGRAM_USER_ID) allowedUsers.add(config.ADMIN_TELEGRAM_USER_ID);
-  if (config.ALLOWED_TELEGRAM_USER_IDS) {
-    for (const part of config.ALLOWED_TELEGRAM_USER_IDS.split(",")) {
-      const n = Number(part.trim());
-      if (Number.isFinite(n) && n > 0) allowedUsers.add(n);
+  const chatId = msg.chat.id;
+  const replyThread = msg.message_thread_id;
+  const globalAllowed = deps.permissions ? buildGlobalAllowed(deps.config) : (() => {
+    const out = new Set<number>();
+    if (deps.config.ADMIN_TELEGRAM_USER_ID) out.add(deps.config.ADMIN_TELEGRAM_USER_ID);
+    if (deps.config.ALLOWED_TELEGRAM_USER_IDS) {
+      for (const part of deps.config.ALLOWED_TELEGRAM_USER_IDS.split(",")) {
+        const n = Number(part.trim());
+        if (Number.isFinite(n) && n > 0) out.add(n);
+      }
     }
-  }
-  const isAuthorized = allowedUsers.size > 0 && userId !== undefined && allowedUsers.has(userId);
+    return out;
+  })();
+  const isAuthorized = deps.permissions
+    ? deps.permissions.canPrompt(deps.store.routeKey(chatId, replyThread), userId, globalAllowed)
+    : (globalAllowed.size > 0 && userId !== undefined && globalAllowed.has(userId));
   if (!isAuthorized) {
     // In groups, silently ignore unauthorized messages.
     if (msg.chat.id < 0) return;
@@ -477,11 +485,6 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     return;
   }
 
-  const chatId = msg.chat.id;
-  const replyThread = msg.message_thread_id;
-  // A new incoming message supersedes any pending auto-retry for sessions
-  // bound to this chat: we do not want stale prompts (and their old answers)
-  // to be replayed while the user is interacting.
   // A new incoming message supersedes any pending auto-retry everywhere:
   // we never want stale prompts (and their old answers) to be replayed.
   for (const sid of store.sessionsById.keys()) cancelAutoRetry(sid);

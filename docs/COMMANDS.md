@@ -25,6 +25,8 @@
 ## Settings
 
 - `/settings` — show and toggle bot behavior per chat (with quick profiles):
+- `/permissions` — granular ACLs for the current thread/topic (admin only):
+  readonly on|off, inherit on|off, add <id> [operator|admin], remove <id>.
   - **Mode & delivery**: `displayMode` (`unified` pinned dashboard M1 + conversation M2, or `flexible`), card behavior (`fija (edita en sitio)` / `única (borra anterior)` / `nueva (conserva anterior)`: each turn gets its own card created immediately with live streaming; `fija` keeps editing the same card), long-answer delivery (`en tarjeta` / `mensaje aparte` / `auto`) and threshold.
   - **Profiles**: `Unificado`, `Unificado+msg`, `Flexible`.
   - **Visualization**: thinking/tools/COT/latest thought & tool, token speed, partial text, compact final, session name/topic options.

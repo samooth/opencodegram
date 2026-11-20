@@ -7,6 +7,7 @@ import type { OpenCodeBridge } from "./opencode.js";
 import type { OpsServer } from "./ops.js";
 import type { Panels } from "./panels.js";
 import type { SessionManager } from "./sessions.js";
+import type { PermissionStore } from "./permissions.js";
 import type { SettingsStore } from "./settings.js";
 import type { StatusManager } from "./status.js";
 import type { SessionStore } from "./store.js";
@@ -63,6 +64,8 @@ export type BotDeps = {
   dashboard: DashboardManager;
   panels: Panels;
   files: FileBrowser;
+  /** Per-thread/topic permission store (granular ACLs). */
+  permissions?: PermissionStore;
   settings: SettingsStore;
   metrics: MetricsStore;
   ops?: OpsServer;

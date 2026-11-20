@@ -11,6 +11,7 @@ import { listRepoDirectories, resolveRepoDirectory } from "./sessions.js";
 import { splitMarkdown } from "./transcript.js";
 import { extractEditFile } from "./editutil.js";
 import { getActivityReadPath } from "./transcriptmanager.js";
+import { buildGlobalAllowed } from "./permissions.js";
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { showSessionPicker } from "./messages.js";
 import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "./util.js";
@@ -28,9 +29,16 @@ type CallbackHandler = (
   data: string,
 ) => Promise<void>;
 
+function isRouteAdmin(deps: BotDeps, chatId: number, threadId: number | undefined, userId: number | undefined): boolean {
+  const routeKey = (deps.store.routeKey ?? ((c: number, t?: number) => `${c}:${t ?? 0}`))(chatId, threadId);
+  if (deps.permissions) return deps.permissions.isAdmin(routeKey, userId, deps.config.ADMIN_TELEGRAM_USER_ID);
+  return !!deps.config.ADMIN_TELEGRAM_USER_ID && userId === deps.config.ADMIN_TELEGRAM_USER_ID;
+}
+
 const PREFIXES = [
   "panel:",
   "perm:",
+  "permthread:",
   "use:",
   "spick:",
   "del:",
@@ -431,6 +439,10 @@ async function handleRuncmd(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
     return;
   }
   deps.pendingConfirmations.delete(key);
+  if (!isRouteAdmin(deps, chatId, threadId, cq.from?.id)) {
+    await deps.tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
   await deps.tg.answerCallbackQuery(cq.id, "Ejecutando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
   try {
     void deps.oc.runCommand(pending.sessionId, pending.name, pending.args)
@@ -716,6 +728,33 @@ async function handlePreset(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
         reply_markup: { inline_keyboard: settingsKeyboard(settings) },
       })
       .catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
+}
+
+/** Granular per-thread permissions: toggle read-only. */
+async function handlePermThread(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
+  const m = data.match(/^permthread:readonly:(on|off)$/);
+  if (!m) return;
+  if (!deps.permissions) {
+    await deps.tg.answerCallbackQuery(cq.id, "Permisos no disponibles.").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  const routeKey = deps.store.routeKey(chatId, threadId);
+  const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
+  const userId = cq.from?.id;
+  const isAdmin = deps.permissions.isAdmin(routeKey, userId, globalAdmin);
+  if (!isAdmin) {
+    await deps.tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    return;
+  }
+  const value = m[1] === "on";
+  deps.permissions.setReadOnly(routeKey, value);
+  await deps.tg.answerCallbackQuery(cq.id, value ? "🔒 Solo lectura" : "🔓 Escritura permitida").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  if (messageId !== undefined) {
+    await deps.tg.editRichMessage(chatId, messageId, `🔐 Permisos · ${routeKey}\nSolo lectura: ${value ? "sí" : "no"}`, {
+      ...threadOpts(threadId),
+      reply_markup: { inline_keyboard: [[{ text: value ? "🔓 Permitir escritura" : "🔒 Solo lectura", callback_data: `permthread:readonly:${value ? "off" : "on"}` }]] },
+    }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
 }
 
@@ -1086,6 +1125,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "hist:": handleHistory,
   "histfmt:": handleHistoryFormatPicker,
   "ops:": handleOps,
+  "permthread:": handlePermThread,
   "panel:": handlePanel,
   "perm:": handlePerm,
   "spick:": async (deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) => {

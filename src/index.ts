@@ -13,6 +13,7 @@ import { renderResourceBlock } from "./resources.js";
 import { SettingsStore } from "./settings.js";
 import { MetricsStore } from "./metrics.js";
 import { createOpsServer } from "./ops.js";
+import { PermissionStore } from "./permissions.js";
 import { createPanels } from "./panels.js";
 import { createFileBrowser } from "./filebrowser.js";
 import { createSessionManager } from "./sessions.js";
@@ -75,6 +76,7 @@ async function main() {
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
   const store = new SessionStore();
+  const permissions = new PermissionStore(store.dataDir);
   // Fail fast with a helpful hint if the data directory is not writable
   // (common in Docker when ./data is owned by root instead of uid 1000).
   try {
@@ -235,6 +237,7 @@ async function main() {
     panels,
     files,
     settings,
+    permissions,
     metrics,
     ops,
     pendingEdits,

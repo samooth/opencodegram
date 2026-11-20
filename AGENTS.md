@@ -64,6 +64,7 @@ Main modules:
 | --- | --- |
 | `index.ts` | Config, clients, dependency wiring, command menu |
 | `context.ts` | Shared `BotDeps` |
+| `permissions.ts` | Per-thread/topic permission store and granular ACLs |
 | `config.ts` | Zod-validated environment configuration |
 | `doctor.ts` | Startup diagnostics (`bun run doctor`) |
 | `opencode.ts` | OpenCode HTTP bridge (client, models, sessions, cost) |
@@ -134,7 +135,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (367 tests across 39 files):
+`bun test` covers (375 tests across 40 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -169,6 +170,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
   resource indicators and the private web app.
 - `tests/syncview.test.ts` — session digest rendering for Conectar and `/sync`.
 - `tests/settings.test.ts` — per-chat settings, persistence and normalization.
+- `tests/permissions.test.ts` — per-thread ACLs, roles, read-only and persistence.
 - `tests/transcript.test.ts` — pagination, limits/dedupe, rendering, recovery and refloat.
 - `tests/transcribe.test.ts` — voice transcription config and execution.
 - `tests/promptdedupe.test.ts` — stripping restated prompts from reasoning.
