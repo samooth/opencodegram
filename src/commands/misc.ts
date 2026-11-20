@@ -6,6 +6,7 @@ import { renderTodos } from "../todos.js";
 import { notePromptSent } from "../autoretry.js";
 import { ctx, isRouteAdmin } from "./shared.js";
 import { buildGlobalAllowed } from "../permissions.js";
+import { RESOURCE_WIDGET_HTML } from "../widgets.js";
 
 export async function cmd_start(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
@@ -423,3 +424,26 @@ export async function cmd_buttons(deps: BotDeps, chatId: number, threadId: numbe
   return false;
 }
 
+
+export async function cmd_widget(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  const C = ctx(deps);
+  if (text === "/widget" || text.startsWith("/widget ")) {
+    // Widgets only work in private chats in production.
+    if (chatId >= 0) {
+      await send("🧩 Los widgets solo funcionan en el chat privado con el bot (limitación de Telegram). Escríbeme por privado y usa /widget.");
+      return true;
+    }
+    try {
+      await C.tg.sendWidget(chatId, RESOURCE_WIDGET_HTML, {
+        caption: "🧩 Monitor del sistema (CPU/RAM/GPU). Se actualiza cada 5 s.",
+        allow_queries: true,
+        ...(threadId ? { message_thread_id: threadId } : {}),
+      });
+      await send("🧩 Widget enviado. Toca «Actualizar» o espera la auto-actualización (cada 5 s).");
+    } catch (err) {
+      await send(`❌ No se pudo enviar el widget: ${esc(String(err))}`);
+    }
+    return true;
+  }
+  return false;
+}

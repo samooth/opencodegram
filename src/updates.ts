@@ -3,6 +3,7 @@ import type { TelegramUpdate } from "./telegram.js";
 import { join } from "node:path";
 import { handleCallback } from "./callbacks.js";
 import { handleMessage } from "./messages.js";
+import { handleWidgetQuery } from "./widgets.js";
 import { POLL_BACKOFF_MS } from "./constants.js";
 import { jsonRead, jsonWrite } from "./db.js";
 
@@ -12,6 +13,10 @@ export function requestStopPolling(): void { stopRequested = true; }
 export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Promise<void> {
   const { metrics } = deps;
   try {
+    if (update.widget_query || update.shared_widget_query) {
+      await handleWidgetQuery(deps, (update.widget_query ?? update.shared_widget_query)! as any);
+      return;
+    }
     if (update.callback_query) {
       const started = Date.now();
       await handleCallback(deps, update.callback_query);

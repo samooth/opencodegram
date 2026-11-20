@@ -53,6 +53,8 @@ export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
+  widget_query?: { id: string; from: { id: number; username?: string }; chat?: { id: number; type: string }; message_id?: number; inline_message_id?: string; chat_instance?: string; data: string; widget_id?: string };
+  shared_widget_query?: { id: string; from: { id: number; username?: string }; data: string; widget_id: string };
 }
 
 function sanitizeUtf8(input: string): string {
@@ -234,7 +236,7 @@ export class TelegramClient {
     return this.call<TelegramUpdate[]>("getUpdates", {
       offset,
       timeout,
-      allowed_updates: ["message", "callback_query"],
+      allowed_updates: ["message", "callback_query", "widget_query", "shared_widget_query"],
     });
   }
 
@@ -490,7 +492,7 @@ export class TelegramClient {
   }
 
   setWebhook(url: string, secretToken?: string): Promise<boolean> {
-    return this.call<boolean>("setWebhook", { url, secret_token: secretToken, allowed_updates: ["message", "callback_query"] });
+    return this.call<boolean>("setWebhook", { url, secret_token: secretToken, allowed_updates: ["message", "callback_query", "widget_query", "shared_widget_query"] });
   }
 
   deleteWebhook(): Promise<boolean> {
@@ -499,5 +501,20 @@ export class TelegramClient {
 
   getFile(fileId: string): Promise<{ file_id: string; file_unique_id: string; file_size?: number; file_path?: string }> {
     return this.call("getFile", { file_id: fileId });
+  }
+
+  sendWidget(chatId: number, html: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
+    const body: Record<string, unknown> = { chat_id: chatId, html, ...opts };
+    return this.call<TelegramMessage>("sendWidget", body);
+  }
+
+  answerWidgetQuery(widgetQueryId: string, data?: string): Promise<boolean> {
+    const body: Record<string, unknown> = { widget_query_id: widgetQueryId };
+    if (data !== undefined) body.data = data;
+    return this.call<boolean>("answerWidgetQuery", body).catch(() => false);
+  }
+
+  editMessageWidgetData(opts: Record<string, unknown>): Promise<boolean> {
+    return this.call<boolean>("editMessageWidgetData", opts).catch(() => false);
   }
 }

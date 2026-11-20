@@ -48,4 +48,5 @@ export const BOT_COMMANDS = [
   { command: "cancel", description: "Cancel pending action or active turn" },
   { command: "goal", description: "Keep working toward a session goal" },
   { command: "stop", description: "Stop the active turn" },
+  { command: "widget", description: "Send a live system monitor widget (private chat)" },
 ];

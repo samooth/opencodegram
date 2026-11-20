@@ -28,7 +28,7 @@ const { cmd_forms, cmd_formreply } = formsCmds;
 const { cmd_mcp } = mcpCmds;
 const {
   cmd_start, cmd_commands, cmd_web, cmd_settings, cmd_models, cmd_agents, cmd_skills,
-  cmd_retry, cmd_buttons, cmd_ops, cmd_todos, cmd_unlink, cmd_cancel, cmd_permissions,
+  cmd_retry, cmd_buttons, cmd_ops, cmd_todos, cmd_unlink, cmd_cancel, cmd_permissions, cmd_widget,
 } = miscCmds;
 const { cmd_stats } = statsCmds;
 
@@ -38,7 +38,7 @@ export const KNOWN_COMMANDS = new Set([
   "agent", "agents", "skill", "skills", "fork", "rename", "archive", "unarchive",
   "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry", "todos", "unlink", "cancel",
   "vcs", "mcp", "branches", "branch", "stage", "unstage", "commit", "worktrees",
-  "worktree", "usage", "forms", "formreply", "sync", "use", "stats",
+  "worktree", "usage", "forms", "formreply", "sync", "use", "stats", "widget",
 ]);
 
 export type CommandHandler = (
@@ -107,6 +107,7 @@ COMMANDS.set("cancel", cmd_cancel);
 COMMANDS.set("running", cmd_running_sessions);
 COMMANDS.set("sessions", cmd_running_sessions);
 COMMANDS.set("use", cmd_use);
+COMMANDS.set("widget", cmd_widget);
 COMMANDS.set("stats", cmd_stats);
 
 export async function handleCommand(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean> {

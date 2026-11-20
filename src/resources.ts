@@ -161,3 +161,27 @@ export function renderResourceBlock(s: ChatSession, opts: { history?: number } =
   resourceCache.set(s, { key, html });
   return html;
 }
+
+/** Plain data snapshot for widgets/APIs (no HTML). */
+export function readResourceSnapshot(): {
+  cpu: number;
+  mem: number;
+  gpu: GpuInfo | null;
+  cpuCount: number;
+  loadAvg: number;
+  totalMemMB: number;
+  freeMemMB: number;
+} {
+  const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / CPU_COUNT) * 100));
+  const memPercent = readMemoryPercent();
+  const gpu = readGpuInfo();
+  return {
+    cpu: cpuPercent,
+    mem: memPercent,
+    gpu,
+    cpuCount: CPU_COUNT,
+    loadAvg: os.loadavg()[0],
+    totalMemMB: Math.round(os.totalmem() / 1048576),
+    freeMemMB: Math.round(os.freemem() / 1048576),
+  };
+}
