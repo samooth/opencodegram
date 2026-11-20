@@ -182,7 +182,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
     // in the transcript page (the full answer stays reachable via 📖 Leer).
     const hideAnswer = settings.showFinalInCard && !!s.lastFinalText?.trim() && !reading;
     // Expanded detail (chosen in Settings) must not be cut by the compact cap.
-    const cap = (html: string) => compact && !hideAnswer && s.activityExpanded !== true ? clampText(html, 650) : html;
+    const cap = (html: string) => (compact && !hideAnswer && s.activityExpanded !== true && s.statusFinished) ? clampText(html, 650) : html;
     if (reading) {
       await transcript.publish(chatId, s, { ...s.cardView, extraTop: "", working: false });
     } else if (s.statusFinished) {
