@@ -262,41 +262,32 @@ async function resolveSessionForMessage(
     }
   }
 
-  // 3) In groups, prefer the last session the user interacted with.
+  // 3) In groups, prefer the last session the user interacted with IN THIS
+  // THREAD. Never guess across the whole chat when replying to an unmapped bot
+  // message: doing so steals the route from whichever session was live in the
+  // thread and detaches it, leaving two cards "active" at the same time.
   if (chatId < 0) {
-    // When replying to a bot message, prefer the most recent session across
-    // the whole chat (the user likely wants the session they just connected to)
-    // instead of only the current thread's binding.
-    const lastThread = isReplyToBot ? undefined : replyThread;
-    const last = store.getLastInteractedSession(chatId, lastThread);
-    if (last) {
-      try {
-        await activateSession(chatId, last, true, replyThread);
-        const s = await restoreActiveSession(chatId, replyThread);
-        if (s) return { session: s };
-      } catch (err) {
-        console.error("[reply] activate last-interacted failed", last, err);
+    if (!isReplyToBot) {
+      const last = store.getLastInteractedSession(chatId, replyThread);
+      if (last) {
+        try {
+          await activateSession(chatId, last, true, replyThread);
+          const s = await restoreActiveSession(chatId, replyThread);
+          if (s) return { session: s };
+        } catch (err) {
+          console.error("[reply] activate last-interacted failed", last, err);
+        }
       }
     }
     const candidates = [...store.activeSessionByRoute.entries()]
       .filter(([k]) => k.startsWith(`${chatId}:`))
       .map(([, sid]) => sid);
-    const unique = [...new Set(candidates)].filter((sid) => store.findSessionById(sid));
-    // When replying to a bot message, prefer the most recently interacted
-    // session across the chat instead of showing the picker: the mapping for
-    // the replied card may be missing after a restart or message cleanup.
-    if (isReplyToBot) {
-      const recent = store.getLastInteractedSession(chatId, undefined);
-      if (recent) {
-        try {
-          await activateSession(chatId, recent, true, replyThread);
-          const s = await restoreActiveSession(chatId, replyThread);
-          if (s) return { session: s };
-        } catch (err) {
-          console.error("[reply] activate most-recent failed", recent, err);
-        }
-      }
+    // The current thread's binding is the strongest candidate for a reply.
+    if (isReplyToBot && replyThread !== undefined) {
+      const bound = store.activeSessionByRoute.get(store.routeKey(chatId, replyThread));
+      if (bound && store.findSessionById(bound) && !candidates.includes(bound)) candidates.unshift(bound);
     }
+    const unique = [...new Set(candidates)].filter((sid) => store.findSessionById(sid));
     if (unique.length === 1) {
       try {
         await activateSession(chatId, unique[0], true, replyThread);

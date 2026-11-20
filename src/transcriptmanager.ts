@@ -439,6 +439,11 @@ ${body}
       const copy = copyTextButton(chatId, "📋 Copiar", s.lastFinalText);
       if (copy) primary.push(copy);
     }
+    // A detached session keeps streaming, but another session owns the tab.
+    // Give the user a one-tap way to bring this session back to the foreground.
+    if (s.detached && !view.working) {
+      primary.unshift({ text: "🔀 Enfocar", callback_data: `use:${s.sessionId}` });
+    }
     if (primary.length) keyboard.push(primary);
 
     // 2) Secondary toggles: detail. The activity toggle moves to the primary

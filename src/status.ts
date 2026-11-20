@@ -106,7 +106,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       lines.push(`<blockquote expandable>🔌 MCP · ${esc(latest.server)}\n${esc(latest.text)}</blockquote>`);
     }
     if (s.detached && !s.stopped) {
-      lines.push("<p><i>🔀 En segundo plano: otra sesión ocupa la pestaña, esta sigue actualizando.</i></p>");
+      lines.push(`<p><i>🔀 En segundo plano · <code>${esc(s.sessionId.slice(0, 12))}…</code> sigue respondiendo aquí. Usa «🔀 Enfocar» para volver a la pestaña.</i></p>`);
     }
     // 4. TODO checklist for the session (from todo.updated events).
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
