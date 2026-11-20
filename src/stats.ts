@@ -478,36 +478,54 @@ export function renderStatsPanel(data: StatsData, opts: StatsPanelOpts): {
   html: string;
   keyboard: Array<Array<{ text: string; callback_data: string }>>;
 } {
+  const bar = (value: number, width = 8): string => {
+    const filled = Math.max(0, Math.min(width, Math.round((value / 100) * width)));
+    return "▰".repeat(filled) + "▱".repeat(width - filled);
+  };
+  const scopeLabel = opts.scope === "all" ? "todos los chats" : "este chat";
+  const turnsLabel = (n: number): string => `${int(n)} ${n === 1 ? "turno" : "turnos"}`;
   const lines: string[] = [
     "📊 <b>Rendimiento de modelos</b>",
-    `<i>${periodLabel(opts.period)} · ${opts.scope === "all" ? "todos los chats" : "este chat"}</i>`,
+    `<i>${periodLabel(opts.period)} · ${scopeLabel}</i>`,
   ];
   if (!data.totals.turns) {
     lines.push(
       "",
-      "Todavía no hay turnos registrados.",
-      "<i>En cuanto termine el próximo turno aparecerán aquí la latencia, los tokens, el coste y la tasa de éxito por modelo.</i>",
+      "<blockquote>Todavía no hay turnos registrados.\n<i>En cuanto termine el próximo turno aparecerán aquí latencia, tokens, coste y tasa de éxito por modelo.</i></blockquote>",
     );
   } else {
     const t = data.totals;
     lines.push(
       "",
-      `🔄 <b>${int(t.turns)}</b> turnos · ✅ <b>${pct(t.successRate)}</b> éxito · ⏱ <b>${fmtMs(t.avgMs)}</b> media`,
-      `⚡ <b>${t.tokPerSec.toFixed(1)}</b> tok/s · 🧠 <b>${fmtTokens(t.outputTokens)}</b> salida · 💵 <b>${fmtCost(t.cost)}</b>`,
-      `🔧 ${int(t.toolCalls)} herramientas${t.toolFailures ? ` (${int(t.toolFailures)} ✗)` : ""} · ✏️ ${int(t.editFiles)} archivos`,
+      "<b>Indicadores</b>",
+      "<table compact striped>",
+      `<tr><td>✅ Éxito</td><td><b>${pct(t.successRate)}</b></td><td>🔄 Turnos</td><td><b>${int(t.turns)}</b></td></tr>`,
+      `<tr><td>⏱ Media</td><td><b>${fmtMs(t.avgMs)}</b></td><td>p95</td><td><b>${fmtMs(t.p95Ms)}</b></td></tr>`,
+      `<tr><td>⚡ Velocidad</td><td><b>${t.tokPerSec.toFixed(1)} tok/s</b></td><td>💵 Coste</td><td><b>${fmtCost(t.cost)}</b></td></tr>`,
+      `<tr><td>🧠 Salida</td><td><b>${fmtTokens(t.outputTokens)}</b></td><td>🔧 Herram.</td><td><b>${int(t.toolCalls)}${t.toolFailures ? ` (${int(t.toolFailures)}✗)` : ""}</b></td></tr>`,
+      "</table>",
       "",
-      "<b>Top modelos</b>",
+      "<b>🏆 Top modelos</b>",
     );
     for (const [idx, m] of data.models.slice(0, 5).entries()) {
       const medal = MEDALS[idx] ?? `${idx + 1}.`;
       lines.push(
-        `${medal} <code>${esc(modelName(m))}</code>`,
-        `   <i>${int(m.turns)} turnos · ${pct(m.successRate)} · ${fmtMs(m.avgMs)} · ⚡ ${m.tokPerSec.toFixed(1)} tok/s · ${fmtCost(m.cost)}</i>`,
+        `<blockquote expandable>${medal} <code>${esc(modelName(m))}</code>`,
+        `<b>${pct(m.successRate)}</b> ${bar(m.successRate)} · ${turnsLabel(m.turns)}`,
+        `<i>${turnsLabel(m.turns)} · ⏱ ${fmtMs(m.avgMs)} · ⚡ ${m.tokPerSec.toFixed(1)} tok/s · 💵 ${fmtCost(m.cost)}</i>`,
+        `<i>🔧 ${int(m.toolCalls)}${m.toolFailures ? ` (${int(m.toolFailures)}✗)` : ""} · ✏️ ${int(m.editFiles)} archivos · +${int(m.addedLines)}/−${int(m.removedLines)}</i></blockquote>`,
       );
     }
-    if (data.models.length > 5) lines.push(`<i>… y ${data.models.length - 5} modelos más en el reporte.</i>`);
+    if (data.models.length > 5) lines.push(`<i>… y ${data.models.length - 5} modelos más en el reporte HTML.</i>`);
+    if (data.providers.length > 1) {
+      lines.push("", "<b>Proveedores</b>");
+      for (const p of data.providers.slice(0, 4)) {
+        const share = t.turns ? (p.turns / t.turns) * 100 : 0;
+        lines.push(`<i>${esc(p.providerID)} ${bar(share)} ${pct(share)} · ${turnsLabel(p.turns)}</i>`);
+      }
+    }
   }
-  lines.push("", "<i>El reporte HTML es un archivo único, responsive y sin dependencias externas.</i>");
+  lines.push("", "<i>📄 El reporte HTML es un archivo único, responsive y sin dependencias externas.</i>");
 
   const mark = (v: boolean) => (v ? "• " : "");
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [
