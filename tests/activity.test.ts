@@ -22,14 +22,14 @@ describe("turn activity counters", () => {
     recordThought(a, "segundo", { at: 2000 });
     recordThought(a, "tercero", { at: 3000 });
     const out = renderActivity(a, "medium", false, 4000);
-    expect(out).toContain("+3 pensamientos");
+    expect(out).toContain("3 pensamientos");
   });
 
   test("uses a minus prefix for a finished turn", () => {
     const a = createTurnActivity();
     recordThought(a, "listo", { at: 1000 });
     const out = renderActivity(a, "medium", true, 1500);
-    expect(out).toContain("−1 pensamiento");
+    expect(out).toContain("1 pensamiento");
     expect(out).not.toContain("+1 pensamiento");
   });
 
@@ -112,7 +112,7 @@ describe("turn activity counters", () => {
     const a = createTurnActivity();
     for (let i = 0; i < 100; i++) recordThought(a, `pensamiento ${i}`, { at: 1000 + i });
     const out = renderActivity(a, "high", false, 2000);
-    expect(out).toContain("+100 pensamientos");
+    expect(out).toContain("100 pensamientos");
     expect(out).not.toContain("pensamiento 0\n");
     expect((out.match(/Pensamiento ·/g) ?? []).length).toBeLessThanOrEqual(40);
   });
@@ -131,14 +131,14 @@ describe("turn activity counters", () => {
     const out = renderActivity(a, "high", false, 1100, true);
     expect(out).toContain("<p>");
     expect(out).toContain("texto visible");
-    expect(out).not.toContain("<blockquote expandable>");
+    expect(out).toContain("<blockquote expandable>");
   });
 
   test("collapsed mode keeps one block per row", () => {
     const a = createTurnActivity();
     recordThought(a, "oculto", { at: 1000 });
     const out = renderActivity(a, "high", false, 1100, false);
-    expect(out).toContain("<blockquote>");
+    expect(out).toContain("<blockquote expandable>");
   });
 
   test("keeps the detail block within a character budget so HTML is never cut mid-tag", () => {
@@ -217,12 +217,14 @@ describe("turn activity counters", () => {
     expect(out.match(/<blockquote>/g)).toHaveLength(1);
   });
 
-  test("collapsed mode shows headers only so the toggle has a visible effect", () => {
+  test("thoughts live in a native collapsible block", () => {
     const a = createTurnActivity();
     recordThought(a, "texto del pensamiento", { at: 1000 });
     const collapsed = renderActivity(a, "high", false, 1100, false);
     const expanded = renderActivity(a, "high", false, 1100, true);
-    expect(collapsed).not.toContain("texto del pensamiento");
+    expect(collapsed).toContain("<blockquote expandable>");
+    expect(collapsed).toContain("texto del pensamiento");
+    expect(expanded).toContain("<blockquote expandable>");
     expect(expanded).toContain("texto del pensamiento");
   });
 
@@ -231,14 +233,14 @@ describe("turn activity counters", () => {
     for (let i = 0; i < 20; i++) recordThought(a, `pensamiento ${i}`, { at: 1000 + i });
     const collapsed = renderActivity(a, "high", false, 2000, false);
     const expanded = renderActivity(a, "high", false, 2000, true);
-    expect((collapsed.match(/<blockquote/g) ?? []).length).toBeLessThanOrEqual(7);
-    expect((expanded.match(/<blockquote/g) ?? []).length).toBeGreaterThan((collapsed.match(/<blockquote/g) ?? []).length);
+    expect((collapsed.match(/<blockquote/g) ?? []).length).toBeLessThanOrEqual(2);
+    expect(expanded.length).toBeGreaterThan(collapsed.length);
   });
 
   test("summary line is a block element so it does not glue to the prompt", () => {
     const a = createTurnActivity();
     recordThought(a, "algo", { at: 1000 });
-    expect(renderActivity(a, "medium", false, 1100, false)).toMatch(/^<p>[+−]/);
+    expect(renderActivity(a, "medium", false, 1100, false)).toMatch(/^<p>/);
   });
 
   test("gives each entry its own expandable block in collapsed mode", () => {
@@ -249,7 +251,7 @@ describe("turn activity counters", () => {
     closeOpen(a, 2500);
     recordTool(a, "read", "README.md", { at: 3000, toolId: "a" });
     const out = renderActivity(a, "high", false, 3500, false);
-    expect(out.match(/<blockquote>/g)).toHaveLength(3);
+    expect(out.match(/<blockquote/g)).toHaveLength(2);
     expect(out).toContain("Pensamiento</b> · 500ms");
   });
 });

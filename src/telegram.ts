@@ -194,11 +194,20 @@ export class TelegramClient {
   /** Multipart upload endpoint (documents/photos), with the same retry policy. */
   private async callForm<T>(method: string, form: FormData, attempt = 0): Promise<T> {
     const chatId = Number(form.get("chat_id"));
-    const res = await fetch(`${API}/bot${this.token}/${method}`, { method: "POST", body: form });
-    if (res.status >= 500 && attempt < 2) {
-      await new Promise((r) => setTimeout(r, 1000));
-      return this.callForm<T>(method, form, attempt + 1);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+      res = await fetch(`${API}/bot${this.token}/${method}`, { method: "POST", body: form, signal: controller.signal });
+    } catch (err) {
+      clearTimeout(timer);
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return this.callForm<T>(method, form, attempt + 1);
+      }
+      throw err;
     }
+    clearTimeout(timer);
     const json = (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     if (!json.ok) {
       if (Number.isFinite(chatId)) {
@@ -366,6 +375,7 @@ export class TelegramClient {
       // quietly so it cannot spin.
       if (
         /message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg) ||
+        /canceled by new edit message request/i.test(msg) ||
         (/Telegram editMessageText failed: 400\b/i.test(msg) && !/message is too long|RICH_MESSAGE_TEXT_TOO_LONG/i.test(msg))
       ) {
         throw err;
@@ -395,6 +405,7 @@ export class TelegramClient {
       }
       if (
         /message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg) ||
+        /canceled by new edit message request/i.test(msg) ||
         (/Telegram editMessageText failed: 400\b/i.test(msg) && !/message is too long|RICH_MESSAGE_TEXT_TOO_LONG/i.test(msg))
       ) {
         throw err;

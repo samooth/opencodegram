@@ -196,7 +196,7 @@ const ICONS: Record<ActivityKind, string> = {
   tool: "🔧",
 };
 
-type ActivityBlock = { head: string; detail: string };
+type ActivityBlock = { head: string; detail: string; expandable?: boolean };
 
 function entryHead(e: ActivityEntry, now: number, showOpen = true): string {
   const status = e.ok === true ? " ✅" : e.ok === false ? " ❌" : e.open && showOpen ? " ⏳" : "";
@@ -229,6 +229,21 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   const visible = a.entries.slice(-maxEntries);
   const blocks: ActivityBlock[] = [];
 
+  // Every thought of the turn goes into ONE native collapsible blockquote, so
+  // the user taps to read them instead of scrolling a wall of text.
+  const thoughts = visible.filter((e) => e.kind === "thought");
+  if (thoughts.length) {
+    const thoughtStatus = (t: ActivityEntry) => expanded
+      ? (t.ok === true ? " ✅" : t.ok === false ? " ❌" : t.open ? " ⏳" : "")
+      : "";
+    const lines = thoughts.map((t) => `<p>💭 <b>${esc(t.label)}</b> · ${fmtDuration(t.durationMs ?? Math.max(0, now - t.at))}${thoughtStatus(t)}</p>${detailPara(t.detail, detailCap)}`);
+    const thoughtBudget = expanded ? 1800 : 1400;
+    let kept = lines;
+    while (kept.length > 1 && kept.join("").length > thoughtBudget) kept = kept.slice(1);
+    const detail = (kept.length !== lines.length ? "<p><i>… anteriores</i></p>" : "") + kept.join("");
+    blocks.push({ head: `💭 Pensamientos (${thoughts.length})`, detail, expandable: true });
+  }
+
   // Every shell call of the turn goes into ONE terminal-like block, no matter
   // where it happened, so the card reads like a session transcript.
   const shells = visible.filter((e) => e.kind === "shell");
@@ -236,7 +251,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   let i = 0;
   while (i < visible.length) {
     const e = visible[i];
-    if (e.kind === "shell") { i++; continue; }
+    if (e.kind === "shell" || e.kind === "thought") { i++; continue; }
     if (e.kind === "read" || e.kind === "search") {
       const run: ActivityEntry[] = [];
       while (i < visible.length && (visible[i].kind === "read" || visible[i].kind === "search")) run.push(visible[i++]);
@@ -270,18 +285,19 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   // Collapsed shows headers only: the global toggle reveals details inline, so
   // pressing it always produces a visible change even on clients that ignore
   // Telegram's native expandable blockquote.
-  const renderBlock = (b: ActivityBlock): string => expanded
-    ? `<blockquote>${b.head}${b.detail}</blockquote>`
-    : `<blockquote>${b.head}</blockquote>`;
+  const renderBlock = (b: ActivityBlock): string => b.expandable
+    ? `<blockquote expandable>${b.head}${b.detail}</blockquote>`
+    : expanded
+      ? `<blockquote>${b.head}${b.detail}</blockquote>`
+      : `<blockquote>${b.head}</blockquote>`;
   const renderBody = (bs: ActivityBlock[]) => bs.map(renderBlock).join("\n");
   const budget = expanded ? 1800 : 1400;
   let kept = blocks;
   while (kept.length > 1 && renderBody(kept).length > budget) kept = kept.slice(1);
   if (kept.length !== blocks.length) kept = [{ head: "<i>… anteriores</i>", detail: "" }, ...kept];
 
-  const prefix = finished ? "−" : "+";
   const hint = expanded ? " ▴" : " ▾";
-  return `<p>${prefix}${parts.join(" · ")}${hint}</p>\n${renderBody(kept)}`;
+  return `<p>${parts.join(" · ")}${hint}</p>\n${renderBody(kept)}`;
 }
 
 /**

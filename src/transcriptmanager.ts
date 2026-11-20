@@ -629,22 +629,37 @@ ${body}
     const tgOpts = threadOptsFor(s);
     const keyboard = { inline_keyboard: compactCardKeyboard(chatId, s, rendered.page, rendered.total, opts) };
     if (s.transcriptMessageId) {
-      const ok = await tg
-        .editRichMessage(chatId, s.transcriptMessageId, rendered.html, { ...tgOpts, reply_markup: keyboard })
-        .then(() => true)
-        .catch(() => false);
-      if (ok) {
+      let editResult: unknown = null;
+      let editError: unknown = null;
+      try {
+        editResult = await tg.editRichMessage(chatId, s.transcriptMessageId, rendered.html, { ...tgOpts, reply_markup: keyboard });
+      } catch (err) {
+        editError = err;
+      }
+      // "canceled by new edit message request" and backoff return undefined:
+      // Telegram already has a newer edit in flight for this message. Do NOT
+      // resend — that creates message churn; the next publish will retry.
+      if (editError) {
+        const msg = String(editError);
+        if (/message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg)) {
+          const previousId = s.transcriptMessageId;
+          if (previousId) await cleanupCard(chatId, previousId);
+          s.transcriptMessageId = undefined;
+        } else {
+          console.warn("[transcript] edit skipped:", msg);
+        }
+        // fall through to send a new card only if the message is gone
+        if (s.transcriptMessageId !== undefined) return;
+      } else if (editResult !== undefined) {
         s.transcriptPage = rendered.page;
         s.statusMessageId = s.transcriptMessageId;
         cardCleanHtml.set(cardKey(chatId, s.transcriptMessageId), cleanHtml);
         store.rememberMessageSession(chatId, s.transcriptMessageId, s.sessionId);
         return;
+      } else {
+        // skipped (backoff / not modified / canceled): leave state, retry later
+        return;
       }
-      // The card is gone or can't be edited: strip its keyboard (if it still
-      // exists) so only the newest card keeps interactive buttons.
-      const previousId = s.transcriptMessageId;
-      if (previousId) await cleanupCard(chatId, previousId);
-      s.transcriptMessageId = undefined;
     }
     const sent = await tg
       .sendRichMessage(chatId, rendered.html, { ...tgOpts, reply_markup: keyboard })
