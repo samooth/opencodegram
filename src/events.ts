@@ -693,7 +693,7 @@ const handlePermissionAsked: EventHandler = async (event, deps) => {
       inline_keyboard: [
         [
           { text: "✅ Allow once", callback_data: `perm:allow:${requestId}` },
-          { text: "✅ Always (admin)", callback_data: `perm:always:${requestId}` },
+          { text: "✅ Always", callback_data: `perm:always:${requestId}` },
         ],
         [
           { text: "⛔ Reject", callback_data: `perm:reject:${requestId}` },

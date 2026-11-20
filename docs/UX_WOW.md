@@ -9,7 +9,7 @@
 **P0, P1 y P2 completados** (18 nov 2026). Extensión 0.4.0 (20 nov 2026):
 estado centralizado en SQLite y panel gestionable casi íntegramente por botones.
 
-Validado con `bun run typecheck`, `bun test` (400 tests en 42 archivos) y
+Validado con `bun run typecheck`, `bun test` (403 tests en 42 archivos) y
 `bun run build`.
 
 ### Extensión 0.4.0 — SQLite + botones

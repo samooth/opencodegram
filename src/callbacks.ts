@@ -123,7 +123,7 @@ async function handleCardView(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
  * /ops actions from the ops card: reset metrics or refresh the view (admin).
  */
 async function handleOps(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, messageId: number | undefined, data: string) {
-  if (!deps.config.ADMIN_TELEGRAM_USER_ID || cq.from?.id !== deps.config.ADMIN_TELEGRAM_USER_ID) {
+  if (!isRouteAdmin(deps, chatId, threadId, cq.from?.id)) {
     await deps.tg.answerCallbackQuery(cq.id, "Solo para el admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
@@ -326,8 +326,14 @@ async function handlePerm(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numb
   let decision: "once" | "always" | "reject" = "reject";
   if (action === "allow") decision = "once";
   else if (action === "always") {
-    if (!deps.config.ADMIN_TELEGRAM_USER_ID || cq.from?.id !== deps.config.ADMIN_TELEGRAM_USER_ID) {
-      await deps.tg.answerCallbackQuery(cq.id, "Solo admin").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    // Any operator who may prompt in this route can whitelist a tool. The
+    // button used to be admin-only and rejected operators with "Solo admin".
+    const routeKey = (deps.store.routeKey ?? ((c: number, t?: number) => `${c}:${t ?? 0}`))(chatId, threadId);
+    const allowed = deps.permissions
+      ? deps.permissions.canPrompt(routeKey, cq.from?.id, buildGlobalAllowed(deps.config))
+      : !!deps.config.ADMIN_TELEGRAM_USER_ID && cq.from?.id === deps.config.ADMIN_TELEGRAM_USER_ID;
+    if (!allowed) {
+      await deps.tg.answerCallbackQuery(cq.id, "Sin permiso").catch((err) => console.warn("[callbacks]", err?.message ?? err));
       return;
     }
     decision = "always";

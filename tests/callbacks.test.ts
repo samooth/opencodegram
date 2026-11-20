@@ -256,6 +256,25 @@ describe("handleCallback", () => {
     expect(edits).toEqual(["<b>OpenCodegram</b>"]);
   });
 
+  test("perm:always works for a thread operator", async () => {
+    const deps = makeDeps();
+    deps.config.ALLOWED_TELEGRAM_USER_IDS = "2";
+    const { PermissionStore } = await import("../src/permissions.js");
+    const perms = new PermissionStore(join(root, "data"));
+    perms.rememberUser(2, "oper");
+    perms.addUser("123:0", 2, "operator");
+    deps.permissions = perms;
+    deps.pendingPermissions.set("req1", { chatId: 123, sessionId: "ses_p", messageId: 5, decided: false, label: "tool", resource: "x" } as any);
+    let decision: string | undefined;
+    deps.oc.replyPermission = async (_sid: string, _rid: string, d: string) => { decision = d; };
+    const answers: string[] = [];
+    deps.tg.answerCallbackQuery = async (_id: string, text?: string) => { answers.push(text ?? ""); };
+    const cq = { id: "p1", from: { id: 2, username: "oper" }, message: { chat: { id: 123 }, message_id: 5 }, data: "perm:always:req1" } as any;
+    await handleCallback(deps, cq);
+    expect(decision).toBe("always");
+    expect(answers[0]).toContain("Always");
+  });
+
   test("settings:back from a card restores the card buttons in the same message", async () => {
     const deps = makeDeps();
     const s = { sessionId: "ses_back", statusFinished: true } as any;

@@ -140,7 +140,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (400 tests across 42 files):
+`bun test` covers (403 tests across 42 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.

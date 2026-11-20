@@ -41,13 +41,13 @@ describe("PermissionStore", () => {
     expect(s.canPrompt("1:2", 1, global)).toBe(false);
   });
 
-  test("isAdmin falls back to global admin", () => {
+  test("isAdmin falls back to global admin and keeps it after adding one", () => {
     const s = new PermissionStore(join(root, "data"));
     expect(s.isAdmin("1:2", 5, 5)).toBe(true);
     expect(s.isAdmin("1:2", 6, 5)).toBe(false);
     s.addUser("1:2", 7, "admin");
     expect(s.isAdmin("1:2", 7, 5)).toBe(true);
-    expect(s.isAdmin("1:2", 5, 5)).toBe(false);
+    expect(s.isAdmin("1:2", 5, 5)).toBe(true);
   });
 
   test("removeUser drops from both lists", () => {
@@ -101,6 +101,25 @@ describe("PermissionStore", () => {
     const kb = s.renderPanel("1:2").keyboard.flat();
     const remove = kb.find((b) => b.callback_data === "permui:remove:42");
     expect(remove?.text).toContain("@maria");
+  });
+
+  test("adding an operator does not lock out the global allowlist", () => {
+    const s = new PermissionStore(join(root, "data"));
+    const global = new Set([1, 2]);
+    s.addUser("1:2", 3, "operator");
+    expect(s.canPrompt("1:2", 3, global)).toBe(true);
+    expect(s.canPrompt("1:2", 1, global)).toBe(true);
+    expect(s.canPrompt("1:2", 99, global)).toBe(false);
+    s.set("1:2", { inherit: false });
+    expect(s.canPrompt("1:2", 1, global)).toBe(false);
+  });
+
+  test("global admin stays admin after a thread admin is added", () => {
+    const s = new PermissionStore(join(root, "data"));
+    s.addUser("1:2", 7, "admin");
+    expect(s.isAdmin("1:2", 5, 5)).toBe(true);
+    expect(s.isAdmin("1:2", 7, 5)).toBe(true);
+    expect(s.isAdmin("1:2", 8, 5)).toBe(false);
   });
 
   test("buildGlobalAllowed parses config", () => {

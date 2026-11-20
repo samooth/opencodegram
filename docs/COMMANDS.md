@@ -39,6 +39,9 @@ usuario` and `🗄 Datos`). The argument forms below remain as a fallback.
   `remove @usuario|id`. Users are shown as `@username` in the panel; the bot
   learns usernames from messages/buttons. Replying to someone with
   `/permissions add [operator|admin]` grants the role to that person directly.
+  Operators may prompt, switch models and approve tool permissions (including
+  «Always»); only admins can manage permissions, settings, `/ops`, dangerous
+  commands and the database VACUUM.
 - `⚡ Comandos` (in `🏠 Panel`) lists OpenCode **and** bot commands as inline
   buttons (`botcmd:`), so no slash command needs to be typed to discover or run
   a feature. Dangerous commands are deliberately excluded from buttons.

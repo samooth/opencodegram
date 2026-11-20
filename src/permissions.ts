@@ -123,14 +123,19 @@ export class PermissionStore {
   canPrompt(routeKey: string, userId: number | undefined, globalAllowed: Set<number>): boolean {
     const p = this.get(routeKey);
     if (p.readOnly) return false;
-    const allowed = p.inherit && p.allowedUsers.length === 0 ? globalAllowed : new Set(p.allowedUsers);
-    return userId !== undefined && allowed.has(userId);
+    if (userId === undefined) return false;
+    // Operators are ADDITIVE to the global allowlist: granting one must not
+    // lock out the admin or the other allowed users. `inherit: false` is the
+    // explicit way to use only the per-thread list.
+    if (p.inherit && globalAllowed.has(userId)) return true;
+    return p.allowedUsers.includes(userId);
   }
 
   isAdmin(routeKey: string, userId: number | undefined, globalAdmin?: number): boolean {
     const p = this.get(routeKey);
-    if (p.adminUsers.length) return userId !== undefined && p.adminUsers.includes(userId);
-    return userId !== undefined && globalAdmin !== undefined && userId === globalAdmin;
+    // The configured global admin is always an admin of every route.
+    if (userId !== undefined && globalAdmin !== undefined && userId === globalAdmin) return true;
+    return userId !== undefined && p.adminUsers.includes(userId);
   }
 
   isReadOnly(routeKey: string): boolean {

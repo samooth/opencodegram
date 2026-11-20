@@ -71,8 +71,12 @@ export async function cmd_commands(deps: BotDeps, chatId: number, threadId: numb
  */
 export async function cmd_ops(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   if (text !== "/ops") return false;
-  if (!deps.config.ADMIN_TELEGRAM_USER_ID || userId !== deps.config.ADMIN_TELEGRAM_USER_ID) {
-    await send("🩺 <b>/ops</b> es solo para el administrador del bot.");
+  const routeKey = deps.store.routeKey(chatId, threadId);
+  const isAdmin = deps.permissions
+    ? deps.permissions.isAdmin(routeKey, userId, deps.config.ADMIN_TELEGRAM_USER_ID)
+    : deps.config.ADMIN_TELEGRAM_USER_ID !== undefined && userId === deps.config.ADMIN_TELEGRAM_USER_ID;
+  if (!isAdmin) {
+    await send("🩺 <b>/ops</b> es solo para administradores.");
     return true;
   }
   const rendered = await deps.panels.renderOps();
