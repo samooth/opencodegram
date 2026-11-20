@@ -94,8 +94,7 @@ export function createDashboardManager({ tg, store, settings, threadOptsFor, oc 
       if (progress) lines.push(progress);
     }
     if (st.showResourceUsage) {
-      s.cardTheme = st.cardTheme;
-      lines.push("", renderResourceBlock(s, { history: st.resourceHistory }));
+      lines.push("", renderResourceBlock(s, { history: st.resourceHistory, theme: st.cardTheme }));
     }
     const html = lines.join("\n").replace(/\n{3,}/g, "\n\n");
 

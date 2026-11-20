@@ -34,3 +34,18 @@ describe("renderResourceBlock", () => {
     expect((s.memHistory?.length ?? 0) <= 12).toBe(true);
   });
 });
+
+describe("resource theme consistency", () => {
+  test("uses one glyph set for all bars and never mutates the session theme", () => {
+    const s = makeSession();
+    s.lastContextTokens = 300_000;
+    s.contextWindow = 1_000_000;
+    s.cardTheme = "auto";
+    const html = renderResourceBlock(s, { theme: "light" });
+    expect(html).toContain("CPU ▰");
+    expect(html).toContain("RAM ▰");
+    expect(html).toContain("CTX ▰");
+    expect(html).not.toContain("CPU ▓");
+    expect(s.cardTheme).toBe("auto");
+  });
+});

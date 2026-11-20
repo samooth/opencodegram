@@ -105,8 +105,7 @@ async function main() {
       if (chatId !== undefined) {
         const st = settings.get(chatId);
         if (st.displayMode === "unified" || !st.showResourceUsage) return "";
-        s.cardTheme = st.cardTheme;
-        return renderResourceBlock(s, { history: st.resourceHistory });
+        return renderResourceBlock(s, { history: st.resourceHistory, theme: st.cardTheme });
       }
       return renderResourceBlock(s);
     },

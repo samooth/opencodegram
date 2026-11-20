@@ -117,11 +117,13 @@ const resourceCache = new WeakMap<ChatSession, { key: string; html: string }>();
 // `os.cpus()` builds an array of per-core objects; the count never changes.
 const CPU_COUNT = Math.max(1, os.cpus().length);
 
-export function renderResourceBlock(s: ChatSession, opts: { history?: number } = {}): string {
+export function renderResourceBlock(s: ChatSession, opts: { history?: number; theme?: "auto" | "light" | "dark" } = {}): string {
   const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / CPU_COUNT) * 100));
   const memPercent = readMemoryPercent();
   const gpuNow = readGpuInfo();
-  const theme = s.cardTheme ?? "auto";
+  // One source of truth for the glyph set. Callers pass the chat theme; never
+  // mutate s.cardTheme (that caused CPU/RAM and GPU bars to disagree).
+  const theme = opts.theme ?? s.cardTheme ?? "auto";
   const key = [cpuPercent, memPercent, s.lastContextTokens ?? 0, s.contextWindow ?? 0, gpuNow?.usedMB ?? 0, gpuNow?.totalMB ?? 0, gpuNow?.util ?? 0, gpuNow?.temperature ?? "", theme].join("|");
   const cached = resourceCache.get(s);
   if (cached?.key === key) return cached.html;
@@ -151,11 +153,11 @@ export function renderResourceBlock(s: ChatSession, opts: { history?: number } =
   const gpu = gpuNow;
   if (gpu) {
     const vramPercent = Math.round((gpu.usedMB / gpu.totalMB) * 100);
-    const vramBar = progressBar(vramPercent, 10, s.cardTheme ?? "auto");
+    const vramBar = progressBar(vramPercent, 10, theme);
     const tempStr = gpu.temperature === null ? "" : ` · ${gpu.temperature}°C`;
     resourceLines.push(`GPU ${String(gpu.name).slice(0, 18)}${tempStr}`);
     resourceLines.push(`VRAM ${vramBar} ${vramPercent}%`);
-    resourceLines.push(`Load ${progressBar(gpu.util, 10, s.cardTheme ?? "auto")} ${gpu.util}%`);
+    resourceLines.push(`Load ${progressBar(gpu.util, 10, theme)} ${gpu.util}%`);
   }
   const html = `<pre>${esc(resourceLines.join("\n"))}</pre>`;
   resourceCache.set(s, { key, html });

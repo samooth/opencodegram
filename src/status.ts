@@ -297,7 +297,7 @@ ${esc(s.cotBuffer.trim().slice(-800))}</blockquote>`);
       const lines: string[] = [];
       lines.unshift(sessionHeader(s).trimEnd());
       lines.push("⏳ <b>Trabajando…</b>\n<i>Esperando a OpenCode</i>");
-      if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s));
+      if (settings.showResourceUsage) lines.push("<hr/>", renderResourceBlock(s, { theme: settings.cardTheme }));
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b: { label: string }, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
       const keyboard = [
@@ -681,8 +681,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     }
     let resourceBlock = "";
     if (settings.showResourceUsage) {
-      target.cardTheme = settings.cardTheme;
-      resourceBlock = renderResourceBlock(target, { history: settings.resourceHistory });
+      resourceBlock = renderResourceBlock(target, { history: settings.resourceHistory, theme: settings.cardTheme });
       lines.push(resourceBlock);
     }
     // Receipt as a quiet footer, after the answer and the indicators.
