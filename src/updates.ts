@@ -13,7 +13,13 @@ export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Prom
   const { metrics } = deps;
   try {
     if (update.callback_query) {
+      const started = Date.now();
       await handleCallback(deps, update.callback_query);
+      const elapsed = Date.now() - started;
+      if (elapsed > 2000) {
+        console.warn("[callbacks] slow handler", { data: update.callback_query.data, elapsed });
+        metrics?.recordError?.(`slow callback ${update.callback_query.data}: ${elapsed}ms`);
+      }
       return;
     }
 

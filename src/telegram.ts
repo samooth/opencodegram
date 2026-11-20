@@ -115,9 +115,10 @@ export class TelegramClient {
     // Interactive calls (toasts, card edits, /ls answers) must fail fast: a
     // 30 s timeout plus five retries can hold a tap for minutes.
     const interactive = INTERACTIVE_METHODS.has(method);
-    const timeoutMs = interactive
-      ? 10_000
-      : Number.isFinite(bodyTimeout) && bodyTimeout > 0 ? (bodyTimeout + 10) * 1000 : 30000;
+    const timeoutMs =
+      method === "answerCallbackQuery" ? 5_000 :
+      interactive ? 15_000 :
+      Number.isFinite(bodyTimeout) && bodyTimeout > 0 ? (bodyTimeout + 10) * 1000 : 30000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let res: Response;
@@ -171,7 +172,7 @@ export class TelegramClient {
       // getUpdates uses long-polling and must keep retrying through outages.
       // getUpdates is handled by the poll loop (with its own backoff); do not
       // retry internally, otherwise a single outage stalls polling for minutes.
-      const maxAttempts = method === "getUpdates" ? 1 : interactive ? 1 : 5;
+      const maxAttempts = method === "getUpdates" ? 1 : interactive ? 2 : 5;
       if (isRetryableTransient && attempt < maxAttempts) {
         const wait = Math.min(30000, 1000 * Math.pow(2, attempt));
         if (method !== "getUpdates") {
