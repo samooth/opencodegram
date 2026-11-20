@@ -101,10 +101,18 @@ export async function readMcpResource(uri: string, directory?: string): Promise<
       const host = parsed.hostname;
       const blocked = (ip: string) => {
         const lower = ip.toLowerCase();
-        if (lower === "127.0.0.1" || lower === "::1" || lower === "0.0.0.0" || lower === "::") return true;
-        if (lower.startsWith("10.") || lower.startsWith("192.168.") || lower.startsWith("169.254.") || lower.startsWith("172.16.") || lower.startsWith("172.17.") || lower.startsWith("172.18.") || lower.startsWith("172.19.") || lower.startsWith("172.2") || lower.startsWith("172.30.") || lower.startsWith("172.31.")) return true;
-        if (lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe80:") || lower.startsWith("ff")) return true; // IPv6 ULA/link-local/multicast
-        if (lower === "169.254.169.254") return true;
+        // Strip an IPv4-mapped IPv6 prefix before testing.
+        const mapped = lower.startsWith("::ffff:") ? lower.slice(7) : lower;
+        if (mapped === "127.0.0.1" || mapped === "::1" || mapped === "0.0.0.0" || mapped === "::") return true;
+        if (mapped === "169.254.169.254") return true;
+        // IPv4 private ranges (incl. CGNAT 100.64.0.0/10).
+        if (mapped.startsWith("10.") || mapped.startsWith("192.168.") || mapped.startsWith("169.254.") || mapped === "0.0.0.0") return true;
+        if (mapped.startsWith("100.") && Number(mapped.split(".")[1]) >= 64 && Number(mapped.split(".")[1]) <= 127) return true;
+        const m = mapped.match(/^172\.(\d+)\./);
+        if (m) { const o = Number(m[1]); if (o >= 16 && o <= 31) return true; }
+        if (mapped.startsWith("0.") || mapped.startsWith("224.") || mapped.startsWith("240.") || mapped.startsWith("255.")) return true;
+        // IPv6 ULA/link-local/multicast/loopback.
+        if (lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe80:") || lower.startsWith("ff") || lower === "::" || lower.startsWith("::1")) return true;
         return false;
       };
       if (host === "localhost" || host.endsWith(".localhost")) return { error: "Blocked host." };

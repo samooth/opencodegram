@@ -303,7 +303,7 @@ export async function cmd_cancel(deps: BotDeps, chatId: number, threadId: number
 
 export async function cmd_buttons(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
-  const isAdmin = !!C.config.ADMIN_TELEGRAM_USER_ID && deps.me?.id === C.config.ADMIN_TELEGRAM_USER_ID;
+  const isAdmin = !!C.config.ADMIN_TELEGRAM_USER_ID && userId === C.config.ADMIN_TELEGRAM_USER_ID;
   if (text === "/buttons" || text.startsWith("/buttons ")) {
     const args = text.slice("/buttons".length).trim();
     if (!isAdmin) {

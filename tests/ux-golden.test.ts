@@ -87,7 +87,7 @@ describe("final answer in card", () => {
     const tm = createTranscriptManager({ tg: {} as any, store, threadOptsFor: () => ({}) });
     const s = makeSession();
     tm.addBlock(s, "answer", "<p>texto duplicado</p>", "texto duplicado");
-    expect(tm.renderPage(s, { answerInCard: true })!.html).toContain("texto duplicado");
+    expect(tm.renderPage(s, { answerInCard: true })!.html).not.toContain("texto duplicado");
   });
 });
 

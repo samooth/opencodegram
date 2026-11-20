@@ -175,7 +175,19 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // final answer is embedded, raise the budget so clampText never cuts it.
     const LAYOUT_LIMIT = view.answerInCard ? 3900 : view.compact ? 1200 : 3900;
     const all = blocksOf(s);
-    const pages = paginateTranscript(all);
+    let pages = paginateTranscript(all);
+    // When the answer is embedded in the strip, pages that end up holding only
+    // the answer block would render as an empty extra page. Drop them so the
+    // card keeps the content page (which also shows the strip) and navigation
+    // never lands on an empty page.
+    if (view.answerInCard) {
+      const withoutAnswers = pages.map((p) => ({ ...p, blocks: p.blocks.filter((b) => b.kind !== "answer") }));
+      const nonEmpty = withoutAnswers.filter((p) => p.blocks.length > 0);
+      const kept = nonEmpty.length ? nonEmpty : withoutAnswers.slice(-1);
+      if (kept.length) {
+        pages = kept.map((p, i) => ({ ...p, index: i, total: kept.length }));
+      }
+    }
     const header = `<p>${sessionHeader(s).replace(/(?:<br\/>)+$/, "")}</p>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";

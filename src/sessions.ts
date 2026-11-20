@@ -1,4 +1,4 @@
-import { readdirSync, rmSync, statSync } from "node:fs";
+import { readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Config } from "./config.js";
 import { getReposDirectory } from "./config.js";
@@ -54,7 +54,11 @@ export function resolveRepoDirectory(config: Config | Record<string, unknown>, n
   const root = getReposDirectory(config);
   if (!root || !name || name.includes("/") || name.includes("\\\\") || name === "." || name === "..") return undefined;
   const full = resolve(root, name);
-  if (!full.startsWith(resolve(root) + sep)) return undefined;
+  let rootReal = resolve(root);
+  let fullReal = full;
+  try { rootReal = realpathSync(root); } catch { return undefined; }
+  try { fullReal = realpathSync(full); } catch { return undefined; }
+  if (!fullReal.startsWith(rootReal + sep)) return undefined;
   try {
     if (!statSync(full).isDirectory()) return undefined;
   } catch {
@@ -65,10 +69,14 @@ export function resolveRepoDirectory(config: Config | Record<string, unknown>, n
 
 export function confineSessionDirectory(config: Config | Record<string, unknown>, input?: string): string {
   const root = resolve(getReposDirectory(config) ?? (config as Config).OPENCODE_DIRECTORY ?? process.cwd());
+  let rootReal = root;
+  try { rootReal = realpathSync(root); } catch { /* keep lexical root */ }
   if (!input) return root;
   const expanded = input.replace(/^~(?=\/|$)/, process.env.HOME ?? process.env.USERPROFILE ?? "");
   const full = resolve(root, expanded);
-  if (full === root || full.startsWith(root + sep)) {
+  let fullReal = full;
+  try { fullReal = realpathSync(full); } catch { return root; }
+  if (fullReal === rootReal || fullReal.startsWith(rootReal + sep)) {
     try {
       if (statSync(full).isDirectory()) return full;
     } catch {
