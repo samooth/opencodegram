@@ -101,3 +101,36 @@ describe("model statistics", () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
+
+describe("quality score penalises failed toolcalls", () => {
+  test("a turn with failed toolcalls scores below its plain success rate", () => {
+    const root = makeDir();
+    try {
+      const dataDir = join(root, "data");
+      // 10 successful turns, but one has 10 failed toolcalls -> big penalty.
+      for (let i = 0; i < 10; i++) {
+        recordTurnStat({
+          sessionId: `s${i}`, turnSeq: 1, chatId: 7, providerID: "kilo", modelID: "flaky",
+          status: "ok", startedAt: Date.now() - 5000, finishedAt: Date.now(), durationMs: 5000,
+          outputTokens: 100, toolCalls: 10,
+          toolCounts: i === 0 ? undefined : undefined,
+        }, dataDir);
+      }
+      // Add failures via a second session with explicit failures count.
+      recordTurnStat({
+        sessionId: "failturn", turnSeq: 1, chatId: 7, providerID: "kilo", modelID: "flaky",
+        status: "ok", startedAt: Date.now() - 5000, finishedAt: Date.now(), durationMs: 5000,
+        outputTokens: 100, toolCalls: 10, toolFailures: 10,
+        toolCounts: { shell: { calls: 0, failures: 0 }, edit: { calls: 0, failures: 0 },
+          read: { calls: 0, failures: 0 }, search: { calls: 0, failures: 0 },
+          other: { calls: 10, failures: 10 } },
+      }, dataDir);
+      const data = collectStats({ period: "all", scope: "chat", chatId: 7, dataDir });
+      expect(data.totals.successRate).toBe(100);
+      // Every failed toolcall subtracts 3%; with 10 failures across 11 turns
+      // the quality score must be below the 100% success rate.
+      expect(data.totals.qualityScore).toBeLessThan(100);
+      expect(data.totals.qualityScore).toBeGreaterThan(0);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});

@@ -130,6 +130,8 @@ export type StatsSummary = {
   stopped: number;
   /** 0..100 */
   successRate: number;
+  /** 0..100 — like successRate but each failed toolcall also penalises (×3%). */
+  qualityScore: number;
   avgMs: number;
   p50Ms: number;
   p95Ms: number;
@@ -411,6 +413,19 @@ function percentile(sorted: number[], ratio: number): number {
   return sorted[idx];
 }
 
+/** Penalty per failed toolcall as a fraction of a turn. */
+const FAILURE_PENALTY = 0.03;
+
+function qualityScore(bucket: Mutable): number {
+  if (!bucket.turns) return 0;
+  // Base: ok = 1, stopped = 0.5, error = 0.
+  let total = bucket.ok + bucket.stopped * 0.5;
+  // Each failed toolcall subtracts up to one full turn's worth of credit spread
+  // across the turn: 3% per failure. Cap each turn's penalty at 100%.
+  const penalty = Math.min(total, bucket.toolFailures * FAILURE_PENALTY);
+  return Math.max(0, Math.min(100, ((total - penalty) / bucket.turns) * 100));
+}
+
 function finalize(bucket: Mutable): StatsSummary {
   const durations = [...bucket.durations].sort((a, b) => a - b);
   const firstTokens = [...bucket.firstTokens].sort((a, b) => a - b);
@@ -420,6 +435,9 @@ function finalize(bucket: Mutable): StatsSummary {
     errors: bucket.errors,
     stopped: bucket.stopped,
     successRate: bucket.turns ? (bucket.ok / bucket.turns) * 100 : 0,
+    // Quality penalises failed toolcalls (3% each) and unfinished turns,
+    // so a model that "succeeds" while spamming failed tools ranks lower.
+    qualityScore: qualityScore(bucket),
     avgMs: durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : 0,
     p50Ms: percentile(durations, 0.5),
     p95Ms: percentile(durations, 0.95),
@@ -507,7 +525,7 @@ export function collectStats(filter: StatsFilter = {}): StatsData {
 
   const models = [...modelBuckets.values()]
     .map((bucket) => ({ ...finalize(bucket), key: bucket.key, providerID: bucket.providerID, modelID: bucket.modelID ?? "unknown", variant: bucket.variant }))
-    .sort((a, b) => b.turns - a.turns || b.successRate - a.successRate);
+    .sort((a, b) => b.qualityScore - a.qualityScore || b.turns - a.turns);
   const providers = [...providerBuckets.values()]
     .map((bucket) => ({ ...finalize(bucket), providerID: bucket.providerID }))
     .sort((a, b) => b.turns - a.turns);
@@ -618,7 +636,8 @@ export function renderStatsPanel(data: StatsData, opts: StatsPanelOpts): {
       "",
       "<b>Indicadores</b>",
       "<table compact striped>",
-      `<tr><td>✅ Éxito</td><td><b>${pct(t.successRate)}</b></td><td>🔄 Turnos</td><td><b>${int(t.turns)}</b></td></tr>`,
+      `<tr><td>✅ Éxito</td><td><b>${pct(t.successRate)}</b></td><td>🎯 Calidad</td><td><b>${pct(t.qualityScore)}</b></td></tr>`,
+      `<tr><td>🔄 Turnos</td><td><b>${int(t.turns)}</b></td><td>❌ Fallos tool</td><td><b>${int(t.toolFailures)}</b></td></tr>`,
       `<tr><td>⏱ Media</td><td><b>${fmtMs(t.avgMs)}</b></td><td>p95</td><td><b>${fmtMs(t.p95Ms)}</b></td></tr>`,
       `<tr><td>⚡ Velocidad</td><td><b>${t.tokPerSec.toFixed(1)} tok/s</b></td><td>💵 Coste</td><td><b>${fmtCost(t.cost)}</b></td></tr>`,
       `<tr><td>🧠 Salida</td><td><b>${fmtTokens(t.outputTokens)}</b></td><td>🔧 Herram.</td><td><b>${int(t.toolCalls)}${t.toolFailures ? ` (${int(t.toolFailures)}✗)` : ""}</b></td></tr>`,
@@ -664,7 +683,7 @@ export function renderStatsPanel(data: StatsData, opts: StatsPanelOpts): {
       const medal = MEDALS[idx] ?? `${idx + 1}.`;
       lines.push(
         `<blockquote expandable>${medal} <code>${esc(modelName(m))}</code>`,
-        `<b>${pct(m.successRate)}</b> ${bar(m.successRate)} · ${turnsLabel(m.turns)}`,
+        `<b>🎯 ${pct(m.qualityScore)}</b> ${bar(m.qualityScore)} · ${turnsLabel(m.turns)}`,
         `<i>⏱ ${fmtMs(m.avgMs)} (p95 ${fmtMs(m.p95Ms)}) · ⚡ ${m.tokPerSec.toFixed(0)} tok/s · 💵 ${fmtCost(m.cost)}</i>`,
         `<i>✏️ ${int(m.editFiles)} archivos · +${int(m.addedLines)}/−${int(m.removedLines)} líneas · 🧪 ${int(m.testOk)}/${int(m.testRuns)} tests</i></blockquote>`,
       );
@@ -790,12 +809,12 @@ function scatterSvg(models: ModelStats[]): string {
     .sort((a, b) => a.turns - b.turns)
     .map((p) => {
       const cx = x(p.tokPerSec);
-      const cy = y(p.successRate);
+      const cy = y(p.qualityScore);
       const r = 6 + Math.sqrt(p.turns / maxTurns) * 18;
       const color = colorFor(p.providerID);
       return `<g class="dot" tabindex="0">
         <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${color}" fill-opacity=".7" stroke="${color}" stroke-width="1.5"/>
-        <title>${h(modelName(p))} · ${int(p.turns)} turnos · ${pct(p.successRate)} éxito · ${p.tokPerSec.toFixed(1)} tok/s · ${fmtMs(p.avgMs)}</title>
+        <title>${h(modelName(p))} · ${int(p.turns)} turnos · ${pct(p.qualityScore)} calidad · ${p.tokPerSec.toFixed(1)} tok/s · ${fmtMs(p.avgMs)}</title>
       </g>`;
     })
     .join("");
@@ -814,7 +833,7 @@ function scatterSvg(models: ModelStats[]): string {
     ${dots}
     ${labels}
     <text x="${(PL + W - PR) / 2}" y="${H - 8}" text-anchor="middle" class="axis-title">Velocidad de salida (tokens/s) →</text>
-    <text x="14" y="${(PT + H - PB) / 2}" text-anchor="middle" transform="rotate(-90 14 ${(PT + H - PB) / 2})" class="axis-title">Tasa de éxito</text>
+    <text x="14" y="${(PT + H - PB) / 2}" text-anchor="middle" transform="rotate(-90 14 ${(PT + H - PB) / 2})" class="axis-title">Calidad (éxito − fallos tool)</text>
   </svg></div>`;
 }
 
@@ -859,6 +878,7 @@ function modelRows(models: ModelStats[]): string {
     <td data-label="Modelo"><span class="rank">${idx + 1}</span><code class="model">${h(modelName(m))}</code></td>
     <td data-label="Turnos" data-value="${m.turns}">${int(m.turns)}</td>
     <td data-label="Éxito" data-value="${m.successRate.toFixed(1)}"><span class="pill ${m.successRate >= 95 ? "good" : m.successRate >= 80 ? "warn" : "bad"}">${pct(m.successRate)}</span></td>
+    <td data-label="Calidad" data-value="${m.qualityScore.toFixed(1)}"><span class="pill ${m.qualityScore >= 95 ? "good" : m.qualityScore >= 80 ? "warn" : "bad"}">${pct(m.qualityScore)}</span></td>
     <td data-label="Media" data-value="${m.avgMs}">${fmtMs(m.avgMs)}</td>
     <td data-label="p95" data-value="${m.p95Ms}">${fmtMs(m.p95Ms)}</td>
     <td data-label="tok/s" data-value="${m.tokPerSec}">${m.tokPerSec ? m.tokPerSec.toFixed(1) : "—"}</td>
@@ -924,6 +944,7 @@ export function buildHtmlReport(data: StatsData, opts: ReportOpts): string {
   const kpis = [
     kpi("Turnos", int(t.turns), `${int(t.ok)} ok · ${int(t.errors)} error · ${int(t.stopped)} detenidos`),
     kpi("Tasa de éxito", pct(t.successRate), `${int(t.turns - t.ok)} turnos no completados`, t.successRate >= 95 ? "good" : t.successRate >= 80 ? "warn" : "bad"),
+    kpi("Calidad", pct(t.qualityScore), `${int(t.toolFailures)} toolcalls fallidas penalizan el score`, t.qualityScore >= 95 ? "good" : t.qualityScore >= 80 ? "warn" : "bad"),
     kpi("Latencia media", fmtMs(t.avgMs), `p50 ${fmtMs(t.p50Ms)} · p95 ${fmtMs(t.p95Ms)}`),
     kpi("Velocidad", `${t.tokPerSec.toFixed(1)} tok/s`, `${fmtTokens(t.avgTokensPerTurn)} tokens/turno`),
     kpi("Tokens de salida", fmtTokens(t.outputTokens), `${fmtTokens(t.inputTokens)} entrada · ${fmtTokens(t.reasoningTokens)} razonamiento`),
@@ -1145,6 +1166,7 @@ footer b{color:var(--muted)}
           <th data-sortable>Modelo</th>
           <th data-sortable>Turnos</th>
           <th data-sortable>Éxito</th>
+          <th data-sortable>Calidad</th>
           <th data-sortable>Media</th>
           <th data-sortable>p95</th>
           <th data-sortable>tok/s</th>
