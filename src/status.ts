@@ -41,18 +41,22 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (prompt?.trim()) {
       lines.push(`<p><i>📝 ${esc(truncate(prompt.trim(), 80))}</i></p>`);
     }
-    // 4. Compact activity summary (OpenCode 2.3.0 style). One line of counters
-    // plus a single expandable block replaces the separate thought/tool blocks.
-    const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
-    if (activityBlock) {
-      lines.push(activityBlock);
+    // Each live section is its OWN collapsible block, so the user can follow
+    // reasoning, thoughts and tools independently as they stream in.
+    // 🧠 Razonamiento (live reasoning buffer, streamed from the model).
+    if (settings.showThinking && s.reasoningBuffer.trim()) {
+      const tail = s.reasoningBuffer.trim().slice(-1600);
+      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(tail)}</blockquote>`);
     }
-    // Virtual shell with every toolcall, always visible when enabled.
+    // 💭 Pensamiento (compact activity: thoughts, reads, tools).
+    const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
+    if (activityBlock) lines.push(activityBlock);
+    // ⚡ Virtual shell with every toolcall, always visible when enabled.
     if (settings.showTools && s.toolCallDetails.length) {
       const shellText = renderVirtualShell(s.toolCallDetails.slice(-8), 400);
       lines.push(`<blockquote expandable>⚡ Shell (${s.toolCallDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
     }
-    if (!activityBlock) {
+    if (!activityBlock && !s.reasoningBuffer.trim()) {
       // Fallback for sessions created before per-turn activity was tracked.
       const thinking = renderThinkingBottom(s, settings);
       if (thinking) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${thinking}</blockquote>` : thinking);

@@ -259,3 +259,27 @@ describe("answer visible in the finished card", () => {
   });
 
 });
+
+describe("live streaming sections", () => {
+  test("shows reasoning as its own collapsible block while working", async () => {
+    const published: any[] = [];
+    const transcript = { publish: async (_c: number, _s: any, o: any) => { published.push(o); return 1; }, addBlock: () => {}, refloat: async () => 1 } as any;
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, showThinking: true, showTools: true, showPartialText: false }),
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => [] } as any, transcript,
+    } as any);
+    const s = makeSession({
+      statusFinished: false,
+      reasoningBuffer: "El modelo está razonando sobre la seguridad...",
+      toolCallDetails: [{ id: "1", name: "read", input: '{"filePath":"a.ts"}', status: "success" }],
+    });
+    await status.publishCard(7, s);
+    const html = published[0]?.extraTop ?? "";
+    expect(html).toMatch(/<blockquote expandable>🧠 Razonamiento/);
+    expect(html).toContain("El modelo está razonando");
+    expect(html).toMatch(/<blockquote expandable>⚡ Shell/);
+    expect(html).toContain("$ read a.ts");
+  });
+});
