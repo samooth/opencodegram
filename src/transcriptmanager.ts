@@ -693,22 +693,40 @@ ${body}
     }
   };
 
-  /** Serialized publish: one card update at a time per session. */
+  /**
+   * Coalesced publish: if an edit is already in flight for this session,
+   * remember only the LATEST requested state and publish it once the current
+   * edit finishes. Streaming deltas arrive far faster than Telegram accepts
+   * edits; queueing every one of them made the visible card lag seconds behind.
+   */
+  const publishPending = new Map<string, { chatId: number; s: ChatSession; opts?: PublishOpts }>();
   const publish = async (
     chatId: number,
     s: ChatSession,
     opts?: PublishOpts,
   ): Promise<void> => {
     const key = s.sessionId;
-    const previous = publishQueue.get(key) ?? Promise.resolve();
-    // Chain on the previous publish and swallow its errors.
-    const next = previous.then(() => publishNow(chatId, s, opts)).catch(() => {});
-    publishQueue.set(key, next);
-    try {
-      await next;
-    } finally {
-      if (publishQueue.get(key) === next) publishQueue.delete(key);
+    // Always refresh the desired state to the newest one.
+    publishPending.set(key, { chatId, s, opts });
+    const running = publishQueue.get(key);
+    if (running) {
+      // An edit is already in flight; it will pick up the latest state.
+      await running;
+      return;
     }
+    const drain = async (): Promise<void> => {
+      while (true) {
+        const pending = publishPending.get(key);
+        if (!pending) break;
+        publishPending.delete(key);
+        await publishNow(pending.chatId, pending.s, pending.opts).catch(() => {});
+      }
+    };
+    const task = drain().finally(() => {
+      if (publishQueue.get(key) === task) publishQueue.delete(key);
+    });
+    publishQueue.set(key, task);
+    await task;
   };
 
   /** Navigate to a specific page of the transcript. */

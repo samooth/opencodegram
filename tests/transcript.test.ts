@@ -685,3 +685,24 @@ describe("answer-in-card keyboard", () => {
     expect(plainButtons).toContain("Respuesta");
   });
 });
+
+
+describe("coalesced live publishing", () => {
+  test("multiple rapid publishes do not queue one edit per call", async () => {
+    let edits = 0;
+    const tg = {
+      sendRichMessage: async () => ({ message_id: 400 }),
+      editRichMessage: async () => { edits++; return {}; },
+    } as any;
+    const store = new SessionStore(join(root, "data"));
+    const transcript = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession({ transcriptMessageId: 400 });
+    transcript.addBlock(s, "answer", "<p>v1</p>", "v1");
+    // Fire several publishes back-to-back; they must coalesce.
+    const promises = [transcript.publish(1, s), transcript.publish(1, s), transcript.publish(1, s)];
+    await Promise.all(promises);
+    // Without coalescing this would be 3 edits; with it, at most 2.
+    expect(edits).toBeLessThanOrEqual(2);
+    expect(edits).toBeGreaterThanOrEqual(1);
+  });
+});
