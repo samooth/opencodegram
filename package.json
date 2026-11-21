@@ -1,6 +1,6 @@
 {
   "name": "opencodegram",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
   "description": "Remote control plane for OpenCode via Telegram",
