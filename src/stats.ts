@@ -316,6 +316,9 @@ type Mutable = {
   testOk: number;
   speedMs: number;
   speedOutput: number;
+  /** Wall time from first streamed token to finish (the generation window). */
+  genMs: number;
+  genOutput: number;
   activeMs: number;
 };
 
@@ -326,7 +329,7 @@ function mutable(key: string, providerID: string, modelID?: string, variant?: st
     durationMs: 0, durations: [], firstTokens: [],
     input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0,
     toolCalls: 0, toolFailures: 0, tools: emptyToolCounts(), editFiles: 0, added: 0, removed: 0,
-    testRuns: 0, testOk: 0, speedMs: 0, speedOutput: 0, activeMs: 0,
+    testRuns: 0, testOk: 0, speedMs: 0, speedOutput: 0, genMs: 0, genOutput: 0, activeMs: 0,
   };
 }
 
@@ -347,19 +350,38 @@ function addRow(bucket: Mutable, row: TurnStatRow): void {
   bucket.cacheRead += num(row.cache_read_tokens);
   bucket.cacheWrite += num(row.cache_write_tokens);
   bucket.cost += num(row.cost);
-  bucket.toolCalls += num(row.tool_calls);
-  bucket.toolFailures += num(row.tool_failures);
-  bucket.tools.shell.calls += num(row.shell_calls);
-  bucket.tools.shell.failures += num(row.shell_failures);
-  bucket.tools.edit.calls += num(row.edit_calls);
-  bucket.tools.edit.failures += num(row.edit_failures);
-  bucket.tools.read.calls += num(row.read_calls);
-  bucket.tools.read.failures += num(row.read_failures);
-  bucket.tools.search.calls += num(row.search_calls);
-  bucket.tools.search.failures += num(row.search_failures);
-  bucket.tools.other.calls += num(row.other_calls);
-  bucket.tools.other.failures += num(row.other_failures);
-  bucket.activeMs += Math.max(0, num(row.finished_at) - num(row.started_at));
+  const rowCalls = {
+    shell: num(row.shell_calls), edit: num(row.edit_calls), read: num(row.read_calls),
+    search: num(row.search_calls), other: num(row.other_calls),
+  };
+  const rowFails = {
+    shell: num(row.shell_failures), edit: num(row.edit_failures), read: num(row.read_failures),
+    search: num(row.search_failures), other: num(row.other_failures),
+  };
+  // Old rows have a legacy total but no per-category data. Fold the difference
+  // into "other" so the breakdown always adds up (these calls predate
+  // categorization, so their type is genuinely unknown).
+  const categorizedCalls = rowCalls.shell + rowCalls.edit + rowCalls.read + rowCalls.search + rowCalls.other;
+  const categorizedFails = rowFails.shell + rowFails.edit + rowFails.read + rowFails.search + rowFails.other;
+  const totalCalls = Math.max(num(row.tool_calls), categorizedCalls);
+  const totalFails = Math.max(num(row.tool_failures), categorizedFails);
+  rowCalls.other += Math.max(0, totalCalls - categorizedCalls);
+  rowFails.other += Math.max(0, totalFails - categorizedFails);
+  bucket.toolCalls += totalCalls;
+  bucket.toolFailures += totalFails;
+  bucket.tools.shell.calls += rowCalls.shell;
+  bucket.tools.shell.failures += rowFails.shell;
+  bucket.tools.edit.calls += rowCalls.edit;
+  bucket.tools.edit.failures += rowFails.edit;
+  bucket.tools.read.calls += rowCalls.read;
+  bucket.tools.read.failures += rowFails.read;
+  bucket.tools.search.calls += rowCalls.search;
+  bucket.tools.search.failures += rowFails.search;
+  bucket.tools.other.calls += rowCalls.other;
+  bucket.tools.other.failures += rowFails.other;
+  // Wall time of the turn: prefer the persisted duration, fall back to the
+  // finished−started delta for old rows.
+  bucket.activeMs += duration > 0 ? duration : Math.max(0, num(row.finished_at) - num(row.started_at));
   bucket.editFiles += num(row.edit_files);
   bucket.added += num(row.added_lines);
   bucket.removed += num(row.removed_lines);
@@ -368,6 +390,14 @@ function addRow(bucket: Mutable, row: TurnStatRow): void {
   if (duration > 0 && num(row.output_tokens) > 0) {
     bucket.speedMs += duration;
     bucket.speedOutput += num(row.output_tokens);
+    // Generation speed uses the same window as the live card: first token →
+    // finish. Rows without a first-token timestamp are excluded (their window
+    // is unknowable), so the rate stays comparable across models.
+    if (timeFinite(row.first_token_ms)) {
+      const genWindow = Math.max(500, duration - num(row.first_token_ms));
+      bucket.genMs += genWindow;
+      bucket.genOutput += num(row.output_tokens);
+    }
   }
 }
 
@@ -409,7 +439,8 @@ function finalize(bucket: Mutable): StatsSummary {
     removedLines: bucket.removed,
     testRuns: bucket.testRuns,
     testOk: bucket.testOk,
-    tokPerSec: bucket.speedMs > 0 ? bucket.speedOutput / (bucket.speedMs / 1000) : 0,
+    // Matches the live card: output tokens / (first-token → finish window).
+    tokPerSec: bucket.genMs > 0 ? bucket.genOutput / (bucket.genMs / 1000) : 0,
     avgTokensPerTurn: bucket.turns ? bucket.output / bucket.turns : 0,
     costPerTurn: bucket.turns ? bucket.cost / bucket.turns : 0,
     avgFirstTokenMs: firstTokens.length ? firstTokens.reduce((a, b) => a + b, 0) / firstTokens.length : 0,
@@ -593,38 +624,49 @@ export function renderStatsPanel(data: StatsData, opts: StatsPanelOpts): {
       `<tr><td>🧠 Salida</td><td><b>${fmtTokens(t.outputTokens)}</b></td><td>🔧 Herram.</td><td><b>${int(t.toolCalls)}${t.toolFailures ? ` (${int(t.toolFailures)}✗)` : ""}</b></td></tr>`,
       "</table>",
       "",
-      "<b>🏆 Modelos · herramientas por minuto</b>",
-      "<i>Sh=shell · Ed=edit · Le=read · Bu=search · Ot=otras · ✗=fallos · /min=llamadas por minuto de turno</i>",
+      "<b>Herramientas por modelo</b>",
+      "<i>Sh=shell · Ed=edit · Le=read · Bu=búsqueda · Ot=otras. El número es el total de llamadas; <code>✗N</code> son fallos. /min = llamadas por minuto de turno.</i>",
       "<table compact striped>",
-      "<tr><td>Modelo</td><td>tok/s</td><td>Sh</td><td>Ed</td><td>Le</td><td>Bu</td><td>Ot</td><td>✗</td><td>/min</td></tr>",
+      "<tr><td>Modelo</td><td>tok/s</td><td>Sh</td><td>Ed</td><td>Le</td><td>Bu</td><td>Ot</td><td>/min</td></tr>",
     );
     const toolCell = (calls: number, failures: number): string =>
-      `${int(calls)}${failures ? `<small>✗${int(failures)}</small>` : ""}`;
+      calls === 0 && failures === 0 ? "—" : `${int(calls)}${failures ? `<small>✗${int(failures)}</small>` : ""}`;
+    const shortName = (m: ModelStats): string => {
+      const full = `${m.providerID}/${m.modelID}`;
+      return full.length > 22 ? `${full.slice(0, 21)}…` : full;
+    };
     for (const m of data.models.slice(0, 6)) {
       lines.push(
-        `<tr><td><code>${esc(modelName(m))}</code></td>`,
-        `<td>${m.tokPerSec.toFixed(1)}</td>`,
+        `<tr><td><code>${esc(shortName(m))}</code></td>`,
+        `<td>${m.tokPerSec ? m.tokPerSec.toFixed(0) : "—"}</td>`,
         `<td>${toolCell(m.tools.shell.calls, m.tools.shell.failures)}</td>`,
         `<td>${toolCell(m.tools.edit.calls, m.tools.edit.failures)}</td>`,
         `<td>${toolCell(m.tools.read.calls, m.tools.read.failures)}</td>`,
         `<td>${toolCell(m.tools.search.calls, m.tools.search.failures)}</td>`,
         `<td>${toolCell(m.tools.other.calls, m.tools.other.failures)}</td>`,
-        `<td>${int(m.toolFailures)}</td>`,
-        `<td>${m.toolsPerMin.toFixed(1)}</td></tr>`,
+        `<td>${m.toolsPerMin ? m.toolsPerMin.toFixed(1) : "—"}</td></tr>`,
       );
     }
-    lines.push("</table>");
+    // Totals row so the breakdown always reconciles with the KPIs above.
     lines.push(
-      "",
-      "<b>Detalle por modelo</b>",
+      `<tr><td><b>TOTAL</b></td>`,
+      `<td><b>${t.tokPerSec ? t.tokPerSec.toFixed(0) : "—"}</b></td>`,
+      `<td>${toolCell(t.tools.shell.calls, t.tools.shell.failures)}</td>`,
+      `<td>${toolCell(t.tools.edit.calls, t.tools.edit.failures)}</td>`,
+      `<td>${toolCell(t.tools.read.calls, t.tools.read.failures)}</td>`,
+      `<td>${toolCell(t.tools.search.calls, t.tools.search.failures)}</td>`,
+      `<td>${toolCell(t.tools.other.calls, t.tools.other.failures)}</td>`,
+      `<td>${t.toolsPerMin ? t.toolsPerMin.toFixed(1) : "—"}</td></tr>`,
     );
+    lines.push("</table>");
+    lines.push("", "<b>Detalle por modelo</b>");
     for (const [idx, m] of data.models.slice(0, 5).entries()) {
       const medal = MEDALS[idx] ?? `${idx + 1}.`;
       lines.push(
         `<blockquote expandable>${medal} <code>${esc(modelName(m))}</code>`,
         `<b>${pct(m.successRate)}</b> ${bar(m.successRate)} · ${turnsLabel(m.turns)}`,
-        `<i>⏱ ${fmtMs(m.avgMs)} (p95 ${fmtMs(m.p95Ms)}) · ⚡ ${m.tokPerSec.toFixed(1)} tok/s · 💵 ${fmtCost(m.cost)}</i>`,
-        `<i>🔧 ${int(m.toolCalls)} (${int(m.toolFailures)}✗) · ${m.toolsPerMin.toFixed(1)} llam./min · ✏️ ${int(m.editFiles)} archivos · +${int(m.addedLines)}/−${int(m.removedLines)}</i></blockquote>`,
+        `<i>⏱ ${fmtMs(m.avgMs)} (p95 ${fmtMs(m.p95Ms)}) · ⚡ ${m.tokPerSec.toFixed(0)} tok/s · 💵 ${fmtCost(m.cost)}</i>`,
+        `<i>✏️ ${int(m.editFiles)} archivos · +${int(m.addedLines)}/−${int(m.removedLines)} líneas · 🧪 ${int(m.testOk)}/${int(m.testRuns)} tests</i></blockquote>`,
       );
     }
     if (data.models.length > 5) lines.push(`<i>… y ${data.models.length - 5} modelos más en el reporte HTML.</i>`);

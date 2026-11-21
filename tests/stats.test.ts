@@ -19,7 +19,7 @@ describe("model statistics", () => {
       const input = {
         sessionId: "s1", turnSeq: 1, chatId: 7, providerID: "kilo", modelID: "beam-free",
         status: "ok" as const, startedAt: Date.now() - 5000, finishedAt: Date.now(), durationMs: 5000,
-        inputTokens: 100, outputTokens: 200, cost: 0.01, toolCalls: 2, editFiles: 1, addedLines: 5, removedLines: 2,
+        inputTokens: 100, outputTokens: 200, cost: 0.01, toolCalls: 5, editFiles: 1, addedLines: 5, removedLines: 2,
         toolCounts: countTools([
           { name: "shell", status: "success" },
           { name: "edit", status: "failed" },
@@ -42,6 +42,12 @@ describe("model statistics", () => {
       expect(data.totals.tools.search.calls).toBe(1);
       expect(data.models[0]?.tools.shell.calls).toBe(2);
       expect(data.totals.toolsPerMin).toBeGreaterThan(0);
+      // The per-category breakdown must always reconcile with the totals.
+      const tools = data.totals.tools;
+      const catCalls = tools.shell.calls + tools.edit.calls + tools.read.calls + tools.search.calls + tools.other.calls;
+      const catFails = tools.shell.failures + tools.edit.failures + tools.read.failures + tools.search.failures + tools.other.failures;
+      expect(catCalls).toBe(data.totals.toolCalls);
+      expect(catFails).toBe(data.totals.toolFailures);
       expect(data.models.length).toBe(1);
       expect(data.models[0].providerID).toBe("kilo");
       expect(data.providers[0].turns).toBe(1);
@@ -61,11 +67,12 @@ describe("model statistics", () => {
       const data = collectStats({ period: "all", scope: "chat", chatId: 7, dataDir });
       const panel = renderStatsPanel(data, { period: "all", scope: "chat", isAdmin: false });
       expect(panel.html).toContain("<b>Indicadores</b>");
-      expect(panel.html).toContain("<b>🏆 Modelos · herramientas por minuto</b>");
+      expect(panel.html).toContain("<b>Herramientas por modelo</b>");
       expect(panel.html).toContain("kilo/beam-free");
       expect(panel.html).toContain("<table compact striped>");
       expect(panel.html).toContain("<b>100%</b>");
-      expect(panel.html).toContain("Modelo</td><td>tok/s</td><td>Sh</td><td>Ed</td><td>Le</td><td>Bu</td><td>Ot</td><td>✗</td><td>/min</td>");
+      expect(panel.html).toContain("<b>TOTAL</b>");
+      expect(panel.html).toContain("Modelo</td><td>tok/s</td><td>Sh</td><td>Ed</td><td>Le</td><td>Bu</td><td>Ot</td><td>/min</td>");
       expect(panel.html).toContain("llamadas por minuto de turno");
       expect(panel.html).toContain("<b>🌐 Proveedores</b>");
       expect(panel.html).toContain("1 modelo");
