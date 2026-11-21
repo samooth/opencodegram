@@ -338,7 +338,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
         const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
         const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
-        latestThoughtBlock = `💭 <b>Último pensamiento:</b>\n<blockquote><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
+        latestThoughtBlock = `💭 <b>Último pensamiento:</b>\n<blockquote expandable><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
       }
 
       let shellBlock = "";
@@ -761,7 +761,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     for (const detail of resolved.edits) {
       const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? "edit");
       const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
-      parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`);
+      parts.push(`✏️ <b>${esc(file)}</b>\n<blockquote expandable><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`);
     }
     const full = `${resolved.header}\n<b>Revisión de cambios</b> (${resolved.edits.length})\n${table}\n\n${parts.join("\n\n")}`;
     const fallback = resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession);
@@ -831,7 +831,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? `edit ${index + 1}`);
     const diff = formatEditDiff(detail.input, settings.diffStyle, resolved.directory);
     const { added, removed } = editStats(detail.input);
-    const text = `${resolved.header}<h4>✏️ ${esc(file)} <i>+${added}/-${removed}</i></h4>\n<blockquote><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`;
+    const text = `${resolved.header}<h4>✏️ ${esc(file)} <i>+${added}/-${removed}</i></h4>\n<blockquote expandable><pre><code class="language-diff">${colorDiff(diff)}</code></pre></blockquote>`;
     const target = resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession);
     const keyboard = finishedKeyboard(resolved.edits, index, target, resolved.s?.detailMessageId ?? messageId);
     const opts = resolved.s ? threadOptsFor(resolved.s) : threadOpts(resolved.threadId);

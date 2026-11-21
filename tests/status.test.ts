@@ -90,7 +90,7 @@ describe("partial text rendering", () => {
 
   test("plain prose stays in a blockquote", () => {
         const html = renderPartialText("Estoy revisando el código para encontrar el problema.", 400);
-    expect(html).toContain("<blockquote>");
+    expect(html).toContain("<blockquote expandable>");
     expect(html).not.toContain("<pre>");
   });
 });

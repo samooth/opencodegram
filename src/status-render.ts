@@ -42,9 +42,9 @@ export function renderPartialText(raw: string, max: number): string {
     /2>\/dev\/null|--?[a-z][a-z-]*\b|\|\s*\w+/.test(text);
   const marker = truncated ? "…\n" : "";
   if (looksLikeCode) {
-    return `<p><i>💬 escribiendo…</i></p>\n<pre><code>${esc(marker + body)}</code></pre>`;
+    return `<p><i>💬 escribiendo…</i></p>\n<blockquote expandable><pre><code>${esc(marker + body)}</code></pre></blockquote>`;
   }
-  return `<p><i>💬 escribiendo…</i></p>\n<blockquote>${esc(marker + body)}</blockquote>`;
+  return `<p><i>💬 escribiendo…</i></p>\n<blockquote expandable>${esc(marker + body)}</blockquote>`;
 }
 
 export function parseShellCommand(input: string): string | null {
