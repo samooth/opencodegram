@@ -2,21 +2,17 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatSession, CardView } from "./types.js";
-import type { SessionStore } from "./store.js";
 import { pendingEditsKey } from "./store.js";
-import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
-import type { DashboardManager } from "./dashboard.js";
-import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -50,7 +46,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
     if (activityBlock) {
       lines.push(activityBlock);
-    } else {
+    }
+    // Virtual shell with every toolcall, always visible when enabled.
+    if (settings.showTools && s.toolCallDetails.length) {
+      const shellText = renderVirtualShell(s.toolCallDetails.slice(-8), 400);
+      lines.push(`<blockquote expandable>⚡ Shell (${s.toolCallDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
+    }
+    if (!activityBlock) {
       // Fallback for sessions created before per-turn activity was tracked.
       const thinking = renderThinkingBottom(s, settings);
       if (thinking) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${thinking}</blockquote>` : thinking);
@@ -240,7 +242,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // finished card as history; "fija" keeps editing the same card in place.
         store?.beginTurn?.(s);
         s.transcriptFollow = true;
-        if (unified || settings.cardBehavior !== "fixed") {
+        // With the virtual shell visible, keep ONE message for the whole turn
+        // (live tools + answer) — refloat would split it across messages.
+        const keepSingleMessage = settings.showTools;
+        if (!keepSingleMessage && (unified || settings.cardBehavior !== "fixed")) {
           await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
         }
         await publishCard(chatId, s).catch((err) => console.warn("[status] publishCard failed", err?.message ?? err));
@@ -303,8 +308,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         ? "<i>🔀 Esta sesión sigue en segundo plano (otra sesión ocupa la pestaña).</i>"
         : "";
 
-      const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
-      const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
       const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
 
       let latestToolBlock = "";
@@ -739,7 +742,6 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
       return `<tr><td><code>${esc(file)}</code></td><td>+${added}</td><td>−${removed}</td></tr>`;
     });
     const table = `<table><tr><th>Archivo</th><th>+</th><th>−</th></tr>${rows.join("")}</table>`;
-    const keyboard = finishedKeyboard(resolved.edits, undefined, resolved.s as ChatSession, messageId);
     const parts: string[] = [];
     for (const detail of resolved.edits) {
       const file = relativeEditPath(resolved.s as ChatSession, extractEditFile(detail.input) ?? "edit");
@@ -783,7 +785,6 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
   const sendPatch = async (chatId: number, messageId: number, threadId?: number): Promise<boolean> => {
     const resolved = resolveEditsFor(chatId, messageId);
     if (!resolved) return false;
-    const settings = getSettings(chatId);
     const body = plainDiff(resolved.edits, "unified", resolved.directory);
     try {
       const dir = join(tmpdir(), "opencode", "exports");

@@ -154,3 +154,50 @@ describe("reasoning always collapsed by default", () => {
     expect(html).toMatch(/<blockquote expandable>🧠 Razonamiento/);
   });
 });
+
+describe("live virtual shell", () => {
+  test("shows all toolcalls as $-prefixed commands in the working card", async () => {
+    const published: any[] = [];
+    const transcript = {
+      publish: async (_c: number, _s: any, opts: any) => { published.push(opts); return 1; },
+      addBlock: () => {}, refloat: async () => 1,
+    } as any;
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, showTools: true, showPartialText: false }),
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => [] } as any,
+      transcript,
+    } as any);
+    const s = makeSession({
+      statusFinished: false,
+      toolCallDetails: [
+        { id: "1", name: "read", input: JSON.stringify({ filePath: "/repo/main.ts" }), status: "success" },
+        { id: "2", name: "bash", input: JSON.stringify({ command: "bun test" }), status: "success" },
+      ],
+    });
+    await status.publishCard(7, s);
+    const html = published[0]?.extraTop ?? "";
+    expect(html).toContain("⚡ Shell (2)");
+    expect(html).toContain("$ read /repo/main.ts");
+    expect(html).toContain("$ bun test");
+  });
+
+  test("does not refloat when showTools keeps the single live message", async () => {
+    let refloats = 0;
+    const transcript = {
+      publish: async () => 1, addBlock: () => {},
+      refloat: async () => { refloats++; return 1; },
+    } as any;
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, showTools: true, cardBehavior: "refloat" }),
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { beginTurn: () => 1, lastPromptBySession: new Map(), getTodos: () => [] } as any,
+      transcript,
+    } as any);
+    const s = makeSession({ statusFinished: false });
+    await status.startStatus(7, s);
+    expect(refloats).toBe(0);
+  });
+});

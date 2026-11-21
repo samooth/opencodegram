@@ -625,9 +625,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       }
       // Optional: deliver the final answer as a separate rich-text message for readability.
       const st = settings.get(chatId);
-      const sendSeparately =
+      // When the virtual shell is the single live card, keep the whole turn in
+      // that one message; a separate answer message would split the transcript.
+      const sendSeparately = !st.showTools && (
         st.longAnswerDelivery === "message" ||
-        (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold);
+        (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold)
+      );
       if (sendSeparately) {
         if (s.lastFinalSeparatedPromptStart !== s.promptStartTime) {
           s.lastFinalSeparatedPromptStart = s.promptStartTime;
