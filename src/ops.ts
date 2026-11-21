@@ -224,6 +224,16 @@ export function createOpsServer(deps: {
       response.end(JSON.stringify({ sessions, metrics: metrics.snapshot(), at: Date.now() }));
       return;
     }
+    if (url.pathname === "/app/todos.json") {
+      if (!webAppAuthorized(request, url, response)) return;
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("Content-Type", "application/json");
+      const todos = [...store.sessionsById.values()]
+        .map((s) => ({ sessionId: s.sessionId, title: s.topicTitle, items: store.getTodos(s.sessionId) }))
+        .filter((x) => x.items.length);
+      response.end(JSON.stringify({ todos, at: Date.now() }));
+      return;
+    }
     if (url.pathname === "/ready") {
       try {
         await oc.serverInfo();
