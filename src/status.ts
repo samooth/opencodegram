@@ -250,10 +250,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // finished card as history; "fija" keeps editing the same card in place.
         store?.beginTurn?.(s);
         s.transcriptFollow = true;
-        // With the virtual shell visible, keep ONE message for the whole turn
-        // (live tools + answer) — refloat would split it across messages.
-        const keepSingleMessage = settings.showTools;
-        if (!keepSingleMessage && (unified || settings.cardBehavior !== "fixed")) {
+        // Respect the user's cardBehavior. With "tarjeta nueva" (refloat) each
+        // turn gets its own message — forcing fixed here broke that choice and
+        // left stale message ids that Telegram then refused to edit.
+        if (unified || settings.cardBehavior !== "fixed") {
           await transcript.refloat(chatId, s, { keep: settings.cardBehavior === "refloat_keep" });
         }
         await publishCard(chatId, s).catch((err) => console.warn("[status] publishCard failed", err?.message ?? err));
