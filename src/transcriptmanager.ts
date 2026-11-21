@@ -425,8 +425,11 @@ ${body}
       primary.push({ text: "▶️ Continuar", callback_data: `retry:${s.sessionId}` });
       primary.push({ text: "📥 Historial", callback_data: `histfmt:${s.sessionId}` });
     } else {
-      if (s.lastFinalText) primary.push({
-        text: view.answerInCard ? "📄 Ver completo" : "📄 Respuesta",
+      // When the answer is already embedded in the card, a "Ver completo"
+      // button is confusing (it makes users think the visible answer is a
+      // teaser). The full answer is also always reachable via 📖 Leer.
+      if (s.lastFinalText && !view.answerInCard) primary.push({
+        text: "📄 Respuesta",
         callback_data: `viewfull:${s.sessionId}`,
       });
       if (edits.length && s.transcriptMessageId) {

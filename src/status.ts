@@ -98,34 +98,24 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    * compact footer so the answer is never buried under a status badge.
    */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
+    // The answer is the point of the turn. When it's embedded in the card, the
+    // reasoning/activity are secondary and get a strict budget so the answer
+    // is NEVER truncated behind a "📄 Ver completo" button.
+    const answerEmbedded = settings.showFinalInCard && !!s.lastFinalText?.trim();
     const lines: string[] = [];
 
-    // 1) Razonamiento (the reasoning that explains the answer).
-    const reasoning = lastReasoning(s);
-    if (settings.showThinking && reasoning) {
-      // Reasoning is always collapsed by default: users opt into reading it.
-      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-3500))}</blockquote>`);
-    }
+    // 3) Respuesta FIRST in the budget calculation (rendered in place below).
+    const rawAnswer = s.lastFinalText?.trim() ?? "";
+    // Cap just below the card budget so the answer always fits in one message;
+    // the untruncated answer stays available via 📖 Leer / copiar.
+    const answerHtml = answerEmbedded && rawAnswer
+      ? `<h4>💬 Respuesta</h4>${markdownToHtml(rawAnswer.slice(0, 2400))}${rawAnswer.length > 2400 ? "\n<i>… completa en 📖 Leer</i>" : ""}`
+      : "";
 
-    // 2) Pensamiento (compact activity: thoughts, reads, tools).
-    if (settings.showThinking || settings.showLatestThought) {
-      // The finished card always collapses detail blocks by default,
-      // regardless of the profile's thinkingExpanded (that only affects the
-      // live card while the turn is streaming).
-      const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), false);
-      if (doneActivity) lines.push(doneActivity);
-    }
+    // The answer is the FIRST thing in the card — no scrolling, no button.
+    if (answerHtml) lines.push(answerHtml);
 
-    // 3) Respuesta (the whole point of the turn).
-    if (settings.showFinalInCard && s.lastFinalText?.trim()) {
-      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(s.lastFinalText.trim().slice(0, 2200))}`);
-    }
-
-    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
-    if (todosBlock) lines.push(todosBlock);
-    if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
-
-    // 4) Receipt last: "✅ Listo" as a small footer, not a headline.
+    // Compact receipt right under the answer.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     const edits = summarizeEdits(s, s.toolCallDetails);
     const test = detectTestRun(s.toolCallDetails);
@@ -137,6 +127,21 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       test,
       telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
     }));
+
+    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
+    if (todosBlock) lines.push(todosBlock);
+    if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
+
+    // Secondary context AFTER the answer, always collapsed and short.
+    if (settings.showThinking || settings.showLatestThought) {
+      const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false);
+      if (doneActivity) lines.push(doneActivity);
+    }
+    const reasoning = lastReasoning(s);
+    if (settings.showThinking && reasoning) {
+      const budget = answerEmbedded ? 900 : 3500;
+      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-budget))}</blockquote>`);
+    }
 
     return lines.join("");
   };

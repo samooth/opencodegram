@@ -334,10 +334,12 @@ describe("finished card reading order", () => {
     const thinking = html.indexOf("Pensamiento");
     const answer = html.indexOf("💬 Respuesta");
     const done = html.indexOf("✅ <b>Listo</b>");
-    expect(reasoning).toBeGreaterThanOrEqual(0);
-    expect(thinking).toBeGreaterThan(reasoning);
-    expect(answer).toBeGreaterThan(thinking);
+    // The answer is FIRST (no button needed to read it); secondary reasoning
+    // and activity come after the receipt.
+    expect(answer).toBeGreaterThanOrEqual(0);
     expect(done).toBeGreaterThan(answer);
+    expect(thinking).toBeGreaterThan(done);
+    expect(reasoning).toBeGreaterThan(thinking);
   });
 
   test("settings disable each block", async () => {

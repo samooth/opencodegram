@@ -657,3 +657,31 @@ describe("transcript manager", () => {
     expect(kb.some((b) => b.text.startsWith("📝 Diff"))).toBe(false);
   });
 });
+
+describe("answer-in-card keyboard", () => {
+  test("no 'Ver completo' button when the answer is embedded in the card", async () => {
+    const sent: any[] = [];
+    const tg = {
+      sendRichMessage: async (...args: any[]) => { sent.push(args); return { message_id: 300 }; },
+      editRichMessage: async (...args: any[]) => { sent.push(args); return { message_id: 300 }; },
+    } as any;
+    const store = new SessionStore(join(root, "data"));
+    const transcript = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession({ lastFinalText: "Mi respuesta completa." });
+    transcript.addBlock(s, "answer", "<p>Mi respuesta completa.</p>", "Mi respuesta completa.");
+
+    // With answerInCard: the answer lives in the strip, no teaser button.
+    await transcript.publish(1, s, { answerInCard: true } as any);
+    const embeddedButtons = JSON.stringify(sent.at(-1)?.[2]?.reply_markup ?? {});
+    expect(embeddedButtons).not.toContain("Ver completo");
+    expect(embeddedButtons).not.toContain("viewfull:");
+
+    // Without answerInCard: the "📄 Respuesta" button is present.
+    sent.length = 0;
+    s.transcriptMessageId = undefined;
+    await transcript.publish(1, s, { answerInCard: false } as any);
+    const plainButtons = JSON.stringify(sent.at(-1)?.[2]?.reply_markup ?? {});
+    expect(plainButtons).toContain("viewfull:");
+    expect(plainButtons).toContain("Respuesta");
+  });
+});

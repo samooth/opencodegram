@@ -228,3 +228,34 @@ describe("finished card collapses reasoning regardless of profile", () => {
     expect(html).toMatch(/<blockquote expandable>💭 Pensamientos/);
   });
 });
+
+describe("answer visible in the finished card", () => {
+  test("answer comes first and reasoning is secondary when embedded", async () => {
+    const { createTurnActivity, recordThought } = await import("../src/activity.js");
+    const { PRESET_SETTINGS } = await import("../src/settings.js");
+    const published: any[] = [];
+    const transcript = { publish: async (_c: number, _s: any, o: any) => { published.push(o); return 1; }, addBlock: () => {}, refloat: async () => 1 } as any;
+    const settings = { ...DEFAULT_SETTINGS, ...PRESET_SETTINGS.verbose, cardBehavior: "refloat" as const, showFinalInCard: true } as any;
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}), getSettings: () => settings,
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => [] } as any, transcript,
+    } as any);
+    const activity = createTurnActivity();
+    recordThought(activity, "pensamiento secundario");
+    const answer = "Mi respuesta completa y legible sin pulsar nada.";
+    const s = makeSession({
+      statusFinished: true, activity, activityExpanded: true,
+      lastFinalText: answer, cotBuffer: "razonamiento del turno", cotCount: 1,
+      promptStartTime: Date.now() - 5000,
+    });
+    await status.publishCard(7, s);
+    const html = published[0]?.extraTop ?? "";
+    const answerIdx = html.indexOf("💬 Respuesta");
+    const reasoningIdx = html.indexOf("🧠 Razonamiento");
+    expect(answerIdx).toBeGreaterThanOrEqual(0);
+    expect(answerIdx).toBeLessThan(reasoningIdx);
+    expect(html).toContain(answer);
+  });
+
+});
