@@ -497,13 +497,13 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       logger.breadcrumb("events", "text.ended.duplicate", { sessionId, reason: "recent-no-msgId" });
       return;
     }
-    const candidateFinal = ((e.data?.text ?? "").toString().trim()) || s.buffer || "(empty response)";
-    if (
-      s.promptStartTime !== undefined &&
-      s.lastFinalDeliveredPromptStart === s.promptStartTime &&
-      s.lastFinalText === candidateFinal
-    ) {
-      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, reason: "same-turn-content" });
+    // OpenCode 2.3.0 emits one `text.ended` per text PART of the assistant
+    // message (tool steps in between). Each carries different partial text,
+    // so comparing content is unreliable — the first delivery already set
+    // lastFinalDeliveredPromptStart for this turn. Treat that as the single
+    // source of truth: one final answer per prompt, no matter how many parts.
+    if (s.promptStartTime !== undefined && s.lastFinalDeliveredPromptStart === s.promptStartTime) {
+      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, reason: "final-already-delivered" });
       return;
     }
   }
@@ -523,6 +523,10 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     s.typingTimer = undefined;
   }
   if (!s.stopped) {
+    // Claim this turn BEFORE any await: OpenCode may emit several text.ended
+    // parts back-to-back, and a second handler must not slip past the dedupe
+    // while finishStatus / message.get are still in flight.
+    s.lastFinalDeliveredPromptStart = s.promptStartTime;
     logger.breadcrumb("events", "text.ended.flush", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
@@ -572,7 +576,6 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (s) {
       s.lastFinalMessageId = msgId ?? s.lastFinalMessageId; // OpenCode assistant msg id
       s.lastFinalSentAt = Date.now();
-      s.lastFinalDeliveredPromptStart = s.promptStartTime;
     }
     logger.breadcrumb("events", "send.final", { chatId, thread: s.targetThreadId ?? s.threadId, len: finalText.length });
     deps.sessionTrace?.("turn.final", {

@@ -116,3 +116,39 @@ describe("handleEvent", () => {
     expect(deps.tg.sent.some((text: string) => text.includes("rate limit exceeded"))).toBe(true);
   });
 });
+
+describe("text.ended final delivery", () => {
+  test("delivers one final answer per turn even with multiple text.ended parts", async () => {
+    const { deps, store } = makeDeps();
+    const session = {
+      sessionId: "ses_parts",
+      buffer: "respuesta completa",
+      reasoningBuffer: "",
+      toolCalls: [],
+      toolCallDetails: [],
+      stopped: false,
+      targetChatId: 100,
+      promptStartTime: 1000,
+      statusFinished: false,
+    } as any;
+    store.sessionsById.set("ses_parts", session);
+    store.chatBySession.set("ses_parts", 100);
+    store.lastPromptBySession.set("ses_parts", "haz algo");
+
+    const sent = (deps.tg as any).sent as string[];
+    await handleEvent({ type: "session.text.ended", data: { sessionID: "ses_parts", assistantMessageID: "msg_a", text: "parte 1" } }, deps);
+    const afterFirst = sent.length;
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(session.lastFinalDeliveredPromptStart).toBe(1000);
+
+    // A second text.ended part of the same turn (different msg id + text)
+    // must be ignored — one final answer per prompt.
+    await handleEvent({ type: "session.text.ended", data: { sessionID: "ses_parts", assistantMessageID: "msg_b", text: "parte 2" } }, deps);
+    expect(sent.length).toBe(afterFirst);
+
+    // A new turn (new promptStartTime) is allowed to deliver again.
+    session.promptStartTime = 2000;
+    await handleEvent({ type: "session.text.ended", data: { sessionID: "ses_parts", assistantMessageID: "msg_c", text: "nueva respuesta" } }, deps);
+    expect(sent.length).toBeGreaterThan(afterFirst);
+  });
+});

@@ -16,7 +16,7 @@ import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderShell, renderThinkingBottom, renderLatestToolBottom, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -38,10 +38,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 2. Telemetry (duration, speed, tokens, context) under the state. The card
     // stays readable while working; the finished turns get the full receipt.
     const telemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
-    const tools = s.toolCallDetails.length;
-    const failedTools = s.toolCallDetails.filter((detail) => detail.status === "failed").length;
-    // The activity summary already carries tool counts; avoid showing them twice.
-    if (tools && !s.activity) telemetry.push(`🔧 ${tools}${failedTools ? ` (${failedTools} ✗)` : ""}`);
+    // Tool counts move to the footer (renderToolStats) — never duplicated here.
     if (telemetry.length) lines.push(`<p><i>${esc(telemetry.join(" · "))}</i></p>`);
     // 3. Prompt being answered — context before detail.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
@@ -84,11 +81,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(renderPartialText(s.buffer, cap));
     }
     // COT is rendered once at the very top (step 0); do not duplicate it here.
+    // Toolcall statistics live at the very bottom, as a compact icon line.
+    const stats = renderToolStats(s.toolCallDetails);
     return {
       top: lines.join(""),
-      // Indicators (resources) and buttons are appended by publishCard below
-      // extraBottom, so they stay at the very bottom of the card.
-      bottom: "",
+      bottom: stats ? `<p><i>${esc(stats)}</i></p>` : "",
     };
   };
 
@@ -104,7 +101,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 1) Razonamiento (the reasoning that explains the answer).
     const reasoning = lastReasoning(s);
     if (settings.showThinking && reasoning) {
-      lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-3500))}</blockquote>`);
+      // Reasoning is always collapsed by default: users opt into reading it.
+      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-3500))}</blockquote>`);
     }
 
     // 2) Pensamiento (compact activity: thoughts, reads, tools).
@@ -342,16 +340,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
 
       let shellBlock = "";
-      if (settings.showTools && settings.showShell && shellDetails.length) {
-        const shellText = renderShell(shellDetails.slice(-5), 180);
-        shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;
+      const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
+      if (settings.showTools && virtualDetails.length) {
+        const shellText = renderVirtualShell(virtualDetails.slice(-6), 180);
+        shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;
       }
 
       let toolsBlock = "";
-      if (settings.showTools && otherDetails.length) {
-        const details = renderTools(otherDetails.slice(-6), 180, settings.showToolInput);
-        toolsBlock = `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas (${otherDetails.length})\n${details}</blockquote>`;
-      } else if (settings.showTools && !shellDetails.length && !editDetails.length && s.toolCalls.length) {
+      if (settings.showTools && !virtualDetails.length && !editDetails.length && s.toolCalls.length) {
         toolsBlock = "🔧 " + esc(s.toolCalls.slice(-6).join(", "));
       }
 
@@ -457,7 +453,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // The reasoning is markdown: render it so code blocks and emphasis
         // keep their rich text inside the card.
         const renderThinking = (chunk: string) =>
-          `<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Razonamiento
+          `<blockquote expandable>🧠 Razonamiento
 ${markdownToHtml(chunk)}</blockquote>`;
         // Models often restate the prompt inside their reasoning; showing it
         // again duplicates information the user already sent.
@@ -473,10 +469,11 @@ ${markdownToHtml(chunk)}</blockquote>`;
         s.reasoningBuffer = "";
       }
       if (settings.showTools && s.toolCallDetails.length) {
-        const shellDetails = s.toolCallDetails.filter((detail) => isShellTool(detail.name));
-        const otherDetails = s.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
+        // Virtual shell: shell, read, write, webfetch, grep… as `$ <cmd>` lines.
+        // Edits keep their own diff block below.
+        const shellDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
         if (shellDetails.length) {
-          const shellText = renderShell(shellDetails, 800);
+          const shellText = renderVirtualShell(shellDetails, 800);
           transcript.addBlock(
             s,
             "tools",
@@ -485,18 +482,6 @@ ${markdownToHtml(chunk)}</blockquote>`;
             (chunk) => `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell
 <pre language=\'bash\'>${esc(chunk)}</pre></blockquote>`,
             shellDetails.map((d) => ({ name: d.name, input: d.input, output: d.output, status: d.status })),
-          );
-        }
-        if (otherDetails.length) {
-          const details = renderTools(otherDetails, 1200, settings.showToolInput);
-          transcript.addBlock(
-            s,
-            "tools",
-            `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas (${otherDetails.length})\n${details}</blockquote>`,
-            details,
-            (chunk) => `<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas
-${chunk}</blockquote>`,
-            otherDetails.map((d) => ({ name: d.name, input: d.input, output: d.output, status: d.status })),
           );
         }
       }
@@ -593,23 +578,18 @@ ${esc(cot)}</blockquote>`);
     if (!settings.compactFinal) {
       if (inlineThinking && settings.showThinking && !target.stopped && target.reasoningBuffer.trim()) {
         const r = target.reasoningBuffer.trim();
-        lines.push(`<blockquote${settings.thinkingExpanded ? "" : " expandable"}>🧠 Razonamiento
+        lines.push(`<blockquote expandable>🧠 Razonamiento
 ${esc(r)}</blockquote>`);
       }
       if (settings.showThinking || settings.showLatestThought) {
         const activityBlock = renderActivity(target.activity, settings.cardVerbosity, true, Date.now(), target.activityExpanded === true);
         if (activityBlock) lines.push(activityBlock);
       }
-      const shellDetails = target.toolCallDetails.filter((detail) => isShellTool(detail.name));
-      const otherDetails = target.toolCallDetails.filter((detail) => !isShellTool(detail.name) && !isEditTool(detail.name, detail.input));
+      const virtualDetails = target.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
-      if (settings.showTools && settings.showShell && shellDetails.length) {
-        const shellText = renderShell(shellDetails, 500);
-        lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
-      }
-      if (settings.showTools && otherDetails.length) {
-        const details = renderTools(otherDetails, 500);
-        lines.push(`<blockquote${settings.toolsExpanded ? "" : " expandable"}>🔧 Herramientas (${otherDetails.length})\n${details}</blockquote>`);
+      if (settings.showTools && virtualDetails.length) {
+        const shellText = renderVirtualShell(virtualDetails, 500);
+        lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
       }
       if (settings.showTools && editDetails.length) {
         const editLines = [`✏️ Cambios: ${editDetails.length}`];
@@ -643,6 +623,9 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
       resourceBlock = renderResourceBlock(target, { history: settings.resourceHistory, theme: settings.cardTheme });
       lines.push(resourceBlock);
     }
+    // Tool stats as a compact icon line at the very bottom (above the receipt).
+    const toolStats = renderToolStats(target.toolCallDetails);
+    if (toolStats) lines.push(`<p><i>${esc(toolStats)}</i></p>`);
     // Receipt as a quiet footer, after the answer and the indicators.
     lines.push(target.stopped ? "⏹ <b>Detenido</b>" : "✅ <b>Listo</b>");
     if (settings.showResourceUsage) {

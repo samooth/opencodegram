@@ -277,6 +277,81 @@ export function isShellTool(name: string): boolean {
   return normalized === "shell" || normalized === "bash" || normalized === "sh" || normalized.includes("shell");
 }
 
+/**
+ * Turn every tool call into a virtual-shell command line (`$ read file …`),
+ * so reads, writes and web fetches read like shell invocations instead of
+ * separate "tool" blocks. Consecutive identical commands are collapsed.
+ */
+export function renderVirtualShell(details: ChatSession["toolCallDetails"], limit: number): string {
+  const toCommand = (name: string, input: string | undefined): string => {
+    const n = (name || "").toLowerCase();
+    const summary = getToolSummary(name, input);
+    const arg = (summary.arg ?? "").toString().trim();
+    const parsed = input ? parseToolInput(input) : undefined;
+    const pathArg = parsed
+      ? ["filePath", "file_path", "path", "filename", "file", "url", "uri"].map((k) => parsed[k]).find((v) => typeof v === "string") as string | undefined
+      : undefined;
+    const target = pathArg ?? arg;
+    if (isShellTool(name)) return parseShellCommand(input ?? "") ?? arg ?? name;
+    if (n.includes("read") || n === "cat") return `read ${target}`.trim();
+    if (n.includes("write") || n.includes("edit") || n.includes("patch")) return `write ${target}`.trim();
+    if (n.includes("webfetch") || n.includes("fetch") || n.includes("web")) return `fetch ${target}`.trim();
+    if (n.includes("grep") || n.includes("search")) return `grep ${target}`.trim();
+    if (n.includes("glob") || n.includes("find") || n.includes("list") || n.includes("ls")) return `ls ${target}`.trim();
+    return `${n}${target ? ` ${target}` : ""}`.trim();
+  };
+
+  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number; cmd: string }> = [];
+  for (const d of details) {
+    const cmd = toCommand(d.name, d.input);
+    const last = compact[compact.length - 1];
+    if (last && last.cmd === cmd) {
+      last.count += 1;
+      last.d = d;
+    } else {
+      compact.push({ d, count: 1, cmd });
+    }
+  }
+  return compact
+    .map(({ d, count, cmd }) => {
+      const failed = d.status === "failed";
+      const output = d.output ? (parseShellOutput(d.output) ?? d.output).trim() : "";
+      const lines = [
+        `$ ${cmd.replace(/\s+/g, " ").trim()}${count > 1 ? `  (×${count})` : ""}${failed ? "  ❌" : ""}`,
+      ];
+      if (output && (failed || isShellTool(d.name))) lines.push(truncateText(output, limit));
+      return lines.join("\n");
+    })
+    .join("\n");
+}
+
+/** Compact toolcall statistics line with per-type icons, meant for the card footer. */
+export function renderToolStats(details: ChatSession["toolCallDetails"]): string {
+  if (!details.length) return "";
+  const count = (pred: (d: ChatSession["toolCallDetails"][number]) => boolean): number =>
+    details.filter(pred).length;
+  const n = (name: string) => (d: ChatSession["toolCallDetails"][number]) => {
+    const l = (d.name || "").toLowerCase();
+    return name === "shell" ? isShellTool(d.name)
+      : name === "read" ? l.includes("read") || l === "cat"
+      : name === "edit" ? l.includes("edit") || l.includes("write") || l.includes("patch")
+      : name === "fetch" ? l.includes("fetch") || l.includes("web")
+      : name === "search" ? l.includes("grep") || l.includes("glob") || l.includes("search") || l.includes("find")
+      : !/shell|read|cat|edit|write|patch|fetch|web|grep|glob|search|find/.test(l);
+  };
+  const failed = count((d) => d.status === "failed");
+  const parts = [
+    `🔧 ${details.length}`,
+    `⚡${count(n("shell"))}`,
+    `📖${count(n("read"))}`,
+    `✏️${count(n("edit"))}`,
+    `🌐${count(n("fetch"))}`,
+    `🔍${count(n("search"))}`,
+  ];
+  if (failed) parts.push(`❌${failed}`);
+  return parts.join(" · ");
+}
+
 export function renderShell(details: ChatSession["toolCallDetails"], limit: number): string {
   // Collapse consecutive identical commands.
   const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number }> = [];

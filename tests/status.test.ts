@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createStatusManager } from "../src/status.js";
 import { renderPartialText } from "../src/status-render.js";
+import { DEFAULT_SETTINGS } from "../src/settings.js";
 import type { ChatSession } from "../src/types.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -92,5 +93,64 @@ describe("partial text rendering", () => {
         const html = renderPartialText("Estoy revisando el código para encontrar el problema.", 400);
     expect(html).toContain("<blockquote expandable>");
     expect(html).not.toContain("<pre>");
+  });
+});
+
+describe("virtual shell and tool stats", () => {
+  test("renders read/write/webfetch as $-prefixed commands", async () => {
+    const { renderVirtualShell } = await import("../src/status-render.js");
+    const html = renderVirtualShell([
+      { id: "1", name: "read", input: JSON.stringify({ filePath: "/repo/src/main.ts" }), status: "success" },
+      { id: "2", name: "write", input: JSON.stringify({ filePath: "/repo/src/new.ts" }), status: "success" },
+      { id: "3", name: "webfetch", input: JSON.stringify({ url: "https://example.com" }), status: "success" },
+      { id: "4", name: "bash", input: JSON.stringify({ command: "ls -la" }), status: "success" },
+    ], 200);
+    expect(html).toContain("$ read /repo/src/main.ts");
+    expect(html).toContain("$ write /repo/src/new.ts");
+    expect(html).toContain("$ fetch https://example.com");
+    expect(html).toContain("$ ls -la");
+  });
+
+  test("tool stats line uses icons and counts failures", async () => {
+    const { renderToolStats } = await import("../src/status-render.js");
+    const line = renderToolStats([
+      { id: "1", name: "bash", status: "success" },
+      { id: "2", name: "read", status: "success" },
+      { id: "3", name: "read", status: "failed" },
+      { id: "4", name: "edit", status: "success" },
+    ]);
+    expect(line).toContain("🔧 4");
+    expect(line).toContain("⚡1");
+    expect(line).toContain("📖2");
+    expect(line).toContain("✏️1");
+    expect(line).toContain("❌1");
+  });
+});
+
+describe("reasoning always collapsed by default", () => {
+  test("finished card renders reasoning as an expandable blockquote", async () => {
+    const published: any[] = [];
+    const tg = { editRichMessage: async () => ({ message_id: 1 }) } as any;
+    const transcript = {
+      publish: async (_c: number, _s: any, opts: any) => { published.push(opts); return 1; },
+      addBlock: () => {}, refloat: async () => 1,
+    } as any;
+    const status = createStatusManager({
+      tg, threadOptsFor: () => ({}),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, showThinking: true, thinkingExpanded: true, showFinalInCard: false }),
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => [] } as any,
+      transcript,
+    } as any);
+    const s = makeSession({
+      statusFinished: true,
+      cotBuffer: "razonamiento secreto del turno",
+      cotCount: 1,
+      promptStartTime: Date.now() - 5000,
+    });
+    await status.publishCard(7, s);
+    const html = published[0]?.extraTop ?? "";
+    expect(html).toContain("🧠 Razonamiento");
+    expect(html).toMatch(/<blockquote expandable>🧠 Razonamiento/);
   });
 });
