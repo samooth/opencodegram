@@ -630,6 +630,12 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         }
         if (view.kind === "search") {
           if (!view.back) {
+            if (messageId !== undefined) {
+              await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
+              await tg.deleteMessage(chatId, messageId).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
+              views.delete(`${chatId}:${messageId}`);
+              return true;
+            }
             await tg.answerCallbackQuery(cq.id, "No previous listing").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
             return true;
           }
