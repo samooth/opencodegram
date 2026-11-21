@@ -16,7 +16,7 @@ import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderShell, renderThinkingBottom, renderLatestToolBottom, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderShell, renderThinkingBottom, renderLatestToolBottom, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -78,11 +78,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 4. TODO checklist for the session (from todo.updated events).
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
-    // 7. Partial answer in a blockquote, clearly distinct from reasoning.
+    // 7. Partial answer, rendered as clean lines (code block for shell/code).
     if (settings.showPartialText && s.buffer.trim()) {
       const cap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
-      const tail = s.buffer.trim().slice(-cap);
-      lines.push(`<p><i>💬 escribiendo…</i></p>\n<blockquote>${esc(tail)}</blockquote>`);
+      lines.push(renderPartialText(s.buffer, cap));
     }
     // COT is rendered once at the very top (step 0); do not duplicate it here.
     return {

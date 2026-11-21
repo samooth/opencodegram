@@ -12,6 +12,41 @@ export function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
 }
 
+/**
+ * Render the live partial answer (model streaming buffer). The buffer often
+ * contains shell commands / code mid-stream; showing it as a plain paragraph
+ * cut mid-token produces unreadable fragments like "…mp -iname …". Instead:
+ *  - keep COMPLETE lines from the tail (so a command is never sliced in half),
+ *  - render as a code block when it looks like shell/code (no accidental
+ *    Telegram markup interpretation), with an explicit truncation marker.
+ */
+export function renderPartialText(raw: string, max: number): string {
+  const text = raw.trim();
+  if (!text) return "";
+  const lines = text.split(/\r?\n/);
+  // Drop whole leading lines until the tail fits, but keep at least one line.
+  let start = 0;
+  let used = lines[lines.length - 1].length;
+  for (let i = lines.length - 2; i >= 0; i--) {
+    const next = used + 1 + lines[i].length;
+    if (next > max) break;
+    used = next;
+    start = i;
+  }
+  const truncated = start > 0;
+  const body = lines.slice(start).join("\n");
+  // Shell/code heuristics: prompt markers, redirections, flags, common verbs.
+  const looksLikeCode =
+    /(^|\n)\s*[$>]\s/.test(text) ||
+    /(^|\n)\s*(cd|ls|find|grep|cat|echo|python3?|node|bun|git|curl|npm|pip)\b/.test(text) ||
+    /2>\/dev\/null|--?[a-z][a-z-]*\b|\|\s*\w+/.test(text);
+  const marker = truncated ? "…\n" : "";
+  if (looksLikeCode) {
+    return `<p><i>💬 escribiendo…</i></p>\n<pre><code>${esc(marker + body)}</code></pre>`;
+  }
+  return `<p><i>💬 escribiendo…</i></p>\n<blockquote>${esc(marker + body)}</blockquote>`;
+}
+
 export function parseShellCommand(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
