@@ -29,6 +29,7 @@ function makeBrowser() {
   const edits: Array<Sent & { messageId: number }> = [];
   const answers: Array<string | undefined> = [];
   const documents: Array<{ path: string; name: string; caption?: string }> = [];
+  const deleted: number[] = [];
   let nextMessageId = 50;
 
   const tg = {
@@ -43,7 +44,7 @@ function makeBrowser() {
       documents.push({ path, name, caption });
       return { message_id: nextMessageId++ };
     },
-    deleteMessage: async () => true,
+    deleteMessage: async (_chatId: number, messageId: number) => { deleted.push(messageId); return true; },
     answerCallbackQuery: async (_id: string, text?: string) => {
       answers.push(text);
       return true;
@@ -56,7 +57,7 @@ function makeBrowser() {
     getActiveSession: () => undefined,
   });
 
-  return { browser, sent, edits, answers, documents };
+  return { browser, sent, edits, answers, documents, deleted };
 }
 
 function buttons(opts: any): Array<{ text: string; callback_data: string }> {
@@ -153,5 +154,50 @@ describe("file browser", () => {
     const { browser, answers } = makeBrowser();
     await browser.handleCallback(callback(999, "fs:u", "cb-expired"));
     expect(answers.at(-1)).toContain("Expired");
+  });
+});
+
+describe("file browser back from root preview", () => {
+  test("back from a root-level file preview returns to the root listing, not 'already at root'", async () => {
+    writeFileSync(join(base, "rootfile.ts"), "export const y = 2;\n");
+    const { browser, sent, edits, answers } = makeBrowser();
+    await browser.showListing(100, 10, "");
+    const firstId = 50;
+    const fileButton = buttons(sent[0].opts).find((b) => b.text.includes("rootfile.ts") && b.callback_data.startsWith("fs:e:"));
+    expect(fileButton?.callback_data.startsWith("fs:e:")).toBe(true);
+    await browser.handleCallback(callback(firstId, fileButton!.callback_data, "cb-open-root-file"));
+    expect(edits.at(-1)?.html).toContain("export const y = 2;");
+    const backButton = buttons(edits.at(-1)!.opts).find((b) => b.text.includes("Atrás"));
+    expect(backButton?.callback_data).toBe("fs:u");
+    await browser.handleCallback(callback(firstId, "fs:u", "cb-back-root"));
+    // No "Already at the root" toast: the back handler used view.back.
+    expect(answers.some((a) => /root/i.test(String(a ?? "")))).toBe(false);
+    expect(edits.at(-1)?.html).toContain("rootfile.ts");
+    expect(edits.at(-1)?.html).not.toContain("export const y = 2;");
+  });
+});
+
+describe("file browser closes viewer when there is no back target", () => {
+  test("back on a root listing deletes the viewer message instead of toasting 'already at root'", async () => {
+    const { browser, sent, deleted, answers } = makeBrowser();
+    await browser.showListing(100, 10, "");
+    const firstId = 50;
+    // Root listing has no "Up" button, but a stale callback may still arrive.
+    await browser.handleCallback(callback(firstId, "fs:u", "cb-back-root-stale"));
+    expect(deleted).toContain(firstId);
+    expect(answers.some((a) => /root/i.test(String(a ?? "")))).toBe(false);
+  });
+
+  test("back on a file view without a listing deletes the viewer message", async () => {
+    writeFileSync(join(base, "noback.ts"), "const z = 3;\n");
+    const { browser, edits, deleted, answers } = makeBrowser();
+    // Open a file directly (no prior listing) so it has no back target.
+    await browser.showFile(100, 10, "noback.ts", { messageId: 50 });
+    const backButton = buttons(edits.at(-1)!.opts).find((b) => b.callback_data === "fs:u");
+    expect(backButton).toBeUndefined(); // no Atrás button is shown without back
+    // Simulate a stale back callback anyway: it must close, not toast.
+    await browser.handleCallback(callback(50, "fs:u", "cb-back-noback"));
+    expect(deleted).toContain(50);
+    expect(answers.some((a) => /previous listing/i.test(String(a ?? "")))).toBe(false);
   });
 });

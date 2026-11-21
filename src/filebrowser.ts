@@ -613,6 +613,14 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         }
         if (view.kind === "file" || view.kind === "summary") {
           if (!view.back) {
+            // No listing to return to: close the viewer instead of leaving a
+            // dead keyboard with a "No previous listing" toast.
+            if (messageId !== undefined) {
+              await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
+              await tg.deleteMessage(chatId, messageId).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
+              views.delete(`${chatId}:${messageId}`);
+              return true;
+            }
             await tg.answerCallbackQuery(cq.id, "No previous listing").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
             return true;
           }
@@ -635,6 +643,14 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
           return true;
         }
         if (!view.dir) {
+          // Already at the root: close the viewer rather than leaving a dead
+          // "Up" keyboard and a confusing toast.
+          if (messageId !== undefined) {
+            await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
+            await tg.deleteMessage(chatId, messageId).catch((err) => console.warn("[filebrowser]", err?.message ?? err));
+            views.delete(`${chatId}:${messageId}`);
+            return true;
+          }
           await tg.answerCallbackQuery(cq.id, "Already at the root").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
           return true;
         }

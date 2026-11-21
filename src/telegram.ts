@@ -364,7 +364,10 @@ export class TelegramClient {
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
     if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
     const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(html));
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: safe }, ...opts }).catch((err) => {
+    // editMessageText must not carry message_thread_id: Telegram rejects it
+    // with a 400 because the message_id already identifies the topic message.
+    const { message_thread_id: _threadId, ...editOpts } = opts;
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { html: safe }, ...editOpts }).catch((err) => {
       const msg = String(err);
       const m = msg.match(/retry after (\d+)/i);
       if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
@@ -399,7 +402,8 @@ export class TelegramClient {
   editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {
     if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
     const safe = sanitizeUtf8(markdown);
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown: safe }, ...opts }).catch((err) => {
+    const { message_thread_id: _threadId, ...editOpts } = opts;
+    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown: safe }, ...editOpts }).catch((err) => {
       const msg = String(err);
       const m = msg.match(/retry after (\d+)/i);
       if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
