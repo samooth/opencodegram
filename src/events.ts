@@ -400,6 +400,14 @@ const handleSessionStepEnded: EventHandler = async (event, deps) => {
   if (chatId === undefined) return;
   const s = _s0;
   if (!s) return;
+  // Capture the model on the step event too: finishStatus records the turn stat
+  // here, and restored sessions have s.model undefined (→ "unknown/unknown").
+  const stepModel = e.data?.model as { id?: string; providerID?: string } | undefined;
+  const stepModelId = (e.data?.modelID as string | undefined) ?? stepModel?.id;
+  const stepProvider = (e.data?.providerID as string | undefined) ?? stepModel?.providerID;
+  if (stepModelId && stepProvider && s.model?.id !== stepModelId) {
+    s.model = { id: stepModelId, providerID: stepProvider };
+  }
   const usage = e.data?.tokens as
     | { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } }
     | undefined;
@@ -538,6 +546,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         await tg.setMessageReaction(chatId, s.transcriptMessageId, "🎉").catch((err) => console.warn("[events] celebration failed", err?.message ?? err));
       }
     }
+    // Some OpenCode builds put the model on the event itself; capture it as a
+    // fallback in case message.get fails below.
+    const evModel = e.data?.model as { id?: string; providerID?: string } | undefined;
+    if (!s.model && evModel?.id && evModel?.providerID) {
+      s.model = { id: evModel.id, providerID: evModel.providerID };
+    }
     endedText = String(e.data?.text ?? "").trim();
     let finalText = endedText || s.buffer || "(empty response)";
     let elapsed = 0;
@@ -555,6 +569,15 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           // Prefer the API's streamed→completed window (OpenCode 2.3.0 metric).
           const start = t.streamed || streamedAt || t.created;
           if (start && t.completed > start) elapsed = (t.completed - start) / 1000;
+        }
+        // The assistant message carries the authoritative model for this turn.
+        // Sessions restored from disk have s.model undefined, which previously
+        // logged every such turn as "unknown/unknown" in stats.
+        const mi = m as { modelID?: string; providerID?: string; model?: { id?: string; providerID?: string } };
+        const resolvedModel = mi.modelID ?? mi.model?.id;
+        const resolvedProvider = mi.providerID ?? mi.model?.providerID;
+        if (resolvedModel && resolvedProvider && s.model?.id !== resolvedModel) {
+          s.model = { id: resolvedModel, providerID: resolvedProvider };
         }
       }
     } catch {

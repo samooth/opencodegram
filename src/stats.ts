@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDatabase } from "./db.js";
@@ -472,8 +472,67 @@ function dayKey(ts: number): string {
 }
 
 /** Read and aggregate the turn history. */
+const backfilledDirs = new Set<string>();
+
+/**
+ * One-time repair for rows logged as "unknown/unknown" before the model was
+ * captured from the assistant message. The transcript's `meta` blocks contain
+ * the real model (`⚡ provider/model (variant) · N tok/s`), so we recover it
+ * from there. Runs once per data directory.
+ */
+function backfillUnknownModels(dataDir: string): void {
+  if (backfilledDirs.has(dataDir)) return;
+  backfilledDirs.add(dataDir);
+  const db = getDatabase(dataDir);
+  const unknown = db.query(
+    "SELECT DISTINCT session_id FROM turn_stats WHERE provider_id='unknown' OR model_id='unknown'",
+  ).all() as Array<{ session_id: string }>;
+  if (!unknown.length) return;
+  const transcriptsDir = join(dataDir, "transcripts");
+  if (!existsSync(transcriptsDir)) return;
+
+  // Build session -> last model seen in its transcript meta blocks.
+  const modelBySession = new Map<string, { providerID: string; modelID: string; variant?: string }>();
+  for (const file of readdirSync(transcriptsDir)) {
+    if (!file.endsWith(".json")) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(join(transcriptsDir, file), "utf8"));
+      const blocks = Array.isArray(parsed) ? parsed : Object.values(parsed);
+      for (const block of blocks) {
+        const b = block as { kind?: string; text?: string };
+        if (b.kind !== "meta" || typeof b.text !== "string") continue;
+        // ⚡ provider/model (variant) · N tok/s
+        const match = b.text.match(/⚡\s+([^\s(·]+?)(?:\s+\(([^)]+)\))?\s*·/);
+        if (!match) continue;
+        const full = match[1]; // e.g. "kilo/reflection/beam-free" or "opencode/hy4-flash-free"
+        const slash = full.indexOf("/");
+        if (slash <= 0) continue;
+        const providerID = full.slice(0, slash);
+        const modelID = full.slice(slash + 1);
+        modelBySession.set(file.replace(/\.json$/, ""), { providerID, modelID, variant: match[2] });
+      }
+    } catch {
+      // Skip unreadable transcripts.
+    }
+  }
+  const tx = db.transaction(() => {
+    for (const { session_id } of unknown) {
+      const m = modelBySession.get(session_id);
+      if (m) {
+        db.run(
+          "UPDATE turn_stats SET provider_id = ?, model_id = ?, variant = ? WHERE session_id = ? AND (provider_id='unknown' OR model_id='unknown')",
+          m.providerID, m.modelID, m.variant ?? null, session_id,
+        );
+      }
+    }
+  });
+  tx();
+}
+
 export function collectStats(filter: StatsFilter = {}): StatsData {
-  const db = getDatabase(filter.dataDir);
+  const dir = filter.dataDir ?? join(process.cwd(), "data");
+  backfillUnknownModels(dir);
+  const db = getDatabase(dir);
   const period = filter.period ?? "7d";
   const scope = filter.scope ?? "chat";
   const since = periodStart(period, filter.now);

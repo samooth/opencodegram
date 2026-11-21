@@ -152,3 +152,28 @@ describe("text.ended final delivery", () => {
     expect(sent.length).toBeGreaterThan(afterFirst);
   });
 });
+
+describe("model capture in stats", () => {
+  test("captures model from the assistant message when session has no model", async () => {
+    const { deps, store } = makeDeps();
+    // Make message.get return a model (restored session has no s.model).
+    (deps.oc as any).client.session.message.get = async () => ({
+      modelID: "glyph-cluster", providerID: "kilo", time: { completed: Date.now() },
+    });
+    const session = {
+      sessionId: "ses_model", buffer: "answer", reasoningBuffer: "", toolCalls: [], toolCallDetails: [],
+      stopped: false, targetChatId: 100, promptStartTime: Date.now() - 5000, statusFinished: false,
+    } as any;
+    store.sessionsById.set("ses_model", session);
+    store.chatBySession.set("ses_model", 100);
+
+    await handleEvent({ type: "session.text.ended", data: {
+      sessionID: "ses_model", assistantMessageID: "m1", text: "answer",
+    } }, deps);
+
+    // The session now knows its model, so subsequent stats use it (not unknown).
+    expect(session.model).toBeDefined();
+    expect(session.model.providerID).toBe("kilo");
+    expect(session.model.id).toBe("glyph-cluster");
+  });
+});
