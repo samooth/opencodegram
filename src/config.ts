@@ -19,6 +19,12 @@ const schema = z.object({
   DEBUG: z.string().optional(),
   OPS_PORT: z.coerce.number().int().positive().default(9090),
   OPS_HOST: z.string().default("127.0.0.1"),
+  /**
+   * Optional token for /health, /metrics and /ready. Required when OPS_HOST is
+   * not a loopback address (the endpoints otherwise expose sessions/metrics).
+   * Send it as `Authorization: Bearer <token>` or `?token=<token>`.
+   */
+  OPS_AUTH_TOKEN: z.string().min(8).optional(),
   /** P2: shared token for the private Mission Control web app (disabled if unset). */
   WEB_APP_TOKEN: z.string().min(8).optional(),
   WEB_APP_TITLE: z.string().default("Mission Control"),

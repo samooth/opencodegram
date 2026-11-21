@@ -423,17 +423,35 @@ export class TelegramClient {
 
   private answeredCallbacks = new Set<string>();
 
-  answerCallbackQuery(callbackQueryId: string, text?: string, opts: { show_alert?: boolean } = {}): Promise<boolean> {
-    if (this.answeredCallbacks.has(callbackQueryId)) return Promise.resolve(true);
-    const result = this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, text, ...opts });
-    result.then(() => {
-      this.answeredCallbacks.add(callbackQueryId);
-      if (this.answeredCallbacks.size > 5000) {
-        const oldest = this.answeredCallbacks.values().next().value;
-        if (oldest !== undefined) this.answeredCallbacks.delete(oldest);
+  async answerCallbackQuery(callbackQueryId: string, text?: string, opts: { show_alert?: boolean } = {}): Promise<boolean> {
+    if (this.answeredCallbacks.has(callbackQueryId)) return true;
+    const body = { callback_query_id: callbackQueryId, text, ...opts };
+    // A tap expires within seconds. Retry a dropped ack briefly (network /
+    // 5xx), but never sleep long enough to outlive the query. Dedup is only
+    // recorded after success, so a failed ack can be retried by the caller.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await this.call<boolean>("answerCallbackQuery", body);
+        this.rememberAnswered(callbackQueryId);
+        return result;
+      } catch (err) {
+        lastError = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        // Deterministic rejection (unknown/expired query) is not retryable.
+        if (/query is too old|query id is invalid|not found/i.test(msg)) break;
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
       }
-    }).catch(() => { /* allow retry on network failure */ });
-    return result;
+    }
+    throw lastError;
+  }
+
+  private rememberAnswered(callbackQueryId: string): void {
+    this.answeredCallbacks.add(callbackQueryId);
+    if (this.answeredCallbacks.size > 5000) {
+      const oldest = this.answeredCallbacks.values().next().value;
+      if (oldest !== undefined) this.answeredCallbacks.delete(oldest);
+    }
   }
 
   createForumTopic(chatId: number, name: string, iconEmojiId?: string): Promise<{ message_thread_id: number; name: string }> {

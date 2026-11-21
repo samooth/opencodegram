@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { statfsSync } from "node:fs";
 import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
@@ -69,6 +69,11 @@ export function createOpsServer(deps: {
   const port = config.OPS_PORT;
   const guardPath = config.DISK_GUARD_PATH ?? process.cwd();
   const minFreeBytes = config.DISK_GUARD_MIN_FREE_MB * 1024 * 1024;
+  // Bind to a non-loopback host (0.0.0.0, a LAN IP, …) and no token configured
+  // -> protect the diagnostic endpoints rather than exposing them publicly.
+  const loopbackHost = host === "127.0.0.1" || host === "::1" || host === "localhost";
+  const opsToken = config.OPS_AUTH_TOKEN;
+  const authRequired = !loopbackHost;
   let lastDiskAlert = 0;
   let listening = false;
   let boundPort: number | undefined;
@@ -103,8 +108,27 @@ export function createOpsServer(deps: {
   checkDisk();
   const interval = setInterval(checkDisk, 5 * 60 * 1000);
 
+  const authorized = (request: IncomingMessage, url: URL): boolean => {
+    if (!authRequired) return true;
+    if (!opsToken) {
+      console.warn("[ops] OPS_HOST is not loopback and OPS_AUTH_TOKEN is unset: refusing diagnostic requests");
+      return false;
+    }
+    const header = request.headers.authorization;
+    const bearer = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    return bearer === opsToken || url.searchParams.get("token") === opsToken;
+  };
+  const unauthorized = (response: ServerResponse): void => {
+    response.statusCode = 401;
+    response.setHeader("WWW-Authenticate", "Bearer");
+    response.end("Unauthorized");
+  };
+
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    if (url.pathname === "/health" || url.pathname === "/metrics" || url.pathname === "/ready") {
+      if (!authorized(request, url)) { unauthorized(response); return; }
+    }
     if (url.pathname === "/health") {
       const ocInfo = await oc.serverInfo().catch(() => null);
       const disk = diskInfo();

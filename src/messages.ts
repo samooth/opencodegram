@@ -43,6 +43,27 @@ export async function downloadAttachments(
 
   let mediaToAttach: Array<{ uri: string; name: string; source?: { type: string; uri: string } }> = [];
   const voiceAttachments: Array<{ uri: string; name: string }> = [];
+  // Downloaded attachments are handed to OpenCode as file:// URIs. Keep only
+  // known-safe extensions; anything else (executables, scripts, unknown) is
+  // stored as .bin so it can never be mistaken for something runnable.
+  const SAFE_ATTACHMENT_EXT = new Set([
+    "txt", "md", "markdown", "json", "jsonl", "csv", "tsv", "yaml", "yml", "toml", "xml", "html", "htm", "css",
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "rtf", "epub",
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "heic",
+    "mp3", "wav", "ogg", "oga", "m4a", "aac", "flac", "opus", "webm", "mp4", "mov", "avi", "mkv",
+    "zip", "gz", "tar", "bz2", "xz", "7z", "tgz",
+    "log", "patch", "diff", "sql", "proto", "graphql", "ipynb",
+  ]);
+  const safeAttachmentName = (raw: string, fileId: string): string => {
+    let name = basename(raw).replace(/[\0-\x1f\x7f]/g, "").slice(0, 120);
+    if (!name || name === "." || name === "..") return `${fileId}.bin`;
+    const dot = name.lastIndexOf(".");
+    const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+    if (!SAFE_ATTACHMENT_EXT.has(ext)) {
+      name = `${name.slice(0, dot > 0 ? dot : name.length)}.bin`;
+    }
+    return name;
+  };
   const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
   const downloadOne = async (fileId: string, suggestedName: string) => {
     const info = await tg.getFile(fileId);
@@ -60,8 +81,8 @@ export async function downloadAttachments(
     const dir = join("/tmp/opencode/attachments", String(chatId));
     await mkdir(dir, { recursive: true });
     const rawName = suggestedName || info.file_path.split("/").pop() || `${fileId}.bin`;
-    const name = basename(rawName).replace(/\0/g, "") || `${fileId}.bin`;
-    const path = join(dir, name === "." || name === ".." ? `${fileId}.bin` : name);
+    const name = safeAttachmentName(rawName, fileId);
+    const path = join(dir, name);
     await writeFile(path, buf);
     return { uri: `file://${path}`, name, source: { type: "uri", uri: `file://${path}` } };
   };

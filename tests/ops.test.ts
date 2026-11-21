@@ -103,3 +103,67 @@ describe("ops server", () => {
     }
   });
 });
+
+describe("ops auth on non-loopback hosts", () => {
+  test("requires a token on /health, /metrics and /ready when OPS_HOST is not loopback", async () => {
+    const server = createOpsServer({
+      config: {
+        OPS_HOST: "0.0.0.0",
+        OPS_PORT: 0,
+        DISK_GUARD_PATH: root,
+        DISK_GUARD_MIN_FREE_MB: 0,
+        OPS_AUTH_TOKEN: "supersecrettoken",
+      } as any,
+      oc: { serverInfo: async () => ({ version: "test" }) } as any,
+      store: { sessionsById: new Map() } as any,
+      metrics: new MetricsStore(),
+    });
+    // Bind uses 0.0.0.0 but is reachable via localhost.
+    const port = server.port();
+    if (!port) {
+      // wait for the bound port
+      await new Promise<void>((r) => setTimeout(r, 50));
+    }
+    const p = server.port();
+    expect(p).toBeGreaterThan(0);
+
+    const noToken = await fetch(`http://127.0.0.1:${p}/health`);
+    expect(noToken.status).toBe(401);
+    expect(noToken.headers.get("www-authenticate")).toContain("Bearer");
+
+    const badToken = await fetch(`http://127.0.0.1:${p}/health?token=wrong`);
+    expect(badToken.status).toBe(401);
+
+    const good = await fetch(`http://127.0.0.1:${p}/health?token=supersecrettoken`);
+    expect(good.status).toBe(200);
+
+    const bearer = await fetch(`http://127.0.0.1:${p}/metrics`, {
+      headers: { authorization: "Bearer supersecrettoken" },
+    });
+    expect(bearer.status).toBe(200);
+
+    const ready = await fetch(`http://127.0.0.1:${p}/ready?token=supersecrettoken`);
+    expect(ready.status).toBe(200);
+    server.stop();
+  });
+
+  test("refuses diagnostics when non-loopback and no token is configured", async () => {
+    const server = createOpsServer({
+      config: {
+        OPS_HOST: "0.0.0.0",
+        OPS_PORT: 0,
+        DISK_GUARD_PATH: root,
+        DISK_GUARD_MIN_FREE_MB: 0,
+      } as any,
+      oc: { serverInfo: async () => ({ version: "test" }) } as any,
+      store: { sessionsById: new Map() } as any,
+      metrics: new MetricsStore(),
+    });
+    await new Promise<void>((r) => setTimeout(r, 50));
+    const p = server.port();
+    expect(p).toBeGreaterThan(0);
+    const res = await fetch(`http://127.0.0.1:${p}/health`);
+    expect(res.status).toBe(401);
+    server.stop();
+  });
+});

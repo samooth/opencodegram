@@ -42,10 +42,10 @@ describe("resource theme consistency", () => {
     s.contextWindow = 1_000_000;
     s.cardTheme = "auto";
     const html = renderResourceBlock(s, { theme: "light" });
-    expect(html).toContain("CPU ▰");
-    expect(html).toContain("RAM ▰");
-    expect(html).toContain("CTX ▰");
-    expect(html).not.toContain("CPU ▓");
+    // RAM/CTX have non-zero values so their bars must use the light glyph set.
+    expect(html).toMatch(/RAM ▰/);
+    expect(html).toMatch(/CTX ▰/);
+    expect(html).not.toMatch(/[▓░]/);
     expect(s.cardTheme).toBe("auto");
   });
 });

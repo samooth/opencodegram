@@ -76,16 +76,16 @@
 - [ ] Adaptación de tema claro/oscuro a preferencias de Telegram.
 
 ### C. Seguridad (residuales)
-- [ ] Mitigar DNS rebinding en `/mcp read` (fijar IP tras lookup).
-- [ ] Reintentar acks fallidos por red.
+- [x] Mitigar DNS rebinding en `/mcp read` (fijar IP tras lookup; verificado en `mcp.ts`).
+- [x] Reintentar acks fallidos por red (`answerCallbackQuery` con 3 intentos y backoff).
 - [ ] Códigos de un solo uso para la web app privada en lugar de token en URL.
-- [ ] Auth opcional en `/health`/`/metrics` cuando `OPS_HOST != 127.0.0.1`.
+- [x] Auth opcional en `/health`/`/metrics` cuando `OPS_HOST != 127.0.0.1` (`OPS_AUTH_TOKEN`).
 
 ### D. Arquitectura y limpieza
 - [ ] Reducir más `status.ts` (extraer helpers restantes).
-- [ ] Validar paths en `downloadOne` (whitelist de extensiones).
-- [ ] Rate limiting por usuario (opt-in, ya existe flag global).
-- [ ] Documentar módulos `config/doctor/opencode/persist` y `commands/*` en AGENTS.md.
+- [x] Validar paths en `downloadOne` (whitelist de extensiones → `.bin` para desconocidas).
+- [x] Rate limiting por usuario (opt-in, ya existe flag global `USER_RATE_LIMIT_ENABLED`).
+- [x] Documentar módulos `config/doctor/opencode/persist` y `commands/*` en AGENTS.md (tabla ampliada con `stats.ts`, `widgets.ts`).
 
 ### E. SQLite + UX 100% por botones (0.4.0) — completado
 - [x] Crear `src/db.ts`: una sola BD `data/opencodegram.db` (WAL) con tabla `kv_state` para estado JSON y esquema relacional de permisos.

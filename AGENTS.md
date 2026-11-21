@@ -51,6 +51,9 @@ temporales pequeños y límpialos al terminar.
 - `OPENCODE_BASE_URL` (default `http://127.0.0.1:49374`)
 - `OPENCODE_DIRECTORY` (optional session directory)
 - `REPOS_DIRECTORY` (optional folder containing repositories; enables choosing a repo when creating a session)
+- `OPS_HOST`, `OPS_PORT` (health/metrics bind; default `127.0.0.1:9090`).
+  `OPS_AUTH_TOKEN` (optional; required for `/health`, `/metrics`, `/ready` when
+  `OPS_HOST` is not loopback — send as `Authorization: Bearer` or `?token=`)
 - `WEB_APP_TOKEN` (optional; enables the private Mission Control web app at
   `OPS_HOST:OPS_PORT/app?token=…`; disabled when unset)
 - `WEB_APP_TITLE` (default `Mission Control`)
@@ -115,6 +118,9 @@ Main modules:
 | `types.ts` | Shared types (`ChatSession`, etc.) |
 | `vcs.ts` | VCS and worktree helpers |
 | `webhook.ts` | Optional webhook server |
+| `stats.ts` | Per-turn SQLite stats, provider/model aggregates, tool breakdown, Telegram panel and portable HTML report |
+| `commands/stats.ts` | `/stats` command with period/scope filters and HTML export |
+| `widgets.ts` | Telegram widget support: resource-monitor widget, `widget_query` handling and HTML template |
 
 ## Routing invariants
 
