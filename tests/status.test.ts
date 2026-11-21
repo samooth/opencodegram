@@ -183,7 +183,7 @@ describe("live virtual shell", () => {
     expect(html).toContain("$ bun test");
   });
 
-  test("does not refloat when showTools keeps the single live message", async () => {
+  test("refloats a new card per turn when cardBehavior is refloat, even with showTools", async () => {
     let refloats = 0;
     const transcript = {
       publish: async () => 1, addBlock: () => {},
@@ -198,7 +198,7 @@ describe("live virtual shell", () => {
     } as any);
     const s = makeSession({ statusFinished: false });
     await status.startStatus(7, s);
-    expect(refloats).toBe(0);
+    expect(refloats).toBe(1);
   });
 });
 
