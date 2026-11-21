@@ -121,6 +121,7 @@ Main modules:
 | `stats.ts` | Per-turn SQLite stats, provider/model aggregates, tool breakdown, Telegram panel and portable HTML report |
 | `commands/stats.ts` | `/stats` command with period/scope filters and HTML export |
 | `widgets.ts` | Telegram widget support: resource-monitor widget, `widget_query` handling and HTML template |
+| `webauth.ts` | Single-use codes and short-lived session cookies for the private web app |
 
 ## Routing invariants
 

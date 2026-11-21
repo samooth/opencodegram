@@ -24,5 +24,15 @@ export const logger = {
     const suffix = data === undefined ? "" : ` ${typeof data === "string" ? data : JSON.stringify(data).slice(0, 200)}`;
     console.log(`[bc][${cat}] ${message}${suffix}`);
   },
+  /**
+   * Best-effort operations (reactions, typing, progress edits, cleanup) should
+   * not spam production logs, but a silent `.catch(() => {})` hides real
+   * failures when debugging. This logs at debug level with a label.
+   */
+  ignore(cat: string, label: string) {
+    return (err: unknown): void => {
+      logger.debug(cat, `${label} (ignored):`, err instanceof Error ? err.message : String(err));
+    };
+  },
 };
 export default logger;

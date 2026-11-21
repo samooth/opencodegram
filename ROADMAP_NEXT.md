@@ -78,11 +78,11 @@
 ### C. Seguridad (residuales)
 - [x] Mitigar DNS rebinding en `/mcp read` (fijar IP tras lookup; verificado en `mcp.ts`).
 - [x] Reintentar acks fallidos por red (`answerCallbackQuery` con 3 intentos y backoff).
-- [ ] Códigos de un solo uso para la web app privada en lugar de token en URL.
+- [x] Códigos de un solo uso para la web app (`webauth.ts`): `/web` emite un código canjeable por una cookie HttpOnly; el token estático queda como fallback.
 - [x] Auth opcional en `/health`/`/metrics` cuando `OPS_HOST != 127.0.0.1` (`OPS_AUTH_TOKEN`).
 
 ### D. Arquitectura y limpieza
-- [ ] Reducir más `status.ts` (extraer helpers restantes).
+- [x] Reducir `status.ts`: `renderThinkingBottom`, `renderLatestToolBottom` y `lastReasoning` extraídos a `status-render.ts`.
 - [x] Validar paths en `downloadOne` (whitelist de extensiones → `.bin` para desconocidas).
 - [x] Rate limiting por usuario (opt-in, ya existe flag global `USER_RATE_LIMIT_ENABLED`).
 - [x] Documentar módulos `config/doctor/opencode/persist` y `commands/*` en AGENTS.md (tabla ampliada con `stats.ts`, `widgets.ts`).

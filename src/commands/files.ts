@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import type { BotDeps, SendFn } from "../context.js";
 import { createZipArchive, fileErrorMessage, formatBytes, prepareDocument, treeDirectory } from "../files/index.js";
 import { esc, threadOpts } from "../util.js";
+import { logger } from "../logger.js";
 import { ctx } from "./shared.js";
 import { parseListArgs, parseFindArgs, parseReadArgs } from "./sessions.js";
 
@@ -27,7 +28,7 @@ export async function cmd_file(deps: BotDeps, chatId: number, threadId: number |
           { ...threadOpts(threadId), parse_mode: "HTML" },
         );
       } finally {
-        await C.tg.deleteMessage(chatId, progress.message_id).catch(() => {});
+        await C.tg.deleteMessage(chatId, progress.message_id).catch(logger.ignore("files", "progress cleanup"));
       }
     } catch (err) {
       await send(`❌ ${esc(fileErrorMessage(err))}`);
@@ -79,7 +80,7 @@ export async function cmd_zip(deps: BotDeps, chatId: number, threadId: number | 
     const progress = await C.tg.sendRichMessage(chatId, "🗜 Creating archive…", threadOpts(threadId));
     try {
       archive = await createZipArchive(base, rawPath);
-      await C.tg.editRichMessage(chatId, progress.message_id, `📎 Sending <b>${esc(archive.name)}</b> (${formatBytes(archive.size)})…`, threadOpts(threadId)).catch(() => {});
+      await C.tg.editRichMessage(chatId, progress.message_id, `📎 Sending <b>${esc(archive.name)}</b> (${formatBytes(archive.size)})…`, threadOpts(threadId)).catch(logger.ignore("files", "progress cleanup"));
       await C.tg.sendDocument(
         chatId,
         archive.absolute,
@@ -91,7 +92,7 @@ export async function cmd_zip(deps: BotDeps, chatId: number, threadId: number | 
       await send(`❌ ${esc(fileErrorMessage(err))}`);
     } finally {
       await archive?.cleanup();
-      await C.tg.deleteMessage(chatId, progress.message_id).catch(() => {});
+      await C.tg.deleteMessage(chatId, progress.message_id).catch(logger.ignore("files", "progress cleanup"));
     }
     return true;
   }

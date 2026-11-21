@@ -7,6 +7,7 @@ import { notePromptSent } from "../autoretry.js";
 import { ctx, isRouteAdmin } from "./shared.js";
 import { buildGlobalAllowed } from "../permissions.js";
 import { RESOURCE_WIDGET_HTML } from "../widgets.js";
+import { issueWebCode } from "../webauth.js";
 
 export async function cmd_start(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
@@ -49,11 +50,15 @@ export async function cmd_web(deps: BotDeps, chatId: number, threadId: number | 
     });
     return true;
   }
+  const { code } = issueWebCode(chatId);
   const base = deps.config.WEB_APP_URL ?? `http://${deps.config.OPS_HOST}:${deps.config.OPS_PORT}`;
-  const url = `${base.replace(/\/$/, "")}/app?token=${encodeURIComponent(token)}`;
-  await send(`🎛 <b>${esc(deps.config.WEB_APP_TITLE || "Mission Control")}</b>\n<i>Panel privado con estado de sesiones y métricas en vivo.</i>`, {
-    reply_markup: { inline_keyboard: [[{ text: "🌐 Abrir Mission Control", url }]] },
-  });
+  const url = `${base.replace(/\/$/, "")}/app?code=${encodeURIComponent(code)}`;
+  await send(
+    `🎛 <b>${esc(deps.config.WEB_APP_TITLE || "Mission Control")}</b>\n` +
+    `<i>Panel privado con estado de sesiones y métricas en vivo.</i>\n` +
+    `<i>🔑 Enlace de un solo uso: caduca en 5 min y deja de servir tras abrirlo. No lo compartas.</i>`,
+    { reply_markup: { inline_keyboard: [[{ text: "🌐 Abrir Mission Control", url }]] } },
+  );
   return true;
 }
 

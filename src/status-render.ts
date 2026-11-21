@@ -410,3 +410,41 @@ export function renderTurnReceipt(input: TurnReceiptInput): string {
   return `<p>${lines.join("<br/>")}</p>`;
 }
 
+
+/** Live "thinking" block shown at the bottom while a turn is in progress. */
+export function renderThinkingBottom(s: ChatSession, settings: ChatSettings): string {
+  if (!settings.showThinking || !settings.showLatestThought || !s.reasoningBuffer.trim() || s.stopped) return "";
+  const tail = s.reasoningBuffer.trim().slice(-1600);
+  return `💭 <b>Pensando…</b>\n<blockquote expandable><mark>${markdownToHtml(tail)}</mark></blockquote>`;
+}
+
+/** Live block with the most recent tool call shown at the bottom of the card. */
+export function renderLatestToolBottom(s: ChatSession, settings: ChatSettings): string {
+  if (!settings.showTools || !settings.showLatestTool || !s.toolCallDetails.length) return "";
+  const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
+  const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
+  const shell = isShellTool(lastTool.name);
+  const summary = getToolSummary(lastTool.name, lastTool.input);
+  let displayName = shell ? "Shell" : (lastTool.name || "Herramienta");
+  if (shell || /^bash$/i.test(lastTool.name)) displayName = "Shell";
+
+  let commandText = "";
+  if (shell) {
+    commandText = parseShellCommand(lastTool.input ?? "") ?? (lastTool.input ?? "").trim() ?? lastTool.name;
+  } else {
+    commandText = (summary?.arg ?? (lastTool.input ?? "").trim() ?? lastTool.name).toString();
+  }
+  commandText = commandText.trim();
+  if (commandText.length > 1200) commandText = `${commandText.slice(0, 1200)}\n…`;
+
+  const header = `${statusEmoji} <b>Última herramienta:</b> ${esc(displayName)}`;
+  if (!commandText) return header;
+  return `${header}\n<pre><code>${esc(commandText)}</code></pre>`;
+}
+
+/** Last reasoning chunk accumulated for this turn (COT segments are joined with ---). */
+export function lastReasoning(s: ChatSession): string {
+  const cot = s.cotBuffer?.trim() ?? "";
+  if (!cot) return "";
+  return (cot.split(/\n\n---\n\n/).pop() ?? "").trim();
+}

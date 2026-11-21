@@ -241,7 +241,10 @@ describe("P2 entry points and cost", () => {
     } as any;
     const send: any = async (html: string, opts?: any) => { sent.push({ html, opts }); };
     expect(await misc.cmd_web(deps, 7, undefined, "/web", send)).toBe(true);
-    expect(sent[0].opts.reply_markup.inline_keyboard[0][0].url).toContain("token=secret-token");
+    // /web now issues a single-use code instead of exposing the static token.
+    expect(sent[0].opts.reply_markup.inline_keyboard[0][0].url).toContain("/app?code=");
+    expect(sent[0].opts.reply_markup.inline_keyboard[0][0].url).not.toContain("token=");
+    expect(sent[0].html).toContain("un solo uso");
     sent.length = 0;
     expect(await misc.cmd_web(deps, -100, undefined, "/web", send)).toBe(true);
     expect(sent[0].html).toContain("solo está disponible en chat privado");

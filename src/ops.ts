@@ -9,6 +9,7 @@ import { formatBytes } from "./files/index.js";
 import { esc } from "./util.js";
 import { describeThrottles, throttleTotals } from "./ratethrottle.js";
 import { readGpuInfo } from "./resources.js";
+import { consumeWebCode, issueWebSession, verifyWebSession, WEB_SESSION_COOKIE } from "./webauth.js";
 
 /** P2: self-contained Mission Control page (no external assets or scripts). */
 export function webAppHtml(title: string): string {
@@ -108,6 +109,38 @@ export function createOpsServer(deps: {
   checkDisk();
   const interval = setInterval(checkDisk, 5 * 60 * 1000);
 
+  const sessionToken = (request: IncomingMessage): string | undefined => {
+    const cookie = request.headers.cookie;
+    if (!cookie) return undefined;
+    for (const part of cookie.split(";")) {
+      const [name, ...rest] = part.trim().split("=");
+      if (name === WEB_SESSION_COOKIE) return rest.join("=");
+    }
+    return undefined;
+  };
+  /** Web app access: one-time code exchange, session cookie or legacy token. */
+  const webAppAuthorized = (request: IncomingMessage, url: URL, response: ServerResponse): boolean => {
+    // Exchange a single-use code for a short-lived HttpOnly cookie, then strip
+    // the code from the URL so it cannot be replayed or leak via history.
+    const code = url.searchParams.get("code");
+    if (code && consumeWebCode(code) !== undefined) {
+      const session = issueWebSession();
+      response.setHeader(
+        "Set-Cookie",
+        `${WEB_SESSION_COOKIE}=${session.token}; Path=/app; HttpOnly; SameSite=Strict; Max-Age=${session.maxAge}`,
+      );
+      response.statusCode = 302;
+      response.setHeader("Location", url.pathname);
+      response.end("Redirect");
+      return false;
+    }
+    if (verifyWebSession(sessionToken(request))) return true;
+    const token = config.WEB_APP_TOKEN;
+    if (token && url.searchParams.get("token") === token) return true;
+    response.statusCode = 404;
+    response.end("Not found");
+    return false;
+  };
   const authorized = (request: IncomingMessage, url: URL): boolean => {
     if (!authRequired) return true;
     if (!opsToken) {
@@ -166,25 +199,17 @@ export function createOpsServer(deps: {
       return;
     }
     if (url.pathname === "/app" || url.pathname === "/app/") {
-      // P2: private Mission Control web app. No token configured -> 404 (it
-      // stays completely off unless the admin opts in).
-      const token = config.WEB_APP_TOKEN;
-      if (!token || url.searchParams.get("token") !== token) {
-        response.statusCode = 404;
-        response.end("Not found");
-        return;
-      }
+      // Private Mission Control: single-use code (preferred), session cookie
+      // or legacy static token. Stays off unless admin configured access.
+      if (!webAppAuthorized(request, url, response)) return;
+      response.setHeader("Cache-Control", "no-store");
       response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.end(webAppHtml(config.WEB_APP_TITLE));
+      response.end(webAppHtml(config.WEB_APP_TITLE || "Mission Control"));
       return;
     }
     if (url.pathname === "/app/data.json") {
-      const token = config.WEB_APP_TOKEN;
-      if (!token || url.searchParams.get("token") !== token) {
-        response.statusCode = 404;
-        response.end("Not found");
-        return;
-      }
+      if (!webAppAuthorized(request, url, response)) return;
+      response.setHeader("Cache-Control", "no-store");
       const sessions = [...store.sessionsById.values()].map((s) => ({
         id: s.sessionId,
         model: s.model ? `${s.model.providerID}/${s.model.id}` : undefined,

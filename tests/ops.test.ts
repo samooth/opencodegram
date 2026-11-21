@@ -167,3 +167,46 @@ describe("ops auth on non-loopback hosts", () => {
     server.stop();
   });
 });
+
+describe("web app single-use codes", () => {
+  test("exchanges a code for a session cookie and keeps data.json accessible", async () => {
+    const { issueWebCode } = await import("../src/webauth.js");
+    const server = createOpsServer({
+      config: {
+        OPS_HOST: "127.0.0.1",
+        OPS_PORT: 0,
+        DISK_GUARD_PATH: root,
+        DISK_GUARD_MIN_FREE_MB: 0,
+        WEB_APP_TOKEN: "staticfallbacktoken",
+      } as any,
+      oc: { serverInfo: async () => ({ version: "test" }) } as any,
+      store: { sessionsById: new Map() } as any,
+      metrics: new MetricsStore(),
+    });
+    await new Promise<void>((r) => setTimeout(r, 50));
+    const p = server.port();
+    expect(p).toBeGreaterThan(0);
+    const base = `http://127.0.0.1:${p}`;
+
+    const { code } = issueWebCode(999);
+    // First request with the code: 302 + Set-Cookie, code consumed.
+    const exchange = await fetch(`${base}/app?code=${encodeURIComponent(code)}`, { redirect: "manual" });
+    expect(exchange.status).toBe(302);
+    const setCookie = exchange.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("ocg_session=");
+    expect(setCookie).toContain("HttpOnly");
+    expect(exchange.headers.get("location")).toBe("/app");
+
+    // Replaying the same code is rejected (static token not present) -> 404.
+    const replay = await fetch(`${base}/app?code=${encodeURIComponent(code)}`, { redirect: "manual" });
+    expect(replay.status).toBe(404);
+
+    const cookie = setCookie.split(";")[0];
+    const page = await fetch(`${base}/app`, { headers: { cookie } });
+    expect(page.status).toBe(200);
+    const data = await fetch(`${base}/app/data.json`, { headers: { cookie } });
+    expect(data.status).toBe(200);
+
+    server.stop();
+  });
+});

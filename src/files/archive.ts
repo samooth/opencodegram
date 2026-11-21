@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { basename, join } from "node:path";
+import { logger } from "../logger.js";
 import {
   resolveSafePath,
   FileAccessError,
@@ -44,18 +45,18 @@ export async function createZipArchive(
       { cwd: safe.base },
     );
   } catch (err) {
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(logger.ignore("archive", "temp cleanup"));
     const message = err instanceof Error ? err.message : String(err);
     throw new FileAccessError("invalid", `Could not create archive: ${message}`);
   }
 
   const archiveStat = await stat(archivePath).catch(() => null);
   if (!archiveStat) {
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(logger.ignore("archive", "temp cleanup"));
     throw new FileAccessError("not_found", "Archive was not created.");
   }
   if (archiveStat.size > maxBytes) {
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(logger.ignore("archive", "temp cleanup"));
     throw new FileAccessError("too_large", `Archive too large (${formatBytes(archiveStat.size)}; limit ${formatBytes(maxBytes)}).`);
   }
 
@@ -64,7 +65,7 @@ export async function createZipArchive(
     name: archiveName,
     size: archiveStat.size,
     cleanup: async () => {
-      await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      await rm(tmpDir, { recursive: true, force: true }).catch(logger.ignore("archive", "temp cleanup"));
     },
   };
 }

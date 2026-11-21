@@ -119,7 +119,7 @@ export async function downloadAttachments(
         const transcript = await transcribeFileStreaming(filePath, config, async (partial) => {
           if (progressMsg?.message_id) {
             const text = `🎤 Transcribiendo…\n<blockquote>${esc(clampText(partial, 3500))}</blockquote>`;
-            await tg.editRichMessage(chatId, progressMsg.message_id, text, { parse_mode: "HTML" }).catch(() => {});
+            await tg.editRichMessage(chatId, progressMsg.message_id, text, { parse_mode: "HTML" }).catch(logger.ignore("messages", "voice progress edit"));
           }
         });
         if (transcript) transcripts.push(transcript);
@@ -127,7 +127,7 @@ export async function downloadAttachments(
       if (transcripts.length) {
         voiceTranscript = transcripts.join("\n\n");
         if (progressMsg?.message_id) {
-          await tg.editRichMessage(chatId, progressMsg.message_id, `📝 Transcript:\n${clampText(voiceTranscript, 3500)}`, { parse_mode: "HTML" }).catch(() => {});
+          await tg.editRichMessage(chatId, progressMsg.message_id, `📝 Transcript:\n${clampText(voiceTranscript, 3500)}`, { parse_mode: "HTML" }).catch(logger.ignore("messages", "voice transcript edit"));
         } else {
           await send(`📝 Transcript:\n${clampText(voiceTranscript, 3500)}`);
         }

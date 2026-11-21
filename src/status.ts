@@ -16,40 +16,11 @@ import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, parseShellCommand, parseToolInput, relativeEditPath, renderShell, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderShell, renderThinkingBottom, renderLatestToolBottom, renderTools, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps, truncateText } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
 export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard, mcpEvents }: StatusDeps) {
-  const renderThinkingBottom = (s: ChatSession, settings: ChatSettings): string => {
-    if (!settings.showThinking || !settings.showLatestThought || !s.reasoningBuffer.trim() || s.stopped) return "";
-    const tail = s.reasoningBuffer.trim().slice(-1600);
-    return `💭 <b>Pensando…</b>\n<blockquote expandable><mark>${markdownToHtml(tail)}</mark></blockquote>`;
-  };
-
-  const renderLatestToolBottom = (s: ChatSession, settings: ChatSettings): string => {
-    if (!settings.showTools || !settings.showLatestTool || !s.toolCallDetails.length) return "";
-    const lastTool = s.toolCallDetails[s.toolCallDetails.length - 1];
-    const statusEmoji = lastTool.status === "success" ? "✅" : lastTool.status === "failed" ? "❌" : "⏳";
-    const shell = isShellTool(lastTool.name);
-    const summary = getToolSummary(lastTool.name, lastTool.input);
-    let displayName = shell ? "Shell" : (lastTool.name || "Herramienta");
-    if (shell || /^bash$/i.test(lastTool.name)) displayName = "Shell";
-
-    let commandText = "";
-    if (shell) {
-      commandText = parseShellCommand(lastTool.input ?? "") ?? (lastTool.input ?? "").trim() ?? lastTool.name;
-    } else {
-      commandText = (summary?.arg ?? (lastTool.input ?? "").trim() ?? lastTool.name).toString();
-    }
-    commandText = commandText.trim();
-    if (commandText.length > 1200) commandText = `${commandText.slice(0, 1200)}\n…`;
-
-    const header = `${statusEmoji} <b>Última herramienta:</b> ${esc(displayName)}`;
-    if (!commandText) return header;
-    return `${header}\n<pre><code>${esc(commandText)}</code></pre>`;
-  };
-
   /**
    * Live strip for the session card. Latest tool and thought are shown at the
    * bottom of the message (above resource indicators) for readability.
@@ -122,13 +93,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     };
   };
 
-
-  /** Last reasoning chunk accumulated for this turn (COT segments are joined with ---). */
-  const lastReasoning = (s: ChatSession): string => {
-    const cot = s.cotBuffer?.trim() ?? "";
-    if (!cot) return "";
-    return (cot.split(/\n\n---\n\n/).pop() ?? "").trim();
-  };
 
   /**
    * Finished card strip. The reading order follows /settings:
