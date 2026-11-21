@@ -921,8 +921,6 @@ export function buildHtmlReport(data: StatsData, opts: ReportOpts): string {
     : "Sin actividad";
   const scopeLabel = opts.scope === "all" ? "Todos los chats" : "Este chat";
   const top = data.models[0];
-  const totalTests = t.testRuns;
-  const testsOk = t.testOk;
   const kpis = [
     kpi("Turnos", int(t.turns), `${int(t.ok)} ok · ${int(t.errors)} error · ${int(t.stopped)} detenidos`),
     kpi("Tasa de éxito", pct(t.successRate), `${int(t.turns - t.ok)} turnos no completados`, t.successRate >= 95 ? "good" : t.successRate >= 80 ? "warn" : "bad"),

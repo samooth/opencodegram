@@ -4,8 +4,8 @@ import type { SessionStore } from "./store.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
-import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { clampText, contextUsage, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
+import { isEditTool, editStats } from "./editutil.js";
+import { contextUsage, esc, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
 
 export function truncateText(text: string, max: number): string {

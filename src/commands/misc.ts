@@ -5,7 +5,6 @@ import { esc, truncate } from "../util.js";
 import { renderTodos } from "../todos.js";
 import { notePromptSent } from "../autoretry.js";
 import { ctx, isRouteAdmin } from "./shared.js";
-import { buildGlobalAllowed } from "../permissions.js";
 import { RESOURCE_WIDGET_HTML } from "../widgets.js";
 import { issueWebCode } from "../webauth.js";
 
@@ -326,7 +325,6 @@ export async function cmd_cancel(deps: BotDeps, chatId: number, threadId: number
 }
 
 export async function cmd_permissions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
-  const C = ctx(deps);
   const routeKey = deps.store.routeKey(chatId, threadId);
   const globalAdmin = deps.config.ADMIN_TELEGRAM_USER_ID;
   const isAdmin = deps.permissions

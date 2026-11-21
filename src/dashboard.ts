@@ -1,5 +1,5 @@
 import type { OpenCodeBridge } from "./opencode.js";
-import type { InlineButton, InlineKeyboard } from "./apitypes.js";
+import type { InlineKeyboard } from "./apitypes.js";
 import type { ChatSession } from "./types.js";
 import type { SessionStore } from "./store.js";
 import type { SettingsStore } from "./settings.js";

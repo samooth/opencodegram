@@ -3,10 +3,6 @@ import { ctx, isRouteAdmin } from "./shared.js";
 import { collectStats, renderStatsPanel, writeStatsReport, type StatsPeriod, type StatsScope } from "../stats.js";
 import { esc, threadOpts } from "../util.js";
 
-function parsePeriod(token: string | undefined): StatsPeriod {
-  return token === "30d" || token === "all" ? (token as StatsPeriod) : "7d";
-}
-
 export async function cmd_stats(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   const args = text.slice("/stats".length).trim().split(/\s+/).filter(Boolean);

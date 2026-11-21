@@ -670,7 +670,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await sendAsDocument(chatId, threadId, view.base, entry.path);
         return true;
       },
-      "fs:p:": async (view, chatId, threadId, messageId, cq, data) => {
+      "fs:p:": async (view, _chatId, threadId, messageId, cq, data) => {
         const pageMatch = data.match(/^fs:p:(\d+)$/);
         if (!pageMatch) {
           await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));
@@ -685,7 +685,7 @@ export function createFileBrowser({ tg, config, getActiveSession, getSettings }:
         await render({ ...view, page }, messageId);
         return true;
       },
-      "fs:e:": async (view, chatId, threadId, messageId, cq, data) => {
+      "fs:e:": async (view, _chatId, threadId, messageId, cq, data) => {
         const entryMatch = data.match(/^fs:e:(\d+)$/);
         if (!entryMatch) {
           await tg.answerCallbackQuery(cq.id, "Unknown file action").catch((err) => console.warn("[filebrowser]", err?.message ?? err));

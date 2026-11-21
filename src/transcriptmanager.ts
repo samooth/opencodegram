@@ -274,14 +274,6 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     };
   };
 
-  /** Kind label for the history export. */
-  const kindLabel: Record<TranscriptKind, string> = {
-    thinking: "💭 Pensamiento",
-    tools: "🔧 Herramienta",
-    answer: "💬 Respuesta",
-    meta: "ℹ️ Meta",
-  };
-
   /**
    * Full transcript as a standalone HTML document, for the 📜 Historial
    * action. Includes every block (even those trimmed from the card pages) and,

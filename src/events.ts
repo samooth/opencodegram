@@ -226,8 +226,34 @@ const handleSessionToolFailed: EventHandler = async (event, deps) =>
     if (s.activity) finishTool(s.activity, detail.id, false);
   });
 
-const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
+/**
+ * Shared notice for compaction start/end/failure: update the live card when
+ * there is one, otherwise send a standalone message and remember it. Keeps the
+ * session-present / session-missing branches from being duplicated 4×.
+ */
+async function compactionNotice(
+  deps: EventsDeps,
+  s: ChatSession | undefined,
+  sessionId: string,
+  chatId: number,
+  threadId: number | undefined,
+  text: string,
+): Promise<void> {
   const { tg, store, updateStatus } = deps;
+  if (s?.statusMessageId) {
+    updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
+    return;
+  }
+  const message = await tg.sendRichMessage(
+    chatId,
+    sessionHeader(s ?? null, sessionId) + text,
+    threadOpts(threadId),
+  ).catch(() => undefined);
+  if (message?.message_id) store.rememberMessageSession(chatId, message.message_id, sessionId);
+}
+
+const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
+  const { store } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
   const e = event as { type: string; data?: Record<string, unknown> };
   const sessionId = e.data?.sessionID as string | undefined;
@@ -240,17 +266,8 @@ const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
     s.compacting = true;
     s.compactionError = undefined;
     s.compactionSummary = undefined;
-    if (s && s.statusMessageId) updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-    else {
-      const threadId = resolveThreadId(sessionId);
-      const _cm = await tg.sendRichMessage(chatId, sessionHeader(s) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => undefined);
-      if (_cm?.message_id) store.rememberMessageSession(chatId, _cm.message_id, sessionId);
-    }
-  } else {
-    const threadId = resolveThreadId(sessionId);
-    const _cm2 = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + "📦 <b>Compacting context…</b>", threadOpts(threadId)).catch(() => undefined);
-    if (_cm2?.message_id) store.rememberMessageSession(chatId, _cm2.message_id, sessionId);
   }
+  await compactionNotice(deps, s, sessionId!, chatId, resolveThreadId(sessionId), "📦 <b>Compacting context…</b>");
 };
 
 const handleSessionCompactionDelta: EventHandler = async (event, deps) => {
@@ -269,7 +286,7 @@ const handleSessionCompactionDelta: EventHandler = async (event, deps) => {
 };
 
 const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
-  const { tg, store, updateStatus } = deps;
+  const { store } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
   const e = event as { type: string; data?: Record<string, unknown> };
   const sessionId = e.data?.sessionID as string | undefined;
@@ -290,23 +307,13 @@ const handleSessionCompactionEnded: EventHandler = async (event, deps) => {
     s.compacting = false;
     s.compactionError = undefined;
     s.compactionSummary = summary ? (summary + (tokenText ? `\n${tokenText.trim()}` : "")) : (s.compactionSummary ?? "");
-    if (s.statusMessageId) {
-      updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-    } else {
-      await tg
-        .sendRichMessage(chatId, sessionHeader(s) + `📦 <b>Compactación completada</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
-        .catch((err) => console.warn("[events]", err?.message ?? err));
-    }
-  } else {
-    await tg
-      .sendRichMessage(chatId, sessionHeader(null, sessionId) + `📦 <b>Compactación completada</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`, threadOpts(threadId))
-      .catch((err) => console.warn("[events]", err?.message ?? err));
   }
+  await compactionNotice(deps, s, sessionId!, chatId, threadId, `📦 <b>Compactación completada</b>${tokenText}${summaryBody ? "\n" + summaryBody : ""}`);
   logger.info("events", "compaction.ended", { sessionId, chatId, threadId, summaryLen: summary.length, usedStatus: !!(s?.statusMessageId) });
 };
 
 const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
-  const { tg, store, updateStatus } = deps;
+  const { store } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
   const e = event as { type: string; data?: Record<string, unknown> };
   const sessionId = e.data?.sessionID as string | undefined;
@@ -319,12 +326,8 @@ const handleSessionCompactionFailed: EventHandler = async (event, deps) => {
   if (s) {
     s.compacting = false;
     s.compactionError = msg;
-    if (s && s.statusMessageId) updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-    else { const _cf = await tg.sendRichMessage(chatId, sessionHeader(s) + `❌ <b>Error al compactar</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined); if (_cf?.message_id) store.rememberMessageSession(chatId, _cf.message_id, sessionId); }
-  } else {
-    const _cf2 = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + `❌ <b>Error al compactar</b>: ${esc(msg)}`, threadOpts(threadId)).catch(() => undefined);
-    if (_cf2?.message_id) store.rememberMessageSession(chatId, _cf2.message_id, sessionId);
   }
+  await compactionNotice(deps, s, sessionId!, chatId, threadId, `❌ <b>Error al compactar</b>: ${esc(msg)}`);
   logger.warn("events", "compaction.failed", { sessionId, chatId, threadId, error: msg });
 };
 

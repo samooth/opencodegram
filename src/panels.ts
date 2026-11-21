@@ -24,7 +24,6 @@ export type PanelsDeps = {
   getActiveSession: (chatId: number, threadId?: number) => ChatSession | undefined;
   restoreActiveSession?: (chatId: number, threadId?: number) => Promise<ChatSession | undefined>;
   findSessionById?: (sessionId: string) => ChatSession | undefined;
-  getLastPrompt?: (sessionId: string) => string | undefined;
   getLastCot?: (sessionId: string) => string | undefined;
   modelListByChat: Map<string, Array<{ id: string; providerID: string; variant?: string; name?: string; variants?: Array<{ id?: string }> }>>;
   routeKey: (chatId: number, threadId?: number) => string;
@@ -37,7 +36,7 @@ export type PanelsDeps = {
 
 export type Panels = ReturnType<typeof createPanels>;
 
-export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, getLastPrompt, modelListByChat, routeKey, chatBySession, deliveryBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
+export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSession, findSessionById, modelListByChat, routeKey, chatBySession, deliveryBySession, getSessionStatus, metrics, rememberMessageSession }: PanelsDeps) {
   /** CPU/load/memory/GPU indicators shared by status, panel and ops cards. */
   const hostInfo = () => {
     const cpuCount = os.cpus().length;

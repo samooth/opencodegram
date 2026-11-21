@@ -635,7 +635,7 @@ export class SessionStore {
     for (const [key, cs] of this.sessionsByThread) {
       if (key.startsWith(prefix)) { affected.add(cs.sessionId); this.sessionsByThread.delete(key); }
     }
-    for (const [key, value] of this.lastInteractedSessionByRoute) {
+    for (const [key] of this.lastInteractedSessionByRoute) {
       if (key.startsWith(prefix)) this.lastInteractedSessionByRoute.delete(key);
     }
     this.sessionsByChat.delete(chatId);
@@ -765,7 +765,7 @@ export class SessionStore {
         affected.add(sid);
       }
     }
-    for (const [key, sid] of [...this.lastInteractedSessionByRoute]) {
+    for (const [key] of [...this.lastInteractedSessionByRoute]) {
       if (key.startsWith(prefix)) this.lastInteractedSessionByRoute.delete(key);
     }
     // Drop the session -> chat/thread/delivery mappings too. Otherwise the

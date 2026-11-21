@@ -260,7 +260,6 @@ function formatUnifiedDiff(filePath: string, oldString: string, newString: strin
     }
   }
   // Build hunks: consecutive included ops, with gaps collapsed.
-  let hunkStart = -1;
   for (let k = 0; k < ops.length; k++) {
     if (!include[k]) {
       if (current) { hunks.push(current); current = null; }

@@ -9,7 +9,7 @@ import type { SettingsStore } from "./settings.js";
 import type { TelegramClient, TelegramMessage } from "./telegram.js";
 import { handleCommand, KNOWN_COMMANDS } from "./commands.js";
 import { clampText, esc, normalizeCommandText, parseSlashCommand, sessionHeader, threadOpts } from "./util.js";
-import { transcribeFile, transcribeFileStreaming, isTranscriptionEnabled } from "./transcribe.js";
+import { transcribeFileStreaming, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { STATUS_EDIT_INTERVAL_MS } from "./constants.js";
@@ -542,7 +542,6 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // a group. Only treat it as a prompt when the bot is explicitly mentioned,
   // even if the message happens to reply to a bot message.
   const hasMedia = !!(msg.photo ?? msg.document ?? msg.audio ?? msg.voice ?? msg.video);
-  const isVoice = !!(msg.voice ?? msg.audio);
   const isPhoto = !!msg.photo;
   // In groups, only respond to commands, mentions or replies to the bot.
   // Photos require an explicit mention (they are often sent by accident);

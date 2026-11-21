@@ -210,7 +210,7 @@ function detailPara(text: string, detailCap: number): string {
 }
 
 /** Render the compact summary line plus one native expandable detail block. */
-export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, finished: boolean, now = Date.now(), expanded = false): string {
+export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, _finished: boolean, now = Date.now(), expanded = false): string {
   if (!a) return "";
   const parts: string[] = [];
   if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "pensamiento" : "pensamientos"}`);

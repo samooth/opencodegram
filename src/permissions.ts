@@ -222,7 +222,7 @@ export class PermissionStore {
   }
 
   /** Render a button-driven panel for the current thread. */
-  renderPanel(routeKey: string, globalAdmin?: number): { html: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
+  renderPanel(routeKey: string, _globalAdmin?: number): { html: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
     const p = this.get(routeKey);
     // Defense in depth: route keys and usernames come from Telegram, but they
     // are interpolated into HTML, so escape them like every other user value.
