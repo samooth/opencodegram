@@ -109,7 +109,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 
     // 2) Pensamiento (compact activity: thoughts, reads, tools).
     if (settings.showThinking || settings.showLatestThought) {
-      const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), s.activityExpanded === true);
+      // The finished card always collapses detail blocks by default,
+      // regardless of the profile's thinkingExpanded (that only affects the
+      // live card while the turn is streaming).
+      const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), false);
       if (doneActivity) lines.push(doneActivity);
     }
 
@@ -585,7 +588,8 @@ ${esc(cot)}</blockquote>`);
 ${esc(r)}</blockquote>`);
       }
       if (settings.showThinking || settings.showLatestThought) {
-        const activityBlock = renderActivity(target.activity, settings.cardVerbosity, true, Date.now(), target.activityExpanded === true);
+        // Finished card: detail always collapsed, independent of the profile.
+        const activityBlock = renderActivity(target.activity, settings.cardVerbosity, true, Date.now(), false);
         if (activityBlock) lines.push(activityBlock);
       }
       const virtualDetails = target.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));

@@ -201,3 +201,30 @@ describe("live virtual shell", () => {
     expect(refloats).toBe(0);
   });
 });
+
+describe("finished card collapses reasoning regardless of profile", () => {
+  test("verbose profile (thinkingExpanded) still collapses the done card", async () => {
+    const { createTurnActivity, recordThought } = await import("../src/activity.js");
+    const { PRESET_SETTINGS } = await import("../src/settings.js");
+    const published: any[] = [];
+    const transcript = { publish: async (_c: number, _s: any, o: any) => { published.push(o); return 1; }, addBlock: () => {}, refloat: async () => 1 } as any;
+    const settings = { ...DEFAULT_SETTINGS, ...PRESET_SETTINGS.verbose, cardBehavior: "refloat" as const } as any;
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}), getSettings: () => settings,
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => [] } as any, transcript,
+    } as any);
+    const activity = createTurnActivity();
+    recordThought(activity, "pensamiento detallado del modelo");
+    const s = makeSession({
+      statusFinished: true, activity, activityExpanded: true,
+      cotBuffer: "razonamiento del turno", cotCount: 1, promptStartTime: Date.now() - 5000,
+    });
+    await status.publishCard(7, s);
+    const html = published[0]?.extraTop ?? "";
+    // No expanded detail marker (▴) in the finished card.
+    expect(html).not.toContain("▴");
+    expect(html).toMatch(/<blockquote expandable>🧠 Razonamiento/);
+    expect(html).toMatch(/<blockquote expandable>💭 Pensamientos/);
+  });
+});
