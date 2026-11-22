@@ -653,9 +653,16 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       }
       // Optional: deliver the final answer as a separate rich-text message for readability.
       const st = settings.get(chatId);
+      // When the answer is already embedded in the card, sending it again as
+      // separate messages only creates noise (parte 1/3, 2/3, …). Only deliver
+      // separately when the user explicitly asked for it or the answer is too
+      // long to fit in the card (showFinalInCard off / oversized).
+      const answerInCard = st.showFinalInCard && finalText.length <= 2400;
       const sendSeparately =
-        st.longAnswerDelivery === "message" ||
-        (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold);
+        !answerInCard && (
+          st.longAnswerDelivery === "message" ||
+          (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold)
+        );
       if (sendSeparately) {
         if (s.lastFinalSeparatedPromptStart !== s.promptStartTime) {
           s.lastFinalSeparatedPromptStart = s.promptStartTime;
