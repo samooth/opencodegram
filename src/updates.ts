@@ -48,6 +48,15 @@ export function dispatchPolledUpdate(deps: BotDeps, update: TelegramUpdate): voi
   const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id ?? 0;
   const threadId = update.callback_query?.message?.message_thread_id ?? update.message?.message_thread_id ?? 0;
   const key = `${chatId}:${threadId}`;
+  // Slash commands (and their callbacks) must never wait behind a turn that is
+  // stuck retrying: the user needs /status, /stop, /sessions, … to respond
+  // immediately even while OpenCode keeps retrying in the background.
+  const isCommand = (update.message?.text ?? "").trim().startsWith("/");
+  const isCallback = !!update.callback_query;
+  if (isCommand || isCallback) {
+    void processUpdate(deps, update).catch(() => {});
+    return;
+  }
   const previous = chatQueues.get(key) ?? Promise.resolve();
   const next = previous.then(() => processUpdate(deps, update)).catch(() => {});
   chatQueues.set(key, next);

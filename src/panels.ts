@@ -401,10 +401,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
   async function showStatus(chatId: number, threadId?: number, messageId?: number): Promise<void> {
     let s = getActiveSession(chatId, threadId);
     if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
+    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([p, new Promise<T | null>((resolve) => setTimeout(() => resolve(null), ms))]);
     const [ocInfo, sessionCount, sessionDetail] = await Promise.all([
-      oc.serverInfo().catch(() => null),
-      oc.listSessionsCached().then((list) => list.length).catch(() => 0),
-      s?.sessionId ? oc.client.session.get({ sessionID: s.sessionId }).catch(() => null) : Promise.resolve(null),
+      withTimeout(oc.serverInfo().catch(() => null), 3000),
+      withTimeout(oc.listSessionsCached().then((list) => list.length).catch(() => 0), 3000),
+      s?.sessionId ? withTimeout(oc.client.session.get({ sessionID: s.sessionId }).catch(() => null), 3000) : Promise.resolve(null),
     ]);
     const { cpuCount, load, totalMem, freeMem, gpu } = hostInfo();
     const botUptime = botUptimeText();
@@ -447,7 +449,8 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       `<tr><td><b>Host</b></td><td>CPU: ${cpuCount} cores<br>Load: ${esc(load)}<br>Mem: ${freeMem}/${totalMem} GB</td></tr>`,
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
-    const text = `<h3>📊 Status</h3>\n\n<table compact striped bordered>${rows}</table>`;
+    const unreachable = !ocInfo && s?.sessionId;
+    const text = `<h3>📊 Status</h3>${unreachable ? "\n<p><i>⚠️ OpenCode no responde en este momento (reintentando). Mostrando datos en caché.</i></p>" : ""}\n\n<table compact striped bordered>${rows}</table>`;
     const keyboard: InlineKeyboard = [];
     if (s?.sessionId) keyboard.push([{ text: "🔗 Conectar", callback_data: `connect:${s.sessionId}` }]);
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Detener", callback_data: "panel:stop" }]);
