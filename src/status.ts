@@ -22,9 +22,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    * bottom of the message (above resource indicators) for readability.
    */
   const renderLiveParts = (s: ChatSession, settings: ChatSettings, unified: boolean): { top: string; bottom: string } => {
+    // Compact mode (phone) has a tight budget. Cap each block so ALL sections
+    // stay visible instead of slicing the whole strip to its tail (which used
+    // to hide reasoning/activity/shell and leave only the partial text).
+    const compact = settings.compactCard && !s.cardMenuExpanded && !s.readingMode;
+    const reasoningCap = compact ? 220 : 1600;
+    const shellCap = compact ? 220 : 400;
+    const partialCap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
     const lines: string[] = [];
-    // CoT belongs to the finished card only. While working it is partial and
-    // truncated, which reads as noise above the live state.
     // 1. State — "still working" is the most important signal at a glance.
     lines.push(
       s.stopped
@@ -45,7 +50,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // reasoning, thoughts and tools independently as they stream in.
     // 🧠 Razonamiento (live reasoning buffer, streamed from the model).
     if (settings.showThinking && s.reasoningBuffer.trim()) {
-      const tail = s.reasoningBuffer.trim().slice(-1600);
+      const tail = s.reasoningBuffer.trim().slice(-reasoningCap);
       lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(tail)}</blockquote>`);
     }
     // 💭 Pensamiento (compact activity: thoughts, reads, tools).
@@ -53,7 +58,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (activityBlock) lines.push(activityBlock);
     // ⚡ Virtual shell with every toolcall, always visible when enabled.
     if (settings.showTools && s.toolCallDetails.length) {
-      const shellText = renderVirtualShell(s.toolCallDetails.slice(-8), 400);
+      const shellText = renderVirtualShell(s.toolCallDetails.slice(-8), shellCap);
       lines.push(`<blockquote expandable>⚡ Shell (${s.toolCallDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
     }
     if (!activityBlock && !s.reasoningBuffer.trim()) {
@@ -83,10 +88,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (todosBlock) lines.push(todosBlock);
     // 7. Partial answer, rendered as clean lines (code block for shell/code).
     if (settings.showPartialText && s.buffer.trim()) {
-      const cap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
-      lines.push(renderPartialText(s.buffer, cap));
+      lines.push(renderPartialText(s.buffer, partialCap));
     }
-    // COT is rendered once at the very top (step 0); do not duplicate it here.
     // Toolcall statistics live at the very bottom, as a compact icon line.
     const stats = renderToolStats(s.toolCallDetails);
     return {

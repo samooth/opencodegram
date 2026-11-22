@@ -192,17 +192,11 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
     // Compact mode caps the status strip, but an embedded final answer must
     // pass through intact — that is the whole reason for showing it.
+    // Per-block caps in renderLiveParts already keep each section short, so
+    // there is no need to slice the whole strip to its tail (which used to
+    // hide reasoning/activity/shell and leave only the partial text).
     const rawExtraTop = opts.extraTop ?? "";
-    // Compact cards are small: when the live strip does not fit, keep the
-    // TAIL (final tokens / latest CoT) instead of the head, so the user sees
-    // what is happening now rather than the stale beginning of the turn.
-    let tailSlice = rawExtraTop.slice(-(600 - 1));
-    // Avoid starting in the middle of an HTML tag: advance to the next tag boundary.
-    const firstClose = tailSlice.indexOf(">");
-    if (firstClose !== -1 && firstClose < 120) tailSlice = tailSlice.slice(firstClose + 1);
-    const extraTop = view.compact && !view.answerInCard && rawExtraTop.length > 600
-      ? "…" + tailSlice
-      : rawExtraTop;
+    const extraTop = rawExtraTop;
     const extraBottom = opts.extraBottom ?? "";
 
     /**
