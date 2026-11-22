@@ -98,9 +98,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
     // Toolcall statistics live at the very bottom, as a compact icon line.
     const stats = renderToolStats(s.toolCallDetails);
+    const statsLine = stats ? `<p><i>${esc(stats)}</i></p>` : "";
+    // In compact mode the strip must leave room for the tool-stats line at the
+    // bottom, otherwise the final clamp eats it. Cap the strip so the footer
+    // always survives.
+    let top = lines.join("");
+    if (compact && top.length > 1000) top = clampText(top, 1000);
     return {
-      top: lines.join(""),
-      bottom: stats ? `<p><i>${esc(stats)}</i></p>` : "",
+      top,
+      bottom: statsLine,
     };
   };
 
