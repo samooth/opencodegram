@@ -327,19 +327,21 @@ describe("finished card reading order", () => {
       activity,
       promptStartTime: Date.now() - 5000,
       turnFinishedAt: Date.now(),
+      toolCallDetails: [{ id: "1", name: "bash", input: '{"command":"ls"}', status: "success" }],
     });
     await status.publishCard(7, s);
     const html = published[0].extraTop as string;
     const reasoning = html.indexOf("🧠 Razonamiento");
     const thinking = html.indexOf("Pensamiento");
-    const answer = html.indexOf("💬 Respuesta");
+    const shell = html.indexOf("⚡ Shell");
     const done = html.indexOf("✅ <b>Listo</b>");
-    // The answer is FIRST (no button needed to read it); secondary reasoning
-    // and activity come after the receipt.
-    expect(answer).toBeGreaterThanOrEqual(0);
-    expect(done).toBeGreaterThan(answer);
-    expect(thinking).toBeGreaterThan(done);
-    expect(reasoning).toBeGreaterThan(thinking);
+    const answer = html.indexOf("💬 Respuesta");
+    // New order: reasoning → pensamiento → shell → Listo → Respuesta.
+    expect(reasoning).toBeGreaterThanOrEqual(0);
+    expect(thinking).toBeGreaterThan(reasoning);
+    expect(shell).toBeGreaterThan(thinking);
+    expect(done).toBeGreaterThan(shell);
+    expect(answer).toBeGreaterThan(done);
   });
 
   test("settings disable each block", async () => {

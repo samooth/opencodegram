@@ -230,7 +230,7 @@ describe("finished card collapses reasoning regardless of profile", () => {
 });
 
 describe("answer visible in the finished card", () => {
-  test("answer comes first and reasoning is secondary when embedded", async () => {
+  test("answer appears after shell virtual and Listo receipt", async () => {
     const { createTurnActivity, recordThought } = await import("../src/activity.js");
     const { PRESET_SETTINGS } = await import("../src/settings.js");
     const published: any[] = [];
@@ -248,13 +248,19 @@ describe("answer visible in the finished card", () => {
       statusFinished: true, activity, activityExpanded: true,
       lastFinalText: answer, cotBuffer: "razonamiento del turno", cotCount: 1,
       promptStartTime: Date.now() - 5000,
+      toolCallDetails: [{ id: "1", name: "bash", input: '{"command":"ls"}', status: "success" }],
     });
     await status.publishCard(7, s);
     const html = published[0]?.extraTop ?? "";
-    const answerIdx = html.indexOf("💬 Respuesta");
     const reasoningIdx = html.indexOf("🧠 Razonamiento");
-    expect(answerIdx).toBeGreaterThanOrEqual(0);
-    expect(answerIdx).toBeLessThan(reasoningIdx);
+    const shellIdx = html.indexOf("⚡ Shell");
+    const doneIdx = html.indexOf("✅ <b>Listo</b>");
+    const answerIdx = html.indexOf("💬 Respuesta");
+    // New order: reasoning → shell → Listo → Respuesta.
+    expect(reasoningIdx).toBeGreaterThanOrEqual(0);
+    expect(shellIdx).toBeGreaterThan(reasoningIdx);
+    expect(doneIdx).toBeGreaterThan(shellIdx);
+    expect(answerIdx).toBeGreaterThan(doneIdx);
     expect(html).toContain(answer);
   });
 

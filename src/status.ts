@@ -105,24 +105,33 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    * compact footer so the answer is never buried under a status badge.
    */
   const renderDoneStrip = (s: ChatSession, settings: ChatSettings): string => {
-    // The answer is the point of the turn. When it's embedded in the card, the
-    // reasoning/activity are secondary and get a strict budget so the answer
-    // is NEVER truncated behind a "📄 Ver completo" button.
+    // The answer is the POINT of the turn but must appear AFTER the shell
+    // virtual and the "✅ Listo" receipt (per user request). Reasoning and
+    // activity stay collapsed context blocks.
     const answerEmbedded = settings.showFinalInCard && !!s.lastFinalText?.trim();
     const lines: string[] = [];
 
-    // 3) Respuesta FIRST in the budget calculation (rendered in place below).
-    const rawAnswer = s.lastFinalText?.trim() ?? "";
-    // Cap just below the card budget so the answer always fits in one message;
-    // the untruncated answer stays available via 📖 Leer / copiar.
-    const answerHtml = answerEmbedded && rawAnswer
-      ? `<h4>💬 Respuesta</h4>${markdownToHtml(rawAnswer.slice(0, 2400))}${rawAnswer.length > 2400 ? "\n<i>… completa en 📖 Leer</i>" : ""}`
-      : "";
+    // 1) Razonamiento (collapsed, at the top).
+    const reasoning = lastReasoning(s);
+    if (settings.showThinking && reasoning) {
+      const budget = answerEmbedded ? 900 : 3500;
+      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-budget))}</blockquote>`);
+    }
 
-    // The answer is the FIRST thing in the card — no scrolling, no button.
-    if (answerHtml) lines.push(answerHtml);
+    // 2) Pensamiento (compact activity, collapsed).
+    if (settings.showThinking || settings.showLatestThought) {
+      const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false);
+      if (doneActivity) lines.push(doneActivity);
+    }
 
-    // Compact receipt right under the answer.
+    // 3) Shell virtual (all toolcalls as `$ <cmd>` lines).
+    const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
+    if (settings.showTools && virtualDetails.length) {
+      const shellText = renderVirtualShell(virtualDetails, 500);
+      lines.push(`<blockquote expandable>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
+    }
+
+    // 4) Receipt "✅ Listo" + telemetry (⚡ 410.5 tok/s · 436 tok · 62% ctx).
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     const edits = summarizeEdits(s, s.toolCallDetails);
     const test = detectTestRun(s.toolCallDetails);
@@ -135,20 +144,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
     }));
 
+    // 5) Respuesta (answer) — now visible directly, below the shell and Listo.
+    const rawAnswer = s.lastFinalText?.trim() ?? "";
+    if (answerEmbedded && rawAnswer) {
+      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(rawAnswer.slice(0, 2400))}${rawAnswer.length > 2400 ? "\n<i>… completa en 📖 Leer</i>" : ""}`);
+    }
+
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
-
-    // Secondary context AFTER the answer, always collapsed and short.
-    if (settings.showThinking || settings.showLatestThought) {
-      const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false);
-      if (doneActivity) lines.push(doneActivity);
-    }
-    const reasoning = lastReasoning(s);
-    if (settings.showThinking && reasoning) {
-      const budget = answerEmbedded ? 900 : 3500;
-      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-budget))}</blockquote>`);
-    }
 
     return lines.join("");
   };
