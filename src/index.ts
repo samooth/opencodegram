@@ -102,12 +102,15 @@ async function main() {
     threadOptsFor: (s) => store.threadOptsFor(s),
     renderResources: (s) => {
       const chatId = store.resolveChatId(s.sessionId);
-      if (chatId !== undefined) {
-        const st = settings.get(chatId);
+      const resolvedChatId = chatId ?? s.targetChatId;
+      if (resolvedChatId !== undefined) {
+        const st = settings.get(resolvedChatId);
         if (st.displayMode === "unified" || !st.showResourceUsage) return "";
         return renderResourceBlock(s, { history: st.resourceHistory, theme: st.cardTheme });
       }
-      return renderResourceBlock(s);
+      // No chat context yet: respect the global default (off) instead of
+      // forcing the indicators on.
+      return "";
     },
   });
   const dashboard = createDashboardManager({ tg, store, settings, oc, threadOptsFor: (s) => store.threadOptsFor(s) });

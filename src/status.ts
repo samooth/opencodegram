@@ -178,7 +178,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const unified = settings.displayMode === "unified";
     const reading = s.readingMode === true;
     const compact = settings.compactCard && !s.cardMenuExpanded && !reading;
-    s.cardView = { compact, reading, showResources: !unified, unified } satisfies CardView;
+    s.cardView = { compact, reading, showResources: !unified && settings.showResourceUsage, unified } satisfies CardView;
     // P1.1: the compact card keeps the receipt readable but never blows past
     // the 1.200-character budget; detail lives in ▾ Más / ▾ Detalles.
     // With the answer already in the strip, skip the duplicate answer block
