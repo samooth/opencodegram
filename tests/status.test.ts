@@ -111,6 +111,24 @@ describe("virtual shell and tool stats", () => {
     expect(html).toContain("$ ls -la");
   });
 
+  test("accumulates identical commands instead of overwriting", async () => {
+    const { renderVirtualShell } = await import("../src/status-render.js");
+    const html = renderVirtualShell([
+      { id: "1", name: "bash", input: JSON.stringify({ command: "bun test" }), status: "success" },
+      { id: "2", name: "read", input: JSON.stringify({ filePath: "/a.ts" }), status: "success" },
+      { id: "3", name: "bash", input: JSON.stringify({ command: "bun test" }), status: "success" },
+      { id: "4", name: "bash", input: JSON.stringify({ command: "bun test" }), status: "failed" },
+    ], 200);
+    // One accumulated line with count 3, not three separate lines.
+    expect(html).toContain("$ bun test  (×3)");
+    expect(html).toContain("❌");
+    // Distinct commands are both present.
+    expect(html).toContain("$ read /a.ts");
+    // Only one "$ bun test" header line.
+    const bunLines = html.split("\n").filter((l: string) => /^\$ bun test/.test(l));
+    expect(bunLines.length).toBe(1);
+  });
+
   test("tool stats line uses icons and counts failures", async () => {
     const { renderToolStats } = await import("../src/status-render.js");
     const line = renderToolStats([

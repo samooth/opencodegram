@@ -61,7 +61,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showTools) {
       const count = s.toolCallDetails.length;
       if (count) {
-        const shellText = renderVirtualShell(s.toolCallDetails.slice(-8), shellCap);
+        const shellText = renderVirtualShell(s.toolCallDetails, shellCap);
         lines.push(`<blockquote expandable>⚡ Shell (${count})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
       } else {
         lines.push(`<blockquote expandable>⚡ Shell (0)\n<pre language='bash'>$ Trabajando…</pre></blockquote>`);
@@ -370,7 +370,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       let shellBlock = "";
       const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
       if (settings.showTools && virtualDetails.length) {
-        const shellText = renderVirtualShell(virtualDetails.slice(-6), 180);
+        const shellText = renderVirtualShell(virtualDetails, 180);
         shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;
       }
 
@@ -505,9 +505,9 @@ ${markdownToHtml(chunk)}</blockquote>`;
           transcript.addBlock(
             s,
             "tools",
-            `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`,
+            `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`,
             shellText,
-            (chunk) => `<blockquote${settings.shellExpanded ? "" : " expandable"}>🖥 Shell
+            (chunk) => `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell
 <pre language=\'bash\'>${esc(chunk)}</pre></blockquote>`,
             shellDetails.map((d) => ({ name: d.name, input: d.input, output: d.output, status: d.status })),
           );

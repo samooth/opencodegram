@@ -301,28 +301,40 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
     return `${n}${target ? ` ${target}` : ""}`.trim();
   };
 
-  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number; cmd: string }> = [];
+  // Accumulate identical commands globally (not just consecutive) so the
+  // transcript shows one line per distinct command with its total count,
+  // instead of overwriting/dropping earlier occurrences.
+  const order: string[] = [];
+  const counts = new Map<string, { count: number; last: ChatSession["toolCallDetails"][number] }>();
   for (const d of details) {
     const cmd = toCommand(d.name, d.input);
-    const last = compact[compact.length - 1];
-    if (last && last.cmd === cmd) {
-      last.count += 1;
-      last.d = d;
+    const existing = counts.get(cmd);
+    if (existing) {
+      existing.count += 1;
+      existing.last = d; // keep the latest status/output
     } else {
-      compact.push({ d, count: 1, cmd });
+      counts.set(cmd, { count: 1, last: d });
+      order.push(cmd);
     }
   }
-  return compact
-    .map(({ d, count, cmd }) => {
-      const failed = d.status === "failed";
-      const output = d.output ? (parseShellOutput(d.output) ?? d.output).trim() : "";
-      const lines = [
-        `$ ${cmd.replace(/\s+/g, " ").trim()}${count > 1 ? `  (×${count})` : ""}${failed ? "  ❌" : ""}`,
-      ];
-      if (output && (failed || isShellTool(d.name))) lines.push(truncateText(output, limit));
-      return lines.join("\n");
-    })
-    .join("\n");
+  // Keep the most recent distinct commands; older ones collapse into a summary.
+  const MAX_CMDS = 12;
+  const hidden = Math.max(0, order.length - MAX_CMDS);
+  const visible = hidden > 0 ? order.slice(-MAX_CMDS) : order;
+  const lines: string[] = [];
+  if (hidden > 0) lines.push(`… ${hidden} comando${hidden === 1 ? "" : "s"} anteriores`);
+  for (const cmd of visible) {
+    const entry = counts.get(cmd)!;
+    const d = entry.last;
+    const failed = d.status === "failed";
+    const output = d.output ? (parseShellOutput(d.output) ?? d.output).trim() : "";
+    const header = `$ ${cmd.replace(/\s+/g, " ").trim()}${entry.count > 1 ? `  (×${entry.count})` : ""}${failed ? "  ❌" : ""}`;
+    lines.push(header);
+    if (output && (failed || isShellTool(d.name))) {
+      lines.push(truncateText(output, limit));
+    }
+  }
+  return lines.join("\n");
 }
 
 /** Compact toolcall statistics line with per-type icons, meant for the card footer. */
