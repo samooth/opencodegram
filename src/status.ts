@@ -54,7 +54,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(tail)}</blockquote>`);
     }
     // 💭 Pensamiento (compact activity: thoughts, reads, tools).
-    const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
+    const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true, settings.showTools);
     if (activityBlock) lines.push(activityBlock);
     // ⚡ Virtual shell: ALWAYS visible while working, even when empty, so the
     // user sees the tool transcript slot from the very first token.
@@ -134,7 +134,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 
     // 2) Pensamiento (compact activity, collapsed).
     if (settings.showThinking || settings.showLatestThought) {
-      const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false);
+      const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false, settings.showTools);
       if (doneActivity) lines.push(doneActivity);
     }
 
@@ -620,7 +620,7 @@ ${esc(r)}</blockquote>`);
       }
       if (settings.showThinking || settings.showLatestThought) {
         // Finished card: detail always collapsed, independent of the profile.
-        const activityBlock = renderActivity(target.activity, settings.cardVerbosity, true, Date.now(), false);
+        const activityBlock = renderActivity(target.activity, settings.cardVerbosity, true, Date.now(), false, settings.showTools);
         if (activityBlock) lines.push(activityBlock);
       }
       const virtualDetails = target.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));

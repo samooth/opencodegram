@@ -12,6 +12,7 @@ import { clampText, esc, normalizeCommandText, parseSlashCommand, sessionHeader,
 import { transcribeFileStreaming, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
+import { clearRetryNotice } from "./events.js";
 import { STATUS_EDIT_INTERVAL_MS } from "./constants.js";
 
 /**
@@ -395,6 +396,11 @@ async function startPrompt(
     store.rememberLastChat(s.sessionId, chatId);
     store.rememberLastPrompt(s.sessionId, text);
     notePromptSent(s.sessionId, text);
+    // A manual prompt supersedes any pending auto-retry: cancel it and drop its
+    // notice message so the new turn does not race with a stale retry (which
+    // used to duplicate the previous turn and interleave the rate-limit warning).
+    cancelAutoRetry(s.sessionId);
+    clearRetryNotice(s.sessionId);
     await startStatus(chatId, s);
     if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {

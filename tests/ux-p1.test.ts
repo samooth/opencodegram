@@ -69,7 +69,7 @@ describe("P1.2 live action rail", () => {
     const store = { lastPromptBySession: new Map(), getTodos: () => [], beginTurn: () => {} } as any;
     const status = createStatusManager({
       tg: {} as any, threadOptsFor: () => ({}),
-      getSettings: () => ({ ...DEFAULT_SETTINGS, cardVerbosity: "medium", showActionRail: true } as ChatSettings),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, cardVerbosity: "medium", showActionRail: true, showTools: false } as ChatSettings),
       pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
       store, transcript,
     } as any);

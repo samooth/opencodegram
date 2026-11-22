@@ -59,6 +59,11 @@ export type EventsDeps = {
 
 const retryMessageBySession = new Map<string, { chatId: number; threadId?: number; messageId: number }>();
 
+/** Drop the pending retry notice for a session (e.g. when the user sends a new prompt). */
+export function clearRetryNotice(sessionId: string): void {
+  retryMessageBySession.delete(sessionId);
+}
+
 type EventHandler = (event: { type: string; data?: unknown }, deps: EventsDeps) => Promise<void>;
 
 /** Loose shape of a form field as sent by OpenCode (validated at runtime). */

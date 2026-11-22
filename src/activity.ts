@@ -210,7 +210,7 @@ function detailPara(text: string, detailCap: number): string {
 }
 
 /** Render the compact summary line plus one native expandable detail block. */
-export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, _finished: boolean, now = Date.now(), expanded = false): string {
+export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, _finished: boolean, now = Date.now(), expanded = false, hideShells = false): string {
   if (!a) return "";
   const parts: string[] = [];
   if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "pensamiento" : "pensamientos"}`);
@@ -269,7 +269,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
     blocks.push({ head: entryHead(e, now, expanded), detail: detailPara(e.detail, detailCap) });
     i++;
   }
-  if (shells.length) {
+  if (shells.length && !hideShells) {
     const last = shells[shells.length - 1];
     const status = last.ok === true ? " ✅" : last.ok === false ? " ❌" : expanded && shells.some((x) => x.open) ? " ⏳" : "";
     const duration = fmtDuration(last.durationMs ?? Math.max(0, now - last.at));
