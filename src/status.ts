@@ -26,7 +26,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // stay visible instead of slicing the whole strip to its tail (which used
     // to hide reasoning/activity/shell and leave only the partial text).
     const compact = settings.compactCard && !s.cardMenuExpanded && !s.readingMode;
-    const reasoningCap = compact ? 220 : 1600;
+    const reasoningCap = compact ? 400 : 600;
     const shellCap = compact ? 220 : 400;
     const partialCap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
     const lines: string[] = [];
@@ -120,7 +120,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
     if (settings.showThinking && reasoning) {
-      const budget = answerEmbedded ? 900 : 3500;
+      // Keep enough reasoning to be readable when expanded; the answer already
+      // took its share, so 1500 is a sane floor for the finished card.
+      const budget = answerEmbedded ? 2500 : 3500;
       lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-budget))}</blockquote>`);
     }
 
