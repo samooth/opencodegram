@@ -67,7 +67,7 @@ describe("turn activity counters", () => {
     recordTool(a, "bash", "bun test", { at: 1000, toolId: "t1" });
     finishTool(a, "t1", true, { at: 1671 });
     const out = renderActivity(a, "high", true, 1700);
-    expect(out).toContain("<blockquote>");
+    expect(out).toContain("<blockquote expandable>");
     expect(out).toContain("Shell");
     expect(out).toContain("671ms");
     expect(out).toContain("✅");

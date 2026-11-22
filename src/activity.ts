@@ -285,11 +285,18 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   // Collapsed shows headers only: the global toggle reveals details inline, so
   // pressing it always produces a visible change even on clients that ignore
   // Telegram's native expandable blockquote.
-  const renderBlock = (b: ActivityBlock): string => b.expandable
-    ? `<blockquote expandable>${b.head}${b.detail}</blockquote>`
-    : expanded
-      ? `<blockquote>${b.head}${b.detail}</blockquote>`
-      : `<blockquote>${b.head}</blockquote>`;
+  // expandable blocks (thoughts) are ALWAYS native collapsibles. Non-expandable
+  // blocks (shell, reads, edits, tools) become native collapsibles too when
+  // collapsed, so the user can tap to read their detail without pressing the
+  // global "▾ Detalles" toggle.
+  const renderBlock = (b: ActivityBlock): string =>
+    b.expandable
+      ? `<blockquote expandable>${b.head}${b.detail}</blockquote>`
+      : expanded
+        ? `<blockquote>${b.head}${b.detail}</blockquote>`
+        : b.detail
+          ? `<blockquote expandable>${b.head}${b.detail}</blockquote>`
+          : `<blockquote>${b.head}</blockquote>`;
   const renderBody = (bs: ActivityBlock[]) => bs.map(renderBlock).join("\n");
   const budget = expanded ? 1800 : 1400;
   let kept = blocks;
