@@ -461,9 +461,13 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   else parsedValue = value === "true";
   const settings = deps.settings.set(chatId, key, parsedValue);
 
-  // Thinking/shell/tool toggles control the active card directly: applying one
-  // immediately updates the detail state instead of waiting for the next turn.
-  if (key === "showThinking" || key === "showShell" || key === "showTools") {
+  // Toggles that change the card's visible blocks must refresh it immediately
+  // instead of waiting for the next turn.
+  if (
+    key === "showThinking" || key === "showShell" || key === "showTools" ||
+    key === "showResourceUsage" || key === "showPartialText" || key === "showCot" ||
+    key === "showFinalInCard" || key === "compactCard"
+  ) {
     const active = deps.store.getActiveSession(chatId, threadId);
     if (active) {
       active.activityExpanded = settings.showThinking || settings.showShell || settings.showTools;

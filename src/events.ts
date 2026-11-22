@@ -745,7 +745,11 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       const resourcesHtml = finalSt.showResourceUsage ? `\n${renderResourceBlock(s, { history: finalSt.resourceHistory, theme: finalSt.cardTheme })}` : "";
       const finalHtml = sessionHeader(s, undefined, (finalSt.sessionNameInMessages ?? true)) + `<blockquote>${answerHtml}</blockquote>` + extraHtml + copyRow + resourcesHtml;
       // Always send a new message: editing the previous final is confusing.
-      const finalMessage = await tg.sendRichMessage(chatId, clampText(finalHtml, 3900), { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
+      // Clamp without a trailing "…": clampText already closes open tags, so
+      // we just strip the ellipsis it appends, leaving a clean (if truncated)
+      // message instead of one ending in "…".
+      const clamped = clampText(finalHtml, 3900).replace(/\n…$/, "");
+      const finalMessage = await tg.sendRichMessage(chatId, clamped, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
         console.error("[send final]", err);
         return undefined;
       });
@@ -1048,6 +1052,125 @@ const handleSessionStepStarted: EventHandler = async (event, deps) => {
   }
 };
 
+const handleSessionRetryScheduled: EventHandler = async (event, deps) => {
+  const { tg } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  const attempt = (e.data?.attempt as number | undefined) ?? (e.data?.retryAttempt as number | undefined);
+  const delay = (e.data?.delay as number | undefined) ?? (e.data?.retryDelay as number | undefined);
+  const reason = (e.data?.error as { message?: string } | undefined)?.message ?? (e.data?.reason as string | undefined);
+  if (!sid) return;
+  const failure = reason ? classifyFailure(reason) : undefined;
+  const label = failure?.label ?? "⏳ Reintentando…";
+  const retryText = `${label}\n⏳ Reintento${attempt ? ` ${attempt}` : ""} programado${delay ? ` en ${Math.round(delay / 1000)}s` : ""}…${failure?.hint ? `\n<i>${esc(failure.hint)}</i>` : ""}`;
+  const existing = retryMessageBySession.get(sid);
+  let sent: { message_id?: number } | null = null;
+  const chatId = deps.store.resolveChatId(sid);
+  const threadId = deps.store.resolveThreadId(sid);
+  if (existing) {
+    await tg.editRichMessage(existing.chatId, existing.messageId, retryText).catch((err) => console.warn("[events]", err?.message ?? err));
+    sent = { message_id: existing.messageId };
+  } else if (chatId !== undefined) {
+    const s2 = deps.store.findSessionById(sid);
+    sent = await tg.sendRichMessage(chatId, retryText, deps.store.threadOptsFor ? deps.store.threadOptsFor(s2 as any) : {}).catch(() => null);
+  }
+  if (sent?.message_id && chatId !== undefined) retryMessageBySession.set(sid, { chatId, threadId, messageId: sent.message_id });
+};
+
+const handleSessionExecutionStarted: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  if (sid) {
+    deps.store.setSessionStatus(sid, "busy");
+    logger.debug("events", "[execution.started]", sid);
+  }
+};
+
+const handleSessionExecutionSucceeded: EventHandler = async (event, deps) => {
+  const { store } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  if (sid) {
+    store.setSessionStatus(sid, "idle");
+    const existing = retryMessageBySession.get(sid);
+    if (existing) {
+      retryMessageBySession.delete(sid);
+      await deps.tg.editRichMessage(existing.chatId, existing.messageId, "✅ Reintento correcto.").catch(() => {});
+    }
+    logger.debug("events", "[execution.succeeded]", sid);
+  }
+};
+
+const handleSessionExecutionInterrupted: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  const s = sid ? deps.store.findSessionById(sid) : undefined;
+  if (s) s.stopped = true;
+  if (sid) {
+    deps.store.setSessionStatus(sid, "idle");
+    logger.info("events", "[execution.interrupted]", sid);
+  }
+};
+
+const handleSessionStepFailed: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  const err = (e.data?.error as { message?: string } | undefined)?.message;
+  logger.warn("events", "[step.failed]", sid, err?.slice(0, 120));
+  if (sid) deps.store.setSessionStatus(sid, "idle");
+};
+
+const handleSessionUsageUpdated: EventHandler = async (event, deps) => {
+  const { store } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  const s = sid ? store.findSessionById(sid) : undefined;
+  if (!s) return;
+  const usage = (e.data?.usage ?? e.data) as Record<string, unknown> | undefined;
+  if (usage) {
+    if (typeof usage.inputTokens === "number") s.turnInputTokens = usage.inputTokens as number;
+    if (typeof usage.outputTokens === "number") s.turnOutputTokens = usage.outputTokens as number;
+    if (typeof usage.reasoningTokens === "number") s.turnReasoningTokens = usage.reasoningTokens as number;
+    if (typeof usage.cacheReadTokens === "number") s.turnCacheReadTokens = usage.cacheReadTokens as number;
+    if (typeof usage.cacheWriteTokens === "number") s.turnCacheWriteTokens = usage.cacheWriteTokens as number;
+    if (typeof usage.cost === "number") s.turnCost = usage.cost as number;
+  }
+  logger.debug("events", "[usage.updated]", sid);
+};
+
+const handleSessionShellStarted: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  logger.debug("events", "[shell.started]", sid, (e.data?.command as string | undefined)?.slice(0, 80));
+};
+
+const handleSessionShellEnded: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  logger.debug("events", "[shell.ended]", sid);
+};
+
+const handleFilesystemChanged: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  logger.debug("events", "[filesystem.changed]", e.data?.path);
+};
+
+const handleProviderUpdated: EventHandler = async (_event, deps) => {
+  try { deps.oc.invalidateModelCache(); } catch { /* ignore */ }
+  logger.debug("events", "[provider.updated]");
+};
+
+const handleModelUpdated: EventHandler = async (_event, deps) => {
+  try { deps.oc.invalidateModelCache(); } catch { /* ignore */ }
+  logger.debug("events", "[model.updated]");
+};
+
+const handleSessionMetadataUpdated: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  logger.debug("events", "[session.metadata.updated]", sid);
+};
+
 const handleSessionIdle: EventHandler = async (event, deps) => {
   const { store, finishStatus } = deps;
   const { findSessionById, resolveChatId } = store;
@@ -1096,6 +1219,20 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.step.started", handleSessionStepStarted],
   ["session.idle", handleSessionIdle],
   ["experimental.mcp.event", handleMcpEvent],
+  ["session.retry.scheduled", handleSessionRetryScheduled],
+  ["session.execution.started", handleSessionExecutionStarted],
+  ["session.execution.succeeded", handleSessionExecutionSucceeded],
+  ["session.execution.interrupted", handleSessionExecutionInterrupted],
+  ["session.step.failed", handleSessionStepFailed],
+  ["session.usage.updated", handleSessionUsageUpdated],
+  ["session.usage.recorded", handleSessionUsageUpdated],
+  ["session.shell.started", handleSessionShellStarted],
+  ["session.shell.ended", handleSessionShellEnded],
+  ["filesystem.changed", handleFilesystemChanged],
+  ["provider.updated", handleProviderUpdated],
+  ["model.updated", handleModelUpdated],
+  ["session.metadata.updated", handleSessionMetadataUpdated],
+  ["session.renamed", handleSessionMetadataUpdated],
 ]);
 
 export async function handleEvent(event: { type: string; data?: unknown }, deps: EventsDeps): Promise<void> {

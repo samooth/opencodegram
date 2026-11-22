@@ -328,7 +328,9 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
     const d = entry.last;
     const failed = d.status === "failed";
     const output = d.output ? (parseShellOutput(d.output) ?? d.output).trim() : "";
-    const header = `$ ${cmd.replace(/\s+/g, " ").trim()}${entry.count > 1 ? `  (×${entry.count})` : ""}${failed ? "  ❌" : ""}`;
+    const normalized = cmd.replace(/\s+/g, " ").trim();
+    const capped = normalized.length > 120 ? `${normalized.slice(0, 117)}…` : normalized;
+    const header = `$ ${capped}${entry.count > 1 ? `  (×${entry.count})` : ""}${failed ? "  ❌" : ""}`;
     lines.push(header);
     if (output && (failed || isShellTool(d.name))) {
       lines.push(truncateText(output, limit));
@@ -380,7 +382,11 @@ export function renderShell(details: ChatSession["toolCallDetails"], limit: numb
   }
   return compact
     .map(({ d, count }) => {
-      const command = parseShellCommand(d.input ?? "") ?? d.input?.trim() ?? d.name;
+      let command = parseShellCommand(d.input ?? "") ?? d.input?.trim() ?? d.name;
+      // Keep only the first line and cap it: multi-line heredocs must not be
+      // dumped verbatim into the card.
+      command = (command.split(/\r?\n/)[0] ?? "").trim();
+      if (command.length > 200) command = `${command.slice(0, 197)}…`;
       const output = (parseShellOutput(d.output ?? "") ?? d.output ?? "").trim();
       const lines = ["$ " + command + (count > 1 ? `  (×${count})` : "")];
       if (output) lines.push(truncateText(output, limit));
@@ -557,8 +563,11 @@ export function renderLatestToolBottom(s: ChatSession, settings: ChatSettings): 
     commandText = (summary?.arg ?? (lastTool.input ?? "").trim() ?? lastTool.name).toString();
   }
   commandText = commandText.trim();
-  if (commandText.length > 1200) commandText = `${commandText.slice(0, 1200)}\n…`;
-
+  // Keep only the first meaningful line, capped: multi-line heredocs and long
+  // pipelines must never be dumped verbatim into the card.
+  const firstLine = commandText.split(/\r?\n/)[0]?.trim() ?? "";
+  if (firstLine.length > 120) commandText = `${firstLine.slice(0, 117)}…`;
+  else commandText = firstLine;
   const header = `${statusEmoji} <b>Última herramienta:</b> ${esc(displayName)}`;
   if (!commandText) return header;
   return `${header}\n<pre><code>${esc(commandText)}</code></pre>`;

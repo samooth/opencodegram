@@ -67,6 +67,10 @@ export class OpenCodeBridge {
     this.sessionListCache = null;
   }
 
+  invalidateModelCache(): void {
+    this.modelCache = null;
+  }
+
   async createSession(opts: { title?: string; directory?: string; model?: { id: string; providerID: string; variant?: string }; agent?: string } = {}) {
     return this.client.session.create({
       title: opts.title,
