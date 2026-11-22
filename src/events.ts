@@ -498,6 +498,25 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   const chatId = resolveChatId(sessionId);
   logger.breadcrumb("events", "text.ended.entry", { sessionId, hasSession: !!_s0, chatId });
 
+  // OpenCode sometimes delivers a provider error as a text.ended event (with
+  // the error string in `text`) instead of as execution.failed. Detect it here
+  // so the retry / friendly-label logic applies instead of showing the raw
+  // error as the final answer.
+  const errorLike =
+    (e.data?.error as { message?: string } | undefined)?.message ??
+    (/^(error|fail(ed)?|exception)\b/i.test(endedText) &&
+     /limit|quota|provider|rate|usage|exceeded|429|5\d\d/i.test(endedText)
+      ? endedText
+      : undefined);
+  if (errorLike && chatId !== undefined) {
+    const synthetic = {
+      type: "session.execution.failed",
+      data: { sessionID: sessionId, error: { message: errorLike } },
+    };
+    await handleSessionExecutionFailed(synthetic as any, deps);
+    return;
+  }
+
   if (chatId === undefined) return;
   let s = _s0;
   const msgId = (e as { data?: Record<string, unknown> }).data?.assistantMessageID as string | undefined;

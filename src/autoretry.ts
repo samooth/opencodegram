@@ -93,7 +93,7 @@ export function classifyFailure(message: string): FailureInfo {
   const msg = message ?? "";
   const ocAlreadyRetrying = /retr(y|ying)|backoff|will retry|retrying in/i.test(msg);
   const permanent = /invalid api key|unauthori[sz]ed|forbidden|401|403|404|not found|does not exist|context (length|window)|maximum context|token limit|invalid request|bad request|\b400\b/i.test(msg);
-  const rateLimit = /rate[\s-]?limit|quota|too many requests|\b429\b|usage limit|free tier/i.test(msg);
+  const rateLimit = /rate[\s-]?limit|quota|too many requests|\b429\b|usage limit|limit (exceeded|reached)|free tier|too many/i.test(msg);
   const network = /econnreset|econnrefused|etimedout|enotfound|socket hang up|fetch failed|network error|connection (reset|refused|closed)/i.test(msg);
   const provider = /provider returned error|provider error|overloaded|internal server error|bad gateway|service unavailable|gateway timeout|upstream|temporarily unavailable|try again later|server error|\b50[0234]\b/i.test(msg);
   if (rateLimit) {
