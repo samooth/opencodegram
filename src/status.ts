@@ -56,10 +56,16 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 💭 Pensamiento (compact activity: thoughts, reads, tools).
     const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true);
     if (activityBlock) lines.push(activityBlock);
-    // ⚡ Virtual shell with every toolcall, always visible when enabled.
-    if (settings.showTools && s.toolCallDetails.length) {
-      const shellText = renderVirtualShell(s.toolCallDetails.slice(-8), shellCap);
-      lines.push(`<blockquote expandable>⚡ Shell (${s.toolCallDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
+    // ⚡ Virtual shell: ALWAYS visible while working, even when empty, so the
+    // user sees the tool transcript slot from the very first token.
+    if (settings.showTools) {
+      const count = s.toolCallDetails.length;
+      if (count) {
+        const shellText = renderVirtualShell(s.toolCallDetails.slice(-8), shellCap);
+        lines.push(`<blockquote expandable>⚡ Shell (${count})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
+      } else {
+        lines.push(`<blockquote expandable>⚡ Shell (0)\n<pre language='bash'>$ Trabajando…</pre></blockquote>`);
+      }
     }
     if (!activityBlock && !s.reasoningBuffer.trim()) {
       // Fallback for sessions created before per-turn activity was tracked.

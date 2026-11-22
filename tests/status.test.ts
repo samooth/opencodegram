@@ -288,4 +288,20 @@ describe("live streaming sections", () => {
     expect(html).toMatch(/<blockquote expandable>⚡ Shell/);
     expect(html).toContain("$ read a.ts");
   });
+
+  test("shows an empty virtual shell block when no toolcalls yet", async () => {
+    const published: any[] = [];
+    const transcript = { publish: async (_c: number, _s: any, o: any) => { published.push(o); return 1; }, addBlock: () => {}, refloat: async () => 1 } as any;
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, showTools: true, showPartialText: false }),
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => [] } as any, transcript,
+    } as any);
+    const s = makeSession({ statusFinished: false, toolCallDetails: [] });
+    await status.publishCard(7, s);
+    const html = published[0]?.extraTop ?? "";
+    expect(html).toMatch(/<blockquote expandable>⚡ Shell \(0\)/);
+    expect(html).toContain("$ Trabajando…");
+  });
 });
