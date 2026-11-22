@@ -194,8 +194,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         extraTop: cap(renderDoneStrip(s, settings)),
         working: false,
         answerInCard: hideAnswer,
-        // Reasoning and speed are already in the strip; never print them twice.
-        hideKinds: ["thinking", "meta"],
+        // Reasoning, tools and speed are already in the strip; never print them
+        // twice (the virtual shell lives in extraTop).
+        hideKinds: settings.showTools ? ["thinking", "tools", "meta"] : ["thinking", "meta"],
       });
     } else {
       const parts = renderLiveParts(s, settings, unified);
