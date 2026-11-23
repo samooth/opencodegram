@@ -104,7 +104,26 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // bottom, otherwise the final clamp eats it. Cap the strip so the footer
     // always survives.
     let top = lines.join("");
-    if (compact && top.length > 1000) top = clampText(top, 1000);
+    // Compact: keep the head (state + telemetry) and the TAIL (shell + partial
+    // answer) so the virtual shell never disappears when the card is tight.
+    // clampText alone keeps only the head, which hid the shell block.
+    if (compact && top.length > 1000) {
+      // Preserve the leading state/telemetry line(s).
+      const headKeep = lines.slice(0, 2).join("");
+      const budget = 1000 - headKeep.length - 4;
+      const tail = top.slice(headKeep.length);
+      let cut = tail.length - budget;
+      if (cut < 0) cut = 0;
+      // Align cut to a tag boundary so we never split an HTML tag.
+      const nextTag = tail.indexOf("<", cut);
+      if (nextTag > cut && nextTag - cut < 40) cut = nextTag;
+      const tailPart = tail.slice(cut);
+      top = headKeep + "\n…" + tailPart;
+      // Close any unterminated tags in the tail.
+      const lastOpen = top.lastIndexOf("<");
+      const lastClose = top.lastIndexOf(">");
+      if (lastOpen > lastClose) top = top.slice(0, lastOpen) + "\n…";
+    }
     return {
       top,
       bottom: statsLine,
