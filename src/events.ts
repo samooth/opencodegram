@@ -592,13 +592,19 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     if (!fallbackText && msgId && sessionId) {
       try {
         const m = await oc.client.session.message.get({ sessionID: sessionId, messageID: msgId });
-        const content = (m as { parts?: Array<{ type?: string; text?: string }> })?.parts;
-        if (Array.isArray(content)) {
-          fallbackText = content.filter((p) => p.type === "text" && typeof p.text === "string").map((p) => p.text!).join("\n\n").trim();
-        }
-        if (!fallbackText) {
-          const mt = (m as { text?: string })?.text;
-          if (typeof mt === "string") fallbackText = mt.trim();
+        // Surface a recorded provider failure (e.g. 402 quota) gracefully.
+        const err = (m as { error?: { message?: string; type?: string } })?.error;
+        if (err?.message) {
+          fallbackText = `⚠️ <b>${esc(classifyFailure(err.message).label)}</b>\n<i>${esc(classifyFailure(err.message).hint)}</i>`;
+        } else {
+          const content = (m as { parts?: Array<{ type?: string; text?: string }> })?.parts;
+          if (Array.isArray(content)) {
+            fallbackText = content.filter((p) => p.type === "text" && typeof p.text === "string").map((p) => p.text!).join("\n\n").trim();
+          }
+          if (!fallbackText) {
+            const mt = (m as { text?: string })?.text;
+            if (typeof mt === "string") fallbackText = mt.trim();
+          }
         }
       } catch (err) {
         console.warn("[events] fallback message.get failed", String(err));
@@ -649,6 +655,18 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       const msgId = (e as { data?: Record<string, unknown> }).data?.assistantMessageID as string | undefined;
       if (msgId) {
         const m = await oc.client.session.message.get({ sessionID: s.sessionId, messageID: msgId });
+        // OpenCode records provider failures (e.g. 402 quota) on the assistant
+        // message itself while text.ended carries empty text. Surface them as
+        // a graceful error card instead of an "(empty response)" final.
+        const err = (m as { error?: { message?: string; type?: string } })?.error;
+        if (err?.message) {
+          const synthetic = {
+            type: "session.execution.failed",
+            data: { sessionID: s.sessionId, error: { message: `${err.type ?? "provider"}: ${err.message}` } },
+          };
+          await handleSessionExecutionFailed(synthetic as any, deps);
+          return;
+        }
         const t = (m as { time?: { completed?: number; streamed?: number; created?: number } })?.time;
         if (t?.streamed && !streamedAt) streamedAt = t.streamed;
         if (t?.completed) {

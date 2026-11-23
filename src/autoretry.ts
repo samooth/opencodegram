@@ -70,7 +70,7 @@ export type RetryDecision =
   | { action: "retry"; attempt: number; delay: number; maxAttempts: number }
   | { action: "exhausted"; attempts: number; maxAttempts: number };
 
-export type FailureKind = "rate-limit" | "provider" | "network" | "permanent" | "unknown";
+export type FailureKind = "rate-limit" | "quota" | "provider" | "network" | "permanent" | "unknown";
 
 export type FailureInfo = {
   kind: FailureKind;
@@ -93,9 +93,22 @@ export function classifyFailure(message: string): FailureInfo {
   const msg = message ?? "";
   const ocAlreadyRetrying = /retr(y|ying)|backoff|will retry|retrying in/i.test(msg);
   const permanent = /invalid api key|unauthori[sz]ed|forbidden|401|403|404|not found|does not exist|context (length|window)|maximum context|token limit|invalid request|bad request|\b400\b/i.test(msg);
-  const rateLimit = /rate[\s-]?limit|quota|too many requests|\b429\b|usage limit|limit (exceeded|reached)|free tier|too many/i.test(msg);
+  // Provider credits / billing quota (e.g. OpenRouter 402 "requires more
+  // credits"): retrying with the SAME model is useless — the user must switch
+  // model or top up. Keep it non-retryable but give an actionable hint.
+  const quota = /more credits|insufficient (credit|fund|balance)|out of credit|billing|quota|\b402\b|upgrade to a paid|free tier|credit limit|no credits|requires credits/i.test(msg);
+  const rateLimit = /rate[\s-]?limit|too many requests|\b429\b|usage limit|limit (exceeded|reached)|free tier|too many/i.test(msg);
   const network = /econnreset|econnrefused|etimedout|enotfound|socket hang up|fetch failed|network error|connection (reset|refused|closed)/i.test(msg);
   const provider = /provider returned error|provider error|overloaded|internal server error|bad gateway|service unavailable|gateway timeout|upstream|temporarily unavailable|try again later|server error|\b50[0234]\b/i.test(msg);
+  if (quota) {
+    return {
+      kind: "quota",
+      retryable: false,
+      label: "💳 Créditos del proveedor agotados",
+      hint: "El modelo actual necesita créditos. Cambia a un modelo gratuito o recarga la cuenta del proveedor.",
+      ocAlreadyRetrying,
+    };
+  }
   if (rateLimit) {
     return {
       kind: "rate-limit",
