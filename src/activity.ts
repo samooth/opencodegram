@@ -236,15 +236,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
     const thoughtStatus = (t: ActivityEntry) => expanded
       ? (t.ok === true ? " ✅" : t.ok === false ? " ❌" : t.open ? " ⏳" : "")
       : "";
-    // Each thought is its own collapsible block, nested inside the outer
-    // "Pensamientos" block, so the user can expand one thought at a time
-    // instead of reading them all in a single wall of text.
-    const lines = thoughts.map((t) => {
-      const dur = fmtDuration(t.durationMs ?? Math.max(0, now - t.at));
-      const head = `💭 <b>${esc(t.label)}</b> · ${dur}${thoughtStatus(t)}`;
-      const body = detailPara(t.detail, detailCap);
-      return body ? `<blockquote expandable>${head}\n${body}</blockquote>` : `<blockquote expandable>${head}</blockquote>`;
-    });
+    const lines = thoughts.map((t) => `<p>💭 <b>${esc(t.label)}</b> · ${fmtDuration(t.durationMs ?? Math.max(0, now - t.at))}${thoughtStatus(t)}</p>${detailPara(t.detail, detailCap)}`);
     const thoughtBudget = expanded ? 1800 : 1400;
     let kept = lines;
     while (kept.length > 1 && kept.join("").length > thoughtBudget) kept = kept.slice(1);

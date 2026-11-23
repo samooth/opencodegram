@@ -233,7 +233,7 @@ describe("turn activity counters", () => {
     for (let i = 0; i < 20; i++) recordThought(a, `pensamiento ${i}`, { at: 1000 + i });
     const collapsed = renderActivity(a, "high", false, 2000, false);
     const expanded = renderActivity(a, "high", false, 2000, true);
-    expect((collapsed.match(/<blockquote/g) ?? []).length).toBeLessThanOrEqual(7);
+    expect((collapsed.match(/<blockquote/g) ?? []).length).toBeLessThanOrEqual(2);
     expect(expanded.length).toBeGreaterThan(collapsed.length);
   });
 
@@ -251,7 +251,7 @@ describe("turn activity counters", () => {
     closeOpen(a, 2500);
     recordTool(a, "read", "README.md", { at: 3000, toolId: "a" });
     const out = renderActivity(a, "high", false, 3500, false);
-    expect(out.match(/<blockquote/g)).toHaveLength(4);
+    expect(out.match(/<blockquote/g)).toHaveLength(2);
     expect(out).toContain("Pensamiento</b> · 500ms");
   });
 });
