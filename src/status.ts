@@ -103,29 +103,26 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // In compact mode the strip must leave room for the tool-stats line at the
     // bottom, otherwise the final clamp eats it. Cap the strip so the footer
     // always survives.
-    // Cap the activity block in compact mode so it cannot push the shell out.
-    if (compact) {
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith("<p>") && lines[i].includes("pensamiento") === false && lines[i].includes("·") && !lines[i].includes("Shell")) {
-          // telemetry/prompt lines stay; only cap very long ones
-        }
-      }
-    }
     let top = lines.join("");
     // Compact: drop the reasoning block first, then activity, if over budget,
     // but ALWAYS keep the state, shell and partial answer. Never clamp to a
     // raw tail (that hid everything except the stream).
     if (compact && top.length > 1000) {
-      // Try removing the reasoning block.
-      const reasoningIdx = lines.findIndex((l) => l.includes("🧠 Razonamiento"));
-      if (reasoningIdx >= 0) {
-        const removed = lines.splice(reasoningIdx, 1);
-        top = lines.join("");
-        if (top.length > 1000) {
-          const actIdx = lines.findIndex((l) => l.includes("Pensamientos") || l.includes("pensamiento"));
-          // activity is one block; remove it too if needed
-          if (actIdx >= 0 && lines.join("").length > 1000) {
-            lines.splice(actIdx, 1);
+      // Drop less-important blocks first, but NEVER the answer (💬 Respuesta)
+      // nor the state/receipt. Order: reasoning -> activity -> shell.
+      for (const needle of ["🧠 Razonamiento", "Pensamientos", "pensamiento", "⚡ Shell"]) {
+        if (lines.join("").length <= 1000) break;
+        const idx = lines.findIndex((l) => l.includes(needle));
+        if (idx >= 0) lines.splice(idx, 1);
+      }
+      top = lines.join("");
+      // If still over budget, truncate the answer block (never drop it).
+      if (top.length > 1000) {
+        const ansIdx = lines.findIndex((l) => l.includes("💬 Respuesta"));
+        if (ansIdx >= 0) {
+          const budget = 1000 - (lines.join("").length - lines[ansIdx].length) - 20;
+          if (budget > 0 && lines[ansIdx].length > budget) {
+            lines[ansIdx] = lines[ansIdx].slice(0, budget) + "…";
             top = lines.join("");
           }
         }
