@@ -929,8 +929,9 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
       const sid = sessionId as string;
       const prompt = promptForRetry as string;
       dispatchRetry(sid, decision.delay, async () => {
-        // Start a fresh turn/card for the retry so the previous answer is not
-        // re-rendered on the same page and stale blocks do not accumulate.
+        // Reuse the SAME card message for the retry instead of creating a new
+        // one: reset the turn state in place (no refloat) so there is only one
+        // message per turn, and the blocks update instead of being duplicated.
         const retrySession = store.findSessionById(sid);
         if (retrySession && chatId !== undefined) {
           retrySession.stopped = false;
@@ -939,19 +940,50 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
           retrySession.reasoningBuffer = "";
           retrySession.toolCalls = [];
           retrySession.toolCallDetails = [];
+          try {
+            const { createTurnActivity } = await import("./activity.js");
+            retrySession.activity = createTurnActivity();
+          } catch { retrySession.activity = retrySession.activity; }
           retrySession.transcriptFollow = true;
-          await deps.startStatus(chatId, retrySession).catch((err) => console.warn("[events] retry startStatus failed", err?.message ?? err));
+          retrySession.readingMode = false;
+          retrySession.cardMenuExpanded = false;
+          retrySession.turnOutputTokens = 0;
+          retrySession.turnInputTokens = 0;
+          retrySession.turnReasoningTokens = 0;
+          retrySession.turnCacheReadTokens = 0;
+          retrySession.turnCacheWriteTokens = 0;
+          retrySession.turnCost = 0;
+          retrySession.turnFirstStreamedAt = undefined;
+          retrySession.turnFinishedAt = undefined;
+          retrySession.lastTurnError = undefined;
+          retrySession.transcriptPage = undefined;
+          retrySession.lastFinalMessageId = undefined;
+          retrySession.lastFinalTelegramMessageId = undefined;
+          retrySession.lastFinalDeliveredPromptStart = undefined;
+          retrySession.lastFinalSeparatedPromptStart = undefined;
+          retrySession.textEndedHandled = undefined;
+          retrySession.sentArtifacts = new Set();
+          if (retrySession.transcriptMessageId) {
+            retrySession.statusMessageId = retrySession.transcriptMessageId;
+            store.rememberStatusMessage(retrySession.sessionId, chatId, retrySession.targetThreadId ?? retrySession.threadId, retrySession.transcriptMessageId);
+          }
+          await (deps.publishCard ? deps.publishCard(chatId, retrySession) : Promise.resolve()).catch((err) => console.warn("[events] retry publishCard failed", err?.message ?? err));
+          // Drop the now-stale retry notice: the card itself shows progress.
+          const notice = retryMessageBySession.get(sid);
+          if (notice) {
+            retryMessageBySession.delete(sid);
+            await tg.deleteMessage?.(notice.chatId, notice.messageId).catch(() => {});
+          }
+          // Restart the live-update interval for the retried turn.
+          if (retrySession.statusTimer) { clearInterval(retrySession.statusTimer); retrySession.statusTimer = undefined; }
+          retrySession.statusTimer = setInterval(() => {
+            deps.updateStatus(chatId, retrySession).catch((err) => console.warn("[events]", String(err)));
+          }, 2000);
         }
         // Always use the latest prompt for this session, so a stale captured
         // prompt is never replayed even if state was not cleared in time.
         const latestPrompt = store.lastPromptBySession.get(sid) ?? prompt;
         await oc.prompt(sid, latestPrompt);
-        const existing = retryMessageBySession.get(sid);
-        if (existing) {
-          await tg
-            .editRichMessage(existing.chatId, existing.messageId, `${failure.label}\n⏳ Reintento ${decision.attempt}/${decision.maxAttempts} enviado; esperando al modelo…`)
-            .catch((err) => console.warn("[events]", err?.message ?? err));
-        }
       });
       const existingRetryMsg = retryMessageBySession.get(sid);
       const retryText = `${failure.label}\n⏳ Reintentando en ${Math.round(decision.delay / 1000)}s (intento ${decision.attempt}/${decision.maxAttempts})…\n<i>${esc(failure.hint)}</i>`;
