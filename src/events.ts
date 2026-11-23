@@ -1133,8 +1133,10 @@ const handleSessionExecutionSucceeded: EventHandler = async (event, deps) => {
 const handleSessionExecutionInterrupted: EventHandler = async (event, deps) => {
   const e = event as { type: string; data?: Record<string, unknown> };
   const sid = e.data?.sessionID as string | undefined;
-  const s = sid ? deps.store.findSessionById(sid) : undefined;
-  if (s) s.stopped = true;
+  // Do NOT mark the session as user-stopped: OpenCode emits this when a turn
+  // pauses for external input (form/permission). Setting stopped=true here
+  // made ensureLiveStatus ignore the resumed turn, so no card updates arrived
+  // after the user replied to a form.
   if (sid) {
     deps.store.setSessionStatus(sid, "idle");
     logger.info("events", "[execution.interrupted]", sid);
