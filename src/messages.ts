@@ -378,14 +378,9 @@ async function startPrompt(
   const { oc, store, status } = deps;
   const { startStatus, updateStatus, finishStatus } = status;
   try {
-    // If a turn is still running, cancel it first so the new prompt does not
-    // overlap (which used to corrupt state and queue prompts for minutes).
-    if (s.statusFinished === false) {
-      s.stopped = true;
-      if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
-      await finishStatus(chatId, s).catch(() => {});
-      cancelAutoRetry(s.sessionId);
-    }
+    // Do NOT cancel an in-progress turn here: OpenCode serialises prompts per
+    // session and emits one text.ended per prompt. Cancelling made each new
+    // prompt discard the previous turn's answer (the user saw "no response").
     s.targetChatId = chatId;
     s.targetThreadId = replyThread;
     s.lastFinalMessageId = undefined;
