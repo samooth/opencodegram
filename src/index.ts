@@ -114,6 +114,7 @@ async function main() {
     },
   });
   const dashboard = createDashboardManager({ tg, store, settings, oc, threadOptsFor: (s) => store.threadOptsFor(s) });
+  let activeIdsCache: { ids: Set<string>; at: number } | null = null;
   const status = createStatusManager({
     tg,
     threadOptsFor: (s) => store.threadOptsFor(s),
@@ -125,6 +126,11 @@ async function main() {
     store,
     transcript,
     dashboard,
+    ocActiveSessionIds: () => {
+      const now = Date.now();
+      if (activeIdsCache && now - activeIdsCache.at < 2000) return Promise.resolve(activeIdsCache.ids);
+      return oc.activeSessionIds().then((ids) => { activeIdsCache = { ids, at: Date.now() }; return ids; });
+    },
   });
   const sessions = createSessionManager({
     config,

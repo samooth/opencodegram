@@ -54,6 +54,17 @@ export class OpenCodeBridge {
     return this.client.session.list();
   }
 
+  /** IDs of sessions whose agent is actually running. Missing = idle. */
+  async activeSessionIds(): Promise<Set<string>> {
+    try {
+      const res = await this.client.session.active() as { data?: Record<string, unknown> } | Record<string, unknown>;
+      const data = (res as { data?: Record<string, unknown> })?.data ?? res as Record<string, unknown>;
+      return new Set(Object.keys(data ?? {}));
+    } catch {
+      return new Set();
+    }
+  }
+
   async listSessionsCached(ttlMs = SESSION_LIST_CACHE_TTL_MS): Promise<unknown[]> {
     const now = Date.now();
     if (this.sessionListCache && this.sessionListCache.expires > now) return this.sessionListCache.data;

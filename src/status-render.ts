@@ -207,6 +207,8 @@ export type StatusDeps = {
   dashboard?: DashboardManager;
   /** Recent MCP events per session (experimental, 2.3.0). */
   mcpEvents?: Map<string, Array<{ at: number; server: string; text: string }>>;
+  /** IDs of sessions actually running in OpenCode (missing = idle). */
+  ocActiveSessionIds?: () => Promise<Set<string>>;
 };
 
 

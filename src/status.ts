@@ -16,7 +16,7 @@ import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, par
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
-export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard, mcpEvents }: StatusDeps) {
+export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard, mcpEvents, ocActiveSessionIds }: StatusDeps) {
   /**
    * Live strip for the session card. Latest tool and thought are shown at the
    * bottom of the message (above resource indicators) for readability.
@@ -209,6 +209,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const unified = settings.displayMode === "unified";
     const reading = s.readingMode === true;
     const compact = settings.compactCard && !s.cardMenuExpanded && !reading;
+    // Trust OpenCode's authoritative active list: a session that is idle there
+    // must never show "Trabajando…" or a Stop button, even if local state still
+    // has statusFinished=false (e.g. a detached session or a missed text.ended).
+    if (!s.statusFinished && !s.stopped && store?.getActiveSession) {
+      try {
+        const active = await ocActiveSessionIds?.();
+        if (active && !active.has(s.sessionId)) {
+          s.statusFinished = true;
+          if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+        }
+      } catch { /* ignore */ }
+    }
     s.cardView = { compact, reading, showResources: !unified && settings.showResourceUsage, unified } satisfies CardView;
     // P1.1: the compact card keeps the receipt readable but never blows past
     // the 1.200-character budget; detail lives in ▾ Más / ▾ Detalles.
