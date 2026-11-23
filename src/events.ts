@@ -263,6 +263,21 @@ const handleSessionToolProgress: EventHandler = async (event, deps) =>
     if (chunk) detail.output = ((detail.output ?? "") + chunk).slice(0, 2000);
   });
 
+const handleSessionInbox: EventHandler = async (event, deps) => {
+  const { store, tg } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  const s = sid ? store.findSessionById(sid) : undefined;
+  if (!s) return;
+  const chatId = store.resolveChatId(sid);
+  if (chatId === undefined) return;
+  const action = e.type.split(".").pop();
+  const label = action === "enqueued" ? "📥 Trabajo en cola" : action === "delivered" ? "✅ Trabajo entregado" : action === "cancelled" ? "⏹ Trabajo cancelado" : "📥 Bandeja";
+  // Refresh the card so the "background/inbox" state is visible in place.
+  if (deps.publishCard) await deps.publishCard(chatId, s).catch(() => {});
+  logger.debug("events", `[inbox.${action}]`, sid);
+};
+
 const handleSessionModelSelected: EventHandler = async (event, deps) => {
   const { store } = deps;
   const e = event as { type: string; data?: Record<string, unknown> };
@@ -1279,6 +1294,10 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.tool.success", handleSessionToolSuccess],
   ["session.tool.progress", handleSessionToolProgress],
   ["session.model.selected", handleSessionModelSelected],
+  ["session.inbox.enqueued", handleSessionInbox],
+  ["session.inbox.delivered", handleSessionInbox],
+  ["session.inbox.cancelled", handleSessionInbox],
+  ["session.inbox.delivery.changed", handleSessionInbox],
   ["session.tool.failed", handleSessionToolFailed],
   ["session.compaction.started", handleSessionCompactionStarted],
   ["session.compaction.delta", handleSessionCompactionDelta],

@@ -804,6 +804,22 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     await panels.showModels(chatId, 0, editId, threadId, undefined, targetSessionId || null, { userId: cq.from?.id });
     return;
   }
+  if (data === "panel:bg") {
+    let s = store.getActiveSession(chatId, threadId);
+    if (!s) {
+      await tg.answerCallbackQuery(cq.id, "No hay sesión activa").catch(() => {});
+      return;
+    }
+    try {
+      await oc.background(s.sessionId);
+      await tg.answerCallbackQuery(cq.id, "🔇 Herramientas en segundo plano").catch(() => {});
+    } catch (err) {
+      await tg.answerCallbackQuery(cq.id, "No se pudo pasar a segundo plano").catch(() => {});
+      console.warn("[callbacks] background failed", err);
+    }
+    return;
+  }
+
   if (data === "panel:stop") {
     let s = store.getActiveSession(chatId, threadId);
     // The Stop button lives in the status card of a specific session. Prefer
@@ -1280,7 +1296,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
   // can turn read-only off again (and manage permissions) from the same card.
   if (!admin && deps.permissions?.isReadOnly(routeKey)) {
     const mutating = [
-      "panel:stop", "panel:new", "retry:", "runcmd:", "botcmd:", "cmd:", "set:", "cycle:", "preset:",
+      "panel:stop", "panel:bg", "panel:new", "retry:", "runcmd:", "botcmd:", "cmd:", "set:", "cycle:", "preset:",
       "profile:", "model:", "agent:", "variant:", "qswitch:", "use:", "del:", "delsessions:", "delconfirm:",
       "connect:", "mcp:", "stage:", "unstage:", "commit:", "branch:", "worktree:", "vcs:", "perm:",
       "permui:", "permthread:", "formreply:", "goal:", "edit:", "edits:", "spick:",

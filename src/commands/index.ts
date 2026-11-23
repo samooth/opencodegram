@@ -18,7 +18,7 @@ import * as miscCmds from "./misc.js";
 import * as statsCmds from "./stats.js";
 
 const {
-  cmd_status, cmd_new, cmd_stop, cmd_fork, cmd_rename, cmd_archive, cmd_unarchive,
+  cmd_status, cmd_new, cmd_stop, cmd_bg, cmd_fork, cmd_rename, cmd_archive, cmd_unarchive,
   cmd_delete, cmd_compact, cmd_context, cmd_usage, cmd_sync, cmd_running_sessions, cmd_search,
   cmd_use, cmd_diff,
 } = sessionsCmds;
@@ -33,7 +33,7 @@ const {
 const { cmd_stats } = statsCmds;
 
 export const KNOWN_COMMANDS = new Set([
-  "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort", "search",
+  "start", "help", "status", "session", "sessions", "running", "new", "stop", "abort", "bg", "background", "search",
   "commands", "settings", "permissions", "web", "ops", "file", "ls", "find", "read", "zip", "tree", "model", "models",
   "agent", "agents", "skill", "skills", "fork", "rename", "archive", "unarchive",
   "delete", "deletesessions", "diff", "context", "compact", "buttons", "retry", "todos", "unlink", "cancel",
@@ -59,6 +59,8 @@ COMMANDS.set("session", cmd_status);
 COMMANDS.set("new", cmd_new);
 COMMANDS.set("stop", cmd_stop);
 COMMANDS.set("abort", cmd_stop);
+COMMANDS.set("bg", cmd_bg);
+COMMANDS.set("background", cmd_bg);
 COMMANDS.set("commands", cmd_commands);
 COMMANDS.set("permissions", cmd_permissions);
 COMMANDS.set("settings", cmd_settings);

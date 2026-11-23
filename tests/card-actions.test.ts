@@ -44,7 +44,7 @@ describe("contextual card keyboards", () => {
     const s = makeSession();
     s.activity!.thoughts = 1;
     const kb = transcript.cardKeyboard(7, s, 0, 1, { working: true });
-    expect(kb[0].map((b) => b.text)).toEqual(["⏹ Detener", "▾ Detalles"]);
+    expect(kb[0].map((b) => b.text)).toEqual(["⏹ Detener", "🔇 Fondo", "▾ Detalles"]);
     expect(kb[0][0].callback_data).toBe("panel:stop");
   });
 

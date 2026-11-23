@@ -48,6 +48,22 @@ export async function cmd_new(deps: BotDeps, chatId: number, threadId: number | 
   return false;
 }
 
+export async function cmd_bg(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
+  if (text === "/bg" || text === "/background") {
+    const C = ctx(deps);
+    const s = await C.restoreActiveSession(chatId, threadId);
+    if (!s) { await send("No hay sesión activa"); return true; }
+    try {
+      await C.oc.background(s.sessionId);
+      await send("🔇 Herramientas pasadas a segundo plano (equivalente a Ctrl+B).");
+    } catch (err) {
+      await send(`❌ ${esc(String(err))}`);
+    }
+    return true;
+  }
+  return false;
+}
+
 export async function cmd_stop(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/stop" || text === "/abort") {

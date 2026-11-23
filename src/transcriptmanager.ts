@@ -414,6 +414,7 @@ ${body}
     const primary: InlineButton[] = [];
     if (view.working) {
       primary.push({ text: "⏹ Detener", callback_data: "panel:stop" });
+      primary.push({ text: "🔇 Fondo", callback_data: "panel:bg" });
       if (hasActivity) primary.push({
         text: s.activityExpanded ? "▴ Ocultar" : "▾ Detalles",
         callback_data: `activity:${s.sessionId}`,

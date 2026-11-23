@@ -2,6 +2,7 @@ export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and control panel" },
   { command: "help", description: "Show help and panel" },
   { command: "status", description: "Show active session" },
+  { command: "bg", description: "Send blocking tools to background (Ctrl+B)" },
   { command: "sessions", description: "List and switch sessions" },
   { command: "use", description: "Switch to a session by ID" },
   { command: "new", description: "Create a new session" },

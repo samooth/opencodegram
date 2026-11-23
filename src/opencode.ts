@@ -264,6 +264,16 @@ export class OpenCodeBridge {
     return this.client.session.interrupt({ sessionID: sessionId });
   }
 
+  /** Move blocking foreground tools to background (TUI Ctrl+B equivalent). */
+  async background(sessionId: string) {
+    return this.client.session.background({ sessionID: sessionId });
+  }
+
+  async inboxList(sessionId: string) {
+    const res = await this.client.session.inbox.list({ sessionID: sessionId });
+    return ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
+  }
+
   async replyPermission(sessionId: string, requestId: string, decision: "once" | "always" | "reject") {
     return this.client.permission.reply({ sessionID: sessionId, requestID: requestId, decision });
   }
