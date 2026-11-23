@@ -127,7 +127,19 @@ export class OpenCodeBridge {
     return this.client.session.command({ sessionID: sessionId, name, text: args });
   }
 
+  /** Prefer a free model: the server default may be a paid model with no
+   * credits, which makes new Telegram sessions fail silently (402 quota). */
   async defaultModel(directory?: string) {
+    try {
+      const list = await this.modelListCached() as Array<{ id?: string; providerID?: string; cost?: Array<{ input?: number; output?: number }>; variants?: Array<{ id?: string }> }>;
+      const free = list.find((m) =>
+        m?.id && m?.providerID &&
+        (m.cost?.some((c) => c.input === 0 && c.output === 0) || /free/i.test(m.id)),
+      );
+      if (free) return { id: free.id!, providerID: free.providerID!, variant: free.variants?.find((v) => v.id === "max")?.id };
+    } catch {
+      // ignore
+    }
     try {
       const res = await this.client.model.default(directory ? { location: { directory } } : undefined);
       const data = (res as { data?: { id?: string; providerID?: string; variants?: Array<{ id?: string }> } })?.data ?? res as { id?: string; providerID?: string; variants?: Array<{ id?: string }> };
