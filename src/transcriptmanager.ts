@@ -225,7 +225,13 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
         if (content.length > budget) content = clampText(content, budget);
       }
       const parts = [headFixed, content ? `<hr/>\n${content}` : "", ...tailParts].filter(Boolean);
-      return clampText(parts.join("\n\n"), LAYOUT_LIMIT);
+      let joined = parts.join("\n\n");
+      // Never let the final clamp eat the tail (stats/resources): drop the
+      // content first, then clamp, so the footer survives.
+      if (joined.length > LAYOUT_LIMIT && content) {
+        joined = [headFixed, ...tailParts].filter(Boolean).join("\n\n");
+      }
+      return clampText(joined, LAYOUT_LIMIT);
     };
 
     // While a turn is streaming and the user follows the card, show only the
