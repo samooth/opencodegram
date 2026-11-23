@@ -103,26 +103,34 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // In compact mode the strip must leave room for the tool-stats line at the
     // bottom, otherwise the final clamp eats it. Cap the strip so the footer
     // always survives.
+    // Cap the activity block in compact mode so it cannot push the shell out.
+    if (compact) {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("<p>") && lines[i].includes("pensamiento") === false && lines[i].includes("·") && !lines[i].includes("Shell")) {
+          // telemetry/prompt lines stay; only cap very long ones
+        }
+      }
+    }
     let top = lines.join("");
-    // Compact: keep the head (state + telemetry) and the TAIL (shell + partial
-    // answer) so the virtual shell never disappears when the card is tight.
-    // clampText alone keeps only the head, which hid the shell block.
+    // Compact: drop the reasoning block first, then activity, if over budget,
+    // but ALWAYS keep the state, shell and partial answer. Never clamp to a
+    // raw tail (that hid everything except the stream).
     if (compact && top.length > 1000) {
-      // Preserve the leading state/telemetry line(s).
-      const headKeep = lines.slice(0, 2).join("");
-      const budget = 1000 - headKeep.length - 4;
-      const tail = top.slice(headKeep.length);
-      let cut = tail.length - budget;
-      if (cut < 0) cut = 0;
-      // Align cut to a tag boundary so we never split an HTML tag.
-      const nextTag = tail.indexOf("<", cut);
-      if (nextTag > cut && nextTag - cut < 40) cut = nextTag;
-      const tailPart = tail.slice(cut);
-      top = headKeep + "\n…" + tailPart;
-      // Close any unterminated tags in the tail.
-      const lastOpen = top.lastIndexOf("<");
-      const lastClose = top.lastIndexOf(">");
-      if (lastOpen > lastClose) top = top.slice(0, lastOpen) + "\n…";
+      // Try removing the reasoning block.
+      const reasoningIdx = lines.findIndex((l) => l.includes("🧠 Razonamiento"));
+      if (reasoningIdx >= 0) {
+        const removed = lines.splice(reasoningIdx, 1);
+        top = lines.join("");
+        if (top.length > 1000) {
+          const actIdx = lines.findIndex((l) => l.includes("Pensamientos") || l.includes("pensamiento"));
+          // activity is one block; remove it too if needed
+          if (actIdx >= 0 && lines.join("").length > 1000) {
+            lines.splice(actIdx, 1);
+            top = lines.join("");
+          }
+        }
+      }
+      if (top.length > 1000) top = clampText(top, 1000);
     }
     return {
       top,
