@@ -398,6 +398,7 @@ async function startPrompt(
     s.promptStartTime = Date.now();
     store.rememberLastChat(s.sessionId, chatId);
     store.rememberLastPrompt(s.sessionId, text);
+    deps.sessionTrace?.("prompt.dispatch", { sessionId: s.sessionId, chatId, replyThread, len: text.length });
     notePromptSent(s.sessionId, text);
     // A manual prompt supersedes any pending auto-retry: cancel it and drop its
     // notice message so the new turn does not race with a stale retry (which
@@ -573,6 +574,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   if (chatId < 0) tg.setMessageReaction(chatId, msg.message_id, "👀").catch(() => {});
   tg.sendChatAction(chatId, "typing", replyThread).catch(() => {});
   deps.audit("message", `${userId} ${chatId}: ${(msg.text ?? msg.caption ?? "").slice(0, 120)}`);
+  deps.sessionTrace?.("message.audit", { chatId, threadId: replyThread, userId });
 
   // If we are awaiting a rejection reason, handle it.
   const reasonKey = routeKey(chatId, replyThread);
@@ -687,6 +689,7 @@ export async function handleMediaMessage(
     { text: (msg.text ?? msg.caption ?? "").trim() || "Analiza este archivo", files: mediaToAttach },
     chatId < 0 && !!msg.reply_to_message && msg.reply_to_message.from?.id === deps.me?.id,
   );
+  deps.sessionTrace?.("message.resolved", { chatId, threadId: replyThread, hasSession: !!resolution.session, asked: !!resolution.asked, sessionId: resolution.session?.sessionId });
   const s = resolution.session;
   if (!s) {
     if (resolution.asked) return;
@@ -812,6 +815,7 @@ export async function handleTextMessage(
   // Create or restore the session bound to this tab.
   const rawText = (msg.text ?? msg.caption ?? "").trim();
   const resolution = await resolveSessionForMessage(deps, chatId, replyThread, repliedSessionId, rawText, { text: rawText }, chatId < 0 && !!msg.reply_to_message && msg.reply_to_message.from?.id === me.id);
+  deps.sessionTrace?.("message.resolved", { chatId, threadId: replyThread, hasSession: !!resolution.session, asked: !!resolution.asked, sessionId: resolution.session?.sessionId });
   const s = resolution.session;
   if (!s) {
     if (resolution.asked) return;
