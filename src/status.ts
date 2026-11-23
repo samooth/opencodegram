@@ -57,8 +57,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true, settings.showTools);
     if (activityBlock) lines.push(activityBlock);
     // ⚡ Virtual shell: ALWAYS visible while working, even when empty, so the
-    // user sees the tool transcript slot from the very first token.
-    if (settings.showTools) {
+    // user sees the tool transcript slot from the very first token and every
+    // new command (read/write/etc.) is captured as it arrives.
+    {
       const count = s.toolCallDetails.length;
       if (count) {
         const shellText = renderVirtualShell(s.toolCallDetails, shellCap);
