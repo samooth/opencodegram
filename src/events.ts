@@ -19,6 +19,7 @@ import { cancelAutoRetry, classifyFailure, decideRetry, dispatchRetry, noteTurnC
 import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
+import { cleanShellOutput } from "./status-render.js";
 
 export type EventsDeps = {
   /** Telegram client used to send/edit messages. */
@@ -804,7 +805,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
                 cmd = d.input.slice(0, 220);
               }
             }
-            const out = (d.output ?? "").toString().trim().slice(0, 400);
+            const out = cleanShellOutput((d.output ?? "").toString()).trim().slice(0, 400);
             return `$ ${esc(cmd)}${out ? `\n${esc(out)}` : ""}${d.status === "failed" ? "\n(failed)" : ""}`;
           }).join("\n\n");
           extraHtml += `\n\n<blockquote expandable>🖥 Shell (${shellDetails.length})\n<pre>${body}</pre></blockquote>`;
@@ -812,7 +813,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
         if (otherDetails.length) {
           const body = otherDetails.slice(-20).map((d) => {
             const inp = d.input ? esc(d.input.slice(0, 180)) : "";
-            const out = (d.output ?? "").toString().trim();
+            const out = cleanShellOutput((d.output ?? "").toString()).trim();
             const outShort = out ? esc(out.slice(0, 220)) : "";
             return `${toolIcon(d.name)} <b>${esc(d.name)}</b>${inp ? `\n<i>${inp}</i>` : ""}${outShort ? `\n<code>${outShort}</code>` : ""}${d.status === "failed" ? " <i>(failed)</i>" : ""}`;
           }).join("\n\n");

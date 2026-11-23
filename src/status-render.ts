@@ -113,9 +113,22 @@ function parseToolOutput(output: string): string {
   return trimmed;
 }
 
+/**
+ * Strip harness/tool noise that should never appear in the user-facing virtual
+ * shell (e.g. the "There is no bash tool, so this ran as shell" harness notice).
+ * Applied to every shell output before rendering.
+ */
+export function cleanShellOutput(output: string): string {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => !/there is no \"?bash\"? tool,? so this ran as \"?shell\"?/i.test(line))
+    .join("\n")
+    .trim();
+}
+
 function parseShellOutput(output: string): string | null {
   const text = parseToolOutput(output);
-  return text || null;
+  return text ? cleanShellOutput(text) || null : null;
 }
 
 export function parseToolInput(input: string | undefined): Record<string, unknown> | null {
@@ -329,7 +342,7 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
     const entry = counts.get(cmd)!;
     const d = entry.last;
     const failed = d.status === "failed";
-    const output = d.output ? (parseShellOutput(d.output) ?? d.output).trim() : "";
+    const output = d.output ? cleanShellOutput((parseShellOutput(d.output) ?? d.output)).trim() : "";
     const normalized = cmd.replace(/\s+/g, " ").trim();
     const capped = normalized.length > 120 ? `${normalized.slice(0, 117)}…` : normalized;
     const header = `$ ${capped}${entry.count > 1 ? `  (×${entry.count})` : ""}${failed ? "  ❌" : ""}`;
@@ -389,7 +402,7 @@ export function renderShell(details: ChatSession["toolCallDetails"], limit: numb
       // dumped verbatim into the card.
       command = (command.split(/\r?\n/)[0] ?? "").trim();
       if (command.length > 200) command = `${command.slice(0, 197)}…`;
-      const output = (parseShellOutput(d.output ?? "") ?? d.output ?? "").trim();
+      const output = cleanShellOutput((parseShellOutput(d.output ?? "") ?? d.output ?? "")).trim();
       const lines = ["$ " + command + (count > 1 ? `  (×${count})` : "")];
       if (output) lines.push(truncateText(output, limit));
       if (d.status === "failed") lines.push("(failed)");
