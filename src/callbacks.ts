@@ -1607,6 +1607,7 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
         reply_markup: { inline_keyboard: [] },
       })
       .catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    if (state.timeoutHandle) clearTimeout(state.timeoutHandle);
     deps.pendingForms.delete(messageId);
     deps.pendingFormsById.delete(state.formId);
     return true;
@@ -1637,6 +1638,7 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
       state.submitted = false;
       await deps.tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
+    if (state.timeoutHandle) clearTimeout(state.timeoutHandle);
     deps.pendingForms.delete(messageId);
     deps.pendingFormsById.delete(state.formId);
     return true;

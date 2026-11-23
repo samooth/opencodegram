@@ -54,6 +54,8 @@ const schema = z.object({
   WHISPER_DAEMON_URL: z.string().url().optional(),
   USER_RATE_LIMIT_ENABLED: z.string().optional().default("false").transform((v) => v === "true" || v === "1"),
   USER_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
+  FORM_TTL_MS: z.coerce.number().int().positive().default(30 * 60_000),
+  PERMISSION_TTL_MS: z.coerce.number().int().positive().default(5 * 60_000),
 });
 
 export type Config = z.infer<typeof schema>;

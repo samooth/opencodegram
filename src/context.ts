@@ -44,6 +44,8 @@ export type FormState = {
   answers: Record<string, string | string[]>;
   messageId?: number;
   submitted: boolean;
+  /** Timeout handle to expire the form and notify the user in-place. */
+  timeoutHandle?: ReturnType<typeof setTimeout>;
 };
 
 export type SendFn = (html: string, opts?: Record<string, unknown>) => Promise<unknown>;

@@ -257,6 +257,30 @@ async function compactionNotice(
   if (message?.message_id) store.rememberMessageSession(chatId, message.message_id, sessionId);
 }
 
+const handleSessionToolProgress: EventHandler = async (event, deps) =>
+  applyToolEvent(deps, event, (detail, d) => {
+    const chunk = typeof d.output === "string" ? d.output : typeof d.text === "string" ? d.text : undefined;
+    if (chunk) detail.output = ((detail.output ?? "") + chunk).slice(0, 2000);
+  });
+
+const handleSessionModelSelected: EventHandler = async (event, deps) => {
+  const { store } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  const s = sid ? store.findSessionById(sid) : undefined;
+  if (!s) return;
+  const m = (e.data?.model ?? e.data) as { id?: string; modelID?: string; providerID?: string; variant?: string } | undefined;
+  const id = m?.id ?? m?.modelID;
+  const providerID = m?.providerID;
+  if (id && providerID) {
+    s.model = { id, providerID, variant: typeof m?.variant === "string" ? m.variant : undefined };
+    logger.info("events", "[model.selected]", sid, `${providerID}/${id}`);
+    // Refresh the card so the model header reflects the TUI change.
+    const chatId = store.resolveChatId(sid);
+    if (chatId !== undefined && deps.publishCard) await deps.publishCard(chatId, s).catch(() => {});
+  }
+};
+
 const handleSessionCompactionStarted: EventHandler = async (event, deps) => {
   const { store } = deps;
   const { findSessionById, resolveChatId, resolveThreadId } = store;
@@ -808,7 +832,7 @@ const handlePermissionAsked: EventHandler = async (event, deps) => {
       }
       pendingPermissions.delete(requestId);
     }
-  }, 5 * 60 * 1000);
+  }, deps.config?.PERMISSION_TTL_MS ?? 5 * 60_000);
   const permInfo = pendingPermissions.get(requestId);
   if (permInfo) permInfo.timeoutHandle = timeoutHandle;
 };
@@ -871,6 +895,17 @@ const handleFormCreated: EventHandler = async (event, deps) => {
     if (sent?.message_id) store.rememberMessageSession(chatId, sent.message_id, sessionId);
     pendingForms.set(sent.message_id, state);
     pendingFormsById.set(formId, sent.message_id);
+    // Expire the form in-place after the configured TTL so the user is not
+    // left staring at an interactive form that OpenCode already discarded.
+    const formTtl = deps.config?.FORM_TTL_MS ?? 30 * 60_000;
+    state.timeoutHandle = setTimeout(async () => {
+      const pending = pendingForms.get(sent.message_id);
+      if (pending && !pending.submitted) {
+        pendingForms.delete(sent.message_id);
+        pendingFormsById.delete(formId);
+        await tg.editRichMessage(chatId, sent.message_id, `<b>⏰ Formulario expirado</b>\n<code>${esc(formId)}</code>\n<i>Envía un nuevo prompt para continuar.</i>`, { reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      }
+    }, formTtl);
   }
 };
 
@@ -1242,6 +1277,8 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.tool.input.started", handleSessionToolInputStarted],
   ["session.tool.called", handleSessionToolCalled],
   ["session.tool.success", handleSessionToolSuccess],
+  ["session.tool.progress", handleSessionToolProgress],
+  ["session.model.selected", handleSessionModelSelected],
   ["session.tool.failed", handleSessionToolFailed],
   ["session.compaction.started", handleSessionCompactionStarted],
   ["session.compaction.delta", handleSessionCompactionDelta],
