@@ -1416,12 +1416,28 @@ export async function handleEvent(event: { type: string; data?: unknown }, deps:
   await handler(e, deps);
 }
 
+const EVENT_HANDLER_TIMEOUT_MS = 15_000;
+
+/** Run a handler with a hard timeout so a stuck await cannot freeze the stream. */
+function handleEventGuarded(event: { type: string; data?: unknown }, deps: EventsDeps): Promise<void> {
+  return Promise.race([
+    handleEvent(event as { type: string; data?: Record<string, unknown> }, deps),
+    new Promise<void>((resolve) => setTimeout(resolve, EVENT_HANDLER_TIMEOUT_MS)),
+  ]).catch((err) => {
+    console.error("[events] handler failed", (event as { type?: string }).type, err);
+  });
+}
+
 export function startEventLoop(deps: EventsDeps): void {
+  // Chain handlers globally so ordering is preserved, but never block the
+  // stream: each event is dispatched as soon as it arrives, with a timeout so
+  // a single stuck handler cannot stall every subsequent event.
+  let chain: Promise<void> = Promise.resolve();
   (async () => {
     while (true) {
       try {
         for await (const event of deps.oc.events()) {
-          await handleEvent(event as { type: string; data?: Record<string, unknown> }, deps);
+          chain = chain.then(() => handleEventGuarded(event, deps));
         }
       } catch (err) {
         console.error("[events] stream ended", err);
