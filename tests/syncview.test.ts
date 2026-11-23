@@ -65,8 +65,10 @@ describe("session digest (Conectar //sync)", () => {
     const items = [userItem(long), assistantItem("y".repeat(3000))];
     const parts = buildDigestParts(makeSession(), items, { title: "📜 Contenido", sessionId: "ses_x" });
     const html = parts.map((p) => p.html).join("\n");
+    // Only the LAST message is rendered in full (no hint); older ones keep hints.
     expect(html).toContain("(+600 caracteres)");
-    expect(html).toContain("(+800 caracteres)");
+    expect(html).not.toContain("(+800 caracteres)");
+    expect(html).toContain("y".repeat(50));
   });
 
   test("tool-only assistant turns list tool names with icons", () => {

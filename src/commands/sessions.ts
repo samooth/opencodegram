@@ -449,12 +449,12 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
       const ctxData = await C.oc.context(s.sessionId);
       const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
       const parts = buildDigestParts(s, items, { title: "📜 Contenido de la sesión", sessionId: s.sessionId });
-      let lastMessageId: number | undefined;
       for (const part of parts) {
         const sent = await send(part.html, { reply_markup: { inline_keyboard: part.keyboard } }) as { message_id?: number } | undefined;
-        lastMessageId = sent?.message_id ?? lastMessageId;
+        // Link EVERY part to the session so replying to any digest message
+        // routes back to the correct session.
+        if (sent?.message_id) C.store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
       }
-      if (lastMessageId) C.store.rememberMessageSession(chatId, lastMessageId, s.sessionId);
     } catch (err) {
       await send("❌ " + esc(String(err)));
     }

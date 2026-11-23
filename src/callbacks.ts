@@ -190,7 +190,7 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
       lines.push("✅ <b>Sesión conectada</b>");
       if (s?.model) lines.push(`🧠 ${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? ` (${esc(s.model.variant)})` : ""}`);
       if (s?.directory) lines.push(`📁 <code>${esc(s.directory)}</code>`);
-      if (s?.lastFinalText) lines.push("", s.lastFinalText.slice(0, 3000));
+      if (s?.lastFinalText) lines.push("", markdownToHtml(s.lastFinalText));
       // P2: a short recap so reconnecting feels like picking up a conversation,
       // not starting cold. Last prompt + activity counts come from local state.
       const lastPrompt = deps.store.lastPromptBySession.get(sessionId);
@@ -206,11 +206,17 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
         if (s?.model) lines.push(`🧠 <code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>`);
       }
       const html = lines.join("\n");
-      const keyboard = [[
-        { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
-        { text: "📂 Sessions", callback_data: "panel:sessions" },
-        { text: "📊 Status", callback_data: "panel:status" },
-      ]];
+      const keyboard = [
+        [
+          { text: "🔗 Abrir sesión", callback_data: `use:${sessionId}` },
+          { text: "📖 Respuesta", callback_data: `viewfull:${sessionId}` },
+        ],
+        [
+          { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
+          { text: "📂 Sessions", callback_data: "panel:sessions" },
+          { text: "📊 Status", callback_data: "panel:status" },
+        ],
+      ];
       if (messageId) {
         await deps.tg.editRichMessage(chatId, messageId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
         deps.store.rememberMessageSession(chatId, messageId, sessionId);

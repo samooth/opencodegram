@@ -18,6 +18,10 @@ const PART_BUDGET = 3800;
 export function digestKeyboard(sessionId: string): DigestKeyboard {
   return [
     [
+      { text: "🔗 Abrir sesión", callback_data: `use:${sessionId}` },
+      { text: "📖 Respuesta", callback_data: `viewfull:${sessionId}` },
+    ],
+    [
       { text: "🧠 Modelos", callback_data: `panel:ms:${sessionId}` },
       { text: "📂 Sesiones", callback_data: "panel:sessions" },
       { text: "📊 Status", callback_data: "panel:status" },
@@ -69,7 +73,7 @@ function assistantTools(item: DigestItem): string[] {
 }
 
 /** One rendered message of the digest (already HTML). */
-function renderItem(item: DigestItem): string {
+function renderItem(item: DigestItem, full = false): string {
   const role = itemRole(item);
   if (role === "user") {
     const raw = item.text;
@@ -81,7 +85,7 @@ function renderItem(item: DigestItem): string {
   }
   if (role === "assistant") {
     const text = assistantText(item);
-    if (text) return `<h4>🤖 OpenCode</h4>\n${markdownToHtml(withHint(text, 2200))}`;
+    if (text) return `<h4>🤖 OpenCode</h4>\n${markdownToHtml(full ? text : withHint(text, 2200))}`;
     const tools = assistantTools(item);
     if (tools.length) {
       const line = tools.slice(0, 8).map((name) => `${toolIcon(name)} ${esc(name)}`).join(" · ");
@@ -156,7 +160,7 @@ export function buildDigestParts(
     return [{ html: `${header}\n\n<p><i>No hay contexto todavía: envía el primer mensaje.</i></p>`, keyboard }];
   }
 
-  const rendered = sliced.map(renderItem).filter(Boolean);
+  const rendered = sliced.map((item, i) => renderItem(item, i === sliced.length - 1)).filter(Boolean);
   const recentCount = Math.min(6, rendered.length);
   const recent = rendered.slice(-recentCount);
   const olderPreviews = sliced.slice(0, Math.max(0, sliced.length - recentCount))
