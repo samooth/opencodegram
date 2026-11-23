@@ -231,9 +231,11 @@ async function main() {
   };
 
   /** Structured per-session trace: chat, topic, session and latency. */
-  const sessionTrace = (event: string, fields: Record<string, unknown>) => {
-    appendRotatingLog("sessions", `${new Date().toISOString()} ${event} ${JSON.stringify(fields)}\n`);
-  };
+  const sessionTrace = config.SESSION_TRACE_ENABLED
+    ? (event: string, fields: Record<string, unknown>) => {
+        appendRotatingLog("sessions", `${new Date().toISOString()} ${event} ${JSON.stringify(fields)}\n`);
+      }
+    : () => {};
 
   const deps: BotDeps = {
     config,

@@ -579,6 +579,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // If we are awaiting a rejection reason, handle it.
   const reasonKey = routeKey(chatId, replyThread);
   if (msg.text && deps.awaitingReason.has(reasonKey)) {
+    deps.sessionTrace?.("message.consumed", { reason: "awaitingReason", chatId, threadId: replyThread });
     const requestId = deps.awaitingReason.get(reasonKey)!;
     deps.awaitingReason.delete(reasonKey);
     const info = deps.pendingPermissions.get(requestId);
@@ -613,6 +614,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     } else if (pendingPermAdd.requestedBy !== userId) {
       // Someone else is chatting in the thread: leave the capture for its owner.
     } else {
+      deps.sessionTrace?.("message.consumed", { reason: "awaitingPermissionAdd", chatId, threadId: replyThread });
       deps.awaitingPermissionAdd?.delete(permAddKey);
       const parts = msg.text.trim().split(/\s+/);
       const role = parts[1] === "admin" ? "admin" : "operator";
@@ -644,6 +646,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   }
 
   if (downloadResult.mediaToAttach.length) {
+    deps.sessionTrace?.("message.consumed", { reason: "media", chatId, threadId: replyThread });
     await handleMediaMessage(deps, msg, chatId, replyThread, repliedSessionId, send, downloadResult);
     return;
   }
@@ -810,7 +813,10 @@ export async function handleTextMessage(
     text = `/permissions add ${msg.reply_to_message.from.id} ${role}`;
   }
 
-  if (await handleCommand(deps, chatId, replyThread, text, send, userId)) return;
+  if (await handleCommand(deps, chatId, replyThread, text, send, userId)) {
+    deps.sessionTrace?.("message.consumed", { reason: "command", chatId, threadId: replyThread, text: text.slice(0,30) });
+    return;
+  }
 
   // Create or restore the session bound to this tab.
   const rawText = (msg.text ?? msg.caption ?? "").trim();

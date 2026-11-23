@@ -227,6 +227,28 @@ data (`transcripts/` — one JSON file per session, `turnPrompts.json`,
 `pendingEdits.json`, `buttons.json`) and per-chat settings (`settings.json`).
 Logs (`audit.log`, `sessions.log`) stay on disk and rotate at 1 MB to `.1`.
 
+### Breadcrumb logging protocol (prompt-flow debugging)
+
+When diagnosing lost/slow prompts, use the existing **session trace** breadcrumbs
+instead of ad-hoc `console.log`. `sessionTrace(event, fields)` writes a
+timestamped JSON line to `data/sessions.log` (rotated at 1 MB). It is **opt-in**
+via `SESSION_TRACE_ENABLED=true` in `.env` (default `false` → no-op).
+
+- Wired at startup in `src/index.ts`; passed into deps as `sessionTrace`.
+- Existing breadcrumbs cover the whole prompt path: `message.audit` (message
+  received), `message.consumed` (reason: `awaitingReason` / `awaitingPermissionAdd`
+  / `media` / `command`), `message.resolved` (session/route resolution),
+  `prompt.dispatch` (sent to OpenCode), `route.*`, `turn.final`,
+  `text.ended.*`, `[events] [step.failed]`, etc.
+- To trace a new code path, call `deps.sessionTrace?.("event.name", { key: value })`
+  at each decision/early-return point. Keep fields small and scalar (no raw
+  text/media). Never log tokens or PII.
+- Reading them: `tail -f data/sessions.log` while sending a test prompt; the
+  sequence of breadcrumbs shows exactly where a message was dropped.
+- For event-stream stalls, also check `text.ended.entry` / `send.final` in
+  `pm2 logs opencodegram`; the event loop now has a 15 s per-handler timeout so a
+  single stuck handler cannot freeze delivery.
+
 The `🗄 Datos` button in the panel shows SQLite stats and lets an admin compact
 the database (VACUUM) without typing a command.
 
