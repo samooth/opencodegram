@@ -584,11 +584,32 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     }
   }
   if (!s) {
-    // No in-memory session (e.g. after restart). Still deliver the final text if available.
-    const fallbackText = String((e as { data?: Record<string, unknown> }).data?.text ?? "").trim();
+    // No in-memory session (e.g. session created from the TUI, or after a
+    // restart). The text.ended event often carries an empty `text` (the answer
+    // streamed via text.delta), so fetch the full assistant message from the
+    // API — otherwise the user gets no Telegram reply at all.
+    let fallbackText = String((e as { data?: Record<string, unknown> }).data?.text ?? "").trim();
+    if (!fallbackText && msgId && sessionId) {
+      try {
+        const m = await oc.client.session.message.get({ sessionID: sessionId, messageID: msgId });
+        const content = (m as { parts?: Array<{ type?: string; text?: string }> })?.parts;
+        if (Array.isArray(content)) {
+          fallbackText = content.filter((p) => p.type === "text" && typeof p.text === "string").map((p) => p.text!).join("\n\n").trim();
+        }
+        if (!fallbackText) {
+          const mt = (m as { text?: string })?.text;
+          if (typeof mt === "string") fallbackText = mt.trim();
+        }
+      } catch (err) {
+        console.warn("[events] fallback message.get failed", String(err));
+      }
+    }
     if (fallbackText) {
       const sent = await tg.sendRichMessage(chatId, sessionHeader(null, sessionId) + markdownToHtml(fallbackText), threadOpts(resolveThreadId(sessionId as string))).catch((err) => { console.error("[send final]", err); return undefined; });
       if (sent?.message_id && sessionId) store.rememberMessageSession(chatId, sent.message_id, sessionId);
+      logger.breadcrumb("events", "send.final.fallback", { sessionId, chatId, len: fallbackText.length });
+    } else {
+      logger.breadcrumb("events", "send.final.fallback.empty", { sessionId, chatId, msgId });
     }
     return;
   }
