@@ -349,108 +349,34 @@ export function renderSettings(chatId: number, settings: ChatSettings): string {
 export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: string; callback_data: string }>> {
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
 
-  keyboard.push([
-    { text: "Perfil: Unificado", callback_data: "profile:unified" },
-    { text: "Perfil: Unificado+msg", callback_data: "profile:unified_split" },
-    { text: "Perfil: Flexible", callback_data: "profile:flexible" },
-  ]);
+  // Simplified settings: one profile selector + a handful of global toggles.
+  keyboard.push([{ text: "◀ Volver", callback_data: "settings:back" }]);
 
-  // P1.6: style presets are one tap away and persist per chat.
+  // Profile selector: a single tap applies a complete visual behaviour.
   keyboard.push(CARD_PRESETS.map((preset) => ({
     text: `${settings.cardPreset === preset ? "✅ " : ""}${PRESET_LABELS[preset]}`,
     callback_data: `preset:${preset}`,
   })));
 
+  // Display mode: unified (dashboard) vs flexible (per-session cards).
   keyboard.push([
-    { text: `🧩 Modo: ${settings.displayMode === "unified" ? "unificado" : "flexible"}`, callback_data: `set:displayMode:${settings.displayMode === "unified" ? "flexible" : "unified"}` },
+    { text: `🖥 Unificado: ${settings.displayMode === "unified" ? "sí" : "no"}`, callback_data: `set:displayMode:${settings.displayMode === "unified" ? "flexible" : "unified"}` },
   ]);
 
-  const deliveryLabels: Record<LongAnswerDelivery, string> = { card: "en tarjeta", message: "mensaje aparte", auto: "auto" };
-  const deliveryCycle: Record<LongAnswerDelivery, LongAnswerDelivery> = { card: "message", message: "auto", auto: "card" };
+  // Global toggles (independent of the profile).
   keyboard.push([
-    { text: `📤 Respuesta larga: ${deliveryLabels[settings.longAnswerDelivery]}`, callback_data: `set:longAnswerDelivery:${deliveryCycle[settings.longAnswerDelivery]}` },
-    { text: `📏 Umbral: ${settings.longAnswerThreshold}`, callback_data: "cycle:longAnswerThreshold" },
+    { text: `${settings.showResourceUsage ? "✅" : "❌"} 📊 Recursos`, callback_data: `set:showResourceUsage:${settings.showResourceUsage ? "false" : "true"}` },
+    { text: `🎨 Tema: ${settings.cardTheme}`, callback_data: `set:cardTheme:${settings.cardTheme === "auto" ? "light" : settings.cardTheme === "light" ? "dark" : "auto"}` },
   ]);
-
-  {
-    const cardLabels: Record<CardBehavior, string> = {
-      fixed: "fija (edita en sitio)",
-      refloat: "única (borra anterior)",
-      refloat_keep: "nueva (conserva anterior)",
-    };
-    const cardCycle: Record<CardBehavior, CardBehavior> = {
-      fixed: "refloat",
-      refloat: "refloat_keep",
-      refloat_keep: "fixed",
-    };
-    const behavior: CardBehavior = cardLabels[settings.cardBehavior] ? settings.cardBehavior : "fixed";
-    keyboard.push([
-      {
-        text: `📍 Tarjeta: ${cardLabels[behavior]}`,
-        callback_data: `set:cardBehavior:${cardCycle[behavior]}`,
-      },
-    ]);
-  }
-
-  {
-    const verbLabels: Record<CardVerbosity, string> = { low: "baja", medium: "media", high: "alta" };
-    const verbCycle: Record<CardVerbosity, CardVerbosity> = { low: "medium", medium: "high", high: "low" };
-    const v = verbLabels[settings.cardVerbosity] ? settings.cardVerbosity : "medium";
-    keyboard.push([
-      { text: `📊 Verbosidad: ${verbLabels[v]}`, callback_data: `set:cardVerbosity:${verbCycle[v]}` },
-    ]);
-  }
-
-  {
-    const themeLabels: Record<CardTheme, string> = { auto: "auto", light: "claro", dark: "oscuro" };
-    const themeCycle: Record<CardTheme, CardTheme> = { auto: "light", light: "dark", dark: "auto" };
-    const theme = themeLabels[settings.cardTheme] ? settings.cardTheme : "auto";
-    keyboard.push([
-      { text: `🎨 Tema: ${themeLabels[theme]}`, callback_data: `set:cardTheme:${themeCycle[theme]}` },
-    ]);
-  }
-
-  const booleanKeys: Array<keyof ChatSettings> = [
-    "showThinking",
-    "showTools",
-    "thinkingExpanded",
-    "toolsExpanded",
-    "showPartialText",
-    "autoArtifacts",
-    "voiceTranscription",
-    "compactFinal",
-    "showShell",
-    "shellExpanded",
-    "showResourceUsage",
-    "showCot",
-    "showLatestThought",
-    "showLatestTool",
-    "showTokenSpeed",
-    "showToolInput",
-    "autoTopicTitle",
-    "sessionNameInMessages",
-    "showSessionNameInStatus",
-    "compactCard",
-    "showActionRail",
-    "showFinalInCard",
-    "celebrateOnDone",
-  ];
-  // Two buttons per row for compactness.
-  for (let i = 0; i < booleanKeys.length; i += 2) {
-    const row: Array<{ text: string; callback_data: string }> = [];
-    for (let j = i; j < Math.min(i + 2, booleanKeys.length); j++) {
-      const key = booleanKeys[j];
-      row.push({ text: `${settings[key] ? "✅" : "❌"} ${LABELS[key]}`, callback_data: `set:${key}:${settings[key] ? "false" : "true"}` });
-    }
-    keyboard.push(row);
-  }
+  keyboard.push([
+    { text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` },
+    { text: `${settings.showFinalInCard ? "✅" : "❌"} 💬 Respuesta en tarjeta`, callback_data: `set:showFinalInCard:${settings.showFinalInCard ? "false" : "true"}` },
+  ]);
   keyboard.push([
     { text: `📏 Preview: ${settings.previewLines}`, callback_data: `cycle:previewLines` },
     { text: `📈 History: ${settings.resourceHistory}`, callback_data: `cycle:resourceHistory` },
   ]);
-  keyboard.push([{ text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` }]);
-  // Back closes the settings view and restores the panel in the SAME message.
-  keyboard.unshift([{ text: "◀ Volver", callback_data: "settings:back" }]);
+
   return keyboard;
 }
 

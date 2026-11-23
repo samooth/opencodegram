@@ -559,6 +559,12 @@ async function handlePreset(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
     return;
   }
   const settings = deps.settings.applyPreset(chatId, preset);
+  // Refresh the active card so the new profile is visible immediately.
+  const active = deps.store.getActiveSession(chatId, threadId);
+  if (active) {
+    active.activityExpanded = settings.showThinking || settings.showShell || settings.showTools;
+    void deps.status.publishCard(chatId, active).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  }
   await deps.tg.answerCallbackQuery(cq.id, `🎛 Estilo: ${PRESET_LABELS[preset]}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   if (messageId !== undefined) {
     await deps.tg
