@@ -481,8 +481,10 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
       }
     }
   }
-  // Per-user rate limit (opt-in via USER_RATE_LIMIT_ENABLED).
-  if (config.USER_RATE_LIMIT_ENABLED && userId !== undefined && isRateLimited(userId, config.USER_RATE_LIMIT_PER_MINUTE)) {
+  // Per-user rate limit (opt-in via USER_RATE_LIMIT_ENABLED). The global admin
+  // is exempt: it must always be able to drive the bot, even under load.
+  const isAdmin = userId !== undefined && config.ADMIN_TELEGRAM_USER_ID !== undefined && userId === config.ADMIN_TELEGRAM_USER_ID;
+  if (config.USER_RATE_LIMIT_ENABLED && !isAdmin && userId !== undefined && isRateLimited(userId, config.USER_RATE_LIMIT_PER_MINUTE)) {
     if (msg.chat.id < 0) return;
     await tg.sendRichMessage(msg.chat.id, "⏳ Too many messages. Please slow down.");
     return;
