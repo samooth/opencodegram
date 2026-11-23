@@ -6,7 +6,7 @@ import type { ChatSession } from "./types.js";
 import type { FormField, FormState, PermissionInfo } from "./context.js";
 import type { SettingsStore } from "./settings.js";
 import { renderForm, formKeyboard } from "./formui.js";
-import { closeThoughts, finishTool, recordThought, recordThoughtDelta, recordTool, updateToolDetail } from "./activity.js";
+import { closeThoughts, createTurnActivity, finishTool, recordThought, recordThoughtDelta, recordTool, updateToolDetail } from "./activity.js";
 import { clampText, esc, markdownToHtml, sessionHeader, threadOpts, toolIcon, truncate } from "./util.js";
 import { splitBySections, splitMarkdown } from "./transcript.js";
 import { logger } from "./logger.js";
@@ -940,10 +940,7 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
           retrySession.reasoningBuffer = "";
           retrySession.toolCalls = [];
           retrySession.toolCallDetails = [];
-          try {
-            const { createTurnActivity } = await import("./activity.js");
-            retrySession.activity = createTurnActivity();
-          } catch { retrySession.activity = retrySession.activity; }
+          retrySession.activity = createTurnActivity();
           retrySession.transcriptFollow = true;
           retrySession.readingMode = false;
           retrySession.cardMenuExpanded = false;
@@ -1148,7 +1145,7 @@ const handleSessionStepFailed: EventHandler = async (event, deps) => {
   const e = event as { type: string; data?: Record<string, unknown> };
   const sid = e.data?.sessionID as string | undefined;
   const err = (e.data?.error as { message?: string } | undefined)?.message;
-  logger.warn("events", "[step.failed]", sid, err?.slice(0, 120));
+  logger.debug("events", "[step.failed]", sid, err?.slice(0, 120));
   if (sid) deps.store.setSessionStatus(sid, "idle");
 };
 
@@ -1160,11 +1157,20 @@ const handleSessionUsageUpdated: EventHandler = async (event, deps) => {
   if (!s) return;
   const usage = (e.data?.usage ?? e.data) as Record<string, unknown> | undefined;
   if (usage) {
-    if (typeof usage.inputTokens === "number") s.turnInputTokens = usage.inputTokens as number;
-    if (typeof usage.outputTokens === "number") s.turnOutputTokens = usage.outputTokens as number;
-    if (typeof usage.reasoningTokens === "number") s.turnReasoningTokens = usage.reasoningTokens as number;
-    if (typeof usage.cacheReadTokens === "number") s.turnCacheReadTokens = usage.cacheReadTokens as number;
-    if (typeof usage.cacheWriteTokens === "number") s.turnCacheWriteTokens = usage.cacheWriteTokens as number;
+    const num = (k: string, alt?: string) => {
+      const v = usage[k] ?? (alt ? usage[alt] : undefined);
+      return typeof v === "number" ? (v as number) : undefined;
+    };
+    const inTok = num("inputTokens", "input");
+    const outTok = num("outputTokens", "output");
+    const reasTok = num("reasoningTokens", "reasoning");
+    const crTok = num("cacheReadTokens", "cacheRead");
+    const cwTok = num("cacheWriteTokens", "cacheWrite");
+    if (inTok !== undefined) s.turnInputTokens = inTok;
+    if (outTok !== undefined) s.turnOutputTokens = outTok;
+    if (reasTok !== undefined) s.turnReasoningTokens = reasTok;
+    if (crTok !== undefined) s.turnCacheReadTokens = crTok;
+    if (cwTok !== undefined) s.turnCacheWriteTokens = cwTok;
     if (typeof usage.cost === "number") s.turnCost = usage.cost as number;
   }
   logger.debug("events", "[usage.updated]", sid);
