@@ -51,9 +51,10 @@ export function dispatchPolledUpdate(deps: BotDeps, update: TelegramUpdate): voi
   // Slash commands (and their callbacks) must never wait behind a turn that is
   // stuck retrying: the user needs /status, /stop, /sessions, … to respond
   // immediately even while OpenCode keeps retrying in the background.
-  const isCommand = (update.message?.text ?? "").trim().startsWith("/");
-  const isCallback = !!update.callback_query;
-  if (isCommand || isCallback) {
+  // Never let a message wait behind a slow/stuck turn: prompts must reach
+  // OpenCode immediately. State consistency is handled inside startPrompt,
+  // which cancels any in-progress turn before starting the new one.
+  if (update.message || update.callback_query) {
     void processUpdate(deps, update).catch(() => {});
     return;
   }

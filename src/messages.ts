@@ -378,6 +378,14 @@ async function startPrompt(
   const { oc, store, status } = deps;
   const { startStatus, updateStatus, finishStatus } = status;
   try {
+    // If a turn is still running, cancel it first so the new prompt does not
+    // overlap (which used to corrupt state and queue prompts for minutes).
+    if (s.statusFinished === false) {
+      s.stopped = true;
+      if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+      await finishStatus(chatId, s).catch(() => {});
+      cancelAutoRetry(s.sessionId);
+    }
     s.targetChatId = chatId;
     s.targetThreadId = replyThread;
     s.lastFinalMessageId = undefined;
