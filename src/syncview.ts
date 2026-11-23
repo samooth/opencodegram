@@ -56,7 +56,7 @@ function withHint(text: string, max: number): string {
   return `${text.slice(0, max)}\n<i>… (+${text.length - max} caracteres)</i>`;
 }
 
-function assistantText(item: DigestItem): string {
+export function assistantText(item: DigestItem): string {
   const content = Array.isArray(item.content) ? item.content : [];
   return content
     .filter((p: { type?: string; text?: unknown; name?: string; tool?: string }) => p.type === "text")
@@ -190,4 +190,21 @@ export function buildDigestParts(
   }
   parts.push({ html: current, keyboard });
   return parts;
+}
+
+
+/** Normalize the response shape of session.context into digest items. */
+export function contextItems(ctxData: unknown): DigestItem[] {
+  return (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as DigestItem[];
+}
+
+/** Last assistant text from a context dump, used when local lastFinalText is gone (after restart). */
+export function lastAssistantText(items: DigestItem[]): string {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (itemRole(item) !== "assistant") continue;
+    const text = assistantText(item);
+    if (text.trim()) return text.trim();
+  }
+  return "";
 }

@@ -19,6 +19,7 @@ import { collectStats, renderStatsPanel, writeStatsReport, type StatsPeriod, typ
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { showSessionPicker } from "./messages.js";
 import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "./util.js";
+import { contextItems, lastAssistantText } from "./syncview.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { join } from "node:path";
 import { handleTranscriptPage, handleCardView, handleHistory, handleHistoryFormatPicker, handlePagePicker, handlePickerJump } from "./callbacks/history.js";
@@ -190,7 +191,17 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
       lines.push("✅ <b>Sesión conectada</b>");
       if (s?.model) lines.push(`🧠 ${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? ` (${esc(s.model.variant)})` : ""}`);
       if (s?.directory) lines.push(`📁 <code>${esc(s.directory)}</code>`);
-      if (s?.lastFinalText) lines.push("", markdownToHtml(s.lastFinalText));
+      // Show the LAST message like a final message. Prefer the local copy;
+      // after a restart it is gone, so fall back to OpenCode's context API.
+      let lastText = s?.lastFinalText?.trim() ?? "";
+      if (!lastText && s) {
+        try {
+          const items = contextItems(await deps.oc.context(s.sessionId));
+          lastText = lastAssistantText(items);
+          if (lastText && s) s.lastFinalText = lastText;
+        } catch { /* keep going without the last message */ }
+      }
+      if (lastText) lines.push("", markdownToHtml(lastText));
       // P2: a short recap so reconnecting feels like picking up a conversation,
       // not starting cold. Last prompt + activity counts come from local state.
       const lastPrompt = deps.store.lastPromptBySession.get(sessionId);
@@ -208,8 +219,8 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
       const html = lines.join("\n");
       const keyboard = [
         [
-          { text: "🔗 Abrir sesión", callback_data: `use:${sessionId}` },
-          { text: "📖 Respuesta", callback_data: `viewfull:${sessionId}` },
+          { text: "📖 Respuesta completa", callback_data: `viewfull:${sessionId}` },
+          { text: "📂 Sesiones", callback_data: "panel:sessions" },
         ],
         [
           { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
