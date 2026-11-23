@@ -506,23 +506,9 @@ ${markdownToHtml(chunk)}</blockquote>`;
         rememberCot(s.sessionId, next, s.cotCount);
         s.reasoningBuffer = "";
       }
-      if (settings.showTools && s.toolCallDetails.length) {
-        // Virtual shell: shell, read, write, webfetch, grep… as `$ <cmd>` lines.
-        // Edits keep their own diff block below.
-        const shellDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
-        if (shellDetails.length) {
-          const shellText = renderVirtualShell(shellDetails, 800);
-          transcript.addBlock(
-            s,
-            "tools",
-            `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${shellDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`,
-            shellText,
-            (chunk) => `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell
-<pre language=\'bash\'>${esc(chunk)}</pre></blockquote>`,
-            shellDetails.map((d) => ({ name: d.name, input: d.input, output: d.output, status: d.status })),
-          );
-        }
-      }
+      // NOTE: the virtual shell is rendered in the card strip (renderDoneStrip)
+      // so it updates in place instead of being duplicated here. Only edits
+      // get their own transcript block (diffs).
       // Drop any stale page the user was browsing mid-turn so the finished
       // answer is the one on screen (no need to tap "⏭ Última").
       s.transcriptFollow = true;
