@@ -627,6 +627,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     s.typingTimer = undefined;
   }
   if (!s.stopped) {
+    // Capture the turn identity NOW. A new prompt may arrive while the awaits
+    // below are in flight; in that case this handler must abort before writing
+    // anything, otherwise it would stamp its answer onto the NEW turn (wrong
+    // transcript turn, overwritten answer, cleared stream).
+    const turnAtClaim = s.promptStartTime;
+    const isStale = () => s.promptStartTime !== turnAtClaim;
     // Claim this turn BEFORE any await: OpenCode may emit several text.ended
     // parts back-to-back, and a second handler must not slip past the dedupe
     // while finishStatus / message.get are still in flight.
@@ -634,10 +640,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     logger.breadcrumb("events", "text.ended.flush", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
     if (s && s.statusMessageId && !s.statusFinished) {
       await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
+      if (isStale()) return;
       // P2: optional celebration reaction on the finished card.
       if (settings.get(chatId).celebrateOnDone && s.transcriptMessageId && !s.stopped && !s.lastTurnError) {
         await tg.setMessageReaction(chatId, s.transcriptMessageId, "🎉").catch((err) => console.warn("[events] celebration failed", err?.message ?? err));
       }
+      if (isStale()) return;
     }
     // Some OpenCode builds put the model on the event itself; capture it as a
     // fallback in case message.get fails below.
@@ -688,6 +696,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     } catch {
       // ignore
     }
+    if (isStale()) return;
     if (!elapsed && streamedAt) {
       elapsed = (Date.now() - streamedAt) / 1000;
     }
@@ -718,6 +727,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       cardMessageId: s.transcriptMessageId,
       pages: deps.transcript?.pageCount(s),
     });
+    if (isStale()) return;
     s.lastFinalText = finalText;
     // Enrich the turn stat row with the final answer length (upsert).
     try {
@@ -734,6 +744,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     const answerHtml = markdownToHtml(finalText);
     const copyRow = `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
 
+    if (isStale()) return;
     if (transcript) {
       // The answer is appended to the session transcript and the session card
       // is edited in place: no new message per event.
@@ -754,6 +765,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       if (s.transcriptMessageId) {
         s.lastFinalTelegramMessageId = s.transcriptMessageId;
       }
+      if (isStale()) return;
       // Optional: deliver the final answer as a separate rich-text message for readability.
       const st = settings.get(chatId);
       // When the answer is already embedded in the card, sending it again as
@@ -1417,16 +1429,26 @@ export async function handleEvent(event: { type: string; data?: unknown }, deps:
   await handler(e, deps);
 }
 
-const EVENT_HANDLER_TIMEOUT_MS = 15_000;
+const EVENT_HANDLER_SLOW_MS = 15_000;
 
-/** Run a handler with a hard timeout so a stuck await cannot freeze the stream. */
+/**
+ * Run a handler in order. A slow/stuck await must NOT be "timed out" by
+ * advancing the chain: Promise.race never cancels the losing handler, so the
+ * next event would run concurrently over the same session and corrupt state
+ * (e.g. a text.ended still writing while a newer prompt started). Instead we
+ * keep the chain strictly serial and only WARN when a handler is slow, so a
+ * stalled final answer can still be delivered instead of being silently lost.
+ */
 function handleEventGuarded(event: { type: string; data?: unknown }, deps: EventsDeps): Promise<void> {
-  return Promise.race([
-    handleEvent(event as { type: string; data?: Record<string, unknown> }, deps),
-    new Promise<void>((resolve) => setTimeout(resolve, EVENT_HANDLER_TIMEOUT_MS)),
-  ]).catch((err) => {
-    console.error("[events] handler failed", (event as { type?: string }).type, err);
-  });
+  const type = (event as { type?: string }).type;
+  const started = Date.now();
+  const timer = setTimeout(() => {
+    console.warn("[events] slow handler", type, `${Date.now() - started}ms`);
+  }, EVENT_HANDLER_SLOW_MS);
+  if (typeof timer.unref === "function") timer.unref();
+  return handleEvent(event as { type: string; data?: Record<string, unknown> }, deps)
+    .catch((err) => console.error("[events] handler failed", type, err))
+    .finally(() => clearTimeout(timer));
 }
 
 export function startEventLoop(deps: EventsDeps): void {

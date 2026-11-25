@@ -38,32 +38,46 @@ export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Prom
 }
 
 const chatQueues = new Map<string, Promise<void>>();
+/** Every dispatched update, including callbacks and widgets, in flight. */
+const inFlight = new Set<Promise<void>>();
 
 /**
- * Dispatch one polled update without ever blocking the polling loop. Callback
- * queries expire within seconds, and a slow /ls must not delay the next tap.
- * Messages are serialized per chat/topic so conversation state stays ordered.
+ * Dispatch one polled update without ever blocking the polling loop.
+ *
+ * Messages AND callbacks for the same chat/topic are serialized so two rapid
+ * prompts cannot race on the same ChatSession object (that caused duplicated,
+ * lost and cross-turn answers). Callbacks of *other* chats still run in
+ * parallel, so a slow /ls in one chat never delays another chat.
+ *
+ * `onSettled` is invoked once the update handler has actually finished; the
+ * polling loop uses it to confirm the offset only AFTER processing, so a
+ * crash cannot silently drop a prompt whose offset was already persisted.
  */
-export function dispatchPolledUpdate(deps: BotDeps, update: TelegramUpdate): void {
-  const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id ?? 0;
+export function dispatchPolledUpdate(
+  deps: BotDeps,
+  update: TelegramUpdate,
+  onSettled?: () => void,
+): void {
+  const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id ?? update.widget_query?.chat?.id ?? 0;
   const threadId = update.callback_query?.message?.message_thread_id ?? update.message?.message_thread_id ?? 0;
   const key = `${chatId}:${threadId}`;
-  // Slash commands (and their callbacks) must never wait behind a turn that is
-  // stuck retrying: the user needs /status, /stop, /sessions, … to respond
-  // immediately even while OpenCode keeps retrying in the background.
-  // Never let a message wait behind a slow/stuck turn: prompts must reach
-  // OpenCode immediately. State consistency is handled inside startPrompt,
-  // which cancels any in-progress turn before starting the new one.
+  const settle = () => { try { onSettled?.(); } catch { /* never break the queue */ } };
+
+  let task: Promise<void>;
   if (update.message || update.callback_query) {
-    void processUpdate(deps, update).catch(() => {});
-    return;
+    const previous = chatQueues.get(key) ?? Promise.resolve();
+    task = previous
+      .then(() => processUpdate(deps, update))
+      .then(settle, (err) => { console.error("[update]", err); settle(); });
+    chatQueues.set(key, task);
+    void task.then(() => {
+      if (chatQueues.get(key) === task) chatQueues.delete(key);
+    });
+  } else {
+    task = processUpdate(deps, update).then(settle, (err) => { console.error("[update]", err); settle(); });
   }
-  const previous = chatQueues.get(key) ?? Promise.resolve();
-  const next = previous.then(() => processUpdate(deps, update)).catch(() => {});
-  chatQueues.set(key, next);
-  void next.then(() => {
-    if (chatQueues.get(key) === next) chatQueues.delete(key);
-  });
+  inFlight.add(task);
+  void task.finally(() => inFlight.delete(task));
 }
 
 /** Telegram long-polling loop. Dispatches callbacks and messages. */
@@ -117,9 +131,9 @@ export async function startPolling(deps: BotDeps): Promise<void> {
         const oldest = seen.values().next().value;
         if (oldest !== undefined) seen.delete(oldest);
       }
-      saveOffset(offset);
+      const confirmed = offset;
       metrics?.inc("updates");
-      dispatchPolledUpdate(deps, u);
+      dispatchPolledUpdate(deps, u, () => saveOffset(confirmed));
     }
   }
 }
@@ -142,6 +156,6 @@ function loadOffset(file: string, botId?: number): number {
 
 /** Wait for in-flight update handlers to finish (used on shutdown). */
 export async function drainPolledUpdates(): Promise<void> {
-  const pending = [...chatQueues.values()];
+  const pending = [...chatQueues.values(), ...inFlight];
   await Promise.allSettled(pending);
 }

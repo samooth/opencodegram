@@ -218,6 +218,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         if (active && !active.has(s.sessionId)) {
           s.statusFinished = true;
           if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+          s.statusMessageId = undefined;
+          forgetStatusMessage(s.sessionId);
         }
       } catch { /* ignore */ }
     }
@@ -263,6 +265,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const settings = getSettings(chatId);
     const unified = settings.displayMode === "unified";
     s.statusFinished = false;
+    if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
+    if (s.statusEditPromise) await s.statusEditPromise.catch(() => {});
     s.statusEditPromise = undefined;
     s.statusEditing = false;
     if (s.deltaFlushTimer) { clearTimeout(s.deltaFlushTimer); s.deltaFlushTimer = undefined; }
@@ -298,6 +302,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.lastFinalMessageId = undefined;
     s.lastFinalTelegramMessageId = undefined;
     s.statusLastUpdate = Date.now();
+    // Turn identity and final-delivery markers belong to the TURN, not to the
+    // entry point that started it. Reset them here so every path (messages,
+    // custom buttons, ensureLiveStatus, retries) gets a fresh dedupe key.
+    s.promptStartTime = Date.now();
+    s.lastFinalDeliveredPromptStart = undefined;
+    s.lastFinalSentAt = undefined;
+    s.lastFinalSeparatedPromptStart = undefined;
+    s.textEndedHandled = undefined;
     // Keep the previous final-answer message id for rapid-final editing; do
     // not delete it here (deleting on new turn surprised users and removed
     // content they wanted to keep). The new turn's card starts fresh via
@@ -491,6 +503,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         clearInterval(s.statusTimer);
         s.statusTimer = undefined;
       }
+      s.statusMessageId = undefined;
+      forgetStatusMessage(s.sessionId);
       return;
     }
     if (s.statusTimer) {

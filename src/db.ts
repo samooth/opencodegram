@@ -176,7 +176,7 @@ export function closeDatabase(dataDir: string): void {
   }
 }
 
-type KvRow = { value: string; canonical: string };
+type KvRow = { value: string; canonical: string; updated_at: number };
 
 function canonicalOf(value: unknown): string {
   return JSON.stringify(value);
@@ -186,7 +186,7 @@ function canonicalOf(value: unknown): string {
 export function jsonRead<T>(file: string, tag = "db"): T | undefined {
   const key = basename(file);
   const db = dbForFile(file);
-  const row = db.query("SELECT value, canonical FROM kv_state WHERE key = ?").get(key) as KvRow | null;
+  const row = db.query("SELECT value, canonical, updated_at FROM kv_state WHERE key = ?").get(key) as KvRow | null;
 
   let fromFile: T | undefined;
   if (existsSync(file)) {
@@ -199,7 +199,15 @@ export function jsonRead<T>(file: string, tag = "db"): T | undefined {
   }
 
   if (fromFile !== undefined && (!row || canonicalOf(fromFile) !== row.canonical)) {
-    // First import, or the file was edited outside the bot: the file wins.
+    // The file wins on first import or on a genuine external edit. But a
+    // STALE mirror (left behind when jsonWrite's file write failed, or an
+    // old copy restored from backup) must NOT overwrite authoritative SQLite
+    // state: compare the file mtime against the last SQLite write.
+    const fileMtime = existsSync(file) ? statSync(file).mtimeMs : 0;
+    if (row && fileMtime < row.updated_at - 1000) {
+      // SQLite is newer: the mirror is stale, keep the authoritative value.
+      return JSON.parse(row.value) as T;
+    }
     jsonWrite(file, fromFile);
     return fromFile;
   }

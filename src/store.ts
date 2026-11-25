@@ -841,7 +841,7 @@ export class SessionStore {
     // appending a copy even when other blocks (e.g. meta) were added after it.
     if (block.kind === "answer" && block.text.trim()) {
       for (let i = list.length - 1; i >= 0; i--) {
-        if (list[i].kind === "answer" && list[i].text === block.text) {
+        if (list[i].kind === "answer" && list[i].text === block.text && list[i].turn === block.turn) {
           list[i] = block;
           this.transcriptBySession.set(sessionId, list);
           this.dirtyTranscripts.add(sessionId);
@@ -960,24 +960,24 @@ export class SessionStore {
   private load() {
     try {
       if (existsSync(this.threadsFile)) {
-        const parsed = JSON.parse(readFileSync(this.threadsFile, "utf8")) as Record<string, number>;
-        for (const [k, v] of Object.entries(parsed)) this.threadBySession.set(k, v);
+        const parsed = jsonRead<Record<string, number>>(this.threadsFile, "store");
+        for (const [k, v] of Object.entries(parsed ?? {})) this.threadBySession.set(k, v);
       }
     } catch (err) {
       logger.error("store", "[threads] load failed", err);
     }
     try {
       if (existsSync(this.chatsFile)) {
-        const parsed = JSON.parse(readFileSync(this.chatsFile, "utf8")) as Record<string, number>;
-        for (const [k, v] of Object.entries(parsed)) this.chatBySession.set(k, v);
+        const parsed = jsonRead<Record<string, number>>(this.chatsFile, "store");
+        for (const [k, v] of Object.entries(parsed ?? {})) this.chatBySession.set(k, v);
       }
     } catch (err) {
       logger.error("store", "[chats] load failed", err);
     }
     try {
       if (existsSync(this.statusMessagesFile)) {
-        const parsed = JSON.parse(readFileSync(this.statusMessagesFile, "utf8")) as Record<string, { chatId?: number; threadId?: number; messageId?: number }>;
-        for (const [sid, info] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, { chatId?: number; threadId?: number; messageId?: number }>>(this.statusMessagesFile, "store");
+        for (const [sid, info] of Object.entries(parsed ?? {})) {
           if (sid && info && typeof info.chatId === "number" && typeof info.messageId === "number") {
             this.statusMessageBySession.set(sid, { chatId: info.chatId, threadId: info.threadId, messageId: info.messageId });
           }
@@ -988,8 +988,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.messagesFile)) {
-        const parsed = JSON.parse(readFileSync(this.messagesFile, "utf8")) as Record<string, string>;
-        for (const [k, v] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, string>>(this.messagesFile, "store");
+        for (const [k, v] of Object.entries(parsed ?? {})) {
           if (k && v) this.messageToSession.set(k, v);
         }
       }
@@ -998,8 +998,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.topicTitlesFile)) {
-        const parsed = JSON.parse(readFileSync(this.topicTitlesFile, "utf8")) as Record<string, string>;
-        for (const [sid, title] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, string>>(this.topicTitlesFile, "store");
+        for (const [sid, title] of Object.entries(parsed ?? {})) {
           if (sid && title) this.topicTitleBySession.set(sid, title);
         }
       }
@@ -1008,8 +1008,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.cotFile)) {
-        const parsed = JSON.parse(readFileSync(this.cotFile, "utf8")) as Record<string, { buffer?: string; count?: number }>;
-        for (const [sid, value] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, { buffer?: string; count?: number }>>(this.cotFile, "store");
+        for (const [sid, value] of Object.entries(parsed ?? {})) {
           if (sid && value) this.cotBySession.set(sid, { buffer: value.buffer ?? "", count: value.count ?? 0 });
         }
       }
@@ -1018,8 +1018,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.lastChatsFile)) {
-        const parsed = JSON.parse(readFileSync(this.lastChatsFile, "utf8")) as Record<string, number>;
-        for (const [sid, chatId] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, number>>(this.lastChatsFile, "store");
+        for (const [sid, chatId] of Object.entries(parsed ?? {})) {
           if (sid && Number.isFinite(chatId)) this.lastChatBySession.set(sid, chatId);
         }
       }
@@ -1028,8 +1028,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.lastPromptsFile)) {
-        const parsed = JSON.parse(readFileSync(this.lastPromptsFile, "utf8")) as Record<string, string>;
-        for (const [sid, prompt] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, string>>(this.lastPromptsFile, "store");
+        for (const [sid, prompt] of Object.entries(parsed ?? {})) {
           if (sid && prompt) this.lastPromptBySession.set(sid, prompt);
         }
       }
@@ -1038,8 +1038,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.lastInteractedFile)) {
-        const parsed = JSON.parse(readFileSync(this.lastInteractedFile, "utf8")) as Record<string, { sessionId?: string; at?: number }>;
-        for (const [key, value] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, { sessionId?: string; at?: number }>>(this.lastInteractedFile, "store");
+        for (const [key, value] of Object.entries(parsed ?? {})) {
           if (key && value?.sessionId && Number.isFinite(value.at)) {
             this.lastInteractedSessionByRoute.set(key, { sessionId: value.sessionId, at: Number(value.at) });
           }
@@ -1050,8 +1050,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.deliveryFile)) {
-        const parsed = JSON.parse(readFileSync(this.deliveryFile, "utf8")) as Record<string, { chatId?: number; threadId?: number }>;
-        for (const [sid, value] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, { chatId?: number; threadId?: number }>>(this.deliveryFile, "store");
+        for (const [sid, value] of Object.entries(parsed ?? {})) {
           if (sid && value && Number.isFinite(value.chatId)) {
             this.deliveryBySession.set(sid, { chatId: Number(value.chatId), threadId: Number.isFinite(value.threadId) ? Number(value.threadId) : undefined });
           }
@@ -1062,8 +1062,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.todosFile)) {
-        const parsed = JSON.parse(readFileSync(this.todosFile, "utf8")) as Record<string, TodoItem[]>;
-        for (const [sid, todos] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, TodoItem[]>>(this.todosFile, "store");
+        for (const [sid, todos] of Object.entries(parsed ?? {})) {
           if (sid && Array.isArray(todos)) this.todosBySession.set(sid, todos);
         }
       }
@@ -1074,9 +1074,9 @@ export class SessionStore {
     try {
       const legacy = join(this.dataDir, "transcripts.json");
       if (existsSync(legacy)) {
-        const parsed = JSON.parse(readFileSync(legacy, "utf8")) as Record<string, TranscriptBlock[]>;
+        const parsed = jsonRead<Record<string, TranscriptBlock[]>>(legacy, "store");
         mkdirSync(this.transcriptsDir, { recursive: true });
-        for (const [sid, blocks] of Object.entries(parsed)) {
+        for (const [sid, blocks] of Object.entries(parsed ?? {})) {
           if (sid && Array.isArray(blocks)) {
             const limited = this.limitTranscript(blocks);
             this.transcriptBySession.set(sid, limited);
@@ -1109,8 +1109,8 @@ export class SessionStore {
     }
     try {
       if (existsSync(this.dashboardFile)) {
-        const parsed = JSON.parse(readFileSync(this.dashboardFile, "utf8")) as Record<string, { sessionId?: string; chatId?: number; threadId?: number; messageId?: number }>;
-        for (const [key, value] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, { sessionId?: string; chatId?: number; threadId?: number; messageId?: number }>>(this.dashboardFile, "store");
+        for (const [key, value] of Object.entries(parsed ?? {})) {
           if (key && value?.sessionId && Number.isFinite(value.chatId) && Number.isFinite(value.messageId)) {
             this.dashboardByRoute.set(key, {
               sessionId: value.sessionId,
@@ -1128,8 +1128,8 @@ export class SessionStore {
     // Explicit tab bindings.
     try {
       if (existsSync(this.activeFile)) {
-        const parsed = JSON.parse(readFileSync(this.activeFile, "utf8")) as Record<string, string | { sessionId?: string }>;
-        for (const [key, value] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, string | { sessionId?: string }>>(this.activeFile, "store");
+        for (const [key, value] of Object.entries(parsed ?? {})) {
           const entry = typeof value === "string" ? { sessionId: value } : value;
           if (!entry?.sessionId) continue;
           const [chatPart, threadPart] = key.split(":");
@@ -1149,8 +1149,8 @@ export class SessionStore {
     // Load custom reply buttons.
     try {
       if (existsSync(this.buttonsFile)) {
-        const parsed = JSON.parse(readFileSync(this.buttonsFile, "utf8")) as Record<string, Array<{ label: string; text: string }>>;
-        for (const [chatId, buttons] of Object.entries(parsed)) {
+        const parsed = jsonRead<Record<string, Array<{ label: string; text: string }>>>(this.buttonsFile, "store");
+        for (const [chatId, buttons] of Object.entries(parsed ?? {})) {
           const id = Number(chatId);
           if (Number.isFinite(id) && Array.isArray(buttons)) {
             this.customButtonsByChat.set(id, buttons.filter((b) => b && typeof b.label === "string" && typeof b.text === "string"));
@@ -1169,7 +1169,7 @@ export class SessionStore {
     {
       const parsed = jsonRead<Record<string, string | { sessionId: string; edits?: EditDetail[] }>>(this.pendingEditsFile, "store");
       if (parsed) {
-        const entries = Object.entries(parsed)
+        const entries = Object.entries(parsed ?? {})
           .map(([key, value]) => {
             const match = key.match(/^(\d+):(\d+)$/);
             return match ? { key, messageId: Number(match[2]), value } : undefined;

@@ -626,7 +626,11 @@ ${body}
       if (!publishTimers.has(key)) {
         const timer = setTimeout(() => {
           publishTimers.delete(key);
-          void publish(chatId, s, opts).catch(() => {});
+          // Do NOT reuse the captured `opts`: a newer turn may have finished
+          // while we waited, and retrying with old `working: true` opts would
+          // republish "Trabajando…" over the finished answer. Re-render from
+          // the session's CURRENT state instead.
+          void publish(chatId, s).catch(() => {});
         }, Math.max(50, until - Date.now() + 100));
         if (typeof timer.unref === "function") timer.unref();
         publishTimers.set(key, timer);
@@ -663,6 +667,20 @@ ${body}
           const previousId = s.transcriptMessageId;
           if (previousId) await cleanupCard(chatId, previousId);
           s.transcriptMessageId = undefined;
+        } else if (/canceled by new edit message request/i.test(msg)) {
+          // Telegram already has a newer edit in flight. Schedule a short
+          // retry from the CURRENT state: if this was the final answer and we
+          // just returned, the answer would never reach the user.
+          const key = s.sessionId;
+          if (!publishTimers.has(key)) {
+            const retryTimer = setTimeout(() => {
+              publishTimers.delete(key);
+              void publish(chatId, s).catch(() => {});
+            }, 400);
+            if (typeof retryTimer.unref === "function") retryTimer.unref();
+            publishTimers.set(key, retryTimer);
+          }
+          return;
         } else {
           console.warn("[transcript] edit skipped:", msg);
         }

@@ -509,9 +509,10 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
     deps.permissions?.rememberUser(replyFrom.id, replyFrom.username);
   }
 
-  // A new incoming message supersedes any pending auto-retry everywhere:
-  // we never want stale prompts (and their old answers) to be replayed.
-  for (const sid of store.sessionsById.keys()) cancelAutoRetry(sid);
+  // Pending auto-retries are cancelled in startPrompt() for the DESTINATION
+  // session only. Cancelling every session here made an unrelated message (or
+  // a command, or a message in another chat) silently kill a retry that was
+  // still waiting on a 429 backoff, leaving that user without an answer.
   // Replying to any bot message routes the prompt to the session that produced
   // it: explicit map first, then dashboard/status/in-memory card fallbacks.
   const replyMessageId = msg.reply_to_message?.message_id;

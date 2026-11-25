@@ -76,10 +76,10 @@ async function main() {
   if (!info) throw new Error("OpenCode server not reachable after retries");
   console.log(`[opencodegram] opencode: ${JSON.stringify(info)}`);
 
+  // Import legacy JSON files into SQLite BEFORE constructing the store, so
+  // SessionStore.load() sees authoritative SQLite values (not stale mirrors).
+  const importedKeys = importAllJson();
   const store = new SessionStore();
-  // Bring every legacy JSON state file into the single SQLite database before
-  // the daemon starts serving updates.
-  const importedKeys = importAllJson(store.dataDir);
   if (importedKeys) console.log(`[opencodegram] imported ${importedKeys} JSON state files into SQLite`);
   const permissions = new PermissionStore(store.dataDir);
   // Fail fast with a helpful hint if the data directory is not writable
