@@ -240,31 +240,6 @@ export class TelegramClient {
     });
   }
 
-  sendMessage(chatId: number, text: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const safe = sanitizeUtf8(text);
-    const body = { chat_id: chatId, text: safe, ...opts };
-    return this.call<TelegramMessage>("sendMessage", body).catch(async (err) => {
-      const msg = String(err);
-      if (opts.message_thread_id && /message thread not found/i.test(msg)) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, text: safe };
-        for (const [key, value] of Object.entries(opts)) {
-          if (key === "message_thread_id" || value === undefined || value === null) continue;
-          retryBody[key] = value;
-        }
-        return this.call<TelegramMessage>("sendMessage", retryBody);
-      }
-      if (/message is too long|RICH_MESSAGE_TEXT_TOO_LONG|MESSAGE_TOO_LONG/i.test(msg)) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, text: safe.slice(0, 3900) };
-        for (const [key, value] of Object.entries(opts)) {
-          if (value === undefined || value === null) continue;
-          retryBody[key] = value;
-        }
-        return this.call<TelegramMessage>("sendMessage", retryBody);
-      }
-      throw err;
-    });
-  }
-
   /** Send a local file as a document (multipart upload). */
   async sendDocument(chatId: number, filePath: string, filename: string, caption?: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
     const data = await readFile(filePath);
@@ -332,35 +307,6 @@ export class TelegramClient {
     });
   }
 
-  sendRichMessageMarkdown(chatId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const safe = sanitizeUtf8(markdown);
-    const body = { chat_id: chatId, rich_message: { markdown: safe }, ...opts };
-    return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
-      const msg = String(err);
-      if (opts.message_thread_id && /message thread not found/i.test(msg)) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, rich_message: { markdown: safe } };
-        for (const [key, value] of Object.entries(opts)) {
-          if (key === "message_thread_id" || value === undefined || value === null) continue;
-          retryBody[key] = value;
-        }
-        return this.call<TelegramMessage>("sendRichMessage", retryBody);
-      }
-      if (/message is too long|RICH_MESSAGE_TEXT_TOO_LONG|MESSAGE_TOO_LONG/i.test(msg)) {
-        const retryBody: Record<string, unknown> = { chat_id: chatId, text: safe.slice(0, 3900) };
-        for (const [key, value] of Object.entries(opts)) {
-          if (value === undefined || value === null) continue;
-          retryBody[key] = value;
-        }
-        return this.call<TelegramMessage>("sendMessage", retryBody);
-      }
-      throw err;
-    });
-  }
-
-  editMessageText(chatId: number, messageId: number, text: string, opts: Record<string, unknown> = {}): Promise<unknown> {
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, text: sanitizeUtf8(text), ...opts });
-  }
-
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
     if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
     const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(html));
@@ -395,28 +341,6 @@ export class TelegramClient {
       const msg = String(err);
       const m = msg.match(/retry after (\d+)/i);
       if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
-      return undefined;
-    });
-  }
-
-  editRichMessageMarkdown(chatId: number, messageId: number, markdown: string, opts: Record<string, unknown> = {}): Promise<unknown> {
-    if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
-    const safe = sanitizeUtf8(markdown);
-    const { message_thread_id: _threadId, ...editOpts } = opts;
-    return this.call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { markdown: safe }, ...editOpts }).catch((err) => {
-      const msg = String(err);
-      const m = msg.match(/retry after (\d+)/i);
-      if (m) this.setEditBackoff(chatId, (Number(m[1]) + 1) * 1000);
-      if (!/429|Too Many Requests/i.test(msg) && !/not modified/i.test(msg) && !/message was deleted/i.test(msg)) {
-        console.error("[telegram] editRichMessageMarkdown failed", chatId, messageId, "len=", safe.length, "err=", msg);
-      }
-      if (
-        /message to edit not found|message can't be edited|message was deleted|message_id_invalid|MESSAGE_ID_INVALID/i.test(msg) ||
-        /canceled by new edit message request/i.test(msg) ||
-        (/Telegram editMessageText failed: 400\b/i.test(msg) && !/message is too long|RICH_MESSAGE_TEXT_TOO_LONG/i.test(msg))
-      ) {
-        throw err;
-      }
       return undefined;
     });
   }
@@ -536,7 +460,4 @@ export class TelegramClient {
     return this.call<boolean>("answerWidgetQuery", body).catch(() => false);
   }
 
-  editMessageWidgetData(opts: Record<string, unknown>): Promise<boolean> {
-    return this.call<boolean>("editMessageWidgetData", opts).catch(() => false);
-  }
 }

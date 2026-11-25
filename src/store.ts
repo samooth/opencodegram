@@ -912,7 +912,12 @@ export class SessionStore {
       clearTimeout(this.transcriptsSaveTimer);
       this.transcriptsSaveTimer = undefined;
     }
-    await this.saveTranscripts();
+    // A transcript block may be appended while we are writing; loop until the
+    // dirty set stays empty so the final block is not lost on shutdown.
+    for (let pass = 0; pass < 5 && this.dirtyTranscripts.size > 0; pass++) {
+      await this.saveTranscripts();
+    }
+    if (this.dirtyTranscripts.size > 0) await this.saveTranscripts();
   };
 
   private deleteTranscriptFile = async (sessionId: string): Promise<void> => {
@@ -1145,7 +1150,6 @@ export class SessionStore {
       logger.error("store", "[active] load failed", err);
     }
 
-    // Migration for installs created before active.json existed: threads.json
     // Load custom reply buttons.
     try {
       if (existsSync(this.buttonsFile)) {
@@ -1187,7 +1191,7 @@ export class SessionStore {
       }
     }
 
-    // already records which session belongs to each topic, so reuse it.
+    // Reuse topic bindings as the authoritative route when active.json is old.
     for (const [sessionId, threadId] of this.threadBySession) {
       const chatId = this.chatBySession.get(sessionId);
       if (chatId === undefined) continue;

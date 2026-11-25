@@ -319,6 +319,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         await dashboard.ensure(chatId, s.targetThreadId ?? s.threadId, s, { working: true }).catch((err) => console.warn("[status] dashboard.ensure failed", err?.message ?? err));
       }
       if (transcript) {
+        // Drain any publish still in flight from the previous turn BEFORE we
+        // detach the old card: otherwise that edit lands after refloat and
+        // creates a stray/duplicate message with stale content.
+        await transcript.awaitDrain?.(s.sessionId);
         // Every turn gets its own card created immediately at the bottom, with
         // live streaming while working. Unified and "única" (refloat) replace
         // the previous card (single message per session); "conservar" keeps the

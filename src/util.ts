@@ -83,24 +83,6 @@ export function copyTextButton(
 }
 
 /** Plain-text version of a rich HTML message, for clipboard fallbacks. */
-export function htmlToPlainText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|h[1-6]|li|blockquote|pre|tr)>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-/**
- * Context usage without clamping: hiding >100% makes an overflow look like a
- * full-but-valid window. `over` lets callers flag it explicitly.
- */
 export function contextUsage(tokens: number | undefined, window: number | undefined): { percent: number; over: boolean } | undefined {
   if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens <= 0) return undefined;
   if (typeof window !== "number" || !Number.isFinite(window) || window <= 0) return undefined;

@@ -15,12 +15,7 @@ export type ThreadPermissions = {
   inherit: boolean;
 };
 
-export const DEFAULT_THREAD_PERMISSIONS: ThreadPermissions = {
-  allowedUsers: [],
-  adminUsers: [],
-  readOnly: false,
-  inherit: true,
-};
+
 
 export class PermissionStore {
   private readonly db: ReturnType<typeof getDatabase>;

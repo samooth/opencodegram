@@ -74,10 +74,6 @@ export class OpenCodeBridge {
     return data;
   }
 
-  invalidateSessionListCache(): void {
-    this.sessionListCache = null;
-  }
-
   invalidateModelCache(): void {
     this.modelCache = null;
   }
@@ -89,25 +85,6 @@ export class OpenCodeBridge {
       model: opts.model ?? undefined,
       agent: opts.agent ?? undefined,
     });
-  }
-
-  async latestSessionDirectory(): Promise<string | undefined> {
-    try {
-      const res = await this.client.session.list();
-      type Timed = { time?: { updated?: number } };
-      const sessions = ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as Timed[];
-      const sorted = [...sessions].sort((a, b) => (b?.time?.updated ?? 0) - (a?.time?.updated ?? 0));
-      // Prefer a real project directory over the home directory.
-      for (const _s of sorted) {
-        const s = _s as { location?: { directory?: string }; directory?: string };
-        const dir = s?.location?.directory ?? s?.directory;
-        if (dir && dir !== process.env.HOME) return dir;
-      }
-      const first = sorted[0] as { location?: { directory?: string }; directory?: string } | undefined;
-      return first?.location?.directory ?? first?.directory;
-    } catch {
-      return undefined;
-    }
   }
 
   async listCommands(directory?: string) {
@@ -127,11 +104,6 @@ export class OpenCodeBridge {
     const data = await this.listCommands(directory);
     this.commandCache.set(key, { data, expires: now + ttlMs });
     return data;
-  }
-
-  invalidateCommandCache(directory?: string): void {
-    if (directory) this.commandCache.delete(directory);
-    else this.commandCache.clear();
   }
 
   async runCommand(sessionId: string, name: string, args: string) {
@@ -205,16 +177,8 @@ export class OpenCodeBridge {
     return this.client.session.form.list({ sessionID: sessionId });
   }
 
-  async getForm(sessionId: string, formId: string) {
-    return this.client.session.form.get({ sessionID: sessionId, formID: formId });
-  }
-
   async replyForm(sessionId: string, formId: string, answer: Record<string, string | number | boolean | string[]>) {
     return this.client.session.form.reply({ sessionID: sessionId, formID: formId, answer });
-  }
-
-  async cancelForm(sessionId: string, formId: string, message?: string) {
-    return this.client.session.form.cancel({ sessionID: sessionId, formID: formId, message });
   }
 
   async diff(sessionId: string) {
@@ -223,10 +187,6 @@ export class OpenCodeBridge {
 
   async vcsStatus(directory?: string) {
     return this.client.vcs.status(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.vcs.status>[0] : undefined);
-  }
-
-  async vcsGet(directory?: string) {
-    return this.client.vcs.get(directory ? { location: { directory } } as unknown as Parameters<typeof this.client.vcs.get>[0] : undefined);
   }
 
   async vcsBranches(directory?: string) {
@@ -261,12 +221,6 @@ export class OpenCodeBridge {
     await this.client.worktree.remove({ projectID, directory: worktreeDirectory, force });
   }
 
-  async worktreeRefresh(directory?: string) {
-    const projectID = await this.projectID(directory);
-    if (!projectID) return;
-    await this.client.worktree.refresh({ projectID });
-  }
-
   async sessionMove(sessionId: string, directory: string) {
     await this.client.session.move({ sessionID: sessionId, directory });
   }
@@ -278,11 +232,6 @@ export class OpenCodeBridge {
   /** Move blocking foreground tools to background (TUI Ctrl+B equivalent). */
   async background(sessionId: string) {
     return this.client.session.background({ sessionID: sessionId });
-  }
-
-  async inboxList(sessionId: string) {
-    const res = await this.client.session.inbox.list({ sessionID: sessionId });
-    return ((res as { data?: unknown })?.data ?? (Array.isArray(res) ? res : [])) as unknown[];
   }
 
   async replyPermission(sessionId: string, requestId: string, decision: "once" | "always" | "reject") {

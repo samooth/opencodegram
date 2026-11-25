@@ -1065,7 +1065,17 @@ ${body}
     await tg.editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] }).catch(() => {});
   };
 
-  return { addBlock, publish, goToPage, renderPage, cardKeyboard, compactCardKeyboard, pagePickerKeyboard, turnSummary, clearPublishTimers: (sessionId: string) => { for (const key of [...publishTimers.keys()]) if (key === sessionId) { const t = publishTimers.get(key); if (t) clearTimeout(t); publishTimers.delete(key); } }, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat, cleanupCard };
+  /** Wait for any in-flight publish of a session to finish (turn boundaries). */
+  const awaitDrain = async (sessionId: string): Promise<void> => {
+    const running = publishQueue.get(sessionId);
+    if (running) await running.catch(() => {});
+    const timer = publishTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      publishTimers.delete(sessionId);
+    }
+  };
+  return { addBlock, publish, awaitDrain, goToPage, renderPage, cardKeyboard, compactCardKeyboard, pagePickerKeyboard, turnSummary, clearPublishTimers: (sessionId: string) => { for (const key of [...publishTimers.keys()]) if (key === sessionId) { const t = publishTimers.get(key); if (t) clearTimeout(t); publishTimers.delete(key); } }, exportTranscriptHtml, exportTranscriptMarkdown, exportTranscriptJsonLd, exportTranscriptJsonl, pageCount, blocksOf, refloat, cleanupCard };
 }
 
 export { esc, TRANSCRIPT_MAX_BLOCKS };

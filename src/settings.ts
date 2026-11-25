@@ -313,39 +313,6 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   onboardingStep: "🎓 Onboarding",
 };
 
-export function renderSettings(chatId: number, settings: ChatSettings): string {
-  const sections: Array<{ title: string; emoji: string; keys: Array<keyof ChatSettings> }> = [
-    { title: "Modo y entrega", emoji: "🧩", keys: ["displayMode", "cardBehavior", "longAnswerDelivery", "longAnswerThreshold", "cardPreset"] },
-    { title: "Accesibilidad y feedback", emoji: "♿", keys: ["celebrateOnDone"] },
-    { title: "Visualización", emoji: "👁", keys: ["showThinking", "showTools", "showCot", "showLatestThought", "showLatestTool", "showTokenSpeed", "showPartialText", "partialTextLines", "compactFinal", "showSessionNameInStatus", "sessionNameInMessages", "autoTopicTitle", "compactCard", "showActionRail", "showFinalInCard", "celebrateOnDone"] },
-    { title: "Shell", emoji: "🖥", keys: ["showShell", "shellExpanded", "showToolInput"] },
-    { title: "Archivos", emoji: "📁", keys: ["autoArtifacts", "previewLines", "diffStyle"] },
-    { title: "Voz", emoji: "🎤", keys: ["voiceTranscription"] },
-    { title: "Recursos", emoji: "📊", keys: ["showResourceUsage", "resourceHistory"] },
-  ];
-  const lines = [`<b>⚙️ Settings</b>`, `Chat: <code>${chatId}</code>`, ""];
-  for (const section of sections) {
-    const maxLabel = Math.max(...section.keys.map((k) => (LABELS[k].replace(/^[^ ]+ /, "").length)), 8);
-    const rows = section.keys.map((key) => {
-      const value = settings[key];
-      const display = typeof value === "boolean" ? (value ? "sí" : "no") : String(value);
-      const label = LABELS[key].replace(/^[^ ]+ /, "");
-      return `${label.padEnd(maxLabel, " ")}  ${display}`;
-    });
-    const body = `<pre>${rows.map(esc).join("\n")}</pre>`;
-    const header = `${section.emoji} <b>${section.title}</b>`;
-    // Long sections are collapsible to reduce initial scroll.
-    if (section.keys.length >= 5) {
-      lines.push(`<blockquote expandable>${header}\n${body}</blockquote>`);
-    } else {
-      lines.push(`<blockquote>${header}\n${body}</blockquote>`);
-    }
-    lines.push("");
-  }
-  lines.push("<i>Los cambios se aplican inmediatamente.</i>");
-  return lines.join("\n");
-}
-
 export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: string; callback_data: string }>> {
   const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
 

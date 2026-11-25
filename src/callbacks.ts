@@ -21,6 +21,7 @@ import { showSessionPicker } from "./messages.js";
 import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "./util.js";
 import { contextItems, lastAssistantText } from "./syncview.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
+import { clearRetryNotice } from "./events.js";
 import { join } from "node:path";
 import { handleTranscriptPage, handleCardView, handleHistory, handleHistoryFormatPicker, handlePagePicker, handlePickerJump } from "./callbacks/history.js";
 
@@ -1375,6 +1376,11 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
       s.targetThreadId = threadId;
       deps.store.rememberSessionChat(s.sessionId, chatId);
       deps.store.rememberActiveRoute(chatId, threadId, s.sessionId);
+      deps.store.rememberDelivery(s.sessionId, chatId, threadId);
+      // A manual retry supersedes any pending auto-retry: cancel it and drop
+      // its notice so the two cannot race and duplicate the answer.
+      cancelAutoRetry(s.sessionId);
+      clearRetryNotice(s.sessionId);
       s.promptStartTime = Date.now();
       deps.store.rememberLastChat(s.sessionId, chatId);
       deps.store.rememberLastPrompt(s.sessionId, prompt);

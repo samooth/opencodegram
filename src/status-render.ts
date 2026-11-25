@@ -225,68 +225,6 @@ export type StatusDeps = {
 };
 
 
-export function renderTools(details: ChatSession["toolCallDetails"], _limit: number, showToolInput = true): string {
-  // Collapse consecutive calls only when name + key arg are identical.
-  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number; summary: ToolSummary }> = [];
-  for (const d of details) {
-    const summary = getToolSummary(d.name, d.input);
-    const last = compact[compact.length - 1];
-    if (last && last.d.name === d.name && last.summary.arg === summary.arg && last.summary.detail === summary.detail) {
-      last.count += 1;
-      last.d = d; // keep latest status/output
-    } else {
-      compact.push({ d, count: 1, summary });
-    }
-  }
-  return compact
-    .map(({ d, count, summary }) => {
-      const failed = d.status === "failed";
-      const status = d.status === "success" ? "✅" : failed ? "❌" : "⏳";
-      const icon = toolIcon(d.name);
-      const countSuffix = count > 1 ? ` <i>×${count}</i>` : "";
-      const arg = summary.arg ? ` <code>${esc(shortToolArg(summary.arg))}</code>` : "";
-      const detail = summary.detail ? ` <i>${esc(truncate(summary.detail, 40))}</i>` : "";
-      const head = `${status} ${icon} <b>${esc(d.name)}</b>${arg}${detail}${countSuffix}`;
-      if (!showToolInput && !failed) return head;
-
-      const output = d.output ? parseToolOutput(d.output) : "";
-      if (failed && output) {
-        return `${head}\n   <i>${esc(firstMeaningfulLine(output, 160))}</i>`;
-      }
-      // For read/webfetch success, a short status line is enough; avoid dumping content.
-      const lower = (d.name || "").toLowerCase();
-      if (!failed && (lower.includes("read") || lower.includes("webfetch") || lower.includes("fetch"))) {
-        const brief = firstMeaningfulLine(output, 100);
-        if (brief && !/^Read file\b/i.test(brief)) return `${head}\n   <i>${esc(brief)}</i>`;
-        return head;
-      }
-      if (!failed && (lower.includes("grep") || lower.includes("glob"))) {
-        // Show a compact result hint (e.g. number of matches / first line)
-        const brief = firstMeaningfulLine(output, 120);
-        if (brief) return `${head}\n   <i>${esc(brief)}</i>`;
-        return head;
-      }
-      if (output) {
-        const brief = firstMeaningfulLine(output, 140);
-        if (brief) return `${head}\n   <i>${esc(brief)}</i>`;
-      }
-      if (!summary.arg && d.input) {
-        // Last resort: compact key=value hint instead of raw JSON dump
-        const p = parseToolInput(d.input);
-        if (p) {
-          const hint = Object.entries(p)
-            .filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean")
-            .slice(0, 2)
-            .map(([k, v]) => `${k}=${truncate(String(v), 40)}`)
-            .join(" ");
-          if (hint) return `${head}\n   <i>${esc(hint)}</i>`;
-        }
-      }
-      return head;
-    })
-    .join("\n");
-}
-
 export function isShellTool(name: string): boolean {
   const normalized = name.toLowerCase();
   return normalized === "shell" || normalized === "bash" || normalized === "sh" || normalized.includes("shell");
@@ -379,36 +317,6 @@ export function renderToolStats(details: ChatSession["toolCallDetails"]): string
   ];
   if (failed) parts.push(`❌${failed}`);
   return parts.join(" · ");
-}
-
-export function renderShell(details: ChatSession["toolCallDetails"], limit: number): string {
-  // Collapse consecutive identical commands.
-  const compact: Array<{ d: ChatSession["toolCallDetails"][number]; count: number }> = [];
-  for (const d of details) {
-    const cmd = parseShellCommand(d.input ?? "") ?? d.input?.trim() ?? d.name;
-    const last = compact[compact.length - 1];
-    const lastCmd = last ? (parseShellCommand(last.d.input ?? "") ?? last.d.input?.trim() ?? last.d.name) : "";
-    if (last && lastCmd === cmd) {
-      last.count += 1;
-      last.d = d;
-    } else {
-      compact.push({ d, count: 1 });
-    }
-  }
-  return compact
-    .map(({ d, count }) => {
-      let command = parseShellCommand(d.input ?? "") ?? d.input?.trim() ?? d.name;
-      // Keep only the first line and cap it: multi-line heredocs must not be
-      // dumped verbatim into the card.
-      command = (command.split(/\r?\n/)[0] ?? "").trim();
-      if (command.length > 200) command = `${command.slice(0, 197)}…`;
-      const output = cleanShellOutput((parseShellOutput(d.output ?? "") ?? d.output ?? "")).trim();
-      const lines = ["$ " + command + (count > 1 ? `  (×${count})` : "")];
-      if (output) lines.push(truncateText(output, limit));
-      if (d.status === "failed") lines.push("(failed)");
-      return lines.join("\n");
-    })
-    .join("\n\n");
 }
 
 /**
