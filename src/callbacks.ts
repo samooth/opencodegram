@@ -1203,15 +1203,13 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
     const sessionId = m[1];
     await deps.tg.answerCallbackQuery(cq.id, "Conectando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     try {
-      // Resolve the target route from the CHOSEN session, not from the button's
-      // message: Telegram callbacks sometimes omit message_thread_id, and a
-      // session picked from another tab must keep its own topic binding.
+      // Bind the chosen session to the route where the button was pressed.
+      // Using a session's ORIGINAL thread here creates a new topic in the wrong
+      // chat and leaves the pressed route with "none" — always prefer the
+      // callback's chat/thread (the user's current view).
       const chosen = deps.store.findSessionById(sessionId);
-      const boundThread = chosen?.targetThreadId ?? chosen?.threadId ?? deps.store.threadBySession.get(sessionId);
-      const boundChat = deps.store.chatBySession.get(sessionId);
-      const targetChat = boundChat === chatId ? chatId : chatId;
-      const targetThread = boundChat === chatId ? boundThread : undefined;
-      const cs = await deps.sessions.activateSession(targetChat, sessionId, true, targetThread);
+      const targetThread = threadId ?? chosen?.targetThreadId ?? chosen?.threadId ?? deps.store.threadBySession.get(sessionId);
+      const cs = await deps.sessions.activateSession(chatId, sessionId, true, targetThread);
       // Rename the tab to the connected session (best-effort; works in
       // private threaded chats, silently fails in groups without permission).
       if (cs) {
