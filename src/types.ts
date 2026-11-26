@@ -106,10 +106,21 @@ export type ChatSession = {
   cardView?: CardView;
   /** Increments on every turn start; transcript blocks are tagged with it. */
   turnSeq?: number;
+  /** Generation counter: stale deltas from a previous turn are discarded. */
+  turnGeneration?: number;
+  /** Last publish timestamp + coalesced retry for central throttle. */
+  _lastPublishAt?: number;
+  _publishScheduled?: boolean;
+  /** Whether a live-card block is collapsed (reasoning / thoughts / shell). */
+  shellCollapsed?: boolean;
+  reasoningCollapsed?: boolean;
+  thoughtsCollapsed?: boolean;
   /** Cumulative tool-call counters for the session (dashboard/stats). */
   toolStats?: { total: number; success: number; failed: number };
   /** Last final answer text, kept for "view full" actions. */
   lastFinalText?: string;
+  /** Turn the lastFinalText belongs to (avoids showing a stale answer). */
+  lastFinalTurn?: number;
   /** promptStartTime of the turn whose final answer was already delivered (dedup). */
   lastFinalDeliveredPromptStart?: number;
   /** promptStartTime of the turn whose long answer was already sent separately (dedup). */

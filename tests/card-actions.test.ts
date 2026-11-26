@@ -44,8 +44,9 @@ describe("contextual card keyboards", () => {
     const s = makeSession();
     s.activity!.thoughts = 1;
     const kb = transcript.cardKeyboard(7, s, 0, 1, { working: true });
-    expect(kb[0].map((b) => b.text)).toEqual(["⏹ Detener", "🔇 Fondo", "▾ Detalles"]);
-    expect(kb[0][0].callback_data).toBe("panel:stop");
+    expect(kb[0].map((b) => b.text)).toEqual(["⏹ Detener", "▾ Detalles"]);
+    // Stop lives next to the page-back button, not in the primary row.
+    expect(kb.flat().some((b) => b.text === "⏹ Detener" && b.callback_data === "panel:stop")).toBe(true);
   });
 
   test("finished cards lead with the answer and a native copy button in private", () => {

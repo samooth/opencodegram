@@ -8,8 +8,16 @@ import { ctx, isRouteAdmin } from "./shared.js";
 export async function cmd_status(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/status" || text === "/session") {
-    const placeholder = await send("⏳ Cargando estado…").catch(() => undefined) as { message_id?: number } | undefined;
-    await C.showStatus(chatId, threadId, placeholder?.message_id);
+    // Send the error directly with a hard timeout; never await a placeholder
+    // that can hang on a flaky Telegram API before the timeout is armed.
+    // Let the Telegram fetch (30 s) finish before declaring failure: a premature
+    // 8 s timeout showed an error while the real message was still in flight.
+    try {
+      await C.showStatus(chatId, threadId, undefined);
+    } catch (err) {
+      const msg = `⚠️ No se pudo mostrar el estado: ${esc(err instanceof Error ? err.message : String(err))}`;
+      await send(msg).catch(() => undefined);
+    }
     return true;
   }
   return false;
@@ -55,7 +63,7 @@ export async function cmd_bg(deps: BotDeps, chatId: number, threadId: number | u
     if (!s) { await send("No hay sesión activa"); return true; }
     try {
       await C.oc.background(s.sessionId);
-      await send("🔇 Herramientas pasadas a segundo plano (equivalente a Ctrl+B).");
+      await send("✅ Comando enviado a segundo plano (equivalente a Ctrl+B).");
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
@@ -311,7 +319,10 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
       const outTok = tokens.output ?? 0;
       const reasonTok = tokens.reasoning ?? 0;
       const cacheRead = tokens.cache?.read ?? 0;
-      const ctxData = await C.oc.context(s.sessionId);
+      const ctxData = await Promise.race([
+        C.oc.context(s.sessionId),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("OpenCode no responde (timeout)")), 8000)),
+      ]);
       const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
       const meaningful = items.filter((m: Record<string, unknown>) => {
         const role = m.role ?? m.type;
@@ -446,11 +457,16 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
       return true;
     }
     try {
-      const ctxData = await C.oc.context(s.sessionId);
+      const ctxData = await Promise.race([
+        C.oc.context(s.sessionId),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("OpenCode no responde (timeout)")), 8000)),
+      ]);
       const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
       const parts = buildDigestParts(s, items, { title: "📜 Contenido de la sesión", sessionId: s.sessionId });
-      for (const part of parts) {
-        const sent = await send(part.html, { reply_markup: { inline_keyboard: part.keyboard } }) as { message_id?: number } | undefined;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const markup = i === parts.length - 1 ? { inline_keyboard: part.keyboard } : undefined;
+        const sent = await send(part.html, markup ? { reply_markup: markup } : {}) as { message_id?: number } | undefined;
         // Link EVERY part to the session so replying to any digest message
         // routes back to the correct session.
         if (sent?.message_id) C.store.rememberMessageSession(chatId, sent.message_id, s.sessionId);
@@ -465,21 +481,29 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
 
 export async function cmd_running_sessions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
+  const safeShow = async (page: number, filter?: number, busy?: boolean): Promise<void> => {
+    // No "Cargando…" placeholder: a hung OpenCode call left it stuck forever.
+    // Let showSessions send the list directly; on timeout/error send a fresh
+    // message so there is always a visible answer.
+    try {
+      await C.showSessions(chatId, page, undefined, threadId, filter, busy);
+    } catch (err) {
+      const msg = `⚠️ No se pudieron listar las sesiones: ${esc(err instanceof Error ? err.message : String(err))}`;
+      await send(msg).catch(() => undefined);
+    }
+  };
   if (text === "/running" || text === "/sessions running" || text === "/sessions busy") {
-    const placeholder = await send("⏳ Cargando sesiones…").catch(() => undefined) as { message_id?: number } | undefined;
-    await C.showSessions(chatId, 0, placeholder?.message_id, threadId, undefined, true);
+    await safeShow(0, undefined, true);
     return true;
   }
   if (text === "/sessions" || text.startsWith("/sessions ")) {
     const arg = text.slice("/sessions".length).trim();
-    const placeholder = await send("⏳ Cargando sesiones…").catch(() => undefined) as { message_id?: number } | undefined;
     if (arg === "group" || arg === "g" || arg === "here") {
-      // Sessions used from this chat (and its topics).
-      await C.showSessions(chatId, 0, placeholder?.message_id, threadId, chatId);
+      await safeShow(0, chatId);
       return true;
     }
     const page = /^\d+$/.test(arg) ? Math.max(0, parseInt(arg, 10) - 1) : 0;
-    await C.showSessions(chatId, page, placeholder?.message_id, threadId);
+    await safeShow(page);
     return true;
   }
   return false;

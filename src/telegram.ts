@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { noteTelegramFailure, noteTelegramSuccess } from "./ratethrottle.js";
+import { dtrace } from "./debuglog.js";
 
 const API = "https://api.telegram.org";
+
+/** Local message counter: every outgoing message gets an id BEFORE Telegram
+ * assigns its own message_id, so even the first frame of a card is numbered. */
+let localMessageSeq = 0;
+const nextLocalId = (): string => `#L${++localMessageSeq}`;
 
 /** Calls that must answer a human tap quickly; no internal retry storm. */
 const INTERACTIVE_METHODS = new Set([
@@ -110,6 +116,13 @@ export class TelegramClient {
   }
 
   private async call<T>(method: string, body?: unknown, attempt = 0): Promise<T> {
+    const b = body as { chat_id?: unknown; message_id?: unknown; rich_message?: { html?: string }; text?: string } | undefined;
+    const rawHtml = b?.rich_message?.html ?? b?.text ?? "";
+    const excerpt = rawHtml
+      ? { htmlHead: rawHtml.slice(0, 150), htmlTail: rawHtml.slice(-150), htmlLen: rawHtml.length }
+      : {};
+    const traceId = dtrace("tg", "call", { method, attempt, chatId: b?.chat_id, messageId: b?.message_id, ...excerpt });
+    if (rawHtml.startsWith("<p><i>#L")) dtrace("tg", "localId", { traceId, localId: rawHtml.slice(9, rawHtml.indexOf("</p>")) });
     const isEdit = method.toLowerCase().includes("edit");
     const chatId = Number((body as { chat_id?: unknown } | undefined)?.chat_id);
     // Timeout: long-poll (getUpdates) gets body.timeout + 10s; others 30s.
@@ -133,6 +146,7 @@ export class TelegramClient {
       });
     } catch (err) {
       clearTimeout(timer);
+      dtrace("tg", "NETFAIL", { traceId, method, attempt, error: String(err).slice(0, 120) });
       if (attempt < 2 && !isEdit) {
         await new Promise((r) => setTimeout(r, 1000));
         return this.call<T>(method, body, attempt + 1);
@@ -188,9 +202,12 @@ export class TelegramClient {
         await new Promise((r) => setTimeout(r, wait));
         return this.call<T>(method, body, attempt + 1);
       }
+      dtrace("tg", "FAIL", { traceId, method, error_code: json.error_code ?? res.status, description: json.description ?? "", attempt });
       throw new Error(`Telegram ${method} failed: ${json.error_code ?? res.status} ${json.description ?? ""}`);
     }
     if (Number.isFinite(chatId)) noteTelegramSuccess(chatId);
+    const resultMessageId = (json.result as { message_id?: number } | undefined)?.message_id;
+    dtrace("tg", "ok", { traceId, method, messageId: resultMessageId, chatId });
     return json.result as T;
   }
 
@@ -222,6 +239,7 @@ export class TelegramClient {
         await new Promise((r) => setTimeout(r, wait));
         return this.callForm<T>(method, form, attempt + 1);
       }
+      dtrace("tg", "FAIL", { method, error_code: json.error_code ?? res.status, description: json.description ?? "", attempt });
       throw new Error(`Telegram ${method} failed: ${json.error_code ?? res.status} ${json.description ?? ""}`);
     }
     if (Number.isFinite(chatId)) noteTelegramSuccess(chatId);
@@ -271,7 +289,12 @@ export class TelegramClient {
   }
 
   sendRichMessage(chatId: number, html: string, opts: Record<string, unknown> = {}): Promise<TelegramMessage> {
-    const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(html));
+    // Number EVERY outgoing message, head AND tail: the tail id is what the
+    // user reads at the bottom of a card (a card sent already-finished never
+    // gets a later edit that would add the id).
+    const localId = nextLocalId();
+    const tagged = `<p><i>${localId}</i></p>\n${html}<p><i>${localId}</i></p>`;
+    const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(tagged));
     const body = { chat_id: chatId, rich_message: { html: safe }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
       const msg = String(err);

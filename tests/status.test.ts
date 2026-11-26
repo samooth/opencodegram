@@ -274,11 +274,11 @@ describe("answer visible in the finished card", () => {
     const shellIdx = html.indexOf("⚡ Shell");
     const doneIdx = html.indexOf("✅ <b>Listo</b>");
     const answerIdx = html.indexOf("💬 Respuesta");
-    // New order: reasoning → shell → Listo → Respuesta.
+    // New order: reasoning → shell → Respuesta → Listo (receipt last).
     expect(reasoningIdx).toBeGreaterThanOrEqual(0);
     expect(shellIdx).toBeGreaterThan(reasoningIdx);
-    expect(doneIdx).toBeGreaterThan(shellIdx);
-    expect(answerIdx).toBeGreaterThan(doneIdx);
+    expect(answerIdx).toBeGreaterThan(shellIdx);
+    expect(doneIdx).toBeGreaterThan(answerIdx);
     expect(html).toContain(answer);
   });
 
@@ -301,9 +301,9 @@ describe("live streaming sections", () => {
     });
     await status.publishCard(7, s);
     const html = published[0]?.extraTop ?? "";
-    expect(html).toMatch(/<blockquote expandable>🧠 Razonamiento/);
+    expect(html).toMatch(/data="block:reasoning:[^"]+">🧠 Razonamiento/);
     expect(html).toContain("El modelo está razonando");
-    expect(html).toMatch(/<blockquote expandable>⚡ Shell/);
+    expect(html).toMatch(/data="block:shell:/);
     expect(html).toContain("$ read a.ts");
   });
 
@@ -320,6 +320,6 @@ describe("live streaming sections", () => {
     await status.publishCard(7, s);
     const html = published[0]?.extraTop ?? "";
     expect(html).toMatch(/<blockquote expandable>⚡ Shell \(0\)/);
-    expect(html).toContain("$ Trabajando…");
+    expect(html).toContain("⚡ Shell (0)");
   });
 });

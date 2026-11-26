@@ -44,6 +44,8 @@ export type PublishOpts = Partial<CardView> & {
   answerInCard?: boolean;
   /** Block kinds rendered in the status strip instead of the page (no duplicates). */
   hideKinds?: Array<import("./transcript.js").TranscriptKind>;
+  /** Render every collapsible section expanded (no `expandable` attribute). */
+  sectionsExpanded?: boolean;
 };
 
 const DEFAULT_VIEW: CardView = { compact: false, reading: false, showResources: true, unified: false };
@@ -231,6 +233,9 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       if (joined.length > LAYOUT_LIMIT && content) {
         joined = [headFixed, ...tailParts].filter(Boolean).join("\n\n");
       }
+      // The final answer has priority: never clampText it away. Telegram rich
+      // messages allow up to 32768 chars, far more than our layout budget.
+      if (headFixed.includes("💬 Respuesta")) return joined;
       return clampText(joined, LAYOUT_LIMIT);
     };
 
@@ -376,9 +381,12 @@ ${body}
   };
 
   /** Keyboard for the session card. */
-  const navRow = (s: ChatSession, page: number, total: number): InlineButton[] => {
+  const navRow = (s: ChatSession, page: number, total: number, withStop = false): InlineButton[] => {
     const nav: InlineButton[] = [];
     if (page > 0) nav.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
+    // Stop sits immediately to the RIGHT of the "back" page button while the
+    // turn is running, so it is always reachable next to navigation.
+    if (withStop) nav.push({ text: "⏹ Detener", callback_data: "panel:stop" });
     // Middle button opens the page picker (jump to page N).
     nav.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
     if (page < total - 1) nav.push({ text: "▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
@@ -397,7 +405,7 @@ ${body}
     const activity = s.activity;
     const hasActivity = !!activity && activity.thoughts + activity.reads + activity.searches + activity.edits + activity.shells + activity.tools > 0;
     if (total > 1) {
-      keyboard.push(navRow(s, page, total));
+      keyboard.push(navRow(s, page, total, view.working));
       // P1.3: once the user is away from the latest page, offer a jump back.
       if (page < total - 1) {
         keyboard.push([{ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
@@ -413,8 +421,8 @@ ${body}
     // the user never has to scroll to act on a long answer.
     const primary: InlineButton[] = [];
     if (view.working) {
-      primary.push({ text: "⏹ Detener", callback_data: "panel:stop" });
-      primary.push({ text: "🔇 Fondo", callback_data: "panel:bg" });
+      // With a single page there is no navRow to host Stop — put it in primary.
+      if (total <= 1) primary.push({ text: "⏹ Detener", callback_data: "panel:stop" });
       if (hasActivity) primary.push({
         text: s.activityExpanded ? "▴ Ocultar" : "▾ Detalles",
         callback_data: `activity:${s.sessionId}`,
@@ -616,8 +624,15 @@ ${body}
     s: ChatSession,
     opts?: PublishOpts,
   ): Promise<void> => {
-    const rendered = renderPage(s, opts);
-    if (!rendered) return;
+    const rawRendered = renderPage(s, opts);
+    if (!rawRendered) return;
+    // Single choke point for the "expanded sections" setting: every card HTML
+    // passes through here, so reasoning/thinking/shell/MCP/recap sections all
+    // open by default when enabled — no need to patch each renderer.
+    const expand = (html: string) => viewOf(s, opts).sectionsExpanded === false
+      ? html
+      : html.replace(/<blockquote expandable>/g, "<blockquote>");
+    const rendered = { ...rawRendered, html: expand(rawRendered.html) };
     // During a 429 backoff editMessageText is a no-op. Do NOT mark the page as
     // published: keep the old state and retry once the backoff expires.
     const until = (tg as unknown as { editBackoffUntil?: (chatId: number) => number }).editBackoffUntil?.(chatId) ?? 0;
@@ -646,7 +661,7 @@ ${body}
       s.cardView?.showResources === false
     );
     const cleanHtml = hasResources
-      ? (renderPage(s, { ...opts, showResources: false })?.html ?? rendered.html)
+      ? expand(renderPage(s, { ...opts, showResources: false })?.html ?? rendered.html)
       : rendered.html;
     const tgOpts = threadOptsFor(s);
     const keyboard = { inline_keyboard: compactCardKeyboard(chatId, s, rendered.page, rendered.total, opts) };

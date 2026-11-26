@@ -149,6 +149,10 @@ export type ChatSettings = {
   showFinalInCard: boolean;
   /** P2: react with 🎉 when a turn finishes successfully. */
   celebrateOnDone: boolean;
+  /** Render all collapsible card sections expanded by default. */
+  sectionsExpanded: boolean;
+  /** Publish prompts typed in OpenCode's TUI to the Telegram route. */
+  showTuiPrompts: boolean;
   /** P2: onboarding step already shown to this chat. */
   onboardingStep: number;
 };
@@ -188,6 +192,8 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   showActionRail: true,
   showFinalInCard: true,
   celebrateOnDone: false,
+  sectionsExpanded: true,
+  showTuiPrompts: true,
   onboardingStep: 0,
 };
 
@@ -310,6 +316,8 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   showActionRail: "⚡ Rail de acciones",
   showFinalInCard: "💬 Respuesta en el card",
   celebrateOnDone: "🎉 Celebración",
+  sectionsExpanded: "📂 Secciones expandidas",
+  showTuiPrompts: "⌨️ Prompts desde TUI",
   onboardingStep: "🎓 Onboarding",
 };
 
@@ -338,6 +346,12 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
   keyboard.push([
     { text: `🧾 Diff: ${settings.diffStyle}`, callback_data: `set:diffStyle:${settings.diffStyle === "simple" ? "unified" : "simple"}` },
     { text: `${settings.showFinalInCard ? "✅" : "❌"} 💬 Respuesta en tarjeta`, callback_data: `set:showFinalInCard:${settings.showFinalInCard ? "false" : "true"}` },
+  ]);
+  keyboard.push([
+    { text: `${settings.sectionsExpanded ? "✅" : "❌"} 📂 Secciones expandidas`, callback_data: `set:sectionsExpanded:${settings.sectionsExpanded ? "false" : "true"}` },
+  ]);
+  keyboard.push([
+    { text: `${settings.showTuiPrompts ? "✅" : "❌"} ⌨️ Prompts TUI`, callback_data: `set:showTuiPrompts:${settings.showTuiPrompts ? "false" : "true"}` },
   ]);
   keyboard.push([
     { text: `📏 Preview: ${settings.previewLines}`, callback_data: `cycle:previewLines` },

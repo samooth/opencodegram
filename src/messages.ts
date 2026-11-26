@@ -12,8 +12,9 @@ import { clampText, esc, normalizeCommandText, parseSlashCommand, sessionHeader,
 import { transcribeFileStreaming, isTranscriptionEnabled } from "./transcribe.js";
 import type { ChatSession } from "./types.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
-import { clearRetryNotice } from "./events.js";
+import { clearRetryNotice, noteTelegramPrompt } from "./events.js";
 import { STATUS_EDIT_INTERVAL_MS } from "./constants.js";
+import { dtrace } from "./debuglog.js";
 
 /**
  * Result of downloading a Telegram message's attachments.
@@ -405,6 +406,8 @@ async function startPrompt(
     // used to duplicate the previous turn and interleave the rate-limit warning).
     cancelAutoRetry(s.sessionId);
     clearRetryNotice(s.sessionId);
+    // Mark this prompt as ours so its inbox.enqueued echo is not shown as TUI.
+    noteTelegramPrompt(s.sessionId, text);
     await startStatus(chatId, s);
     if (s.statusMessageId) store.rememberMessageSession(chatId, s.statusMessageId, s.sessionId);
     s.statusTimer = setInterval(() => {
@@ -454,6 +457,7 @@ function isRateLimited(userId: number, limit: number): boolean {
 
 export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promise<void> {
   const { config, tg, oc, store, me } = deps;
+  dtrace("msg", "enter", { telegramMsgId: msg.message_id, chatId: msg.chat.id, threadId: msg.message_thread_id, userId: msg.from?.id, textLen: (msg.text ?? msg.caption ?? "").length });
   const { routeKey } = store;
 
   const userId = msg.from?.id;
@@ -495,6 +499,7 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   const isAuthorized = deps.permissions
     ? deps.permissions.canPrompt(deps.store.routeKey(chatId, replyThread), userId, globalAllowed)
     : (globalAllowed.size > 0 && userId !== undefined && globalAllowed.has(userId));
+  dtrace("msg", "auth", { telegramMsgId: msg.message_id, chatId, threadId: replyThread, isAuthorized });
   if (!isAuthorized) {
     // In groups, silently ignore unauthorized messages.
     if (msg.chat.id < 0) return;
@@ -575,7 +580,8 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   if (chatId < 0) tg.setMessageReaction(chatId, msg.message_id, "👀").catch(() => {});
   tg.sendChatAction(chatId, "typing", replyThread).catch(() => {});
   deps.audit("message", `${userId} ${chatId}: ${(msg.text ?? msg.caption ?? "").slice(0, 120)}`);
-  deps.sessionTrace?.("message.audit", { chatId, threadId: replyThread, userId });
+  deps.sessionTrace?.("message.audit", { chatId, threadId: replyThread, userId, telegramMsgId: msg.message_id });
+  dtrace("msg", "accepted", { telegramMsgId: msg.message_id, chatId, threadId: replyThread });
 
   // If we are awaiting a rejection reason, handle it.
   const reasonKey = routeKey(chatId, replyThread);
@@ -837,7 +843,9 @@ export async function handleTextMessage(
 
     // Dangerous commands require confirmation.
     if (isDangerousCommand(name)) {
-      const confirmKey = `runcmd:${s.sessionId}:${name}:${args}`;
+      // callback_data is limited to 64 bytes (Bot API §6). Use a short opaque
+      // key as the map key; the full session/name/args live in the map value.
+      const confirmKey = `rc${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
       deps.pendingConfirmations = deps.pendingConfirmations ?? new Map();
       deps.pendingConfirmations.set(confirmKey, { sessionId: s.sessionId, name, args, expires: Date.now() + 30_000 });
       await send(`⚠️ <b>Confirm</b>: run <code>/${esc(name)}</code>${args ? " " + esc(args) : ""}?`, {

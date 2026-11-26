@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { handleEvent } from "../src/events.js";
+import { handleEvent, noteTelegramPrompt } from "../src/events.js";
 import { SessionStore } from "../src/store.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -134,6 +134,7 @@ describe("text.ended final delivery", () => {
     store.sessionsById.set("ses_parts", session);
     store.chatBySession.set("ses_parts", 100);
     store.lastPromptBySession.set("ses_parts", "haz algo");
+    noteTelegramPrompt("ses_parts", "haz algo");
 
     const sent = (deps.tg as any).sent as string[];
     await handleEvent({ type: "session.text.ended", data: { sessionID: "ses_parts", assistantMessageID: "msg_a", text: "parte 1" } }, deps);
@@ -141,12 +142,13 @@ describe("text.ended final delivery", () => {
     expect(afterFirst).toBeGreaterThan(0);
     expect(session.lastFinalDeliveredPromptStart).toBe(1000);
 
-    // A second text.ended part of the same turn (different msg id + text)
-    // must be ignored — one final answer per prompt.
-    await handleEvent({ type: "session.text.ended", data: { sessionID: "ses_parts", assistantMessageID: "msg_b", text: "parte 2" } }, deps);
+    // A second text.ended part of the SAME assistant message (same msg id,
+    // different partial text) must be ignored — one final answer per message.
+    await handleEvent({ type: "session.text.ended", data: { sessionID: "ses_parts", assistantMessageID: "msg_a", text: "parte 2" } }, deps);
     expect(sent.length).toBe(afterFirst);
 
-    // A new turn (new promptStartTime) is allowed to deliver again.
+    // A new user prompt + new assistant message is allowed to deliver again.
+    noteTelegramPrompt("ses_parts", "otra pregunta");
     session.promptStartTime = 2000;
     await handleEvent({ type: "session.text.ended", data: { sessionID: "ses_parts", assistantMessageID: "msg_c", text: "nueva respuesta" } }, deps);
     expect(sent.length).toBeGreaterThan(afterFirst);
@@ -166,6 +168,7 @@ describe("model capture in stats", () => {
     } as any;
     store.sessionsById.set("ses_model", session);
     store.chatBySession.set("ses_model", 100);
+    noteTelegramPrompt("ses_model", "test prompt");
 
     await handleEvent({ type: "session.text.ended", data: {
       sessionID: "ses_model", assistantMessageID: "m1", text: "answer",

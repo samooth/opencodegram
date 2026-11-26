@@ -365,11 +365,26 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
   }
 
   async function activateSession(chatId: number, sessionId: string, silent = true, threadId?: number): Promise<ChatSession | undefined> {
-    const session = await oc.client.session.get({ sessionID: sessionId });
-    const s = session as { location?: { directory?: string }; directory?: string; model?: { id: string; providerID: string; variant?: string }; title?: string };
+    let s: { location?: { directory?: string }; directory?: string; model?: { id: string; providerID: string; variant?: string }; title?: string } | undefined;
+    let getError: unknown;
+    try {
+      s = await oc.client.session.get({ sessionID: sessionId }) as typeof s;
+    } catch (err) {
+      getError = err;
+    }
+    // The SDK may resolve with an error object instead of throwing, and during
+    // a provider outage OpenCode reports "not found" for a session that is
+    // still persisted locally. Use local state in either case.
+    const looksMissing = !!getError || !s || !!(s as { error?: unknown }).error || !(s as { id?: string }).id;
+    if (looksMissing) {
+      const local = sessionsById.get(sessionId);
+      const knownLocally = !!local || store.chatBySession.has(sessionId) || store.threadBySession.has(sessionId);
+      if (!knownLocally) throw (getError ?? new Error(`Session not found: ${sessionId}`));
+      s = { directory: local?.directory, title: local?.topicTitle ?? store.topicTitleBySession.get(sessionId) };
+    }
     const directory = s?.location?.directory ?? s?.directory;
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
-    const title = (s.title || sessionId).slice(0, 120);
+    const title = (s?.title || sessionId).slice(0, 120);
 
     // Reuse the existing in-memory object when possible so tool details and
     // status state survive session restoration/switching.

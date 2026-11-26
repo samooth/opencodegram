@@ -89,9 +89,11 @@ describe("activity summary in the session card", () => {
     const { status, s, published, store } = makeHarness();
     const long = "Explicame de que va este repo y ademas quiero que detalles todos los modos de la tarjeta y sus botones por favor";
     store.lastPromptBySession.set(s.sessionId, long);
+    store.getTurnPrompt = () => long;
     await status.publishCard(7, s);
     const top = published[0]?.extraTop ?? "";
-    expect(top).toContain(long.slice(0, 80));
+    expect(top).toContain(long.slice(0, 50));
+    expect(top).toContain(long.slice(-49));
     expect(top).not.toContain(long);
     expect(top).toContain("…");
   });

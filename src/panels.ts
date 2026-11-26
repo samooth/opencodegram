@@ -1,3 +1,4 @@
+import { dtrace } from "./debuglog.js";
 type SessionRow = { id?: string; title?: string; model?: { providerID?: string; id?: string }; location?: { directory?: string }; directory?: string };
 type CommandRow = { name?: string; description?: string };
 type ModelRow = { id?: string; modelID?: string; name?: string; providerID?: string; provider?: string; variants?: Array<{ id?: string } | string>; capabilities?: { input?: string[] } };
@@ -399,10 +400,12 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
   }
 
   async function showStatus(chatId: number, threadId?: number, messageId?: number): Promise<void> {
-    let s = getActiveSession(chatId, threadId);
-    if (!s && restoreActiveSession) s = await restoreActiveSession(chatId, threadId);
+    dtrace("panel", "status.enter", { chatId, threadId, messageId });
     const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
       Promise.race([p, new Promise<T | null>((resolve) => setTimeout(() => resolve(null), ms))]);
+    let s = getActiveSession(chatId, threadId);
+    if (!s && restoreActiveSession) s = await withTimeout(restoreActiveSession(chatId, threadId), 2500) ?? undefined;
+    dtrace("panel", "status.restored", { hasSession: !!s, sessionId: s?.sessionId });
     const [ocInfo, sessionCount, sessionDetail] = await Promise.all([
       withTimeout(oc.serverInfo().catch(() => null), 3000),
       withTimeout(oc.listSessionsCached().then((list) => list.length).catch(() => 0), 3000),
@@ -450,7 +453,11 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
     ].filter(Boolean).join("");
     const unreachable = !ocInfo && s?.sessionId;
-    const text = `<h3>📊 Status</h3>${unreachable ? "\n<p><i>⚠️ OpenCode no responde en este momento (reintentando). Mostrando datos en caché.</i></p>" : ""}\n\n<table compact striped bordered>${rows}</table>`;
+    // Private chats occasionally stall on complex rich messages (table+buttons).
+    // Send a simpler single-block version there for reliable delivery.
+    const plainText = `<blockquote>📊 Status\n${rows.replace(/<tr>/g, "").replace(/<\/tr>/g, "\n").replace(/<[^>]*>/g, "").trim()}</blockquote>`;
+    const richText = `<h3>📊 Status</h3>${unreachable ? "\n<p><i>⚠️ OpenCode no responde en este momento (reintentando). Mostrando datos en caché.</i></p>" : ""}\n\n<table compact striped bordered>${rows}</table>`;
+    const text = chatId > 0 ? plainText : richText;
     const keyboard: InlineKeyboard = [];
     if (s?.sessionId) keyboard.push([{ text: "🔗 Conectar", callback_data: `connect:${s.sessionId}` }]);
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Detener", callback_data: "panel:stop" }]);
@@ -459,7 +466,9 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       { text: "📂 Sesiones", callback_data: "panel:sessions" },
     ]);
     keyboard.push([{ text: "🔄 Actualizar", callback_data: "panel:status" }, { text: "🏠 Panel", callback_data: "panel:home" }]);
-    await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }, s?.sessionId);
+    dtrace("panel", "status.send", { chatId, threadId, messageId, htmlLen: text.length, plain: chatId > 0 });
+    const sentId = await sendOrEditRich(chatId, messageId, text, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }, s?.sessionId);
+    dtrace("panel", "status.sent", { chatId, messageId, sentId });
   }
 
   async function renderPanel(chatId: number, threadId?: number): Promise<{ html: string; keyboard: InlineKeyboard }> {

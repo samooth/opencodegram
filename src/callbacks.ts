@@ -74,6 +74,7 @@ const PREFIXES = [
   "editfile:",
   "readfile:",
   "resources:",
+  "block:",
   "patch:",
   "copy:",
 ].sort((a, b) => b.length - a.length);
@@ -484,7 +485,7 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
   if (
     key === "showThinking" || key === "showShell" || key === "showTools" ||
     key === "showResourceUsage" || key === "showPartialText" || key === "showCot" ||
-    key === "showFinalInCard" || key === "compactCard"
+    key === "showFinalInCard" || key === "compactCard" || key === "sectionsExpanded"
   ) {
     const active = deps.store.getActiveSession(chatId, threadId);
     if (active) {
@@ -830,7 +831,7 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
     }
     try {
       await oc.background(s.sessionId);
-      await tg.answerCallbackQuery(cq.id, "🔇 Herramientas en segundo plano").catch(() => {});
+      await tg.answerCallbackQuery(cq.id, "✅ Comando enviado a segundo plano").catch(() => {});
     } catch (err) {
       await tg.answerCallbackQuery(cq.id, "No se pudo pasar a segundo plano").catch(() => {});
       console.warn("[callbacks] background failed", err);
@@ -1042,6 +1043,20 @@ async function handleResourcesToggle(deps: BotDeps, cq: TelegramCallbackQuery, c
   await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
 }
 
+async function handleBlockToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, _threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const m = data.match(/^block:(reasoning|thoughts|shell):(.+)$/);
+  if (!m) return;
+  await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+  const s = deps.store.findSessionById(m[2]);
+  if (!s) return;
+  const block = m[1];
+  if (block === "reasoning") s.reasoningCollapsed = !s.reasoningCollapsed;
+  else if (block === "thoughts") s.thoughtsCollapsed = !s.thoughtsCollapsed;
+  else s.shellCollapsed = !s.shellCollapsed;
+  const refresh = s.statusFinished ? deps.status.publishCard(chatId, s) : deps.status.updateStatus(chatId, s, true);
+  await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
+}
+
 /** Show what a read tool actually opened, in the file browser. */
 async function handleReadFile(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, threadId: number | undefined, _messageId: number | undefined, data: string) {
   const m = data.match(/^readfile:(.+)$/);
@@ -1147,6 +1162,7 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
   "editfile:": handleEditFile,
   "readfile:": handleReadFile,
   "resources:": handleResourcesToggle,
+  "block:": handleBlockToggle,
   "patch:": handlePatch,
   "copy:": handleCopy,
   "tpage:": handleTranscriptPage,

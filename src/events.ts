@@ -20,6 +20,7 @@ import type { TranscriptManager } from "./transcriptmanager.js";
 import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { cleanShellOutput } from "./status-render.js";
+import { dtrace } from "./debuglog.js";
 
 export type EventsDeps = {
   /** Telegram client used to send/edit messages. */
@@ -156,7 +157,13 @@ const handleSessionReasoningDelta: EventHandler = async (event, deps) => {
   if (chatId === undefined || !sessionId) return;
   const s = _s0;
   if (!s) return;
+  // Discard reasoning deltas from a turn that already ended: OpenCode may
+  // still be streaming the previous answer when a new prompt starts.
+  const gen = s.turnGeneration ?? 0;
+  const deltaAid = e.data?.assistantMessageID as string | undefined;
+  if (deltaAid && s.lastFinalMessageId && deltaAid === s.lastFinalMessageId) return;
   const delta = String(e.data?.delta ?? "");
+  if (gen !== (s.turnGeneration ?? 0)) return;
   s.reasoningBuffer += delta;
   if (s.activity && delta) recordThoughtDelta(s.activity, delta);
   updateStatus(chatId, s).catch((err) => console.warn("[events]", err?.message ?? err));
@@ -265,7 +272,7 @@ const handleSessionToolProgress: EventHandler = async (event, deps) =>
   });
 
 const handleSessionInbox: EventHandler = async (event, deps) => {
-  const { store, tg } = deps;
+  const { store, tg, settings } = deps;
   const e = event as { type: string; data?: Record<string, unknown> };
   const sid = e.data?.sessionID as string | undefined;
   const s = sid ? store.findSessionById(sid) : undefined;
@@ -273,11 +280,74 @@ const handleSessionInbox: EventHandler = async (event, deps) => {
   const chatId = store.resolveChatId(sid);
   if (chatId === undefined) return;
   const action = e.type.split(".").pop();
-  const label = action === "enqueued" ? "📥 Trabajo en cola" : action === "delivered" ? "✅ Trabajo entregado" : action === "cancelled" ? "⏹ Trabajo cancelado" : "📥 Bandeja";
+  // OpenCode 2.3 delivers TUI prompts as session.inbox.enqueued with
+  // data.item = { type: "user", payload: { text, ... }, delivery }. Publish the
+  // user's own text so it is visible in Telegram alongside the assistant card.
+  if (action === "enqueued" && settings.get(chatId).showTuiPrompts) {
+    const item = e.data?.item as { type?: string; payload?: { text?: string } } | undefined;
+    const text = item?.type === "user" ? String(item.payload?.text ?? "").trim() : "";
+    const inboxId = String(e.data?.inboxID ?? "");
+    // Prompts the bot sent from Telegram come back as inbox.enqueued too — do
+    // NOT label those as TUI input.
+    const isTelegramEcho = text && sid ? isTelegramPromptEcho(sid, text) : false;
+    // Inter-agent messages ([FROM @x | TO @y | ...]) are not TUI user input.
+    const isAgentMessage = /^\[FROM @[^|]+\|\s*TO @/i.test(text);
+    if (text && inboxId && !isTelegramEcho && !isAgentMessage && !publishedTuiPrompts.has(inboxId)) {
+      publishedTuiPrompts.add(inboxId);
+      if (sid) noteUserPrompt(sid, text);
+      if (publishedTuiPrompts.size > 500) {
+        const oldest = publishedTuiPrompts.values().next().value;
+        if (oldest) publishedTuiPrompts.delete(oldest);
+      }
+      const html = sessionHeader(s, sid, settings.get(chatId).sessionNameInMessages)
+        + `<blockquote>⌨️ <b>TUI</b>: ${esc(truncate(text, 500))}</blockquote>`;
+      await tg.sendRichMessage(chatId, html, store.threadOptsFor(s)).catch((err) => console.warn("[events] TUI prompt publish failed", String(err)));
+    }
+  }
   // Refresh the card so the "background/inbox" state is visible in place.
   if (deps.publishCard) await deps.publishCard(chatId, s).catch(() => {});
   logger.debug("events", `[inbox.${action}]`, sid);
 };
+/** Dedupe set for TUI prompts already published (by inboxID). */
+const publishedTuiPrompts = new Set<string>();
+/** Prompts the bot itself sent to OpenCode (from Telegram) — not TUI input. */
+const telegramPrompts = new Map<string, { text: string; at: number }[]>();
+/** Real prompts typed in OpenCode's TUI (inbox.enqueued user items). */
+const tuiPrompts = new Map<string, { text: string; at: number }[]>();
+/** Record a prompt the bot is about to send so its inbox echo is not shown as TUI. */
+export function noteTelegramPrompt(sessionId: string, text: string): void {
+  const list = telegramPrompts.get(sessionId) ?? [];
+  list.push({ text: text.trim(), at: Date.now() });
+  if (list.length > 20) list.shift();
+  telegramPrompts.set(sessionId, list);
+}
+/** Record any real user prompt (Telegram or TUI) with its arrival time. */
+export function noteUserPrompt(sessionId: string, text: string): void {
+  const list = tuiPrompts.get(sessionId) ?? [];
+  list.push({ text: text.trim(), at: Date.now() });
+  if (list.length > 20) list.shift();
+  tuiPrompts.set(sessionId, list);
+}
+/** Timestamp of the most recent user prompt already answered; prevents
+ * re-publishing an earlier assistant answer when a new prompt arrives. */
+const answeredPromptAt = new Map<string, number>();
+/** True if there is a user prompt newer than the last answered one. */
+export function hasPendingUserPrompt(sessionId: string): boolean {
+  const list = [...(telegramPrompts.get(sessionId) ?? []), ...(tuiPrompts.get(sessionId) ?? [])];
+  const answeredAt = answeredPromptAt.get(sessionId) ?? 0;
+  // There must be a prompt NEWER than the last one we already answered.
+  return list.some((p) => p.at > answeredAt && Date.now() - p.at < 120_000);
+}
+function markPromptAnswered(sessionId: string): void {
+  const list = [...(telegramPrompts.get(sessionId) ?? []), ...(tuiPrompts.get(sessionId) ?? [])];
+  const newest = list.reduce((m, p) => Math.max(m, p.at), 0);
+  if (newest) answeredPromptAt.set(sessionId, newest);
+}
+function isTelegramPromptEcho(sessionId: string, text: string): boolean {
+  const list = telegramPrompts.get(sessionId) ?? [];
+  const now = Date.now();
+  return list.some((p) => p.text === text.trim() && now - p.at < 60_000);
+}
 
 const handleSessionModelSelected: EventHandler = async (event, deps) => {
   const { store } = deps;
@@ -416,7 +486,11 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
   if (chatId === undefined) return;
   const s = _s0;
   if (!s) return;
+  const gen = s.turnGeneration ?? 0;
+  const deltaAid = (e.data?.assistantMessageID ?? e.data?.assistantMessageId) as string | undefined;
+  if (deltaAid && s.lastFinalMessageId && deltaAid === s.lastFinalMessageId) return;
   const delta = String(e.data?.delta ?? e.data?.text ?? "");
+  if (gen !== (s.turnGeneration ?? 0)) return;
   if (delta) {
     s.buffer += delta;
     // First streamed token timestamp (authoritative metric for tok/s in 2.3.0).
@@ -563,6 +637,16 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
   }
 
   if (chatId === undefined) return;
+  // Only publish assistant answers that answer a REAL user prompt (Telegram or
+  // TUI). The assistant's own streaming (e.g. this agent replying in its own
+  // session) emits text.ended too, and must not create a Telegram card.
+  // Publish whenever there is real streamed content in this turn. The guard
+  // only drops answers with NO prompt at all in a long window (orphan
+  // streaming from an unrelated background agent).
+  if (sessionId && !hasPendingUserPrompt(sessionId) && !(_s0?.buffer?.trim())) {
+    logger.breadcrumb("events", "text.ended.no-user-prompt", { sessionId, len: endedText.length });
+    return;
+  }
   let s = _s0;
   const msgId = (e as { data?: Record<string, unknown> }).data?.assistantMessageID as string | undefined;
   if (s) {
@@ -575,12 +659,11 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       return;
     }
     // OpenCode 2.3.0 emits one `text.ended` per text PART of the assistant
-    // message (tool steps in between). Each carries different partial text,
-    // so comparing content is unreliable — the first delivery already set
-    // lastFinalDeliveredPromptStart for this turn. Treat that as the single
-    // source of truth: one final answer per prompt, no matter how many parts.
-    if (s.promptStartTime !== undefined && s.lastFinalDeliveredPromptStart === s.promptStartTime) {
-      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, reason: "final-already-delivered" });
+    // message. Dedupe by assistantMessageID (the API's authoritative identity),
+    // NOT by prompt timestamp: a timestamp can repeat across events and caused
+    // duplicated/lost answers (OpenCode API skill §5/§12).
+    if (msgId && s.lastFinalMessageId === msgId) {
+      logger.breadcrumb("events", "text.ended.duplicate", { sessionId, msgId, reason: "delivered-msgId" });
       return;
     }
   }
@@ -627,34 +710,26 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     s.typingTimer = undefined;
   }
   if (!s.stopped) {
-    // Capture the turn identity NOW. A new prompt may arrive while the awaits
-    // below are in flight; in that case this handler must abort before writing
-    // anything, otherwise it would stamp its answer onto the NEW turn (wrong
-    // transcript turn, overwritten answer, cleared stream).
-    const turnAtClaim = s.promptStartTime;
-    const isStale = () => s.promptStartTime !== turnAtClaim;
-    // Claim this turn BEFORE any await: OpenCode may emit several text.ended
-    // parts back-to-back, and a second handler must not slip past the dedupe
-    // while finishStatus / message.get are still in flight.
+    // Claim the assistant message id BEFORE any await so a second text.ended
+    // part cannot slip past the dedupe while message.get / publish are in
+    // flight. Turn CLOSING is owned by session.idle / execution.succeeded —
+    // text.ended only publishes the answer (OpenCode API skill §5/§12).
+    if (msgId) s.lastFinalMessageId = msgId;
     s.lastFinalDeliveredPromptStart = s.promptStartTime;
-    logger.breadcrumb("events", "text.ended.flush", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped });
-    if (s && s.statusMessageId && !s.statusFinished) {
-      await finishStatus(chatId, s).catch((err) => console.error("[finishStatus error]", err));
-      if (isStale()) return;
-      // P2: optional celebration reaction on the finished card.
-      if (settings.get(chatId).celebrateOnDone && s.transcriptMessageId && !s.stopped && !s.lastTurnError) {
-        await tg.setMessageReaction(chatId, s.transcriptMessageId, "🎉").catch((err) => console.warn("[events] celebration failed", err?.message ?? err));
-      }
-      if (isStale()) return;
-    }
+    logger.breadcrumb("events", "text.ended.flush", { sessionId, statusMsg: s.statusMessageId, finished: s.statusFinished, stopped: s.stopped, msgId });
     // Some OpenCode builds put the model on the event itself; capture it as a
     // fallback in case message.get fails below.
     const evModel = e.data?.model as { id?: string; providerID?: string } | undefined;
     if (!s.model && evModel?.id && evModel?.providerID) {
       s.model = { id: evModel.id, providerID: evModel.providerID };
     }
-    endedText = String(e.data?.text ?? "").trim();
-    let finalText = endedText || s.buffer || "(empty response)";
+    // OpenCode emits one text.ended per text PART of the assistant message.
+    // s.buffer accumulates ALL streamed deltas, so prefer it over the single
+    // part in this event: publishing endedText truncated the answer to the
+    // first part while OpenCode kept generating the rest (skill §4/§5).
+    const buffered = s.buffer?.trim() ?? "";
+    const eventPart = String(e.data?.text ?? "").trim();
+    let finalText = buffered || eventPart || endedText || "(empty response)";
     let elapsed = 0;
     // Tokens are accumulated across ALL steps of the turn (multi-step tool
     // calls), not just the last one (fix B1/B2).
@@ -696,7 +771,6 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     } catch {
       // ignore
     }
-    if (isStale()) return;
     if (!elapsed && streamedAt) {
       elapsed = (Date.now() - streamedAt) / 1000;
     }
@@ -727,8 +801,9 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       cardMessageId: s.transcriptMessageId,
       pages: deps.transcript?.pageCount(s),
     });
-    if (isStale()) return;
     s.lastFinalText = finalText;
+    s.lastFinalTurn = s.turnSeq;
+    if (sessionId) markPromptAnswered(sessionId);
     // Enrich the turn stat row with the final answer length (upsert).
     try {
       const promptText = deps.store.lastPromptBySession?.get?.(s.sessionId);
@@ -740,11 +815,12 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
     } catch (err) {
       console.warn("[stats] enrich failed", err);
     }
-    const copyText = esc(finalText.slice(0, 200)).replace(/"/g, "&quot;");
+    const copySource = finalText.trim() || "(sin texto)";
+    const copyText = esc(copySource.slice(0, 200)).replace(/"/g, "&quot;");
     const answerHtml = markdownToHtml(finalText);
+    // RICH_MESSAGE_BUTTON_TEXT_EMPTY: Telegram rejects an empty copy_text button.
     const copyRow = `\n\n<tg-button-row><tg-button type="copy_text" text="${copyText}">📋 Copy answer</tg-button></tg-button-row>`;
 
-    if (isStale()) return;
     if (transcript) {
       // The answer is appended to the session transcript and the session card
       // is edited in place: no new message per event.
@@ -765,8 +841,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       if (s.transcriptMessageId) {
         s.lastFinalTelegramMessageId = s.transcriptMessageId;
       }
-      if (isStale()) return;
-      // Optional: deliver the final answer as a separate rich-text message for readability.
+        // Optional: deliver the final answer as a separate rich-text message for readability.
       const st = settings.get(chatId);
       // When the answer is already embedded in the card, sending it again as
       // separate messages only creates noise (parte 1/3, 2/3, …). Only deliver
@@ -1420,6 +1495,8 @@ export async function handleEvent(event: { type: string; data?: unknown }, deps:
     }
   }
   logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
+  const _item = e.data?.item as { type?: string; payload?: { text?: string } } | undefined;
+  dtrace("evt", "in", { type: e.type, sessionID: (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined, text: typeof e.data?.text === "string" ? (e.data.text as string).slice(0, 80) : undefined, itemType: _item?.type, itemText: _item?.payload?.text?.slice(0, 80), inboxID: e.data?.inboxID });
 
   let handler = eventHandlers.get(e.type);
   if (!handler && e.type.startsWith("session.text.ended")) {
@@ -1441,14 +1518,19 @@ const EVENT_HANDLER_SLOW_MS = 15_000;
  */
 function handleEventGuarded(event: { type: string; data?: unknown }, deps: EventsDeps): Promise<void> {
   const type = (event as { type?: string }).type;
-  const started = Date.now();
-  const timer = setTimeout(() => {
-    console.warn("[events] slow handler", type, `${Date.now() - started}ms`);
-  }, EVENT_HANDLER_SLOW_MS);
-  if (typeof timer.unref === "function") timer.unref();
-  return handleEvent(event as { type: string; data?: Record<string, unknown> }, deps)
-    .catch((err) => console.error("[events] handler failed", type, err))
-    .finally(() => clearTimeout(timer));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // Advance the chain even if a handler hangs (e.g. editRichMessage waiting on
+  // Telegram backoff). Turn guards (turnGeneration / lastFinalTurn /
+  // answeredPromptAt) prevent the late handler from corrupting newer turns.
+  return Promise.race([
+    handleEvent(event as { type: string; data?: Record<string, unknown> }, deps),
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, EVENT_HANDLER_SLOW_MS); }),
+  ]).then(() => {
+    if (timer) clearTimeout(timer);
+  }).catch((err) => {
+    console.error("[events] handler failed", type, err);
+    if (timer) clearTimeout(timer);
+  });
 }
 
 export function startEventLoop(deps: EventsDeps): void {

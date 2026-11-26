@@ -134,7 +134,7 @@ describe("P2 golden UX states", () => {
     finishTool(s.activity!, s.activity!.entries[0].toolId!, true, { at: Date.now() - 1000 });
     await status.publishCard(7, s);
     const html = published[0].extraTop;
-    expect(html).toContain("⏳ Trabajando…");
+    expect(html).not.toContain("⏳ Trabajando…");
     expect(html).toContain("⏱ 12s");
     expect(html).toContain("Edición</b> · 1.0s ✅");
     expect(html).not.toContain("Últimas acciones");
@@ -336,12 +336,12 @@ describe("finished card reading order", () => {
     const shell = html.indexOf("⚡ Shell");
     const done = html.indexOf("✅ <b>Listo</b>");
     const answer = html.indexOf("💬 Respuesta");
-    // New order: reasoning → pensamiento → shell → Listo → Respuesta.
+    // New order: reasoning → pensamiento → shell → Respuesta → Listo (receipt last).
     expect(reasoning).toBeGreaterThanOrEqual(0);
     expect(thinking).toBeGreaterThan(reasoning);
     expect(shell).toBeGreaterThan(thinking);
-    expect(done).toBeGreaterThan(shell);
-    expect(answer).toBeGreaterThan(done);
+    expect(answer).toBeGreaterThan(shell);
+    expect(done).toBeGreaterThan(answer);
   });
 
   test("settings disable each block", async () => {

@@ -5,6 +5,7 @@ import { handleCallback } from "./callbacks.js";
 import { handleMessage } from "./messages.js";
 import { handleWidgetQuery } from "./widgets.js";
 import { POLL_BACKOFF_MS } from "./constants.js";
+import { dtrace } from "./debuglog.js";
 import { jsonRead, jsonWrite } from "./db.js";
 
 let stopRequested = false;
@@ -12,6 +13,8 @@ export function requestStopPolling(): void { stopRequested = true; }
 
 export async function processUpdate(deps: BotDeps, update: TelegramUpdate): Promise<void> {
   const { metrics } = deps;
+  const updId = update.update_id;
+  dtrace("upd", "process", { updateId: updId, msg: !!update.message, cb: !!update.callback_query, widget: !!update.widget_query });
   try {
     if (update.widget_query || update.shared_widget_query) {
       await handleWidgetQuery(deps, (update.widget_query ?? update.shared_widget_query)! as any);
@@ -110,6 +113,7 @@ export async function startPolling(deps: BotDeps): Promise<void> {
     try {
       updates = await tg.getUpdates(offset, 5);
       consecutiveFailures = 0;
+      dtrace("poll", "getUpdates", { askedOffset: offset, returned: updates.length, ids: updates.map((u) => u.update_id) });
     } catch (err) {
       consecutiveFailures += 1;
       const msg = err instanceof Error ? err.message : String(err);
@@ -133,7 +137,8 @@ export async function startPolling(deps: BotDeps): Promise<void> {
       }
       const confirmed = offset;
       metrics?.inc("updates");
-      dispatchPolledUpdate(deps, u, () => saveOffset(confirmed));
+      dtrace("poll", "dispatch", { updateId: u.update_id, confirmedOffset: confirmed });
+      dispatchPolledUpdate(deps, u, () => { dtrace("poll", "settled", { updateId: u.update_id }); saveOffset(confirmed); });
     }
   }
 }

@@ -5,9 +5,11 @@ import type { ChatSession, CardView } from "./types.js";
 import { pendingEditsKey } from "./store.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate } from "./util.js";
+import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
+import { dtrace } from "./debuglog.js";
+import { hasPendingUserPrompt } from "./events.js";
 import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
@@ -27,46 +29,59 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // to hide reasoning/activity/shell and leave only the partial text).
     const compact = settings.compactCard && !s.cardMenuExpanded && !s.readingMode;
     const reasoningCap = compact ? 400 : 600;
+    const activityCap = compact ? 300 : 450;
     const shellCap = compact ? 220 : 400;
-    const partialCap = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
+    // Blocks hidden via their link give their budget to the answer, so hiding
+    // reasoning/thoughts/shell makes more room for the user-visible text.
+    const hiddenBudget =
+      (s.reasoningCollapsed ? reasoningCap : 0) +
+      (s.thoughtsCollapsed ? activityCap : 0) +
+      (s.shellCollapsed ? shellCap : 0);
+    const basePartial = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
+    const partialCap = basePartial + hiddenBudget;
     const lines: string[] = [];
     // 1. State — "still working" is the most important signal at a glance.
-    lines.push(
-      s.stopped
-        ? "<h4>⏹ Detenido</h4>"
-        : "<h4>⏳ Trabajando…</h4>",
-    );
+    // The card id is embedded in the state line so EVERY message (including
+    // the very first "Trabajando…" before Telegram assigns an id) is numbered.
+    const liveCardId = s.transcriptMessageId ?? s.statusMessageId;
+    const liveIdSuffix = liveCardId ? ` <code>#${liveCardId}</code>` : "";
+    // No "Trabajando…" label: the telemetry clock below already signals work.
+    // The id stays embedded so the first frame is numbered before Telegram
+    // assigns a message_id.
+    if (liveIdSuffix) lines.push(`<p><i>${liveIdSuffix.trim()}</i></p>`);
     // 2. Telemetry (duration, speed, tokens, context) under the state. The card
     // stays readable while working; the finished turns get the full receipt.
     const telemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
     // Tool counts move to the footer (renderToolStats) — never duplicated here.
-    if (telemetry.length) lines.push(`<p><i>${esc(telemetry.join(" · "))}</i></p>`);
     // 3. Prompt being answered — context before detail.
-    const prompt = store?.lastPromptBySession.get(s.sessionId);
+    // Use the prompt bound to THIS turn by beginTurn(), not the global
+    // lastPromptBySession (which can be overwritten by non-user events and
+    // showed the assistant's own previous answer in the card).
+    const prompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
+      ?? store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) {
-      lines.push(`<p><i>📝 ${esc(truncate(prompt.trim(), 80))}</i></p>`);
+      const clock = telemetry.length ? `${esc(telemetry.join(" · "))} · ` : "";
+      lines.push(`<p><i>${clock}📝 ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`);
+    } else if (telemetry.length) {
+      lines.push(`<p><i>${esc(telemetry.join(" · "))}</i></p>`);
     }
     // Each live section is its OWN collapsible block, so the user can follow
     // reasoning, thoughts and tools independently as they stream in.
     // 🧠 Razonamiento (live reasoning buffer, streamed from the model).
     if (settings.showThinking && s.reasoningBuffer.trim()) {
-      const tail = s.reasoningBuffer.trim().slice(-reasoningCap);
-      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(tail)}</blockquote>`);
+      const collapsed = s.reasoningCollapsed === true;
+      lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:reasoning:${s.sessionId}">🧠 Razonamiento ${collapsed ? "▸" : "▾"}</tg-button></tg-button-row>`);
+      if (!collapsed) {
+        const tail = s.reasoningBuffer.trim().slice(-reasoningCap);
+        lines.push(`<blockquote>${markdownToHtml(tail)}</blockquote>`);
+      }
     }
     // 💭 Pensamiento (compact activity: thoughts, reads, tools).
     const activityBlock = renderActivity(s.activity, settings.cardVerbosity, false, Date.now(), s.activityExpanded === true, settings.showTools);
-    if (activityBlock) lines.push(activityBlock);
-    // ⚡ Virtual shell: ALWAYS visible while working, even when empty, so the
-    // user sees the tool transcript slot from the very first token and every
-    // new command (read/write/etc.) is captured as it arrives.
-    {
-      const count = s.toolCallDetails.length;
-      if (count) {
-        const shellText = renderVirtualShell(s.toolCallDetails, shellCap);
-        lines.push(`<blockquote expandable>⚡ Shell (${count})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
-      } else {
-        lines.push(`<blockquote expandable>⚡ Shell (0)\n<pre language='bash'>$ Trabajando…</pre></blockquote>`);
-      }
+    if (activityBlock) {
+      const collapsed = s.thoughtsCollapsed === true;
+      lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:thoughts:${s.sessionId}">💭 Pensamiento ${collapsed ? "▸" : "▾"}</tg-button></tg-button-row>`);
+      if (!collapsed) lines.push(activityBlock);
     }
     if (!activityBlock && !s.reasoningBuffer.trim()) {
       // Fallback for sessions created before per-turn activity was tracked.
@@ -97,9 +112,34 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push(renderPartialText(s.buffer, partialCap));
     }
+    // ⚡ Virtual shell: ALWAYS visible while working, even when empty, so the
+    // user sees the tool transcript slot from the very first token and every
+    // new command (read/write/etc.) is captured as it arrives.
+    {
+      const count = s.toolCallDetails.length;
+      if (count) {
+        const collapsed = s.shellCollapsed === true;
+        const label = collapsed ? `⚡ Shell (${count}) ▸` : `⚡ Shell (${count}) ▾`;
+        lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:shell:${s.sessionId}">${label}</tg-button></tg-button-row>`);
+        if (!collapsed) {
+          const shellText = renderVirtualShell(s.toolCallDetails, shellCap);
+          lines.push(`<blockquote><pre language='bash'>${esc(shellText)}</pre></blockquote>`);
+        }
+      } else {
+        lines.push(`<blockquote expandable>⚡ Shell (0)\n<pre language='bash'>$ Trabajando…</pre></blockquote>`);
+      }
+      // Clear affordance for "send blocking tools to background" (Ctrl+B):
+      // a link-style button right under the shell, ONLY while the turn is
+      // actively running commands. It disappears on the finished card.
+      if (!s.statusFinished && !s.stopped && s.toolCallDetails.length > 0) {
+        lines.push('<tg-button-row align="left"><tg-button type="callback_data" style="link" data="panel:bg">Enviar comando a segundo plano</tg-button></tg-button-row>');
+      }
+    }
     // Toolcall statistics live at the very bottom, as a compact icon line.
     const stats = renderToolStats(s.toolCallDetails);
-    const statsLine = stats ? `<p><i>${esc(stats)}</i></p>` : "";
+    const cardId = s.transcriptMessageId ?? s.statusMessageId;
+    const idSuffix = cardId ? ` · #${cardId}` : "";
+    const statsLine = stats ? `<p><i>${esc(stats)}${idSuffix}</i></p>` : (idSuffix ? `<p><i>#${cardId}</i></p>` : "");
     // In compact mode the strip must leave room for the tool-stats line at the
     // bottom, otherwise the final clamp eats it. Cap the strip so the footer
     // always survives.
@@ -110,7 +150,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (compact && top.length > 1000) {
       // Drop less-important blocks first, but NEVER the answer (💬 Respuesta)
       // nor the state/receipt. Order: reasoning -> activity -> shell.
-      for (const needle of ["🧠 Razonamiento", "Pensamientos", "pensamiento", "⚡ Shell"]) {
+      for (const needle of ["🧠 Razonamiento", "Pensamientos", "pensamiento"]) {
         if (lines.join("").length <= 1000) break;
         const idx = lines.findIndex((l) => l.includes(needle));
         if (idx >= 0) lines.splice(idx, 1);
@@ -145,7 +185,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // The answer is the POINT of the turn but must appear AFTER the shell
     // virtual and the "✅ Listo" receipt (per user request). Reasoning and
     // activity stay collapsed context blocks.
-    const answerEmbedded = settings.showFinalInCard && !!s.lastFinalText?.trim();
+    // Only embed the answer if it belongs to THIS turn — a stale answer from
+    // the previous turn must not be shown on a new prompt's card.
+    const answerIsCurrent = s.lastFinalTurn === undefined || s.lastFinalTurn === s.turnSeq;
+    const answerEmbedded = settings.showFinalInCard && answerIsCurrent && !!s.lastFinalText?.trim();
     const lines: string[] = [];
 
     // 1) Razonamiento (collapsed, at the top).
@@ -170,7 +213,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       lines.push(`<blockquote expandable>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
     }
 
-    // 4) Receipt "✅ Listo" + telemetry (⚡ 410.5 tok/s · 436 tok · 62% ctx).
+    // 4) Respuesta (answer) — visible directly, below the shell.
+    const rawAnswer = answerIsCurrent ? (s.lastFinalText?.trim() ?? "") : "";
+    if (answerEmbedded && rawAnswer) {
+      // The answer is the point of the turn: never truncate it.
+      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(rawAnswer)}`);
+    }
+
+    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
+    if (todosBlock) lines.push(todosBlock);
+    if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
+    // Receipt goes LAST, just above the message id: the answer stays prominent
+    // and "✅ Listo" is the final signal that the turn actually finished.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     const edits = summarizeEdits(s, s.toolCallDetails);
     const test = detectTestRun(s.toolCallDetails);
@@ -182,16 +236,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       test,
       telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
     }));
-
-    // 5) Respuesta (answer) — now visible directly, below the shell and Listo.
-    const rawAnswer = s.lastFinalText?.trim() ?? "";
-    if (answerEmbedded && rawAnswer) {
-      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(rawAnswer.slice(0, 2400))}${rawAnswer.length > 2400 ? "\n<i>… completa en 📖 Leer</i>" : ""}`);
-    }
-
-    const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
-    if (todosBlock) lines.push(todosBlock);
-    if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
+    const doneCardId = s.transcriptMessageId ?? s.statusMessageId;
+    if (doneCardId) lines.push(`<p><i>#${doneCardId}</i></p>`);
 
     return lines.join("");
   };
@@ -202,6 +248,21 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
    * latest thought at the bottom for readability.
    */
   const publishCard = async (chatId: number, s: ChatSession): Promise<void> => {
+    // Central throttle: EVERY caller (events, callbacks, timers) must respect
+    // the per-chat cadence. Without this, publishers bypassed updateStatus's
+    // gap and triggered Telegram 429 "retry after" storms.
+    const nowPub = Date.now();
+    const gap = throttleGap(chatId, STATUS_MIN_UPDATE_GAP_MS);
+    if (s._lastPublishAt && nowPub - s._lastPublishAt < gap && !s.statusFinished) {
+      // Schedule one coalesced follow-up instead of dropping the update.
+      if (!s._publishScheduled) {
+        s._publishScheduled = true;
+        setTimeout(() => { s._publishScheduled = false; void publishCard(chatId, s).catch(() => {}); }, gap - (nowPub - s._lastPublishAt) + 20);
+      }
+      return;
+    }
+    s._lastPublishAt = nowPub;
+    dtrace("card", "publish", { sessionId: s.sessionId, chatId, page: s.transcriptPage, turnSeq: s.turnSeq, follow: s.transcriptFollow, finished: s.statusFinished, cardMsgId: s.transcriptMessageId });
     // Cards are published for every chat now (linear mode disabled): one
     // paginated message per session, edited in place, with header/buttons/resources.
     if (!transcript) return;
@@ -215,7 +276,10 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (!s.statusFinished && !s.stopped && store?.getActiveSession) {
       try {
         const active = await ocActiveSessionIds?.();
-        if (active && !active.has(s.sessionId)) {
+        // Do NOT auto-finish while a user prompt is still pending a reply:
+        // OpenCode reports a queued session as idle until it starts working,
+        // and finishing here would show stale history instead of "working".
+        if (active && !active.has(s.sessionId) && !hasPendingUserPrompt(s.sessionId)) {
           s.statusFinished = true;
           if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
           s.statusMessageId = undefined;
@@ -232,10 +296,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // Expanded detail (chosen in Settings) must not be cut by the compact cap.
     const cap = (html: string) => (compact && !hideAnswer && s.activityExpanded !== true && s.statusFinished) ? clampText(html, 650) : html;
     if (reading) {
-      await transcript.publish(chatId, s, { ...s.cardView, extraTop: "", working: false });
+      await transcript.publish(chatId, s, { ...s.cardView, extraTop: "", working: false, sectionsExpanded: settings.sectionsExpanded });
     } else if (s.statusFinished) {
       await transcript.publish(chatId, s, {
         ...s.cardView,
+        sectionsExpanded: settings.sectionsExpanded,
         extraTop: cap(renderDoneStrip(s, settings)),
         working: false,
         answerInCard: hideAnswer,
@@ -247,6 +312,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const parts = renderLiveParts(s, settings, unified);
       await transcript.publish(chatId, s, {
         ...s.cardView,
+        sectionsExpanded: settings.sectionsExpanded,
         extraTop: cap(parts.top),
         extraBottom: cap(parts.bottom),
         working: true,
@@ -270,8 +336,15 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     s.statusEditPromise = undefined;
     s.statusEditing = false;
     if (s.deltaFlushTimer) { clearTimeout(s.deltaFlushTimer); s.deltaFlushTimer = undefined; }
+    // Bump the generation so late deltas from the previous turn are discarded
+    // instead of writing their text into this turn's buffers.
+    s.turnGeneration = (s.turnGeneration ?? 0) + 1;
     s.buffer = "";
     s.reasoningBuffer = "";
+    // Clear the COT/reasoning history so lastReasoning() cannot show the
+    // previous turn's reasoning (the assistant's own answer) on this card.
+    s.cotBuffer = "";
+    s.cotCount = 0;
     s.toolCalls = [];
     s.toolCallDetails = [];
     s.activity = createTurnActivity();

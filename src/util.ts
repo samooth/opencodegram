@@ -59,6 +59,14 @@ export function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
+/** Keep the beginning and the end of a long string, with "…" in the middle. */
+export function truncateMiddle(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const head = Math.ceil((max - 1) / 2);
+  const tail = Math.floor((max - 1) / 2);
+  return s.slice(0, head) + "…" + s.slice(s.length - tail);
+}
+
 export function threadOpts(threadId?: number): Record<string, unknown> {
   return threadId ? { message_thread_id: threadId } : {};
 }
@@ -261,7 +269,9 @@ export function markdownToHtml(md: string): string {
 
   const flushPara = () => {
     if (!paraBuf.length) return;
-    out.push(paraBuf.join("\n"));
+    // Telegram rich messages collapse bare newlines: wrap paragraphs in <p>
+    // and join soft line breaks with <br/> so the answer keeps its layout.
+    out.push(`<p>${paraBuf.join("<br/>")}</p>`);
     paraBuf = [];
   };
   const flushList = () => {
@@ -334,7 +344,6 @@ export function markdownToHtml(md: string): string {
     const trimmed = line.trim();
     if (!trimmed) {
       flushPara(); flushList();
-      out.push("");
       continue;
     }
     const h = trimmed.match(/^(#{1,6})\s+(.+)/);

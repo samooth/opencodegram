@@ -23,18 +23,9 @@ export function truncateText(text: string, max: number): string {
 export function renderPartialText(raw: string, max: number): string {
   const text = raw.trim();
   if (!text) return "";
-  const lines = text.split(/\r?\n/);
-  // Drop whole leading lines until the tail fits, but keep at least one line.
-  let start = 0;
-  let used = lines[lines.length - 1].length;
-  for (let i = lines.length - 2; i >= 0; i--) {
-    const next = used + 1 + lines[i].length;
-    if (next > max) break;
-    used = next;
-    start = i;
-  }
-  const truncated = start > 0;
-  const body = lines.slice(start).join("\n");
+  // Keep the WHOLE text: the answer has priority and must not be truncated.
+  const truncated = text.length > max;
+  const body = truncated ? text.slice(0, max) : text;
   // Shell/code heuristics: prompt markers, redirections, flags, common verbs.
   const looksLikeCode =
     /(^|\n)\s*[$>]\s/.test(text) ||
