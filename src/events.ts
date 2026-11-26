@@ -189,6 +189,21 @@ const handleSessionReasoningDelta: EventHandler = async (event, deps) => {
   updateStatus(chatId, s).catch((err) => console.warn("[events]", err?.message ?? err));
 };
 
+/** Skill activation: show it in the virtual shell like any other tool. */
+const handleSessionSkillActivated: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  if (!sid) return;
+  const s = deps.store.findSessionById(sid);
+  const chatId = deps.store.resolveChatId(sid);
+  if (!s || chatId === undefined) return;
+  const name = String(e.data?.name ?? e.data?.id ?? "skill");
+  const id = String(e.data?.id ?? `skill-${Date.now()}`);
+  s.toolCallDetails.push({ id, name: "skill", input: JSON.stringify({ name }), status: "success" });
+  if (s.activity) recordTool(s.activity, "skill", name, { toolId: id });
+  deps.updateStatus(chatId, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
+};
+
 const handleSessionToolInputStarted: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
   const { findSessionById, resolveChatId } = store;
@@ -1446,6 +1461,7 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.text.started", handleSessionTextStarted],
   ["session.reasoning.started", handleSessionReasoningStarted],
   ["session.reasoning.delta", handleSessionReasoningDelta],
+  ["session.skill.activated", handleSessionSkillActivated],
   ["session.tool.input.started", handleSessionToolInputStarted],
   ["session.tool.called", handleSessionToolCalled],
   ["session.tool.success", handleSessionToolSuccess],

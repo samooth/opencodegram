@@ -248,6 +248,11 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
       ? ["filePath", "file_path", "path", "filename", "file", "url", "uri"].map((k) => parsed[k]).find((v) => typeof v === "string") as string | undefined
       : undefined;
     const target = pathArg ?? arg;
+    if (n === "skill") {
+      const parsed = parseToolInput(input ?? "");
+      const skillName = String(parsed?.name ?? parsed?.id ?? arg ?? "").trim();
+      return skillName ? `skill ${skillName}` : "skill";
+    }
     if (n === "execute") {
       // Code-execution tool: show the first meaningful line so the shell
       // block displays what ran instead of the bare tool name.

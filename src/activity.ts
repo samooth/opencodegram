@@ -220,7 +220,10 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   // Edits are rendered in the virtual shell ($ write …), not here.
   // if (a.edits) parts.push(...);
   if (a.shells) parts.push(`${a.shells} ${a.shells === 1 ? "comando" : "comandos"}`);
-  if (a.tools) parts.push(`${a.tools} ${a.tools === 1 ? "herramienta" : "herramientas"}`);
+  // Skill activation belongs to the virtual shell ($ skill <name>), not here.
+  const skills = a.entries.filter((e) => e.label === "skill").length;
+  const toolsShown = Math.max(0, a.tools - skills);
+  if (toolsShown) parts.push(`${toolsShown} ${toolsShown === 1 ? "herramienta" : "herramientas"}`);
   if (!parts.length) return "";
 
   const detailCap = verbosity === "low" ? 0 : verbosity === "high" ? 360 : 90;
@@ -253,7 +256,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   let i = 0;
   while (i < visible.length) {
     const e = visible[i];
-    if (e.kind === "shell" || e.kind === "thought" || e.kind === "edit") { i++; continue; }
+    if (e.kind === "shell" || e.kind === "thought" || e.kind === "edit" || e.label === "skill") { i++; continue; }
     if (e.kind === "read" || e.kind === "search") {
       const run: ActivityEntry[] = [];
       while (i < visible.length && (visible[i].kind === "read" || visible[i].kind === "search")) run.push(visible[i++]);
