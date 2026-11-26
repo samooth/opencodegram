@@ -172,8 +172,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const answerIsCurrent = s.lastFinalTurn === undefined || s.lastFinalTurn === s.turnSeq;
     const answerEmbedded = settings.showFinalInCard && answerIsCurrent && !!s.lastFinalText?.trim();
     const lines: string[] = [];
-    // One state indicator only: the bold receipt at the bottom. A second
-    // "✅ Listo" up here produced the duplicate the user saw.
+    // Same top block as the live card: prompt, then the live clock/context.
+    const donePrompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
+      ?? store?.lastPromptBySession.get(s.sessionId);
+    const doneTelemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
+    if (donePrompt?.trim()) lines.push(`<p><i>📝 ${esc(truncateMiddle(donePrompt.trim(), 100))}</i></p>`);
+    if (doneTelemetry.length) lines.push(`<p><i>${esc(doneTelemetry.join(" · "))}</i></p>`);
+    // One state indicator only: the bold receipt at the bottom.
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
     if (settings.showThinking && reasoning) {
@@ -224,17 +229,16 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
-    // Detailed receipt then the compact OpenCode-style footer.
-    const prompt = store?.lastPromptBySession.get(s.sessionId);
+    // Receipt keeps only the outcome (edits/test); prompt and telemetry are
+    // already at the top, exactly like the live card.
     const edits = summarizeEdits(s, s.toolCallDetails);
     const test = detectTestRun(s.toolCallDetails);
     lines.push(renderTurnReceipt({
       stopped: s.stopped,
       error: s.lastTurnError,
-      prompt,
       edits: edits.files ? edits : undefined,
       test,
-      telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
+      telemetry: [],
     }));
     lines.push(renderTurnFooter({
       mode: settings.displayMode === "unified" ? "Unificado" : "Build",

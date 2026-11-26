@@ -104,7 +104,8 @@ describe("activity summary in the session card", () => {
     store.lastPromptBySession.set(s.sessionId, long);
     await status.finishStatus(7, s);
     const top = published[published.length - 1]?.extraTop ?? "";
-    expect(top).toContain(long.slice(0, 80));
+    expect(top).toContain(long.slice(0, 50));
+    expect(top).toContain(long.slice(-49));
     expect(top).not.toContain(long);
   });
 
