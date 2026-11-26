@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import type { TelegramClient } from "./telegram.js";
 import type { CardView, ChatSession } from "./types.js";
 import type { InlineButton, InlineKeyboard } from "./apitypes.js";
@@ -386,7 +387,7 @@ ${body}
     if (page > 0) nav.push({ text: "◀", callback_data: `tpage:${s.sessionId}:${page - 1}` });
     // Stop sits immediately to the RIGHT of the "back" page button while the
     // turn is running, so it is always reachable next to navigation.
-    if (withStop) nav.push({ text: "⏹ Detener", callback_data: "panel:stop" });
+    if (withStop) nav.push({ text: t("stop"), callback_data: "panel:stop" });
     // Middle button opens the page picker (jump to page N).
     nav.push({ text: `${page + 1}/${total} ⊞`, callback_data: `tpick:${s.sessionId}` });
     if (page < total - 1) nav.push({ text: "▶", callback_data: `tpage:${s.sessionId}:${page + 1}` });
@@ -408,7 +409,7 @@ ${body}
       keyboard.push(navRow(s, page, total, view.working));
       // P1.3: once the user is away from the latest page, offer a jump back.
       if (page < total - 1) {
-        keyboard.push([{ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
+        keyboard.push([{ text: t("last"), callback_data: `tpage:${s.sessionId}:${total - 1}` }]);
       }
     }
 
@@ -422,17 +423,17 @@ ${body}
     const primary: InlineButton[] = [];
     if (view.working) {
       // With a single page there is no navRow to host Stop — put it in primary.
-      if (total <= 1) primary.push({ text: "⏹ Detener", callback_data: "panel:stop" });
+      if (total <= 1) primary.push({ text: t("stop"), callback_data: "panel:stop" });
       if (hasActivity) primary.push({
         text: s.activityExpanded ? "▴ Ocultar" : "▾ Detalles",
         callback_data: `activity:${s.sessionId}`,
       });
     } else if (s.lastTurnError) {
-      primary.push({ text: "🔁 Reintentar", callback_data: `retry:${s.sessionId}` });
-      primary.push({ text: "🧠 Cambiar modelo", callback_data: `panel:ms:${s.sessionId}` });
+      primary.push({ text: t("retry"), callback_data: `retry:${s.sessionId}` });
+      primary.push({ text: t("changeModel"), callback_data: `panel:ms:${s.sessionId}` });
     } else if (s.stopped) {
       primary.push({ text: "▶️ Continuar", callback_data: `retry:${s.sessionId}` });
-      primary.push({ text: "📥 Historial", callback_data: `histfmt:${s.sessionId}` });
+      primary.push({ text: t("history"), callback_data: `histfmt:${s.sessionId}` });
     } else {
       // When the answer is already embedded in the card, a "Ver completo"
       // button is confusing (it makes users think the visible answer is a
@@ -472,7 +473,7 @@ ${body}
       const lastCommand = lastShell ? parseShellCommand(lastShell.input ?? "") ?? lastShell.input?.trim() : undefined;
       if (lastCommand) {
         const copyCommand = copyTextButton(chatId, "📋 Copiar comando", lastCommand);
-        keyboard.push([copyCommand ?? { text: "📋 Copiar comando", callback_data: `copy:command:${s.sessionId}` }]);
+        keyboard.push([copyCommand ?? { text: t("copyCommand"), callback_data: `copy:command:${s.sessionId}` }]);
       }
     }
 
@@ -515,7 +516,7 @@ ${body}
     if (!view.working) {
       const nativeCopy = copyTextButton(chatId, "📋 Copiar", s.lastFinalText);
       if (s.lastFinalText && !nativeCopy) {
-        keyboard.push([{ text: "📋 Copiar respuesta", callback_data: `copy:answer:${s.sessionId}` }]);
+        keyboard.push([{ text: t("copyAnswer"), callback_data: `copy:answer:${s.sessionId}` }]);
       }
     }
 
@@ -523,9 +524,9 @@ ${body}
     // icon-only buttons on the next, keeping the card short.
     if (!view.unified) {
       keyboard.push([
-        { text: "🏠 Panel", callback_data: "panel:home" },
-        { text: "📂 Sesiones", callback_data: "panel:sessions" },
-        { text: "📥 Exportar", callback_data: `histfmt:${s.sessionId}` },
+        { text: t("panel"), callback_data: "panel:home" },
+        { text: t("sessions"), callback_data: "panel:sessions" },
+        { text: t("export"), callback_data: `histfmt:${s.sessionId}` },
       ]);
       keyboard.push([
         { text: "🧠", callback_data: `panel:ms:${s.sessionId}` },
@@ -533,7 +534,7 @@ ${body}
         { text: "⚙️", callback_data: "panel:settings" },
       ]);
     } else {
-      keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+      keyboard.push([{ text: t("panel"), callback_data: "panel:home" }]);
     }
 
     return keyboard;
@@ -556,7 +557,7 @@ ${body}
       const rows: InlineKeyboard = [[{ text: "⬅ Volver", callback_data: `back:${s.sessionId}` }]];
       if (total > 1) {
         const nav = navRow(s, page, total);
-        if (page < total - 1) nav.push({ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` });
+        if (page < total - 1) nav.push({ text: t("last"), callback_data: `tpage:${s.sessionId}:${total - 1}` });
         rows.push(nav);
       }
       return rows;
@@ -581,7 +582,7 @@ ${body}
     const rows: InlineKeyboard = [primary];
     if (total > 1) {
       const nav = navRow(s, page, total);
-      if (page < total - 1) nav.push({ text: "⏭ Última", callback_data: `tpage:${s.sessionId}:${total - 1}` });
+      if (page < total - 1) nav.push({ text: t("last"), callback_data: `tpage:${s.sessionId}:${total - 1}` });
       rows.push(nav);
     }
     const more: InlineButton[] = [];

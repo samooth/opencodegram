@@ -3,6 +3,7 @@ import { mkdirSync, accessSync, constants } from "node:fs";
 import { appendFile, mkdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
+import { initLocale } from "./i18n.js";
 import { TelegramClient } from "./telegram.js";
 import { OpenCodeBridge, resolveServerPassword } from "./opencode.js";
 import { SessionStore } from "./store.js";
@@ -26,6 +27,7 @@ import { BOT_COMMANDS } from "./botcommands.js";
 
 async function main() {
   const config = loadConfig();
+  initLocale();
   if (config.DEBUG && !process.env.DEBUG) process.env.DEBUG = config.DEBUG;
   const tg = new TelegramClient(config.TELEGRAM_BOT_TOKEN);
   // Dead-chat hygiene: when a chat is gone (deleted group, bot kicked), drop

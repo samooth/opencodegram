@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -217,7 +218,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const rawAnswer = answerIsCurrent ? (s.lastFinalText?.trim() ?? "") : "";
     if (answerEmbedded && rawAnswer) {
       // The answer is the point of the turn: never truncate it.
-      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(rawAnswer)}`);
+      lines.push(`<h4>${t("answer")}</h4>${markdownToHtml(rawAnswer)}`);
     }
 
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
@@ -768,7 +769,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
       else lines.push(`📦 <b>Compaction</b>: ${esc(sum)}`);
     }
     if (settings.showFinalInCard && target.lastFinalText?.trim()) {
-      lines.push(`<h4>💬 Respuesta</h4>${markdownToHtml(target.lastFinalText.trim().slice(0, 2200))}`);
+      lines.push(`<h4>${t("answer")}</h4>${markdownToHtml(target.lastFinalText.trim().slice(0, 2200))}`);
     }
     let resourceBlock = "";
     if (settings.showResourceUsage) {
