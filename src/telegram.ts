@@ -36,7 +36,7 @@ export interface TelegramMessage {
   message_id: number;
   chat: { id: number; type: string };
   message_thread_id?: number;
-  from?: { id: number; username?: string };
+  from?: { id: number; username?: string; language_code?: string };
   text?: string;
   caption?: string;
   reply_to_message?: { from?: { id: number }; message_id?: number };

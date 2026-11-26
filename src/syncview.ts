@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import type { ChatSession } from "./types.js";
 import { esc, markdownToHtml, toolIcon } from "./util.js";
 
@@ -18,7 +19,7 @@ const PART_BUDGET = 3800;
 export function digestKeyboard(sessionId: string): DigestKeyboard {
   return [
     [
-      { text: "🔗 Abrir sesión", callback_data: `use:${sessionId}` },
+      { text: t("openSession"), callback_data: `use:${sessionId}` },
       { text: "📖 Respuesta", callback_data: `viewfull:${sessionId}` },
     ],
     [
@@ -26,7 +27,7 @@ export function digestKeyboard(sessionId: string): DigestKeyboard {
       { text: "📂 Sesiones", callback_data: "panel:sessions" },
       { text: "📊 Status", callback_data: "panel:status" },
     ],
-    [{ text: "🏠 Panel", callback_data: "panel:home" }],
+    [{ text: t("panel"), callback_data: "panel:home" }],
   ];
 }
 

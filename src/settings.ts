@@ -153,6 +153,8 @@ export type ChatSettings = {
   sectionsExpanded: boolean;
   /** Publish prompts typed in OpenCode's TUI to the Telegram route. */
   showTuiPrompts: boolean;
+  /** UI language for this chat (es|en). */
+  locale: "es" | "en";
   /** P2: onboarding step already shown to this chat. */
   onboardingStep: number;
 };
@@ -193,6 +195,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   showFinalInCard: true,
   celebrateOnDone: false,
   sectionsExpanded: true,
+  locale: "es",
   showTuiPrompts: true,
   onboardingStep: 0,
 };
@@ -317,6 +320,7 @@ export const LABELS: Record<keyof ChatSettings, string> = {
   showFinalInCard: "💬 Respuesta en el card",
   celebrateOnDone: "🎉 Celebración",
   sectionsExpanded: "📂 Secciones expandidas",
+  locale: "🌐 Idioma",
   showTuiPrompts: "⌨️ Prompts desde TUI",
   onboardingStep: "🎓 Onboarding",
 };
@@ -352,6 +356,9 @@ export function settingsKeyboard(settings: ChatSettings): Array<Array<{ text: st
   ]);
   keyboard.push([
     { text: `${settings.showTuiPrompts ? "✅" : "❌"} ⌨️ Prompts TUI`, callback_data: `set:showTuiPrompts:${settings.showTuiPrompts ? "false" : "true"}` },
+  ]);
+  keyboard.push([
+    { text: `🌐 ${settings.locale === "en" ? "English" : "Español"}`, callback_data: `set:locale:${settings.locale === "en" ? "es" : "en"}` },
   ]);
   keyboard.push([
     { text: `📏 Preview: ${settings.previewLines}`, callback_data: `cycle:previewLines` },

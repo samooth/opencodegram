@@ -1,4 +1,5 @@
 import { isDangerousCommand, isChatAdminCommand } from "./dangerous.js";
+import { setLocale } from "./i18n.js";
 import { handleCommand } from "./commands.js";
 import { isRouteAdmin } from "./commands/shared.js";
 import type { InlineKeyboard } from "./apitypes.js";
@@ -477,8 +478,16 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
     parsedValue = CARD_PRESETS.includes(value as CardPreset) ? (value as CardPreset) : "balanced";
   else if (key === "longAnswerDelivery")
     parsedValue = value === "message" ? "message" : value === "auto" ? "auto" : "card";
+  else if (key === "locale")
+    parsedValue = value === "en" ? "en" : "es";
   else parsedValue = value === "true";
   const settings = deps.settings.set(chatId, key, parsedValue);
+  // Changing the UI language updates the process locale and refreshes the card.
+  if (key === "locale") {
+    if (parsedValue === "en" || parsedValue === "es") setLocale(parsedValue);
+    const active = deps.store.getActiveSession(chatId, threadId);
+    if (active) void deps.status.publishCard(chatId, active).catch(() => {});
+  }
 
   // Toggles that change the card's visible blocks must refresh it immediately
   // instead of waiting for the next turn.

@@ -114,11 +114,14 @@ export function initLocale(envLocale?: string): Locale {
   return current;
 }
 
+export function setLocale(l: Locale): Locale { current = l; return current; }
+
 export function locale(): Locale {
   return current;
 }
 
 /** Translate a key, falling back to Spanish then to the key itself. */
-export function t(key: string): string {
-  return DICT[current][key] ?? DICT.es[key] ?? key;
+export function t(key: string, loc?: Locale): string {
+  const l = loc ?? current;
+  return DICT[l][key] ?? DICT.es[key] ?? key;
 }

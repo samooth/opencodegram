@@ -1,3 +1,4 @@
+import { setLocale } from "./i18n.js";
 import { logger } from "./logger.js";
 import { isDangerousCommand } from "./dangerous.js";
 import { buildGlobalAllowed } from "./permissions.js";
@@ -509,6 +510,20 @@ export async function handleMessage(deps: BotDeps, msg: TelegramMessage): Promis
   // Learn usernames only AFTER authorization: nobody outside the allowlist may
   // seed or overwrite the @name -> ID map used by the permission UI.
   if (userId !== undefined && msg.from?.username) deps.permissions?.rememberUser(userId, msg.from.username);
+  // Auto-detect language from Telegram's language_code once, unless the chat
+  // explicitly chose a locale via Settings.
+  {
+    const current = deps.settings.get(chatId).locale;
+    const lang = msg.from?.language_code;
+    if (lang && lang.toLowerCase().startsWith("en") && deps.settings.get(chatId).locale === "es") {
+      deps.settings.set(chatId, "locale", "en");
+      setLocale("en");
+    } else if (lang && lang.toLowerCase().startsWith("es") && deps.settings.get(chatId).locale === "en") {
+      // Only override if Telegram says Spanish explicitly and no manual choice.
+      // Manual choice is stored in settings; leave it alone once set.
+    }
+    void current;
+  }
   const replyFrom = msg.reply_to_message?.from as { id: number; username?: string } | undefined;
   if (replyFrom?.id !== undefined && replyFrom.username) {
     deps.permissions?.rememberUser(replyFrom.id, replyFrom.username);

@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import { dtrace } from "./debuglog.js";
 type SessionRow = { id?: string; title?: string; model?: { providerID?: string; id?: string }; location?: { directory?: string }; directory?: string };
 type CommandRow = { name?: string; description?: string };
