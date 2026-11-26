@@ -111,6 +111,16 @@ describe("virtual shell and tool stats", () => {
     expect(html).toContain("$ ls -la");
   });
 
+  test("execute tool shows the code, not the tool name", async () => {
+    const { renderVirtualShell, isShellTool } = await import("../src/status-render.js");
+    expect(isShellTool("execute")).toBe(true);
+    const html = renderVirtualShell([
+      { id: "1", name: "execute", input: JSON.stringify({ code: "const r = await tools.bus.send({\n to: \"hy4\"\n});\nreturn r" }), status: "success" },
+    ], 200);
+    expect(html).toContain("$ execute const r = await tools.bus.send({");
+    expect(html).not.toMatch(/^\$ execute$/m);
+  });
+
   test("accumulates identical commands instead of overwriting", async () => {
     const { renderVirtualShell } = await import("../src/status-render.js");
     const html = renderVirtualShell([

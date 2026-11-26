@@ -295,6 +295,10 @@ const handleSessionInbox: EventHandler = async (event, deps) => {
     if (text && inboxId && !isTelegramEcho && !isAgentMessage && !publishedTuiPrompts.has(inboxId)) {
       publishedTuiPrompts.add(inboxId);
       if (sid) noteUserPrompt(sid, text);
+      // TUI prompts skip the Telegram message path: without this the turn had
+      // no promptStartTime and the footer showed "—" for duration/tok/s/ttft.
+      s.promptStartTime = Date.now();
+      deps.startStatus(chatId, s).catch((err) => console.warn("[events] startStatus (TUI prompt) failed", err?.message ?? err));
       if (publishedTuiPrompts.size > 500) {
         const oldest = publishedTuiPrompts.values().next().value;
         if (oldest) publishedTuiPrompts.delete(oldest);
@@ -1246,6 +1250,16 @@ const handleMcpEvent: EventHandler = async (event, deps) => {
   if (chatId !== undefined && s) updateStatus(chatId, s, true).catch(() => {});
 };
 
+/** Authoritative first-token timestamp from OpenCode (used for ttft). */
+const handleSessionStepFirstToken: EventHandler = async (event, deps) => {
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sid = e.data?.sessionID as string | undefined;
+  if (!sid) return;
+  const s = deps.store.findSessionById(sid);
+  if (!s || !s.promptStartTime) return;
+  if (!s.turnFirstStreamedAt) s.turnFirstStreamedAt = Date.now();
+};
+
 const handleSessionStepStarted: EventHandler = async (event, deps) => {
   const { store } = deps;
   const e = event as { type: string; data?: Record<string, unknown> };
@@ -1440,6 +1454,7 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["permission.replied", handlePermissionReplied],
   ["session.execution.failed", handleSessionExecutionFailed],
   ["session.step.started", handleSessionStepStarted],
+  ["session.step.first-token", handleSessionStepFirstToken],
   ["session.idle", handleSessionIdle],
   ["experimental.mcp.event", handleMcpEvent],
   ["session.retry.scheduled", handleSessionRetryScheduled],

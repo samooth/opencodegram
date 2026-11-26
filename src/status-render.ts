@@ -51,6 +51,10 @@ export function parseShellCommand(input: string): string | null {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed.command === "string") return parsed.command;
     if (parsed && typeof parsed.cmd === "string") return parsed.cmd;
+    // OpenCode 2.3's `execute` tool runs JS via { code }. Without this the
+    // shell rendered just the tool name ("execute") instead of the code.
+    if (parsed && typeof parsed.code === "string") return parsed.code;
+    if (parsed && typeof parsed.script === "string") return parsed.script;
     if (Array.isArray(parsed) && parsed.length && typeof parsed[0] === "string") return parsed.join(" ");
   } catch {
     // Not JSON or not a shell command.
@@ -220,7 +224,8 @@ export type StatusDeps = {
 
 export function isShellTool(name: string): boolean {
   const normalized = name.toLowerCase();
-  return normalized === "shell" || normalized === "bash" || normalized === "sh" || normalized.includes("shell");
+  return normalized === "shell" || normalized === "bash" || normalized === "sh" ||
+    normalized === "execute" || normalized.includes("shell");
 }
 
 /**
@@ -238,6 +243,13 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
       ? ["filePath", "file_path", "path", "filename", "file", "url", "uri"].map((k) => parsed[k]).find((v) => typeof v === "string") as string | undefined
       : undefined;
     const target = pathArg ?? arg;
+    if (n === "execute") {
+      // Code-execution tool: show the first meaningful line so the shell
+      // block displays what ran instead of the bare tool name.
+      const code = parseShellCommand(input ?? "");
+      const firstLine = code?.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+      return firstLine ? `execute ${firstLine}` : "execute";
+    }
     if (isShellTool(name)) return parseShellCommand(input ?? "") ?? arg ?? name;
     if (n.includes("read") || n === "cat") return `read ${target}`.trim();
     if (n.includes("write") || n.includes("edit") || n.includes("patch")) return `write ${target}`.trim();
