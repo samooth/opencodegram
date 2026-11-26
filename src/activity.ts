@@ -215,8 +215,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   if (!a) return "";
   const parts: string[] = [];
   if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "pensamiento" : "pensamientos"}`);
-  if (a.reads) parts.push(`${a.reads} ${a.reads === 1 ? "lectura" : "lecturas"}`);
-  if (a.searches) parts.push(`${a.searches} ${a.searches === 1 ? "búsqueda" : "búsquedas"}`);
+  // Reads/searches are rendered in the virtual shell, not here.
   // Edits are rendered in the virtual shell ($ write …), not here.
   // if (a.edits) parts.push(...);
   if (a.shells) parts.push(`${a.shells} ${a.shells === 1 ? "comando" : "comandos"}`);
@@ -257,20 +256,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   while (i < visible.length) {
     const e = visible[i];
     if (e.kind === "shell" || e.kind === "thought" || e.kind === "edit" || e.label === "skill") { i++; continue; }
-    if (e.kind === "read" || e.kind === "search") {
-      const run: ActivityEntry[] = [];
-      while (i < visible.length && (visible[i].kind === "read" || visible[i].kind === "search")) run.push(visible[i++]);
-      const reads = run.filter((r) => r.kind === "read").length;
-      const searches = run.length - reads;
-      const grouped: string[] = [];
-      if (reads) grouped.push(`${reads} ${reads === 1 ? "lectura" : "lecturas"}`);
-      if (searches) grouped.push(`${searches} ${searches === 1 ? "búsqueda" : "búsquedas"}`);
-      blocks.push({
-        head: `→ Explorado: ${grouped.join(", ")}`,
-        detail: run.map((r) => `<p>${esc(r.label)} · <code>${esc(truncate(r.detail.trim() || r.label, detailCap || 80))}</code></p>`).join(""),
-      });
-      continue;
-    }
+    if (e.kind === "read" || e.kind === "search") { i++; continue; }
     blocks.push({ head: entryHead(e, now, expanded), detail: detailPara(e.detail, detailCap) });
     i++;
   }

@@ -482,6 +482,25 @@ describe("transcript manager", () => {
     expect(s.transcriptMessageId).toBe(402);
   });
 
+  test("a retired card never keeps the live thinking strip", async () => {
+    const store = new SessionStore(join(root, "data"));
+    const edited: any[] = [];
+    const tg = {
+      editMessageReplyMarkup: async () => ({}),
+      sendRichMessage: async () => ({ message_id: 500 }),
+      editRichMessage: async (...args: any[]) => { edited.push(args); return { message_id: args[1] }; },
+      deleteMessage: async () => true,
+    } as any;
+    const transcript = createTranscriptManager({ tg, store, threadOptsFor: () => ({}) });
+    const s = makeSession();
+    transcript.addBlock(s, "answer", "<p>respuesta</p>", "respuesta");
+    await transcript.publish(1, s, { extraTop: "<p>SOLO-PENSAMIENTO</p>" });
+    await transcript.refloat(1, s, { keep: true });
+    const archived = edited.map((e) => e[2]).join("\n");
+    expect(archived).not.toContain("SOLO-PENSAMIENTO");
+    expect(archived).toContain("respuesta");
+  });
+
   test("the card keyboard offers page picker and history export", async () => {
     const { store, transcript } = makeHarness();
     const s = makeSession();

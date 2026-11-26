@@ -47,8 +47,8 @@ describe("turn activity counters", () => {
     recordTool(a, "bash", "bun test", { at: 1300, toolId: "d" });
     recordTool(a, "mystery_tool", "x", { at: 1400, toolId: "e" });
     const out = renderActivity(a, "high", false, 2000);
-    expect(out).toContain("1 lectura");
-    expect(out).toContain("1 búsqueda");
+    expect(out).not.toContain("lectura");
+    expect(out).not.toContain("búsqueda");
     expect(out).not.toContain("edición");
     expect(out).toContain("1 comando");
     expect(out).toContain("1 herramienta");
@@ -59,7 +59,7 @@ describe("turn activity counters", () => {
     recordTool(a, "read", "README.md", { at: 1000, toolId: "a" });
     const out = renderActivity(a, "high", false, 1100);
     expect(out).not.toContain("1 herramienta");
-    expect(out).toContain("1 lectura");
+    expect(out).not.toContain("1 lectura");
   });
 
   test("renders tool durations and success marks in the expandable detail", () => {
@@ -81,14 +81,13 @@ describe("turn activity counters", () => {
     expect(out).toContain("3.0s");
   });
 
-  test("groups consecutive reads and searches under Explored", () => {
+  test("reads and searches stay out of the activity block (they live in the shell)", () => {
     const a = createTurnActivity();
     recordTool(a, "read", ".", { at: 1000, toolId: "a" });
     recordTool(a, "glob", "README*", { at: 1100, toolId: "b" });
     const out = renderActivity(a, "high", false, 1200, true);
-    expect(out).toContain("Explorado: 1 lectura, 1 búsqueda");
-    expect(out).toContain("Lectura");
-    expect(out).toContain("Glob");
+    expect(out).not.toContain("Explorado");
+    expect(out).not.toContain("Lectura");
   });
 
   test("hides detail text at low verbosity and shows more at high verbosity", () => {
@@ -165,13 +164,16 @@ describe("turn activity counters", () => {
     expect(a.entries[0]?.detail).toBe("git status");
   });
 
-  test("read entries extract path and line range from JSON input", () => {
+  test("read entries extract path and line range from JSON input", async () => {
     const a = createTurnActivity();
     recordTool(a, "read", JSON.stringify({ filePath: "/workspace/src/foo.ts", offset: 10, limit: 5 }), { at: 1000, toolId: "r1" });
     expect(a.entries[0]?.detail).toBe("/workspace/src/foo.ts:10-14");
-    const out = renderActivity(a, "high", false, 1100, true);
-    expect(out).toContain("foo.ts:10-14");
-    expect(out).not.toContain("&quot;row&quot;");
+    const { renderVirtualShell } = await import("../src/status-render.js");
+    const shell = renderVirtualShell([
+      { id: "r1", name: "read", input: a.entries[0]!.detail, status: "success" },
+    ], 200);
+    expect(shell).toContain("read /workspace/src/foo.ts:10-14");
+    expect(shell).not.toContain("&quot;row&quot;");
   });
 
   test("search entries use the pattern when there is no file", () => {
@@ -255,7 +257,7 @@ describe("turn activity counters", () => {
     closeOpen(a, 2500);
     recordTool(a, "read", "README.md", { at: 3000, toolId: "a" });
     const out = renderActivity(a, "high", false, 3500, false);
-    expect(out.match(/<blockquote/g)).toHaveLength(2);
+    expect(out.match(/<blockquote/g)).toHaveLength(1);
     expect(out).toContain("Pensamiento</b> · 500ms");
   });
 });

@@ -669,9 +669,13 @@ ${body}
       opts?.showResources === false ||
       s.cardView?.showResources === false
     );
+    // The archived snapshot of a card must NOT keep the live strip (which
+    // can be only thoughts mid-turn). Re-render without extraTop/bottom so a
+    // retired card shows the transcript, not a frozen thinking block.
+    const cleanOpts = { ...opts, extraTop: "", extraBottom: "" };
     const cleanHtml = hasResources
-      ? expand(renderPage(s, { ...opts, showResources: false })?.html ?? rendered.html)
-      : rendered.html;
+      ? expand(renderPage(s, { ...cleanOpts, showResources: false })?.html ?? rendered.html)
+      : expand(renderPage(s, cleanOpts)?.html ?? rendered.html);
     const tgOpts = threadOptsFor(s);
     const keyboard = { inline_keyboard: compactCardKeyboard(chatId, s, rendered.page, rendered.total, opts) };
     if (s.transcriptMessageId) {

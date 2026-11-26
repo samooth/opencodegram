@@ -4,7 +4,7 @@ import type { SessionStore } from "./store.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
-import { isEditTool, editStats } from "./editutil.js";
+import { describeToolInput, isEditTool, editStats } from "./editutil.js";
 import { contextUsage, esc, isAgentMonologue, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
 
@@ -266,7 +266,12 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
       const raw = (parseShellCommand(input ?? "") ?? arg ?? name).trim();
       return raw.replace(/^cd\s+(?:"[^"]+"|'[^']+'|\S+)\s*&&\s*/i, "");
     }
-    if (n.includes("read") || n === "cat") return `read ${target}`.trim();
+    if (n.includes("read") || n === "cat") {
+      // Keep the line range from describeToolInput (e.g. file.zig:250-329).
+      const d = describeToolInput(input);
+      const full = d.file ? (d.hint ? `${d.file}:${d.hint}` : d.file) : target;
+      return `read ${full}`.trim();
+    }
     if (n.includes("write")) return `write ${target}`.trim();
     // Keep edits distinct from writes: merging both into "$ write <path>" made
     // the virtual shell look like it was dropping tool calls.

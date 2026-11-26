@@ -338,9 +338,15 @@ const handleSessionInbox: EventHandler = async (event, deps) => {
         const oldest = publishedTuiPrompts.values().next().value;
         if (oldest) publishedTuiPrompts.delete(oldest);
       }
-      const html = sessionHeader(s, sid, settings.get(chatId).sessionNameInMessages)
-        + `<blockquote>⌨️ <b>TUI</b>: ${esc(truncate(text, 500))}</blockquote>`;
-      await tg.sendRichMessage(chatId, html, store.threadOptsFor(s)).catch((err) => console.warn("[events] TUI prompt publish failed", String(err)));
+      // In unified mode the card already carries the prompt at the top:
+      // a standalone TUI notice was the "extra 📌 message with a loose
+      // thought" the user saw. Keep it only outside unified.
+      if (settings.get(chatId).displayMode !== "unified") {
+        const icon = settings.get(chatId).displayMode === "unified" ? "🧩" : "🖥";
+        const html = sessionHeader(s, sid, settings.get(chatId).sessionNameInMessages, icon)
+          + `<blockquote>⌨️ <b>TUI</b>: ${esc(truncate(text, 500))}</blockquote>`;
+        await tg.sendRichMessage(chatId, html, store.threadOptsFor(s)).catch((err) => console.warn("[events] TUI prompt publish failed", String(err)));
+      }
     }
   }
   // Refresh the card so the "background/inbox" state is visible in place.

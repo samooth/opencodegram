@@ -43,7 +43,8 @@ describe("activity summary in the session card", () => {
     await status.publishCard(7, s);
 
     const top = published[0]?.extraTop ?? "";
-    expect(top).toContain("1 pensamiento · 1 lectura");
+    expect(top).toContain("1 pensamiento");
+    expect(top).not.toContain("1 lectura");
     expect(top).toContain("<blockquote");
     expect(top).toContain("analizo el repo");
   });
