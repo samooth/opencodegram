@@ -384,7 +384,8 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     }
     const directory = s?.location?.directory ?? s?.directory;
     const model = s?.model ? { id: s.model.id, providerID: s.model.providerID, variant: s.model.variant } : undefined;
-    const title = (s?.title || sessionId).slice(0, 120);
+    const fetchedTitle = String((s as { title?: string })?.title ?? "").trim().slice(0, 120);
+    const title = fetchedTitle || sessionId;
 
     // Reuse the existing in-memory object when possible so tool details and
     // status state survive session restoration/switching.
@@ -412,11 +413,12 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
     }
     store.rememberSessionChat(sessionId, chatId);
     store.rememberLastChat(sessionId, chatId);
-    cs.topicTitle = cs.topicTitle ?? store.topicTitleBySession.get(sessionId) ?? title;
+    // Prefer the title OpenCode currently reports over a stale stored one so
+    // connecting immediately shows the real session name in the card header.
+    cs.topicTitle = fetchedTitle || store.topicTitleBySession.get(sessionId) || cs.topicTitle;
     // Restore persisted COT (finished-turn reasoning history) if not already in memory.
     if (!cs.cotBuffer) cs.cotBuffer = store.getCotBuffer(sessionId) ?? "";
     if (!cs.cotCount) cs.cotCount = store.getCotCount(sessionId) ?? 0;
-    cs.topicTitle = store.topicTitleBySession.get(sessionId) ?? title;
 
     // If this session was already tracked, retire its old status message so it
     // doesn't keep a stale Stop button when the session moves to another tab.
@@ -568,20 +570,26 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
   // Mirror that title into the Telegram tab so both always match.
   const syncTopicTitle = async (chatId: number, s: ChatSession) => {
     const threadId = s.targetThreadId ?? s.threadId ?? store.threadBySession.get(s.sessionId);
-    if (!threadId) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "no-thread" }); return; }
-    s.threadId = threadId;
-    s.targetThreadId = threadId;
     try {
       const res = await oc.client.session.get({ sessionID: s.sessionId });
       const title = String((res as { title?: string })?.title ?? "").trim().slice(0, 120);
       if (!title) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "empty-title" }); return; }
+      // Mirror OpenCode's title into the card header EVEN WHEN there is no
+      // Telegram topic to rename. Previously this returned early on no-thread
+      // and the header fell back to the directory basename (e.g. the user saw
+      // "zig-ai-clean" instead of the real session title "AtlasKV").
+      if (s.topicTitle !== title) {
+        s.topicTitle = title;
+        store.rememberTopicTitle(s.sessionId, title);
+      }
+      if (!threadId) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "no-thread" }); return; }
+      s.threadId = threadId;
+      s.targetThreadId = threadId;
       // Always attempt the rename (idempotent on Telegram's side): the cached
       // topicTitle may be stale (e.g. after testing or a bot switch).
       const targetChat = s.targetChatId ?? chatId;
       if (!canRenameTopic(targetChat)) return;
       await tg.editForumTopic(targetChat, threadId, title);
-      s.topicTitle = title;
-      store.rememberTopicTitle(s.sessionId, title);
       logger.breadcrumb("sessions", "syncTopicTitle.done", { sessionId: s.sessionId, threadId, title });
     } catch {
       // Cosmetic only: never fail a turn because a topic title could not be updated.

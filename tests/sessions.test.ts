@@ -96,6 +96,19 @@ describe("sessions restoreActiveSession", () => {
 });
 
 describe("syncTopicTitle", () => {
+  test("mirrors the OpenCode title even without a Telegram topic", async () => {
+    const { sessions, tg, store } = makeHarness();
+    const calls: any[] = [];
+    tg.editForumTopic = async (...args: any[]) => { calls.push(args); return true; };
+    const s = { sessionId: "ses_x", directory: "/tmp/zig-ai-clean" } as any;
+    await sessions.syncTopicTitle(-100, s);
+    // The card header uses topicTitle; without this it falls back to the
+    // directory basename ("zig-ai-clean") instead of the real session name.
+    expect(s.topicTitle).toBe("t");
+    expect(store.topicTitleBySession.get("ses_x")).toBe("t");
+    expect(calls.length).toBe(0);
+  });
+
   test("does not rename group topics", async () => {
     const { sessions, tg, store } = makeHarness();
     const calls: any[] = [];
