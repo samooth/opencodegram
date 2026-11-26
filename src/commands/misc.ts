@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 type Named = { name?: string; id?: string; description?: string };
 import type { BotDeps, SendFn } from "../context.js";
 import { renderSettingsPanel, settingsKeyboard } from "../settings.js";
@@ -43,8 +44,8 @@ export async function cmd_web(deps: BotDeps, chatId: number, threadId: number | 
     // Groups: only inline buttons — no web links or tokens are shared here.
     await send("🎛 Mission Control solo está disponible en chat privado. Aquí tienes los controles:", {
       reply_markup: { inline_keyboard: [[
-        { text: "📊 Estado", callback_data: "panel:status" },
-        { text: "📂 Sesiones", callback_data: "panel:sessions" },
+        { text: t("status"), callback_data: "panel:status" },
+        { text: t("sessions"), callback_data: "panel:sessions" },
       ]] },
     });
     return true;
@@ -94,7 +95,7 @@ export async function cmd_settings(deps: BotDeps, chatId: number, threadId: numb
   if (text === "/settings") {
     // Settings apply to the whole chat, so only its admins may change them.
     if (!isRouteAdmin(deps, chatId, threadId, userId)) {
-      await send("⚙️ Solo un admin de este chat puede cambiar los ajustes.");
+      await send(t("onlyAdminSettings"));
       return true;
     }
     const settings = C.settings.get(chatId);
@@ -107,7 +108,7 @@ export async function cmd_settings(deps: BotDeps, chatId: number, threadId: numb
 export async function cmd_models(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   if (text === "/models" || text === "/model") {
-    const placeholder = await send("⏳ Cargando modelos…").catch(() => undefined) as { message_id?: number } | undefined;
+    const placeholder = await send(t("loadingModels")).catch(() => undefined) as { message_id?: number } | undefined;
     await C.showModels(chatId, 0, placeholder?.message_id, threadId, undefined, undefined, { userId });
     return true;
   }
@@ -131,7 +132,7 @@ export async function cmd_agents(deps: BotDeps, chatId: number, threadId: number
     const rows = (agents as Named[]).map((a) => `<tr><td><b>${esc(a.name ?? a.id ?? "")}</b></td><td>${esc(truncate(a.description ?? "", 90))}</td></tr>`).join("");
     const table = `<table><tr><th>Agent</th><th>Description</th></tr>${rows}</table>`;
     const keyboard = (agents as Named[]).map((a) => [{ text: a.name ?? a.id ?? "", callback_data: `agent:${a.id ?? ""}` }]);
-    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    keyboard.push([{ text: t("panel"), callback_data: "panel:home" }]);
     await send(`<b>Agents</b>\n\n${table}`, { reply_markup: { inline_keyboard: keyboard } });
     return true;
   }
@@ -152,7 +153,7 @@ export async function cmd_skills(deps: BotDeps, chatId: number, threadId: number
     const table = `<table><tr><th>Skill</th><th>Description</th></tr>${rows}</table>`;
     const json = JSON.stringify((skills as Named[]).map((k) => ({ id: k.id ?? k.name ?? "", name: k.name ?? k.id ?? "" })), null, 2);
     const keyboard = (skills as Named[]).map((k) => [{ text: k.name ?? k.id ?? "", callback_data: `skill:${k.id ?? ""}` }]);
-    keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
+    keyboard.push([{ text: t("panel"), callback_data: "panel:home" }]);
     await send(`<b>Skills</b>\n\n${table}\n\n<pre>${esc(json)}</pre>`, { reply_markup: { inline_keyboard: keyboard } });
     return true;
   }

@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 import type { BotDeps, SendFn } from "../context.js";
 import { colorDiff, esc } from "../util.js";
 import { paginateTranscript } from "../transcript.js";
@@ -31,7 +32,7 @@ export async function cmd_new(deps: BotDeps, chatId: number, threadId: number | 
       await send(`⚠️ Ya hay una sesión activa: <code>${esc(active.sessionId)}</code>.\\n¿Crear una nueva y reemplazarla?`, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "✅ Sí, crear nueva", callback_data: "new:confirm" }, { text: "❌ Cancelar", callback_data: "new:cancel" }],
+            [{ text: t("confirmYes"), callback_data: "new:confirm" }, { text: t("cancel"), callback_data: "new:cancel" }],
           ],
         },
       });
@@ -40,7 +41,7 @@ export async function cmd_new(deps: BotDeps, chatId: number, threadId: number | 
     const repos = (deps.sessions.listRepoDirectories?.() ?? []);
     if (repos.length) {
       const keyboard = repos.map((name) => [{ text: name, callback_data: `repo:${name}` }]);
-      await send("Elige el repositorio para la nueva sesión:", { reply_markup: { inline_keyboard: keyboard } });
+      await send(t("chooseRepo"), { reply_markup: { inline_keyboard: keyboard } });
       return true;
     }
     await deps.sessions.createNewSession(chatId, false, threadId);
@@ -63,7 +64,7 @@ export async function cmd_bg(deps: BotDeps, chatId: number, threadId: number | u
     if (!s) { await send("No hay sesión activa"); return true; }
     try {
       await C.oc.background(s.sessionId);
-      await send("✅ Comando enviado a segundo plano (equivalente a Ctrl+B).");
+      await send(t("changesBackground"));
     } catch (err) {
       await send(`❌ ${esc(String(err))}`);
     }
@@ -105,7 +106,7 @@ export async function cmd_fork(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/fork") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -135,7 +136,7 @@ export async function cmd_rename(deps: BotDeps, chatId: number, threadId: number
   if (text.startsWith("/rename ")) {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     const title = text.slice(8).trim();
@@ -178,7 +179,7 @@ export async function cmd_archive(deps: BotDeps, chatId: number, threadId: numbe
   if (text === "/archive") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -199,7 +200,7 @@ export async function cmd_unarchive(deps: BotDeps, chatId: number, threadId: num
   if (text === "/unarchive") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -220,7 +221,7 @@ export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number
   if (text === "/delete" || text.startsWith("/delete ") || text === "/deletesessions" || text.startsWith("/deletesessions ")) {
     // Deleting sessions affects everyone in the route: admins only.
     if (!isRouteAdmin(deps, chatId, threadId, userId)) {
-      await send("🗑 Solo un admin de este chat puede borrar sesiones.");
+      await send(t("onlyAdminDelete"));
       return true;
     }
   }
@@ -235,7 +236,7 @@ export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number
   if (text === "/delete") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     await send(`Delete session <code>${esc(s.sessionId)}</code>?`, {
@@ -253,7 +254,7 @@ export async function cmd_delete(deps: BotDeps, chatId: number, threadId: number
   if (text === "/delete confirm") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -278,7 +279,7 @@ export async function cmd_compact(deps: BotDeps, chatId: number, threadId: numbe
   if (text === "/compact") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -299,7 +300,7 @@ export async function cmd_context(deps: BotDeps, chatId: number, threadId: numbe
   if (text === "/context") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -453,7 +454,7 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/sync") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -462,7 +463,7 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("OpenCode no responde (timeout)")), 8000)),
       ]);
       const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
-      const parts = buildDigestParts(s, items, { title: "📜 Contenido de la sesión", sessionId: s.sessionId });
+      const parts = buildDigestParts(s, items, { title: t("sessionContent"), sessionId: s.sessionId });
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         const markup = i === parts.length - 1 ? { inline_keyboard: part.keyboard } : undefined;
@@ -482,7 +483,7 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
 export async function cmd_running_sessions(deps: BotDeps, chatId: number, threadId: number | undefined, text: string, send: SendFn, userId?: number): Promise<boolean | void> {
   const C = ctx(deps);
   const safeShow = async (page: number, filter?: number, busy?: boolean): Promise<void> => {
-    // No "Cargando…" placeholder: a hung OpenCode call left it stuck forever.
+    // No t("more") placeholder: a hung OpenCode call left it stuck forever.
     // Let showSessions send the list directly; on timeout/error send a fresh
     // message so there is always a visible answer.
     try {
@@ -514,7 +515,7 @@ export async function cmd_use(deps: BotDeps, chatId: number, threadId: number | 
   if (text === "/use" || text.startsWith("/use ")) {
     const sessionId = text.slice(4).trim();
     if (!sessionId) {
-      const placeholder = await send("⏳ Cargando sesiones…").catch(() => undefined) as { message_id?: number } | undefined;
+      const placeholder = await send(t("loadingSessions")).catch(() => undefined) as { message_id?: number } | undefined;
       await C.showSessions(chatId, 0, placeholder?.message_id, threadId);
       return true;
     }
@@ -565,7 +566,7 @@ export async function cmd_diff(deps: BotDeps, chatId: number, threadId: number |
   if (text === "/diff") {
     const s = await C.restoreActiveSession(chatId, threadId);
     if (!s) {
-      await send("No hay sesión activa.");
+      await send(t("noSession"));
       return true;
     }
     try {
@@ -604,7 +605,7 @@ export async function cmd_search(deps: BotDeps, chatId: number, threadId: number
   const s = await C.restoreActiveSession(chatId, threadId);
   const transcript = deps.transcript;
   if (!s || !transcript) {
-    await send("No hay sesión activa.");
+    await send(t("noSession"));
     return true;
   }
   const blocks = transcript.blocksOf(s);
