@@ -108,6 +108,8 @@ export type ChatSession = {
   turnSeq?: number;
   /** Generation counter: stale deltas from a previous turn are discarded. */
   turnGeneration?: number;
+  /** Turn for which the edit-transcript block was already added (dedupe). */
+  lastEditBlockTurn?: number;
   /** Collapse state for the finished card block toggles. */
   reasoningDoneCollapsed?: boolean;
   thoughtsDoneCollapsed?: boolean;

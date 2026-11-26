@@ -62,6 +62,15 @@ describe("edits inside the session card", () => {
     expect(sent).toHaveLength(0);
   });
 
+  test("finishStatus twice in the same turn does not duplicate the edit block", async () => {
+    const { status, s, blocks } = makeHarness();
+    s.turnSeq = 42;
+    await status.finishStatus(7, s);
+    s.statusFinished = false; // simulate a second finish signal for the same turn
+    await status.finishStatus(7, s);
+    expect(blocks.filter((b) => b[1] === "tools")).toHaveLength(1);
+  });
+
   test("the edits block keeps the table and per-file expandable diff", async () => {
     const { status, s, blocks } = makeHarness();
     await status.finishStatus(7, s);

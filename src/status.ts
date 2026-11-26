@@ -674,7 +674,10 @@ ${markdownToHtml(chunk)}</blockquote>`;
       // table + per-file expandable diff presentation is kept. The block is
       // appended BEFORE publishing so the finished card already shows it.
       let editSnapshot: Array<ChatSession["toolCallDetails"][number]> | undefined;
-      if (editDetails.length) {
+      // finishStatus can run more than once per turn (step.ended, session.idle,
+      // auto-finish). Adding the edit block each time repeated the same
+      // "✏️ src/file.zig" in later pages/messages. Add it ONCE per turn.
+      if (editDetails.length && s.lastEditBlockTurn !== (s.turnSeq ?? -1)) {
         const editLines: string[] = [];
         const tableRows: string[] = [];
         const plainFiles: string[] = [];
@@ -691,6 +694,7 @@ ${markdownToHtml(chunk)}</blockquote>`;
         const html = `<h4>✏️ Cambios (${editDetails.length})</h4>\n${table}\n${editLines.join("\n")}`;
         editSnapshot = editDetails.map((d) => ({ ...d }));
         transcript.addBlock(s, "tools", html, `Cambios (${editDetails.length}): ${plainFiles.join(", ")}`);
+        s.lastEditBlockTurn = s.turnSeq ?? -1;
       }
       // Keep the finished card attached: it holds the final answer and stays
       // navigable (pagination). The next turn start decides whether it is
