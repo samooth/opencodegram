@@ -531,5 +531,12 @@ export function renderLatestToolBottom(s: ChatSession, settings: ChatSettings): 
 export function lastReasoning(s: ChatSession): string {
   const cot = s.cotBuffer?.trim() ?? "";
   if (!cot) return "";
-  return (cot.split(/\n\n---\n\n/).pop() ?? "").trim();
+  const entries = cot.split(/\n\n---\n\n/).map((e) => e.trim()).filter(Boolean);
+  // Drop internal agent monologue ("The user says…", "I should…", "Let me…"):
+  // it is reasoning ABOUT the task, not useful context for the user reading
+  // the card of this session.
+  const internal = /^(the user (says|asked|wants|is)|i (should|need|will|must|think|do|have)|let me|we (are|need|should)|now let me)/i;
+  const useful = entries.filter((e) => !internal.test(e));
+  const chosen = useful.length ? useful : entries.filter((e) => !/^(need|todo|note)/i.test(e));
+  return (chosen.pop() ?? "").trim();
 }
