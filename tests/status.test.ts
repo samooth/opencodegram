@@ -123,6 +123,18 @@ describe("virtual shell and tool stats", () => {
     expect(html).not.toContain("cd /repo");
   });
 
+  test("shell output unwraps truncated harness JSON and caps long output", async () => {
+    const { renderVirtualShell } = await import("../src/status-render.js");
+    const html = renderVirtualShell([
+      { id: "1", name: "bash", input: JSON.stringify({ command: "sed -n 1,200p file.ts" }),
+        status: "success", output: '[{"type":"text","text":"linea uno\nlinea dos\nlinea tres\nlinea cuatro\nlinea cinco\nlinea seis\nlinea siete\nlinea ocho"', },
+    ], 400);
+    expect(html).toContain("$ sed -n 1,200p file.ts");
+    expect(html).toContain("linea uno");
+    expect(html).not.toContain('[{"type"');
+    expect(html).toContain("líneas)");
+  });
+
   test("execute tool shows the code, not the tool name", async () => {
     const { renderVirtualShell, isShellTool } = await import("../src/status-render.js");
     expect(isShellTool("execute")).toBe(true);

@@ -95,7 +95,9 @@ function parseToolOutput(output: string): string {
   } catch {
     // Extract text fields from truncated/partial JSON.
   }
-  const matches = [...trimmed.matchAll(/"text"\s*:\s*"((?:\\.|[^"\\])*)"/g)];
+  // Truncated tool results (e.g. "[{\"type\":\"text\",\"text\":\"asy") must
+  // still yield their text: do not require a closing quote.
+  const matches = [...trimmed.matchAll(/"text"\s*:\s*"((?:\\.|[^"\\])*)/g)];
   if (matches.length) {
     return matches
       .map((match) => {
@@ -116,7 +118,10 @@ function parseToolOutput(output: string): string {
  * Applied to every shell output before rendering.
  */
 export function cleanShellOutput(output: string): string {
-  return output
+  const stripped = output
+    .replace(/^\s*\[\s*\{\s*"type"\s*:\s*"text"\s*,\s*"text"\s*:\s*/, "")
+    .replace(/^\s*\{\s*"output"\s*:\s*/, "");
+  return stripped
     .split(/\r?\n/)
     .filter((line) => !/there is no \"?bash\"? tool,? so this ran as \"?shell\"?/i.test(line))
     .join("\n")
@@ -299,7 +304,12 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
     const header = `$ ${capped}${entry.count > 1 ? `  (×${entry.count})` : ""}${failed ? "  ❌" : ""}`;
     lines.push(header);
     if (output && (failed || isShellTool(d.name))) {
-      lines.push(truncateText(output, limit));
+      const outLines = output.split("\n");
+      const MAX_OUT_LINES = 6;
+      const shown = outLines.length > MAX_OUT_LINES
+        ? `${outLines.slice(0, MAX_OUT_LINES).join("\n")}\n<i>… (+${outLines.length - MAX_OUT_LINES} líneas)</i>`
+        : output;
+      lines.push(truncateText(shown, limit));
     }
   }
   return lines.join("\n");
