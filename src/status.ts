@@ -191,14 +191,24 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const answerIsCurrent = s.lastFinalTurn === undefined || s.lastFinalTurn === s.turnSeq;
     const answerEmbedded = settings.showFinalInCard && answerIsCurrent && !!s.lastFinalText?.trim();
     const lines: string[] = [];
+    // Precise state of the LAST turn, right at the top: what happened and how
+    // long it took, before any collapsed context.
+    {
+      const state = s.stopped ? "⏹ Detenido" : s.lastTurnError ? "⚠️ Error" : "✅ Listo";
+      const dur = s.turnFinishedAt && s.promptStartTime
+        ? ` · ${((s.turnFinishedAt - s.promptStartTime) / 1000).toFixed(1)}s`
+        : "";
+      const tools = s.toolCallDetails.length ? ` · 🔧 ${s.toolCallDetails.length}` : "";
+      lines.push(`<p><b>${state}</b><i>${dur}${tools}</i></p>`);
+    }
 
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
     if (settings.showThinking && reasoning) {
       // Keep enough reasoning to be readable when expanded; the answer already
       // took its share, so 1500 is a sane floor for the finished card.
-      const budget = answerEmbedded ? 2500 : 3500;
-      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(reasoning.slice(-budget))}</blockquote>`);
+      const budget = answerEmbedded ? 1200 : 1800;
+      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(truncateMiddle(reasoning.trim(), budget))}</blockquote>`);
     }
 
     // 2) Pensamiento (compact activity, collapsed).
