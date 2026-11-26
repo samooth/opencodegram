@@ -1,3 +1,4 @@
+import { RICH_MESSAGE_LIMIT } from "./constants.js";
 import type { ChatSession } from "./types.js";
 
 /**
@@ -60,7 +61,7 @@ export const TRANSCRIPT_BLOCK_BUDGET = 1200;
  * does not reshuffle while the live section changes size. It leaves room for
  * the header, the live strip, the page indicator and the resource indicators.
  */
-export const TRANSCRIPT_PAGE_BUDGET = 2600;
+export const TRANSCRIPT_PAGE_BUDGET = RICH_MESSAGE_LIMIT - 2000;
 
 export function transcriptBlocks(s: ChatSession): TranscriptBlock[] {
   if (!s.transcript) s.transcript = [];
@@ -156,7 +157,7 @@ export function splitMarkdown(md: string, budget = TRANSCRIPT_BLOCK_BUDGET): str
  * instead of arbitrary size chunks. Returns [] when there are no usable
  * headings (caller falls back to splitMarkdown).
  */
-export function splitBySections(md: string, budget = 3200): string[] {
+export function splitBySections(md: string, budget = 30000): string[] {
   const source = md.replace(/\r\n/g, "\n");
   if (!source.trim()) return [];
   // Collect heading line indexes that are not inside a fenced code block.

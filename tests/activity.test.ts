@@ -49,7 +49,7 @@ describe("turn activity counters", () => {
     const out = renderActivity(a, "high", false, 2000);
     expect(out).toContain("1 lectura");
     expect(out).toContain("1 búsqueda");
-    expect(out).toContain("1 edición");
+    expect(out).not.toContain("edición");
     expect(out).toContain("1 comando");
     expect(out).toContain("1 herramienta");
   });
@@ -195,11 +195,15 @@ describe("turn activity counters", () => {
     expect(expanded).toContain("⏳");
   });
 
-  test("edit entries show the file path instead of raw JSON", () => {
+  test("edit entries show the file path instead of raw JSON", async () => {
     const a = createTurnActivity();
     recordTool(a, "edit", JSON.stringify({ filePath: "/workspace/src/pilot.py", oldString: "a", newString: "b" }), { at: 1000, toolId: "e" });
     expect(a.entries[0]?.detail).toBe("/workspace/src/pilot.py");
-    const out = renderActivity(a, "high", false, 1100, true);
+    // Edits render in the virtual shell, not in the thought/activity block.
+    const { renderVirtualShell } = await import("../src/status-render.js");
+    const out = renderVirtualShell([
+      { id: "e", name: "edit", input: JSON.stringify({ filePath: a.entries[0]!.detail }), status: "success" },
+    ], 200);
     expect(out).toContain("pilot.py");
     expect(out).not.toContain("oldString");
   });

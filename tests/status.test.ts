@@ -111,6 +111,16 @@ describe("virtual shell and tool stats", () => {
     expect(html).toContain("$ ls -la");
   });
 
+  test("accumulates the same command regardless of a leading cd", async () => {
+    const { renderVirtualShell } = await import("../src/status-render.js");
+    const html = renderVirtualShell([
+      { id: "1", name: "bash", input: JSON.stringify({ command: "cd /repo && bun test" }), status: "success" },
+      { id: "2", name: "bash", input: JSON.stringify({ command: "cd /repo && bun test" }), status: "success" },
+    ], 200);
+    expect(html).toContain("$ bun test  (×2)");
+    expect(html).not.toContain("cd /repo");
+  });
+
   test("execute tool shows the code, not the tool name", async () => {
     const { renderVirtualShell, isShellTool } = await import("../src/status-render.js");
     expect(isShellTool("execute")).toBe(true);

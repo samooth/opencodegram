@@ -130,13 +130,13 @@ describe("P2 golden UX states", () => {
       activity: createTurnActivity(),
     });
     recordThought(s.activity!, "analizando", { at: Date.now() - 1000 });
-    recordTool(s.activity!, "edit", "editando", { at: Date.now() - 2000 });
+    recordTool(s.activity!, "read", "README.md", { at: Date.now() - 2000 });
     finishTool(s.activity!, s.activity!.entries[0].toolId!, true, { at: Date.now() - 1000 });
     await status.publishCard(7, s);
     const html = (published[0].extraTop ?? "") + (published[0].extraBottom ?? "");
     expect(html).not.toContain("⏳ Trabajando…");
     expect(html).toContain("⏱ 12s");
-    expect(html).toContain("Edición</b> · 1.0s ✅");
+    expect(html).toContain("Lectura ·");
     expect(html).not.toContain("Últimas acciones");
     expect(published[0].working).toBe(true);
     assertAccessible(html, "working");

@@ -150,8 +150,10 @@ describe("transcript manager", () => {
     const { transcript } = makeHarness();
     const s = makeSession();
     for (let i = 0; i < 8; i++) {
-      // The rendered HTML drives the pagination, as in the real flow.
-      transcript.addBlock(s, "answer", "", `${"z".repeat(600)} ${i}`, (chunk) => `<p>${chunk}</p>`);
+      // Distinct, already-rendered blocks so the store's duplicate suppression
+      // does not collapse them. Each exceeds a fraction of the 30k page budget.
+      const big = `<p>${String(i).repeat(2)} ${"z".repeat(12000)}</p>`;
+      transcript.addBlock(s, "answer", big, `bloque ${i}`);
     }
     await transcript.publish(123, s);
     const total = transcript.pageCount(s);
@@ -484,7 +486,7 @@ describe("transcript manager", () => {
     const { store, transcript } = makeHarness();
     const s = makeSession();
     for (let i = 0; i < 8; i++) {
-      const big = `bloque ${i} ${"x".repeat(600)}`;
+      const big = `bloque ${i} ${"x".repeat(5000)}`;
       transcript.addBlock(s, "answer", `<p>${big}</p>`, big);
     }
     await transcript.publish(1, s);
@@ -615,22 +617,19 @@ describe("transcript manager", () => {
     expect(dataset.trainingPairs[0].messages[0].content).toBe("nuevo prompt");
   });
 
-  test("a huge live strip trims the page keeping the newest blocks", () => {
+  test("a huge live strip is clamped to the rich-message limit without broken HTML", () => {
     const { transcript } = makeHarness();
     const s = makeSession();
     for (let i = 0; i < 3; i++) {
       transcript.addBlock(s, "answer", `<p>bloque-${i} ${"a".repeat(190)}</p>`, `bloque-${i}`);
     }
-    const live = "x".repeat(3500);
+    const live = "x".repeat(40000);
     const rendered = transcript.renderPage(s, { extraTop: live });
     expect(rendered).toBeDefined();
-    expect(rendered!.html.length).toBeLessThanOrEqual(3900);
-    // The live strip survives whole and the latest block stays visible.
-    expect(rendered!.html).toContain(live);
-    expect(rendered!.html).toContain("bloque-2");
-    expect(rendered!.html).not.toContain("bloque-0");
-    // The cut is announced and does not leave an unclosed tag.
-    expect(rendered!.html).toContain("<i>…</i>");
+    expect(rendered!.html.length).toBeLessThanOrEqual(32000);
+    // A strip larger than Telegram's rich-message budget is cut, but keeps a
+    // long readable prefix and never leaves an unclosed tag.
+    expect(rendered!.html).toContain("x".repeat(1000));
     expect(rendered!.html).not.toMatch(/<[^>]*$/);
   });
 

@@ -1,3 +1,4 @@
+import { RICH_MESSAGE_LIMIT } from "./constants.js";
 import { t } from "./i18n.js";
 import { dtrace } from "./debuglog.js";
 type SessionRow = { id?: string; title?: string; model?: { providerID?: string; id?: string }; location?: { directory?: string }; directory?: string };
@@ -540,7 +541,7 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [
       [{ text: "♻️ Reset métricas", callback_data: "ops:reset" }, { text: "🔄 Refrescar", callback_data: "ops:show" }],
     ];
-    return { html: clampText(text, 3900), keyboard };
+    return { html: clampText(text, RICH_MESSAGE_LIMIT), keyboard };
   }
 
   return { showSessions, showDeleteSessions, showCommands, showModels, showStatus, renderPanel, sendPanel, renderOps, providerListByChat, selectedProviderByChat, modelTargetSessionByScope, modelPanels, userScope };

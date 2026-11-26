@@ -1,3 +1,4 @@
+import { RICH_MESSAGE_LIMIT } from "./constants.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -398,14 +399,14 @@ export class SessionStore {
       const body = lines.join("\n");
       const html = `<pre>${esc(body)}</pre>\n<hr/>\n${resources}`;
       try {
-        await tg.editRichMessage(info.chatId, info.messageId, clampText(html, 3900), {
+        await tg.editRichMessage(info.chatId, info.messageId, clampText(html, RICH_MESSAGE_LIMIT), {
           ...(info.threadId ? { message_thread_id: info.threadId } : {}),
           reply_markup: { inline_keyboard: [] },
         });
       } catch {
         // Fallback: edit failed (e.g. message too old). Send a fresh message.
         try {
-          await tg.sendRichMessage(info.chatId, clampText(html, 3900), {
+          await tg.sendRichMessage(info.chatId, clampText(html, RICH_MESSAGE_LIMIT), {
             ...(info.threadId ? { message_thread_id: info.threadId } : {}),
             reply_markup: { inline_keyboard: [] },
           });

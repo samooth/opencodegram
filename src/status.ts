@@ -8,7 +8,7 @@ import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
-import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
+import { RICH_MESSAGE_LIMIT, STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import { dtrace, debugTraceEnabled } from "./debuglog.js";
 import { hasPendingUserPrompt } from "./events.js";
 import { renderResourceBlock } from "./resources.js";
@@ -186,7 +186,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (!rc) {
         // Each COT entry gets its own native collapsible sub-block.
         const entries = reasoning.split(/\n{2,}---\n{2,}|\n---\n/).filter((e) => e.trim());
-        const budget = answerEmbedded ? 1200 : 1800;
+        const budget = answerEmbedded ? 10000 : 16000;
         const shown = entries.length > 1 ? entries.map((e) => `<blockquote expandable>${markdownToHtml(truncateMiddle(e.trim(), budget))}</blockquote>`).join("\n") : `<blockquote>${markdownToHtml(truncateMiddle(reasoning.trim(), budget))}</blockquote>`;
         lines.push(shown);
       }
@@ -200,7 +200,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // Keep the actual thought text. "low" verbosity used here made
         // detailCap = 0, so toggling back showed only labels with no content.
         const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), false, settings.showTools);
-        if (doneActivity) lines.push(clampText(doneActivity, 800));
+        if (doneActivity) lines.push(clampText(doneActivity, 8000));
       } else {
         const preview = s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim();
         if (preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(preview, 140))}</i></blockquote>`);
@@ -213,7 +213,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const sc = s.shellDoneCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:shell:${s.sessionId}">⚡ Shell (${virtualDetails.length}) ${sc ? "▸" : "▾"}</tg-button></tg-button-row>`);
       if (!sc) {
-        const shellText = renderVirtualShell(virtualDetails, 500);
+        const shellText = renderVirtualShell(virtualDetails, 8000);
         lines.push(`<blockquote><pre language='bash'>${esc(shellText)}</pre></blockquote>`);
       }
     }
@@ -439,7 +439,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         [{ text: "⏹ Detener", callback_data: "panel:stop" }],
         ...btnRows,
       ];
-      const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()), {
+      const sent = await tg.sendRichMessage(chatId, clampText(lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd(), RICH_MESSAGE_LIMIT), {
         ...opts,
         reply_markup: { inline_keyboard: keyboard },
       });
@@ -555,7 +555,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         partialBlock,
       ].filter(Boolean);
 
-      const finalText = clampText(parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trimEnd(), 3900);
+      const finalText = clampText(parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trimEnd(), RICH_MESSAGE_LIMIT);
 
       const customBtns = store?.getCustomButtons?.(chatId) ?? [];
       const btnRows = customBtns.map((b: { label: string }, i: number) => [{ text: b.label.slice(0, 64), callback_data: `btn:${i}` }]);
@@ -707,7 +707,7 @@ ${markdownToHtml(chunk)}</blockquote>`;
         store?.rememberPendingEdits(chatId, messageId, s.sessionId, editDetails.map((d) => ({ ...d })));
       }
       const fullThinking = (!s.stopped && s.reasoningBuffer.trim()) ? s.reasoningBuffer.trim() : "";
-      const text = clampText(renderFinished(s, settings, !fullThinking || !settings.showThinking));
+      const text = clampText(renderFinished(s, settings, !fullThinking || !settings.showThinking), RICH_MESSAGE_LIMIT);
       const keyboard = finishedKeyboard(editDetails, undefined, s, messageId);
       await tg
         .editRichMessage(chatId, messageId, text, {
@@ -753,7 +753,7 @@ ${esc(r)}</blockquote>`);
       const virtualDetails = target.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (settings.showTools && virtualDetails.length) {
-        const shellText = renderVirtualShell(virtualDetails, 500);
+        const shellText = renderVirtualShell(virtualDetails, 8000);
         lines.push(`<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
       }
       if (settings.showTools && editDetails.length) {
@@ -795,9 +795,9 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     lines.push(target.stopped ? "⏹ <b>Detenido</b>" : "✅ <b>Listo</b>");
     if (settings.showResourceUsage) {
       const full = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
-      if (full.length > 3900 && resourceBlock) {
+      if (full.length > RICH_MESSAGE_LIMIT && resourceBlock) {
         const without = full.replace(resourceBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd();
-        const headMax = 3900 - resourceBlock.length - 5;
+        const headMax = RICH_MESSAGE_LIMIT - resourceBlock.length - 5;
         return without.slice(0, Math.max(0, headMax)) + "\n…\n" + resourceBlock;
       }
       return full;
@@ -885,7 +885,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     });
     const keyboard = finishedKeyboard(resolved.edits, next, (resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession)), messageId);
     const opts = resolved.s ? threadOptsFor(resolved.s) : threadOpts(resolved.threadId);
-    await tg.editRichMessage(chatId, messageId, clampText(lines.join("\n"), 3900), {
+    await tg.editRichMessage(chatId, messageId, clampText(lines.join("\n"), RICH_MESSAGE_LIMIT), {
       ...opts,
       reply_markup: { inline_keyboard: keyboard },
     }).catch((err) => console.warn("[status]", err?.message ?? err));
@@ -981,7 +981,7 @@ ${esc(sum.slice(0, 2000))}</blockquote>`);
     const target = resolved.s ?? ({ sessionId: resolved.snapshotId ?? "unknown", directory: resolved.directory } as unknown as ChatSession);
     const keyboard = finishedKeyboard(resolved.edits, index, target, resolved.s?.detailMessageId ?? messageId);
     const opts = resolved.s ? threadOptsFor(resolved.s) : threadOpts(resolved.threadId);
-    const html = clampText(text, 3900);
+    const html = clampText(text, RICH_MESSAGE_LIMIT);
     const markup = { reply_markup: { inline_keyboard: keyboard } };
     if (resolved.s?.detailMessageId) {
       await tg.editRichMessage(chatId, resolved.s.detailMessageId, html, { ...opts, ...markup }).catch((err) => console.warn("[status]", err?.message ?? err));

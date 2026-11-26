@@ -1,3 +1,4 @@
+import { RICH_MESSAGE_LIMIT } from "./constants.js";
 import { isDangerousCommand, isChatAdminCommand } from "./dangerous.js";
 import { setLocale } from "./i18n.js";
 import { handleCommand } from "./commands.js";
@@ -232,10 +233,10 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
         ],
       ];
       if (messageId) {
-        await deps.tg.editRichMessage(chatId, messageId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+        await deps.tg.editRichMessage(chatId, messageId, clampText(html, RICH_MESSAGE_LIMIT), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
         deps.store.rememberMessageSession(chatId, messageId, sessionId);
       } else {
-        const sent = await deps.tg.sendRichMessage(chatId, clampText(html, 3900), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => undefined);
+        const sent = await deps.tg.sendRichMessage(chatId, clampText(html, RICH_MESSAGE_LIMIT), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => undefined);
         if (sent?.message_id) deps.store.rememberMessageSession(chatId, sent.message_id, sessionId);
       }
     }
@@ -1027,16 +1028,16 @@ async function handleViewFull(deps: BotDeps, cq: TelegramCallbackQuery, chatId: 
     await deps.tg.sendRichMessage(chatId, "No hay respuesta completa disponible.", threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
-  const parts = splitMarkdown(text, 3200);
+  const parts = splitMarkdown(text, 30000);
   if (parts.length <= 1) {
-    await deps.tg.sendRichMessage(chatId, clampText(`${sessionHeader(s)}${markdownToHtml(text)}`, 3900), threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.sendRichMessage(chatId, clampText(`${sessionHeader(s)}${markdownToHtml(text)}`, RICH_MESSAGE_LIMIT), threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;
   }
   for (let i = 0; i < parts.length; i++) {
     const chunk = parts[i];
     const prefix = `<i>(${i + 1}/${parts.length})</i>\n`;
     const piece = `${sessionHeader(s)}${prefix}${markdownToHtml(chunk)}`;
-    await deps.tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    await deps.tg.sendRichMessage(chatId, clampText(piece, RICH_MESSAGE_LIMIT), threadOpts(threadId)).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
 }
 

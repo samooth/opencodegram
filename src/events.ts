@@ -1,3 +1,4 @@
+import { RICH_MESSAGE_LIMIT } from "./constants.js";
 import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
@@ -863,14 +864,14 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
           // Prefer section-aware splitting: one part per markdown section
           // (headings) so code blocks are never cut mid-way. Falls back to
           // size-based splitting when there are no usable headings.
-          const sections = splitBySections(finalText, 3200);
-          const parts = sections.length ? sections : splitMarkdown(finalText, 3200);
+          const sections = splitBySections(finalText, 30000);
+          const parts = sections.length ? sections : splitMarkdown(finalText, 30000);
           for (let i = 0; i < parts.length; i++) {
             const prefix = parts.length > 1 ? `<i>(${i + 1}/${parts.length})</i>\n` : "";
             // The card already carries the indicators; don't duplicate them
             // in the separate long-answer message.
             const piece = `${sessionHeader(s, undefined, (settings.get(chatId).sessionNameInMessages ?? true))}${prefix}<blockquote>${markdownToHtml(parts[i])}</blockquote>`;
-            await tg.sendRichMessage(chatId, clampText(piece, 3900), threadOpts2).catch((err) => console.warn("[events]", err?.message ?? err));
+            await tg.sendRichMessage(chatId, clampText(piece, RICH_MESSAGE_LIMIT), threadOpts2).catch((err) => console.warn("[events]", err?.message ?? err));
           }
         }
       }
@@ -918,7 +919,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       // Clamp without a trailing "…": clampText already closes open tags, so
       // we just strip the ellipsis it appends, leaving a clean (if truncated)
       // message instead of one ending in "…".
-      const clamped = clampText(finalHtml, 3900).replace(/\n…$/, "");
+      const clamped = clampText(finalHtml, RICH_MESSAGE_LIMIT).replace(/\n…$/, "");
       const finalMessage = await tg.sendRichMessage(chatId, clamped, { ...threadOpts2, reply_markup: { inline_keyboard: quickKeyboard } }).catch((err) => {
         console.error("[send final]", err);
         return undefined;

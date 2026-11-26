@@ -216,7 +216,8 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "pensamiento" : "pensamientos"}`);
   if (a.reads) parts.push(`${a.reads} ${a.reads === 1 ? "lectura" : "lecturas"}`);
   if (a.searches) parts.push(`${a.searches} ${a.searches === 1 ? "búsqueda" : "búsquedas"}`);
-  if (a.edits) parts.push(`${a.edits} ${a.edits === 1 ? "edición" : "ediciones"}`);
+  // Edits are rendered in the virtual shell ($ write …), not here.
+  // if (a.edits) parts.push(...);
   if (a.shells) parts.push(`${a.shells} ${a.shells === 1 ? "comando" : "comandos"}`);
   if (a.tools) parts.push(`${a.tools} ${a.tools === 1 ? "herramienta" : "herramientas"}`);
   if (!parts.length) return "";
@@ -251,7 +252,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   let i = 0;
   while (i < visible.length) {
     const e = visible[i];
-    if (e.kind === "shell" || e.kind === "thought") { i++; continue; }
+    if (e.kind === "shell" || e.kind === "thought" || e.kind === "edit") { i++; continue; }
     if (e.kind === "read" || e.kind === "search") {
       const run: ActivityEntry[] = [];
       while (i < visible.length && (visible[i].kind === "read" || visible[i].kind === "search")) run.push(visible[i++]);

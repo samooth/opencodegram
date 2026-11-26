@@ -1,3 +1,4 @@
+import { RICH_MESSAGE_LIMIT } from "./constants.js";
 import { t } from "./i18n.js";
 import type { TelegramClient } from "./telegram.js";
 import type { CardView, ChatSession } from "./types.js";
@@ -173,7 +174,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // the expanded view keep the original 3.900-char budget.
     // Normally the compact card fits a phone screen (≤1.200 chars). When the
     // final answer is embedded, raise the budget so clampText never cuts it.
-    const LAYOUT_LIMIT = view.answerInCard ? 3900 : view.compact ? 1200 : 3900;
+    const LAYOUT_LIMIT = view.answerInCard ? RICH_MESSAGE_LIMIT : view.compact ? 1200 : RICH_MESSAGE_LIMIT;
     const all = opts.hideKinds?.length
       ? blocksOf(s).filter((b) => !opts.hideKinds!.includes(b.kind))
       : blocksOf(s);

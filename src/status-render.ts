@@ -250,7 +250,12 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
       const firstLine = code?.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
       return firstLine ? `execute ${firstLine}` : "execute";
     }
-    if (isShellTool(name)) return parseShellCommand(input ?? "") ?? arg ?? name;
+    if (isShellTool(name)) {
+      // A leading "cd /repo && " is noise: strip it so the same command
+      // issued in the same repo accumulates into one ($ cmd  (×N)) line.
+      const raw = (parseShellCommand(input ?? "") ?? arg ?? name).trim();
+      return raw.replace(/^cd\s+(?:"[^"]+"|'[^']+'|\S+)\s*&&\s*/i, "");
+    }
     if (n.includes("read") || n === "cat") return `read ${target}`.trim();
     if (n.includes("write") || n.includes("edit") || n.includes("patch")) return `write ${target}`.trim();
     if (n.includes("webfetch") || n.includes("fetch") || n.includes("web")) return `fetch ${target}`.trim();
