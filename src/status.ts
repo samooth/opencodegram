@@ -41,22 +41,17 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const basePartial = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
     const partialCap = basePartial + hiddenBudget;
     const lines: string[] = [];
-    // Telemetry and the prompt are built here but appended LAST, after the
-    // reasoning/thought/shell blocks: the user wants the work first and the
-    // clock/context at the bottom (OpenCode-style), not as the first lines.
+    // Header (name · id · model · 🎯turn) is added by the transcript manager.
+    // Right below it: the prompt, then the live clock/context/speed, so the
+    // reader sees WHAT this turn is about before the work blocks.
     const telemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
     // Use the prompt bound to THIS turn by beginTurn(), not the global
     // lastPromptBySession (which can be overwritten by non-user events and
     // showed the assistant's own previous answer in the card).
     const prompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
       ?? store?.lastPromptBySession.get(s.sessionId);
-    let infoLine = "";
-    if (prompt?.trim()) {
-      const clock = telemetry.length ? `${esc(telemetry.join(" · "))} · ` : "";
-      infoLine = `<p><i>${clock}📝 ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`;
-    } else if (telemetry.length) {
-      infoLine = `<p><i>${esc(telemetry.join(" · "))}</i></p>`;
-    }
+    if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`);
+    if (telemetry.length) lines.push(`<p><i>${esc(telemetry.join(" · "))}</i></p>`);
     // Each live section is its OWN collapsible block, so the user can follow
     // reasoning, thoughts and tools independently as they stream in.
     // 🧠 Razonamiento (live reasoning buffer, streamed from the model).
@@ -151,7 +146,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const cardId = s.transcriptMessageId ?? s.statusMessageId;
     const idSuffix = debugTraceEnabled && cardId ? ` · #${cardId}` : "";
     const toolCount = s.toolCallDetails.length;
-    const statsLine = (infoLine ? infoLine : "") + `<p><i>🔧 ${toolCount}${idSuffix}</i></p>`;
+    const statsLine = `<p><i>🔧 ${toolCount}${idSuffix}</i></p>`;
     // Compact: shrink the strip instead of DELETING sections. Dropping the
     // reasoning/thought lines made the user think those never happened.
     let top = lines.join("");

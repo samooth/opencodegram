@@ -174,7 +174,9 @@ describe("P1.3 turn navigation", () => {
     s.turnSeq = 2;
     transcript.addBlock(s, "answer", "<p>dos</p>", "dos");
     const html = transcript.renderPage(s)!.html;
-    expect(html).toContain("Turno 2/2");
+    // Latest turn: compact tag without the redundant /N denominator.
+    expect(html).toContain("🎯 2");
+    expect(html).not.toContain("Turno 2/2");
     expect(html).not.toContain("📄");
   });
 

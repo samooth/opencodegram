@@ -92,13 +92,14 @@ describe("final answer in card", () => {
 });
 
 describe("message layout", () => {
-  test("session name, model and receipt lines are separated with <br/>", () => {
+  test("header is one compact line: icon · name · id · model", () => {
     const s = makeSession({
       topicTitle: "opencodegram",
       model: { id: "hy4-flash-free", providerID: "opencode", variant: "high" },
     });
     const header = sessionHeader(s);
-    expect(header).toContain("📌 <b>opencodegram</b> · <code>ses_gold</code><br/>🧠 <code>opencode/hy4-flash-free</code> (high)");
+    expect(header).toContain("📌 <b>opencodegram</b> · <code>ses_gold</code> · <code>opencode/hy4-flash-free</code> (high)");
+    expect(header).not.toContain("🧠");
     const receipt = renderTurnReceipt({
       stopped: false,
       telemetry: ["⏱ 40s", "35% ctx"],

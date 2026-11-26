@@ -4,7 +4,7 @@ import type { TelegramClient } from "./telegram.js";
 import type { CardView, ChatSession } from "./types.js";
 import type { InlineButton, InlineKeyboard } from "./apitypes.js";
 import type { SessionStore } from "./store.js";
-import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, truncate } from "./util.js";
+import { clampText, copyTextButton, esc, markdownToHtml, modeIcon, sessionHeader, truncate } from "./util.js";
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { extractEditFile } from "./editutil.js";
 import {
@@ -191,7 +191,8 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
         pages = kept.map((p, i) => ({ ...p, index: i, total: kept.length }));
       }
     }
-    const header = `<p>${sessionHeader(s).replace(/(?:<br\/>)+$/, "")}</p>`;
+    const baseHeader = sessionHeader(s, undefined, true, modeIcon(view.unified)).replace(/(?:<br\/>)+$/, "");
+    const emptyHeader = `<p>${baseHeader}</p>`;
     // System indicators close the message unless explicitly suppressed (e.g. unified mode uses M1).
     const resources = !view.showResources || s.resourcesCollapsed ? "" : renderResources ? renderResources(s) : "";
     // Compact mode caps the status strip, but an embedded final answer must
@@ -253,12 +254,12 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     if (!view.reading && s.transcriptFollow !== false && !s.statusFinished && s.turnSeq !== undefined) {
       const hasTurnBlocks = all.some((b) => b.turn === s.turnSeq);
       if (!hasTurnBlocks) {
-        return { html: fit([header], []), page: Math.max(0, pages.length - 1), total: pages.length };
+        return { html: fit([emptyHeader], []), page: Math.max(0, pages.length - 1), total: pages.length };
       }
     }
 
     if (!pages.length) {
-      return { html: fit([header], []), page: 0, total: 0 };
+      return { html: fit([emptyHeader], []), page: 0, total: 0 };
     }
     const page = resolvePage(pages, s.transcriptPage, s.transcriptFollow !== false);
     if (!page) return undefined;
@@ -267,9 +268,12 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // to have transcript blocks; otherwise "Turno 606" showed "/104".
     const pageTurn = turnOfPage(page);
     const totalTurns = Math.max(s.turnSeq ?? 0, pageTurn ?? 0);
-    const indicator = pageTurn && totalTurns
-      ? `<p><i>🎯 Turno ${pageTurn}/${totalTurns}</i></p>`
-      : page.total > 1 ? `<p><i>📄 ${page.index + 1}/${page.total}</i></p>` : "";
+    // Compact: fold the turn number into the header line instead of spending
+    // a whole row. If this is the newest turn, N/N adds no information.
+    const turnTag = pageTurn
+      ? (pageTurn >= totalTurns ? `🎯 ${pageTurn}` : `🎯 ${pageTurn}/${totalTurns}`)
+      : page.total > 1 ? `📄 ${page.index + 1}/${page.total}` : "";
+    const header = `<p>${baseHeader}${turnTag ? ` · <i>${turnTag}</i>` : ""}</p>`;
     // Mini "previously on…" (two lines) when the user jumps to another turn.
     let recap = "";
     if (s.lastViewedTurn !== undefined && pageTurn && s.lastViewedTurn !== pageTurn) {
@@ -279,7 +283,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       }
     }
     return {
-      html: fit([header, indicator, recap].filter(Boolean), page.blocks),
+      html: fit([header, recap].filter(Boolean), page.blocks),
       page: page.index,
       total: page.total,
     };

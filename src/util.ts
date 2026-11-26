@@ -191,25 +191,27 @@ export function projectLabel(directory?: string): string {
   return `${projectEmoji(directory)} ${name}`;
 }
 
-export function sessionHeader(session?: { sessionId?: string; topicTitle?: string; directory?: string; model?: { id?: string; providerID?: string; variant?: string }; parentId?: string } | null, fallbackId?: string, showName = true): string {
+export function sessionHeader(session?: { sessionId?: string; topicTitle?: string; directory?: string; model?: { id?: string; providerID?: string; variant?: string }; parentId?: string } | null, fallbackId?: string, showName = true, icon = "📌"): string {
   const sid = (session?.sessionId ?? fallbackId ?? "").trim();
   if (!sid) return "";
   const short = sid.slice(0, 8);
-  // Telegram rich HTML collapses bare "\n"; use explicit <br/> separators.
-  // Session name and model get their own lines for readability.
-  // Without a session object the id is all we know: show it once, short.
-  if (!session) return `📌 <code>${esc(short)}</code><br/><br/>`;
-  if (!showName) return `📌 <code>${esc(short)}</code><br/><br/>`;
+  // One compact line: <icon> name · id · provider/model. Telegram rich HTML
+  // collapses bare "\n", so keep the whole header on a single line.
+  if (!session || !showName) return `${icon} <code>${esc(short)}</code><br/><br/>`;
   let name = (session?.topicTitle ?? "").trim();
   if (!name && session?.directory) name = session.directory.split("/").filter(Boolean).pop() || "";
   if (!name) name = sid.slice(0, 16);
-  const parts = [`📌 <b>${esc(name)}</b> · <code>${esc(short)}</code>`];
-  const model = session?.model?.id
-    ? `🧠 <code>${esc(session.model.providerID ?? "")}/${esc(session.model.id)}</code>${session.model.variant ? ` (${esc(session.model.variant)})` : ""}`
-    : "";
-  if (model) parts.push(model);
-  if (session?.parentId) parts.push(`🔀 fork <code>${esc(session.parentId.slice(0, 8))}</code>`);
-  return parts.join("<br/>") + "<br/><br/>";
+  const parts = [`${icon} <b>${esc(name)}</b> · <code>${esc(short)}</code>`];
+  if (session?.model?.id) {
+    parts.push(`<code>${esc(session.model.providerID ?? "")}/${esc(session.model.id)}</code>${session.model.variant ? ` (${esc(session.model.variant)})` : ""}`);
+  }
+  if (session?.parentId) parts.push(`🔀 <code>${esc(session.parentId.slice(0, 8))}</code>`);
+  return parts.join(" · ") + "<br/><br/>";
+}
+
+/** Icon for the card header, driven by the configured display mode. */
+export function modeIcon(unified: boolean): string {
+  return unified ? "🧩" : "🖥";
 }
 
 /**
