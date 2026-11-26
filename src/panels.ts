@@ -438,27 +438,28 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       }
     }
 
-    const rows = [
-      `<tr><td><b>Session</b></td><td><code>${esc(s?.sessionId ?? "none")}</code></td></tr>`,
-      s?.sessionId ? `<tr><td><b>Title</b></td><td>${esc(title)}</td></tr>` : "",
-      s?.sessionId ? `<tr><td><b>Model</b></td><td>${modelLine}</td></tr>` : "",
-      s?.sessionId ? `<tr><td><b>Directory</b></td><td><code>${esc(directory)}</code></td></tr>` : "",
-      s?.sessionId ? `<tr><td><b>Tokens</b></td><td>${tokensLine}</td></tr>` : "",
-      s?.sessionId ? `<tr><td><b>Cost</b></td><td>${costLine}</td></tr>` : "",
-      s?.sessionId ? `<tr><td><b>Updated</b></td><td>${updatedLine}</td></tr>` : "",
-      s?.sessionId ? `<tr><td><b>Turn</b></td><td>${turnLine}</td></tr>` : "",
-      `<tr><td><b>Bot</b></td><td>uptime ${botUptime} · pid ${process.pid} · updates ${metrics.get("updates")}</td></tr>`,
-      metrics.lastError ? `<tr><td><b>Last error</b></td><td>${esc(metrics.lastError.message)} (${new Date(metrics.lastError.time).toISOString().slice(11, 19)})</td></tr>` : "",
-      ocInfo ? `<tr><td><b>OpenCode</b></td><td>v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""} · sessions ${sessionCount}</td></tr>` : "",
-      `<tr><td><b>Host</b></td><td>CPU: ${cpuCount} cores<br>Load: ${esc(load)}<br>Mem: ${freeMem}/${totalMem} GB</td></tr>`,
-      gpu ? `<tr><td><b>GPU</b></td><td>${gpu}</td></tr>` : "",
-    ].filter(Boolean).join("");
+    // Build entries as label/value pairs: each line becomes its own <p> so the
+    // panel has real line breaks in Telegram (bare newlines get collapsed).
+    const pairs: Array<[string, string]> = [
+      ["Session", `<code>${esc(s?.sessionId ?? "none")}</code>`],
+      ...(s?.sessionId ? [
+        ["Title", esc(title)] as [string, string],
+        ["Model", modelLine] as [string, string],
+        ["Directory", `<code>${esc(directory)}</code>`] as [string, string],
+        ["Tokens", tokensLine] as [string, string],
+        ["Cost", costLine] as [string, string],
+        ["Updated", updatedLine] as [string, string],
+        ["Turn", turnLine] as [string, string],
+      ] : []),
+      ["Bot", `uptime ${botUptime} · pid ${process.pid} · updates ${metrics.get("updates")}`],
+      ...(metrics.lastError ? [["Last error", `${esc(metrics.lastError.message)} (${new Date(metrics.lastError.time).toISOString().slice(11, 19)})`] as [string, string]] : []),
+      ...(ocInfo ? [["OpenCode", `v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""} · sessions ${sessionCount}`] as [string, string]] : []),
+      ["Host", `CPU: ${cpuCount} cores · Load: ${esc(load)} · Mem: ${freeMem}/${totalMem} GB`],
+      ...(gpu ? [["GPU", gpu] as [string, string]] : []),
+    ];
     const unreachable = !ocInfo && s?.sessionId;
-    // Private chats occasionally stall on complex rich messages (table+buttons).
-    // Send a simpler single-block version there for reliable delivery.
-    const plainText = `<blockquote>📊 Status\n${rows.replace(/<tr>/g, "").replace(/<\/tr>/g, "\n").replace(/<[^>]*>/g, "").trim()}</blockquote>`;
-    const richText = `<h3>📊 Status</h3>${unreachable ? "\n<p><i>⚠️ OpenCode no responde en este momento (reintentando). Mostrando datos en caché.</i></p>" : ""}\n\n<table compact striped bordered>${rows}</table>`;
-    const text = chatId > 0 ? plainText : richText;
+    const linesHtml = pairs.map(([k, v]) => `<p><b>${esc(k)}</b>: ${v}</p>`).join("\n");
+    const text = `<h3>📊 Status</h3>${unreachable ? "\n<p><i>⚠️ OpenCode no responde en este momento (reintentando). Mostrando datos en caché.</i></p>" : ""}\n${linesHtml}`;
     const keyboard: InlineKeyboard = [];
     if (s?.sessionId) keyboard.push([{ text: "🔗 Conectar", callback_data: `connect:${s.sessionId}` }]);
     if (s?.statusMessageId) keyboard.push([{ text: "⏹ Detener", callback_data: "panel:stop" }]);
