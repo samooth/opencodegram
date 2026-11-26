@@ -87,6 +87,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // even when the detailed rows are folded away.
         const summary = activityBlock.match(/^<p>[\s\S]*?<\/p>/)?.[0] ?? "";
         if (summary) lines.push(summary);
+        const preview = s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim();
+        if (preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(preview, 140))}</i></blockquote>`);
       }
     }
     if (!activityBlock && !s.reasoningBuffer.trim()) {
@@ -195,8 +197,13 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       const tc = s.thoughtsDoneCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:thoughts:${s.sessionId}">💭 Pensamiento ${tc ? "▸" : "▾"}</tg-button></tg-button-row>`);
       if (!tc) {
-        const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false, settings.showTools);
-        if (doneActivity) lines.push(doneActivity);
+        // Keep the actual thought text. "low" verbosity used here made
+        // detailCap = 0, so toggling back showed only labels with no content.
+        const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), false, settings.showTools);
+        if (doneActivity) lines.push(clampText(doneActivity, 800));
+      } else {
+        const preview = s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim();
+        if (preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(preview, 140))}</i></blockquote>`);
       }
     }
 

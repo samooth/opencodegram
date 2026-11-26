@@ -108,6 +108,33 @@ describe("activity summary in the session card", () => {
     expect(top).not.toContain(long);
   });
 
+  test("toggling the thoughts block keeps the thought text on both cards", async () => {
+    const { status, s, published } = makeHarness();
+    recordThought(s.activity!, "analizando el problema de memoria", { at: Date.now() - 1000 });
+    await status.publishCard(7, s);
+    s.thoughtsCollapsed = true;
+    await status.publishCard(7, s);
+    s.thoughtsCollapsed = false;
+    s._lastPublishAt = 0;
+    await status.publishCard(7, s);
+    const live = published[published.length - 1]?.extraTop ?? "";
+    expect(live).toContain("analizando el problema de memoria");
+
+    // Finished card: low verbosity must not strip the detail (detailCap = 0).
+    s.lastFinalText = "Respuesta final";
+    s.statusFinished = true;
+    s.thoughtsDoneCollapsed = true;
+    s._lastPublishAt = 0;
+    await status.publishCard(7, s);
+    const collapsedDone = published[published.length - 1]?.extraTop ?? "";
+    expect(collapsedDone).toContain("analizando el problema de memoria");
+    s.thoughtsDoneCollapsed = false;
+    s._lastPublishAt = 0;
+    await status.publishCard(7, s);
+    const openDone = published[published.length - 1]?.extraTop ?? "";
+    expect(openDone).toContain("analizando el problema de memoria");
+  });
+
   test("low token counts show a count but no misleading tok/s", async () => {
     const { status, s, published } = makeHarness();
     s.turnOutputTokens = 47;
