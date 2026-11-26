@@ -91,7 +91,7 @@ describe("activity summary in the session card", () => {
     store.lastPromptBySession.set(s.sessionId, long);
     store.getTurnPrompt = () => long;
     await status.publishCard(7, s);
-    const top = published[0]?.extraTop ?? "";
+    const top = (published[0]?.extraTop ?? "") + (published[0]?.extraBottom ?? "");
     expect(top).toContain(long.slice(0, 50));
     expect(top).toContain(long.slice(-49));
     expect(top).not.toContain(long);
@@ -113,7 +113,7 @@ describe("activity summary in the session card", () => {
     s.turnOutputTokens = 47;
     s.turnFirstStreamedAt = Date.now() - 27000;
     await status.publishCard(7, s);
-    const top = published[0]?.extraTop ?? "";
+    const top = (published[0]?.extraTop ?? "") + (published[0]?.extraBottom ?? "");
     expect(top).toContain("47 tok");
     expect(top).not.toContain("tok/s");
   });
@@ -123,7 +123,7 @@ describe("activity summary in the session card", () => {
     s.turnOutputTokens = 500;
     s.turnFirstStreamedAt = Date.now() - 4000;
     await status.publishCard(7, s);
-    const top = published[0]?.extraTop ?? "";
+    const top = (published[0]?.extraTop ?? "") + (published[0]?.extraBottom ?? "");
     expect(top).toContain("tok/s");
   });
 
@@ -132,7 +132,7 @@ describe("activity summary in the session card", () => {
     s.turnOutputTokens = 500;
     s.turnFirstStreamedAt = Date.now() - 4000;
     await status.publishCard(7, s);
-    const top = published[0]?.extraTop ?? "";
+    const top = (published[0]?.extraTop ?? "") + (published[0]?.extraBottom ?? "");
     expect(top).toContain("<p><i>⚡");
   });
 

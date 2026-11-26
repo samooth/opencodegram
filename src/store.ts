@@ -501,6 +501,14 @@ export class SessionStore {
     const blocks = this.transcriptBySession.get(s.sessionId) ?? [];
     const maxTurn = blocks.reduce((m, b) => Math.max(m, b.turn ?? 0), 0);
     s.turnSeq = Math.max((s.turnSeq ?? 0) + 1, maxTurn + 1);
+    // Every turn starts with its sections open: a collapse from a previous
+    // turn must not hide this turn's reasoning/thoughts/shell.
+    s.reasoningCollapsed = false;
+    s.thoughtsCollapsed = false;
+    s.shellCollapsed = false;
+    s.reasoningDoneCollapsed = false;
+    s.thoughtsDoneCollapsed = false;
+    s.shellDoneCollapsed = false;
     const pending = this.pendingTurnPromptBySession.get(s.sessionId);
     if (pending !== undefined) {
       this.rememberTurnPrompt(s.sessionId, s.turnSeq, pending);

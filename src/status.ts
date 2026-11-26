@@ -29,9 +29,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // stay visible instead of slicing the whole strip to its tail (which used
     // to hide reasoning/activity/shell and leave only the partial text).
     const compact = settings.compactCard && !s.cardMenuExpanded && !s.readingMode;
-    const reasoningCap = compact ? 400 : 600;
-    const activityCap = compact ? 300 : 450;
-    const shellCap = compact ? 220 : 400;
+    const reasoningCap = compact ? 220 : 600;
+    const activityCap = compact ? 220 : 450;
+    const shellCap = compact ? 200 : 400;
     // Blocks hidden via their link give their budget to the answer, so hiding
     // reasoning/thoughts/shell makes more room for the user-visible text.
     const hiddenBudget =
@@ -41,30 +41,21 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const basePartial = settings.cardVerbosity === "low" ? 200 : settings.cardVerbosity === "high" ? 800 : (unified ? 600 : 400);
     const partialCap = basePartial + hiddenBudget;
     const lines: string[] = [];
-    // 1. State — "still working" is the most important signal at a glance.
-    // The card id is embedded in the state line so EVERY message (including
-    // the very first "Trabajando…" before Telegram assigns an id) is numbered.
-    const liveCardId = s.transcriptMessageId ?? s.statusMessageId;
-    const liveIdSuffix = debugTraceEnabled && liveCardId ? ` <code>#${liveCardId}</code>` : "";
-    // No "Trabajando…" label: the telemetry clock below already signals work.
-    // The id stays embedded so the first frame is numbered before Telegram
-    // assigns a message_id.
-    if (liveIdSuffix) lines.push(`<p><i>${liveIdSuffix.trim()}</i></p>`);
-    // 2. Telemetry (duration, speed, tokens, context) under the state. The card
-    // stays readable while working; the finished turns get the full receipt.
+    // Telemetry and the prompt are built here but appended LAST, after the
+    // reasoning/thought/shell blocks: the user wants the work first and the
+    // clock/context at the bottom (OpenCode-style), not as the first lines.
     const telemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
-    // Tool counts move to the footer (renderToolStats) — never duplicated here.
-    // 3. Prompt being answered — context before detail.
     // Use the prompt bound to THIS turn by beginTurn(), not the global
     // lastPromptBySession (which can be overwritten by non-user events and
     // showed the assistant's own previous answer in the card).
     const prompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
       ?? store?.lastPromptBySession.get(s.sessionId);
+    let infoLine = "";
     if (prompt?.trim()) {
       const clock = telemetry.length ? `${esc(telemetry.join(" · "))} · ` : "";
-      lines.push(`<p><i>${clock}📝 ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`);
+      infoLine = `<p><i>${clock}📝 ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`;
     } else if (telemetry.length) {
-      lines.push(`<p><i>${esc(telemetry.join(" · "))}</i></p>`);
+      infoLine = `<p><i>${esc(telemetry.join(" · "))}</i></p>`;
     }
     // Each live section is its OWN collapsible block, so the user can follow
     // reasoning, thoughts and tools independently as they stream in.
@@ -75,6 +66,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (!collapsed) {
         const tail = s.reasoningBuffer.trim().slice(-reasoningCap);
         lines.push(`<blockquote>${markdownToHtml(tail)}</blockquote>`);
+      } else {
+        // Keep a one-line preview: a collapsed section with zero content made
+        // the user feel reasoning/thoughts were missing entirely.
+        const preview = s.reasoningBuffer.trim().split("\n").filter(Boolean).pop() ?? "";
+        if (preview) lines.push(`<blockquote expandable>${esc(truncateMiddle(preview, 120))}</blockquote>`);
       }
     }
     // 💭 Pensamiento (compact activity: thoughts, reads, tools).
@@ -82,7 +78,16 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (activityBlock) {
       const collapsed = s.thoughtsCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:thoughts:${s.sessionId}">💭 Pensamiento ${collapsed ? "▸" : "▾"}</tg-button></tg-button-row>`);
-      if (!collapsed) lines.push(activityBlock);
+      if (!collapsed) {
+        // renderActivity has its own budget; in compact mode cap it here so
+        // thoughts stay as a short preview instead of being deleted later.
+        lines.push(compact ? clampText(activityBlock, activityCap) : activityBlock);
+      } else {
+        // Always show at least the counts summary so thoughts are visible
+        // even when the detailed rows are folded away.
+        const summary = activityBlock.match(/^<p>[\s\S]*?<\/p>/)?.[0] ?? "";
+        if (summary) lines.push(summary);
+      }
     }
     if (!activityBlock && !s.reasoningBuffer.trim()) {
       // Fallback for sessions created before per-turn activity was tracked.
@@ -109,10 +114,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 4. TODO checklist for the session (from todo.updated events).
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
-    // 7. Partial answer, rendered as clean lines (code block for shell/code).
-    if (settings.showPartialText && s.buffer.trim()) {
-      lines.push(renderPartialText(s.buffer, partialCap));
-    }
     // ⚡ Virtual shell: ALWAYS visible while working, even when empty, so the
     // user sees the tool transcript slot from the very first token and every
     // new command (read/write/etc.) is captured as it arrives.
@@ -136,41 +137,22 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push('<tg-button-row align="left"><tg-button type="callback_data" style="link" data="panel:bg">Enviar comando a segundo plano</tg-button></tg-button-row>');
       }
     }
-    // Toolcall statistics live at the very bottom, as a compact icon line.
+    // Partial answer LAST among the work blocks: reasoning → thoughts → shell
+    // → answer, the same reading order as the finished card.
+    if (settings.showPartialText && s.buffer.trim()) {
+      lines.push(renderPartialText(s.buffer, partialCap));
+    }
+    // Toolcall statistics + clock/prompt live in `bottom`, which the card
+    // layout treats as protected tail (it trims history, never this). Putting
+    // them here also keeps a SINGLE message id at the very bottom.
     const cardId = s.transcriptMessageId ?? s.statusMessageId;
     const idSuffix = debugTraceEnabled && cardId ? ` · #${cardId}` : "";
-    // Simple counter at the very bottom; the full breakdown is in the footer.
     const toolCount = s.toolCallDetails.length;
-    const statsLine = `<p><i>🔧 ${toolCount}${idSuffix}</i></p>`;
-    // In compact mode the strip must leave room for the tool-stats line at the
-    // bottom, otherwise the final clamp eats it. Cap the strip so the footer
-    // always survives.
+    const statsLine = (infoLine ? infoLine : "") + `<p><i>🔧 ${toolCount}${idSuffix}</i></p>`;
+    // Compact: shrink the strip instead of DELETING sections. Dropping the
+    // reasoning/thought lines made the user think those never happened.
     let top = lines.join("");
-    // Compact: drop the reasoning block first, then activity, if over budget,
-    // but ALWAYS keep the state, shell and partial answer. Never clamp to a
-    // raw tail (that hid everything except the stream).
-    if (compact && top.length > 1000) {
-      // Drop less-important blocks first, but NEVER the answer (💬 Respuesta)
-      // nor the state/receipt. Order: reasoning -> activity -> shell.
-      for (const needle of ["🧠 Razonamiento", "Pensamientos", "pensamiento"]) {
-        if (lines.join("").length <= 1000) break;
-        const idx = lines.findIndex((l) => l.includes(needle));
-        if (idx >= 0) lines.splice(idx, 1);
-      }
-      top = lines.join("");
-      // If still over budget, truncate the answer block (never drop it).
-      if (top.length > 1000) {
-        const ansIdx = lines.findIndex((l) => l.includes("💬 Respuesta"));
-        if (ansIdx >= 0) {
-          const budget = 1000 - (lines.join("").length - lines[ansIdx].length) - 20;
-          if (budget > 0 && lines[ansIdx].length > budget) {
-            lines[ansIdx] = lines[ansIdx].slice(0, budget) + "…";
-            top = lines.join("");
-          }
-        }
-      }
-      if (top.length > 1000) top = clampText(top, 1000);
-    }
+    if (compact && top.length > 1100) top = clampText(top, 1100);
     return {
       top,
       bottom: statsLine,
