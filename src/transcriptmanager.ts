@@ -464,11 +464,10 @@ ${body}
       }]);
     }
 
-    // 3) Copy prompt and the last shell command (private clipboard button only
-    // when it fits; groups and long texts fall back to a code block).
+    // 3) Copy the last shell command (private clipboard button only when it
+    // fits; groups and long texts fall back to a code block). The "copy prompt"
+    // button was removed: the prompt is redundant next to the card answer.
     if (!view.working) {
-      const copyPrompt = copyTextButton(chatId, "📋 Copiar prompt", store.lastPromptBySession.get(s.sessionId));
-      if (copyPrompt) keyboard.push([copyPrompt]);
       const lastShell = [...(s.toolCallDetails ?? [])].reverse().find((d) => isShellTool(d.name));
       const lastCommand = lastShell ? parseShellCommand(lastShell.input ?? "") ?? lastShell.input?.trim() : undefined;
       if (lastCommand) {

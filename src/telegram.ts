@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { noteTelegramFailure, noteTelegramSuccess } from "./ratethrottle.js";
-import { dtrace } from "./debuglog.js";
+import { dtrace, debugTraceEnabled } from "./debuglog.js";
 
 const API = "https://api.telegram.org";
 
@@ -292,8 +292,10 @@ export class TelegramClient {
     // Number EVERY outgoing message, head AND tail: the tail id is what the
     // user reads at the bottom of a card (a card sent already-finished never
     // gets a later edit that would add the id).
-    const localId = nextLocalId();
-    const tagged = `<p><i>${localId}</i></p>\n${html}<p><i>${localId}</i></p>`;
+    // Number messages ONLY in debug mode (DEBUG_TRACE_ENABLED=true).
+    const tagged = debugTraceEnabled
+      ? (() => { const localId = nextLocalId(); return `<p><i>${localId}</i></p>\n${html}<p><i>${localId}</i></p>`; })()
+      : html;
     const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(tagged));
     const body = { chat_id: chatId, rich_message: { html: safe }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {

@@ -8,7 +8,7 @@ import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editut
 import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
-import { dtrace } from "./debuglog.js";
+import { dtrace, debugTraceEnabled } from "./debuglog.js";
 import { hasPendingUserPrompt } from "./events.js";
 import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
@@ -44,7 +44,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // The card id is embedded in the state line so EVERY message (including
     // the very first "Trabajando…" before Telegram assigns an id) is numbered.
     const liveCardId = s.transcriptMessageId ?? s.statusMessageId;
-    const liveIdSuffix = liveCardId ? ` <code>#${liveCardId}</code>` : "";
+    const liveIdSuffix = debugTraceEnabled && liveCardId ? ` <code>#${liveCardId}</code>` : "";
     // No "Trabajando…" label: the telemetry clock below already signals work.
     // The id stays embedded so the first frame is numbered before Telegram
     // assigns a message_id.
@@ -138,7 +138,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // Toolcall statistics live at the very bottom, as a compact icon line.
     const stats = renderToolStats(s.toolCallDetails);
     const cardId = s.transcriptMessageId ?? s.statusMessageId;
-    const idSuffix = cardId ? ` · #${cardId}` : "";
+    const idSuffix = debugTraceEnabled && cardId ? ` · #${cardId}` : "";
     const statsLine = stats ? `<p><i>${esc(stats)}${idSuffix}</i></p>` : (idSuffix ? `<p><i>#${cardId}</i></p>` : "");
     // In compact mode the strip must leave room for the tool-stats line at the
     // bottom, otherwise the final clamp eats it. Cap the strip so the footer
@@ -237,7 +237,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
     }));
     const doneCardId = s.transcriptMessageId ?? s.statusMessageId;
-    if (doneCardId) lines.push(`<p><i>#${doneCardId}</i></p>`);
+    if (debugTraceEnabled && doneCardId) lines.push(`<p><i>#${doneCardId}</i></p>`);
 
     return lines.join("");
   };

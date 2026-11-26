@@ -90,13 +90,12 @@ describe("contextual card keyboards", () => {
     expect(kb[0][1].callback_data).toBe("panel:ms:ses_actions");
   });
 
-  test("private cards offer a copy-prompt button when the prompt fits", () => {
+  test("private cards do not offer a copy-prompt button", () => {
     const { store, transcript } = makeTranscript();
     store.lastPromptBySession.set("ses_actions", "arregla el card");
     const s = makeSession();
     const flat = transcript.cardKeyboard(7, s, 0, 1).flat();
-    const copyPrompt = flat.find((b) => b.text === "📋 Copiar prompt");
-    expect(copyPrompt?.copy_text).toEqual({ text: "arregla el card" });
+    expect(flat.some((b) => b.text === "📋 Copiar prompt")).toBe(false);
   });
 
   test("private cards offer a copy-command button for the last shell command", () => {
