@@ -181,6 +181,11 @@ export class OpenCodeBridge {
     return this.client.session.form.reply({ sessionID: sessionId, formID: formId, answer });
   }
 
+  /** Tell OpenCode the form was abandoned so the tool stops waiting. */
+  async cancelForm(sessionId: string, formId: string, message?: string) {
+    return this.client.session.form.cancel({ sessionID: sessionId, formID: formId, ...(message ? { message } : {}) });
+  }
+
   async diff(sessionId: string) {
     return this.client.session.diff({ sessionID: sessionId });
   }

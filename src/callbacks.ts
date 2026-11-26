@@ -1693,8 +1693,15 @@ async function handleFormCallback(deps: BotDeps, cq: TelegramCallbackQuery): Pro
 
   if (data === "forms:cancel") {
     await deps.tg.answerCallbackQuery(cq.id, "Cancelado").catch((err) => console.warn("[callbacks]", err?.message ?? err));
+    // Notify OpenCode too: closing the Telegram card alone leaves the tool
+    // waiting for an answer and the form open in the TUI.
+    try {
+      await deps.oc.cancelForm(state.sessionId, state.formId, "Cancelado desde Telegram");
+    } catch (err) {
+      console.warn("[callbacks] form cancel failed", err);
+    }
     await deps.tg
-      .editRichMessage(chatId, messageId, `<b>Form cancelled</b>\n<code>${esc(state.formId)}</code>`, {
+      .editRichMessage(chatId, messageId, `<b>Formulario cancelado</b>\n<code>${esc(state.formId)}</code>`, {
         reply_markup: { inline_keyboard: [] },
       })
       .catch((err) => console.warn("[callbacks]", err?.message ?? err));

@@ -47,6 +47,24 @@ function makeDeps() {
   return deps;
 }
 
+describe("form cancellation", () => {
+  test("cancel closes the Telegram form AND cancels it in OpenCode", async () => {
+    const deps = makeDeps();
+    const cancelled: Array<{ sessionId: string; formId: string }> = [];
+    deps.oc.cancelForm = async (sessionId: string, formId: string) => { cancelled.push({ sessionId, formId }); };
+    deps.pendingForms.set(77, {
+      formId: "form_1", sessionId: "ses_x", chatId: 123, title: "Prueba",
+      fields: [], answers: {}, submitted: false,
+    } as any);
+    deps.pendingFormsById.set("form_1", 77);
+    const cq = { id: "f1", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 77 }, data: "forms:cancel" } as any;
+    await handleCallback(deps, cq);
+    expect(cancelled).toEqual([{ sessionId: "ses_x", formId: "form_1" }]);
+    expect(deps.pendingForms.has(77)).toBe(false);
+    expect(deps.pendingFormsById.has("form_1")).toBe(false);
+  });
+});
+
 describe("handleCallback", () => {
   test("handles panel:home without throwing", async () => {
     const deps = makeDeps();
