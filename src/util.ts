@@ -212,6 +212,22 @@ export function sessionHeader(session?: { sessionId?: string; topicTitle?: strin
   return parts.join("<br/>") + "<br/><br/>";
 }
 
+/**
+ * Drop the model's internal monologue from anything shown in a card.
+ * OpenCode streams reasoning like "The user says…", "I should…", "Let me…":
+ * it is reasoning ABOUT the task, not useful context for the reader.
+ */
+const AGENT_MONOLOGUE = /^(the user (says|asked|wants|is)|i (should|need|will|must|think|do|have)\b|let me\b|we (are|need|should)\b|now let me\b)/i;
+
+export function stripAgentMonologue(text: string): string {
+  const out = text.split("\n").filter((line) => !AGENT_MONOLOGUE.test(line.trim())).join("\n");
+  return out.trim() ? out : "";
+}
+
+export function isAgentMonologue(text: string): boolean {
+  return AGENT_MONOLOGUE.test(text.trim());
+}
+
 export function toolIcon(name: string): string {
   const n = (name || "").toLowerCase();
   if (n.includes("read")) return "📖";

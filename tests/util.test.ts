@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { clampText, contextUsage, esc, normalizeCommandText, parseSlashCommand, rateLimitRetryAt } from "../src/util.js";
+import { clampText, contextUsage, esc, isAgentMonologue, normalizeCommandText, parseSlashCommand, rateLimitRetryAt, stripAgentMonologue } from "../src/util.js";
 
 describe("rateLimitRetryAt", () => {
   test("schedules :15 of the current hour before the mark", () => {
@@ -108,5 +108,20 @@ describe("clampText", () => {
     // max - 2 = 10 would land inside the pair; the cut moves back one char.
     expect(out).toBe(`${"a".repeat(9)}\n…`);
     expect(out).not.toContain("\uFFFD");
+  });
+});
+
+describe("agent monologue filter", () => {
+  test("strips 'The user says' and 'I should' lines but keeps useful reasoning", () => {
+    const raw = 'The user says: "haz esto" — I should check the repo.\nVoy a revisar el fichero de могulo.\nEl cambio rompe el test.';
+    const clean = stripAgentMonologue(raw);
+    expect(clean).not.toContain("The user says");
+    expect(clean).not.toContain("I should");
+    expect(clean).toContain("Voy a revisar");
+    expect(clean).toContain("El cambio rompe");
+    expect(isAgentMonologue('  Let me do that  ')).toBe(true);
+    // Word boundaries, not literal backspaces (regression: \b became \x08).
+    expect(isAgentMonologue("I shouldn't")).toBe(false);
+    expect(isAgentMonologue("Individual")).toBe(false);
   });
 });

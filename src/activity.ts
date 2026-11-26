@@ -5,7 +5,7 @@
  * compact line plus a single native Telegram `<blockquote expandable>` so no
  * extra messages or callbacks are needed.
  */
-import { esc } from "./util.js";
+import { esc, stripAgentMonologue } from "./util.js";
 import { describeToolInput } from "./editutil.js";
 import type { CardVerbosity } from "./settings.js";
 
@@ -205,8 +205,9 @@ function entryHead(e: ActivityEntry, now: number, showOpen = true): string {
 }
 
 function detailPara(text: string, detailCap: number): string {
-  if (!text.trim() || detailCap <= 0) return "";
-  return `<p><i>${esc(truncate(text.trim(), detailCap))}</i></p>`;
+  const clean = stripAgentMonologue(text.trim());
+  if (!clean || detailCap <= 0) return "";
+  return `<p><i>${esc(truncate(clean, detailCap))}</i></p>`;
 }
 
 /** Render the compact summary line plus one native expandable detail block. */

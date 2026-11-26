@@ -6,7 +6,7 @@ import type { ChatSession, CardView } from "./types.js";
 import { pendingEditsKey } from "./store.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
+import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripAgentMonologue, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { RICH_MESSAGE_LIMIT, STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import { dtrace, debugTraceEnabled } from "./debuglog.js";
@@ -60,16 +60,17 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // Each live section is its OWN collapsible block, so the user can follow
     // reasoning, thoughts and tools independently as they stream in.
     // 🧠 Razonamiento (live reasoning buffer, streamed from the model).
-    if (settings.showThinking && s.reasoningBuffer.trim()) {
+    const liveReasoning = stripAgentMonologue(s.reasoningBuffer.trim());
+    if (settings.showThinking && liveReasoning) {
       const collapsed = s.reasoningCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:reasoning:${s.sessionId}">🧠 Razonamiento ${collapsed ? "▸" : "▾"}</tg-button></tg-button-row>`);
       if (!collapsed) {
-        const tail = s.reasoningBuffer.trim().slice(-reasoningCap);
+        const tail = liveReasoning.slice(-reasoningCap);
         lines.push(`<blockquote>${markdownToHtml(tail)}</blockquote>`);
       } else {
         // Keep a one-line preview: a collapsed section with zero content made
         // the user feel reasoning/thoughts were missing entirely.
-        const preview = s.reasoningBuffer.trim().split("\n").filter(Boolean).pop() ?? "";
+        const preview = liveReasoning.split("\n").filter(Boolean).pop() ?? "";
         if (preview) lines.push(`<blockquote expandable>${esc(truncateMiddle(preview, 120))}</blockquote>`);
       }
     }
@@ -87,7 +88,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // even when the detailed rows are folded away.
         const summary = activityBlock.match(/^<p>[\s\S]*?<\/p>/)?.[0] ?? "";
         if (summary) lines.push(summary);
-        const preview = s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim();
+        const preview = stripAgentMonologue(s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim() ?? "");
         if (preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(preview, 140))}</i></blockquote>`);
       }
     }
@@ -202,7 +203,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), false, settings.showTools);
         if (doneActivity) lines.push(clampText(doneActivity, 8000));
       } else {
-        const preview = s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim();
+        const preview = stripAgentMonologue(s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim() ?? "");
         if (preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(preview, 140))}</i></blockquote>`);
       }
     }
@@ -511,7 +512,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       let latestThoughtBlock = "";
       if (settings.showThinking && settings.showLatestThought && s.reasoningBuffer.trim()) {
         const reasoningLines = s.reasoningBuffer.trim().split(/\n+/).filter(Boolean);
-        const lastThought = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim();
+        const lastThought = stripAgentMonologue(reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : s.reasoningBuffer.trim());
         latestThoughtBlock = `💭 <b>Último pensamiento:</b>\n<blockquote expandable><mark>${esc(clampText(lastThought, 240))}</mark></blockquote>`;
       }
 

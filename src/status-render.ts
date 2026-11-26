@@ -5,7 +5,7 @@ import type { TranscriptManager } from "./transcriptmanager.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, editStats } from "./editutil.js";
-import { contextUsage, esc, markdownToHtml, toolIcon, truncate } from "./util.js";
+import { contextUsage, esc, isAgentMonologue, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
 
 export function truncateText(text: string, max: number): string {
@@ -548,11 +548,9 @@ export function lastReasoning(s: ChatSession): string {
   const cot = s.cotBuffer?.trim() ?? "";
   if (!cot) return "";
   const entries = cot.split(/\n\n---\n\n/).map((e) => e.trim()).filter(Boolean);
-  // Drop internal agent monologue ("The user says…", "I should…", "Let me…"):
-  // it is reasoning ABOUT the task, not useful context for the user reading
-  // the card of this session.
-  const internal = /^(the user (says|asked|wants|is)|i (should|need|will|must|think|do|have)|let me|we (are|need|should)|now let me)/i;
-  const useful = entries.filter((e) => !internal.test(e));
-  const chosen = useful.length ? useful : entries.filter((e) => !/^(need|todo|note)/i.test(e));
+  // Reuse the shared filter (the old inline regex had literal backspaces).
+  // It is reasoning ABOUT the task, not useful context for the card.
+  const useful = entries.filter((e) => !isAgentMonologue(e));
+  const chosen = useful.length ? useful : entries.filter((e) => !/^(need|todo|note)\b/i.test(e));
   return (chosen.pop() ?? "").trim();
 }
