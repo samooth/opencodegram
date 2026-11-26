@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { buildDigestParts, digestStats } from "../src/syncview.js";
+import { buildDigestParts, buildLastTurnCard, digestStats } from "../src/syncview.js";
 import type { ChatSession } from "../src/types.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -120,5 +120,30 @@ describe("session digest (Conectar //sync)", () => {
       { role: "compaction", summary: "s" },
     ]);
     expect(stats).toEqual({ users: 2, assistants: 2, tools: 3, compactions: 1 });
+  });
+});
+
+describe("last-turn card (Conectar //sync)", () => {
+  test("shows only the newest prompt + answer, not the whole timeline", () => {
+    const items = [
+      userItem("pregunta antigua"),
+      assistantItem("respuesta antigua", ["read", "bash"]),
+      userItem("pregunta nueva"),
+      assistantItem("respuesta nueva con **markdown**"),
+      assistantItem("", ["grep"]),
+    ];
+    const card = buildLastTurnCard(makeSession(), items, { sessionId: "ses_x" })[0];
+    expect(card.html).toContain("pregunta nueva");
+    expect(card.html).toContain("respuesta nueva");
+    expect(card.html).not.toContain("pregunta antigua");
+    expect(card.html).not.toContain("respuesta antigua");
+    expect(card.html).not.toContain("Mensajes anteriores");
+    expect(card.keyboard?.flat().some((b) => b.callback_data === "use:ses_x")).toBe(true);
+  });
+
+  test("handles an empty context with a friendly message", () => {
+    const card = buildLastTurnCard(makeSession(), [], { sessionId: "ses_x", note: "✅ Sesión conectada" })[0];
+    expect(card.html).toContain("Sesión conectada");
+    expect(card.html).toContain("Sin respuesta todavía");
   });
 });

@@ -21,7 +21,7 @@ import { collectStats, renderStatsPanel, writeStatsReport, type StatsPeriod, typ
 import { isShellTool, parseShellCommand } from "./status-render.js";
 import { showSessionPicker } from "./messages.js";
 import { clampText, copyTextButton, esc, markdownToHtml, sessionHeader, threadOpts, truncate } from "./util.js";
-import { contextItems, lastAssistantText } from "./syncview.js";
+import { assistantText, buildLastTurnCard, contextItems } from "./syncview.js";
 import { cancelAutoRetry, notePromptSent } from "./autoretry.js";
 import { clearRetryNotice } from "./events.js";
 import { join } from "node:path";
@@ -178,67 +178,25 @@ async function handleConnect(deps: BotDeps, cq: TelegramCallbackQuery, chatId: n
   try {
     const cs = await deps.sessions.activateSession(chatId, sessionId, true, threadId);
     const resolvedCs = cs ?? deps.store.findSessionById(sessionId);
-    // Show the session like a normal turn: the card in groups, a normal
-    // message in private chats. No digest.
-    if (chatId < 0 && deps.transcript) {
-      // Group: publish the session card (current page = last answer if idle).
-      await deps.status.publishCard(chatId, resolvedCs!);
-      if (resolvedCs?.transcriptMessageId) {
-        deps.store.rememberMessageSession(chatId, resolvedCs.transcriptMessageId, sessionId);
-      }
-      if (messageId) deps.store.rememberMessageSession(chatId, messageId, sessionId);
+    // One clean card with the last turn, same layout for /sync and Conectar.
+    const s = resolvedCs;
+    let items = contextItems(await deps.oc.context(sessionId).catch(() => []));
+    if (!items.some((i) => assistantText(i)) && s?.lastFinalText?.trim()) {
+      items = [...items, { role: "assistant", content: [{ type: "text", text: s.lastFinalText }] }];
+    }
+    const lastPrompt = deps.store.lastPromptBySession.get(sessionId);
+    if (lastPrompt && !items.some((i) => (i.role ?? i.type) === "user")) {
+      items = [...items, { role: "user", text: lastPrompt }];
+    }
+    const card = buildLastTurnCard(s ?? null, items, { sessionId, note: "✅ Sesión conectada" });
+    const html = card[0].html;
+    const keyboard = card[0].keyboard ?? [];
+    if (messageId) {
+      await deps.tg.editRichMessage(chatId, messageId, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      deps.store.rememberMessageSession(chatId, messageId, sessionId);
     } else {
-      // Private: send a normal message with session info + last answer.
-      const s = resolvedCs;
-      const lines: string[] = [];
-      if (s) lines.push(sessionHeader(s).trimEnd());
-      lines.push("✅ <b>Sesión conectada</b>");
-      if (s?.model) lines.push(`🧠 ${esc(s.model.providerID)}/${esc(s.model.id)}${s.model.variant ? ` (${esc(s.model.variant)})` : ""}`);
-      if (s?.directory) lines.push(`📁 <code>${esc(s.directory)}</code>`);
-      // Show the LAST message like a final message. Prefer the local copy;
-      // after a restart it is gone, so fall back to OpenCode's context API.
-      let lastText = s?.lastFinalText?.trim() ?? "";
-      if (!lastText && s) {
-        try {
-          const items = contextItems(await deps.oc.context(s.sessionId));
-          lastText = lastAssistantText(items);
-          if (lastText && s) s.lastFinalText = lastText;
-        } catch { /* keep going without the last message */ }
-      }
-      if (lastText) lines.push("", markdownToHtml(lastText));
-      // P2: a short recap so reconnecting feels like picking up a conversation,
-      // not starting cold. Last prompt + activity counts come from local state.
-      const lastPrompt = deps.store.lastPromptBySession.get(sessionId);
-      const a = s?.activity;
-      const counts = a
-        ? [`${a.thoughts} pensamientos`, `${a.reads} lecturas`, `${a.edits} ediciones`, `${a.shells} comandos`]
-          .filter((part) => !part.startsWith("0 ")).join(" · ")
-        : "";
-      if (lastPrompt || counts) {
-        lines.push("", "⏮ <b>Recap</b>");
-        if (lastPrompt) lines.push(`👤 <i>${esc(truncate(lastPrompt, 160))}</i>`);
-        if (counts) lines.push(`🔧 <i>${esc(counts)}</i>`);
-        if (s?.model) lines.push(`🧠 <code>${esc(s.model.providerID)}/${esc(s.model.id)}</code>`);
-      }
-      const html = lines.join("\n");
-      const keyboard = [
-        [
-          { text: "📖 Respuesta completa", callback_data: `viewfull:${sessionId}` },
-          { text: "📂 Sesiones", callback_data: "panel:sessions" },
-        ],
-        [
-          { text: "🧠 Models", callback_data: `panel:ms:${sessionId}` },
-          { text: "📂 Sessions", callback_data: "panel:sessions" },
-          { text: "📊 Status", callback_data: "panel:status" },
-        ],
-      ];
-      if (messageId) {
-        await deps.tg.editRichMessage(chatId, messageId, clampText(html, RICH_MESSAGE_LIMIT), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks]", err?.message ?? err));
-        deps.store.rememberMessageSession(chatId, messageId, sessionId);
-      } else {
-        const sent = await deps.tg.sendRichMessage(chatId, clampText(html, RICH_MESSAGE_LIMIT), { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => undefined);
-        if (sent?.message_id) deps.store.rememberMessageSession(chatId, sent.message_id, sessionId);
-      }
+      const sent = await deps.tg.sendRichMessage(chatId, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch(() => undefined);
+      if (sent?.message_id) deps.store.rememberMessageSession(chatId, sent.message_id, sessionId);
     }
   } catch (err) {
     console.error("[connect] failed", sessionId, err);

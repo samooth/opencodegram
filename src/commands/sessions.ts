@@ -2,7 +2,7 @@ import { t } from "../i18n.js";
 import type { BotDeps, SendFn } from "../context.js";
 import { colorDiff, esc } from "../util.js";
 import { paginateTranscript } from "../transcript.js";
-import { buildDigestParts } from "../syncview.js";
+import { buildLastTurnCard } from "../syncview.js";
 import { cancelAutoRetry } from "../autoretry.js";
 import { ctx, isRouteAdmin } from "./shared.js";
 
@@ -463,7 +463,8 @@ export async function cmd_sync(deps: BotDeps, chatId: number, threadId: number |
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("OpenCode no responde (timeout)")), 8000)),
       ]);
       const items = (Array.isArray(ctxData) ? ctxData : ((ctxData as { data?: unknown })?.data ?? [])) as Array<Record<string, unknown>>;
-      const parts = buildDigestParts(s, items, { title: t("sessionContent"), sessionId: s.sessionId });
+      // One clean card with the last turn, not a 40-message digest.
+      const parts = buildLastTurnCard(s, items, { sessionId: s.sessionId });
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         const markup = i === parts.length - 1 ? { inline_keyboard: part.keyboard } : undefined;

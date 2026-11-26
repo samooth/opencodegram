@@ -1,6 +1,7 @@
 import { t } from "./i18n.js";
 import type { ChatSession } from "./types.js";
-import { esc, markdownToHtml, toolIcon } from "./util.js";
+import { RICH_MESSAGE_LIMIT } from "./constants.js";
+import { clampText, esc, markdownToHtml, sessionHeader, toolIcon } from "./util.js";
 
 /**
  * Shared renderer for the session digest shown by "Conectar" and /sync:
@@ -208,4 +209,35 @@ export function lastAssistantText(items: DigestItem[]): string {
     if (text.trim()) return text.trim();
   }
   return "";
+}
+
+/**
+ * Single clean card for /sync and "Conectar": the LAST user prompt and the
+ * LAST assistant answer, with the session header. The old 40-message digest
+ * buried the turn under tool calls and previews nobody could read.
+ */
+export function buildLastTurnCard(
+  s: ChatSession | null,
+  items: DigestItem[],
+  opts: { sessionId: string; note?: string; icon?: string },
+): DigestPart[] {
+  const header = s
+    ? sessionHeader(s, opts.sessionId, true, opts.icon ?? "📌").replace(/(?:<br\/>)+$/, "")
+    : `📌 <code>${esc(opts.sessionId.slice(0, 8))}</code>`;
+  const lines: string[] = [`<p>${header}</p>`];
+  if (opts.note) lines.push(`<p><i>${esc(opts.note)}</i></p>`);
+
+  const lastUser = [...items].reverse().find((i) => itemRole(i) === "user");
+  const raw = lastUser?.text;
+  const prompt = typeof raw === "string" ? raw.trim() : raw ? JSON.stringify(raw) : "";
+  if (prompt) lines.push(`<p><i>📝 ${esc(withHint(prompt, 300))}</i></p>`);
+
+  const lastAnswer = [...items].reverse().find((i) => itemRole(i) === "assistant" && assistantText(i));
+  const answer = lastAnswer ? assistantText(lastAnswer) : "";
+  if (answer) lines.push(markdownToHtml(answer));
+  else lines.push("<p><i>Sin respuesta todavía en esta sesión.</i></p>");
+
+  const tools = digestStats(items).tools;
+  if (tools) lines.push(`<p><i>🔧 ${tools} herramientas en la sesión</i></p>`);
+  return [{ html: clampText(lines.join("\n"), RICH_MESSAGE_LIMIT), keyboard: digestKeyboard(opts.sessionId) }];
 }
