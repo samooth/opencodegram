@@ -184,7 +184,13 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
     }
     const directoryOf = (s: SessionRow): string => s.location?.directory ?? s.directory ?? "";
     const folderOf = (s: SessionRow): string => directoryOf(s).split("/").filter(Boolean).pop() ?? "(sin carpeta)";
-    filtered = [...filtered].sort((a, b) => folderOf(a).localeCompare(folderOf(b)) || (a.title ?? "").localeCompare(b.title ?? ""));
+    // Most recently updated sessions first: when switching between sessions
+    // the one you just used should be at the top, not buried by folder/alpha.
+    const updatedOf = (x: SessionRow): number => {
+      const t = (x as { time?: { updated?: number } }).time?.updated;
+      return typeof t === "number" && Number.isFinite(t) ? t : 0;
+    };
+    filtered = [...filtered].sort((a, b) => updatedOf(b) - updatedOf(a) || folderOf(a).localeCompare(folderOf(b)) || (a.title ?? "").localeCompare(b.title ?? ""));
     const folders = [...new Set(filtered.map(folderOf))].sort((a, b) => a.localeCompare(b));
     view.folders = folders;
     if (_opts?.folderIndex !== undefined) view.folder = folders[_opts.folderIndex];

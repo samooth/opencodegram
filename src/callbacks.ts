@@ -1209,6 +1209,15 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
       if (cs) {
         cs.topicTitle = undefined;
         await deps.sessions.syncTopicTitle(chatId, cs).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+        // Separate the new session's card from the previous session's card in
+        // this topic: refloat so this session gets its OWN message, preserving
+        // the old one as static history (no mixing of two sessions in one card).
+        if (deps.transcript?.refloat) {
+          await deps.transcript.refloat(chatId, cs, { keep: true });
+          cs.transcriptMessageId = undefined;
+          cs.statusMessageId = undefined;
+          await deps.status.publishCard(chatId, cs).catch((err) => console.warn("[callbacks] refloat publish", err?.message ?? err));
+        }
       }
       // A message may have been waiting for the user to pick a session.
       const route = deps.store.routeKey(chatId, threadId);
