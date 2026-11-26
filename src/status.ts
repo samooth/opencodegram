@@ -246,11 +246,19 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       test,
       telemetry: [],
     }));
+    // A card can be marked finished by the auto-finish path (publishCard)
+    // without finishStatus ever running. Give it a timestamp once so the
+    // footer never shows "—" for duration / speed on a completed turn.
+    if (s.statusFinished && !s.turnFinishedAt) s.turnFinishedAt = Date.now();
+    const finishedAt = s.turnFinishedAt ?? 0;
+    const startedAt = s.promptStartTime ?? 0;
+    const streamedAt = s.turnFirstStreamedAt ?? 0;
     lines.push(renderTurnFooter({
       mode: settings.displayMode === "unified" ? "Unificado" : "Build",
       model: s.model,
-      durationMs: s.turnFinishedAt && s.promptStartTime ? s.turnFinishedAt - s.promptStartTime : 0,
-      outputTokens: s.turnOutputTokens ?? 0,
+      durationMs: finishedAt && startedAt ? Math.max(0, finishedAt - startedAt) : 0,
+      speedWindowMs: streamedAt && finishedAt > streamedAt ? finishedAt - streamedAt : undefined,
+      outputTokens: s.turnOutputTokens ?? s.lastOutputTokens ?? 0,
       firstStreamedAt: s.turnFirstStreamedAt,
       promptStartTime: s.promptStartTime,
       tools: s.toolCallDetails.length,
@@ -300,6 +308,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // and finishing here would show stale history instead of "working".
         if (active && !active.has(s.sessionId) && !hasPendingUserPrompt(s.sessionId)) {
           s.statusFinished = true;
+          s.turnFinishedAt ??= Date.now();
           if (s.statusTimer) { clearInterval(s.statusTimer); s.statusTimer = undefined; }
           s.statusMessageId = undefined;
           forgetStatusMessage(s.sessionId);

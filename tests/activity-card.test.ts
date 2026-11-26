@@ -109,6 +109,21 @@ describe("activity summary in the session card", () => {
     expect(top).not.toContain(long);
   });
 
+  test("auto-finished card has real duration and tok/s in the footer", async () => {
+    const { status, s, published } = makeHarness();
+    // publishCard's auto-finish path sets statusFinished but not turnFinishedAt.
+    s.statusFinished = true;
+    s.promptStartTime = Date.now() - 10_000;
+    s.turnFirstStreamedAt = Date.now() - 9_000;
+    s.turnOutputTokens = 500;
+    s.lastFinalText = "respuesta final";
+    await status.publishCard(7, s);
+    const html = published[published.length - 1]?.extraTop ?? "";
+    expect(s.turnFinishedAt).toBeGreaterThan(0);
+    expect(html).toContain("tok/s");
+    expect(html).not.toContain("· — · —");
+  });
+
   test("toggling the thoughts block keeps the thought text on both cards", async () => {
     const { status, s, published } = makeHarness();
     recordThought(s.activity!, "analizando el problema de memoria", { at: Date.now() - 1000 });

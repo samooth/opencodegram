@@ -517,6 +517,8 @@ export function renderTurnFooter(input: {
   mode: string;
   model?: { providerID?: string; id?: string; variant?: string };
   durationMs: number;
+  /** Streamed→completed window (OpenCode's own tok/s metric). */
+  speedWindowMs?: number;
   outputTokens: number;
   firstStreamedAt?: number;
   promptStartTime?: number;
@@ -528,8 +530,9 @@ export function renderTurnFooter(input: {
     ? `${input.model.providerID ?? ""}/${input.model.id ?? ""}${input.model.variant ? ` (${input.model.variant})` : ""}`
     : "—";
   const dur = input.durationMs > 0 ? formatDuration(input.durationMs) : "—";
-  const speed = input.durationMs > 0 && input.outputTokens > 0
-    ? `${(input.outputTokens / (input.durationMs / 1000)).toFixed(1)} tok/s`
+  const speedMs = input.speedWindowMs && input.speedWindowMs > 0 ? input.speedWindowMs : input.durationMs;
+  const speed = speedMs > 0 && input.outputTokens > 0
+    ? `${(input.outputTokens / (speedMs / 1000)).toFixed(1)} tok/s`
     : "—";
   const ttft = input.firstStreamedAt && input.promptStartTime && input.firstStreamedAt > input.promptStartTime
     ? formatDuration(input.firstStreamedAt - input.promptStartTime)
