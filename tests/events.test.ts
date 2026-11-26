@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { handleEvent, noteTelegramPrompt } from "../src/events.js";
+import { handleEvent, noteTelegramPrompt, wantsSeparateAnswer } from "../src/events.js";
 import { SessionStore } from "../src/store.js";
 
 const TEST_ROOT = "/tmp/opencode";
@@ -178,5 +178,24 @@ describe("model capture in stats", () => {
     expect(session.model).toBeDefined();
     expect(session.model.providerID).toBe("kilo");
     expect(session.model.id).toBe("glyph-cluster");
+  });
+});
+
+describe("separate answer delivery", () => {
+  const base = { showFinalInCard: false, longAnswerDelivery: "auto", longAnswerThreshold: 1800, displayMode: "unified" };
+
+  test("unified mode does not spam a second message for long answers", () => {
+    expect(wantsSeparateAnswer(base, "x".repeat(3000))).toBe(false);
+    // Explicit user choice is still honoured.
+    expect(wantsSeparateAnswer({ ...base, longAnswerDelivery: "message" }, "corto")).toBe(true);
+  });
+
+  test("flexible mode keeps the historic auto behaviour", () => {
+    expect(wantsSeparateAnswer({ ...base, displayMode: "flexible" }, "x".repeat(2000))).toBe(true);
+    expect(wantsSeparateAnswer({ ...base, displayMode: "flexible" }, "corto")).toBe(false);
+  });
+
+  test("answer embedded in the card is never duplicated", () => {
+    expect(wantsSeparateAnswer({ ...base, showFinalInCard: true }, "x".repeat(3000))).toBe(false);
   });
 });

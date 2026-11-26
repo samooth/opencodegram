@@ -257,7 +257,10 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
       return raw.replace(/^cd\s+(?:"[^"]+"|'[^']+'|\S+)\s*&&\s*/i, "");
     }
     if (n.includes("read") || n === "cat") return `read ${target}`.trim();
-    if (n.includes("write") || n.includes("edit") || n.includes("patch")) return `write ${target}`.trim();
+    if (n.includes("write")) return `write ${target}`.trim();
+    // Keep edits distinct from writes: merging both into "$ write <path>" made
+    // the virtual shell look like it was dropping tool calls.
+    if (n.includes("edit") || n.includes("patch")) return `edit ${target}`.trim();
     if (n.includes("webfetch") || n.includes("fetch") || n.includes("web")) return `fetch ${target}`.trim();
     if (n.includes("grep") || n.includes("search")) return `grep ${target}`.trim();
     if (n.includes("glob") || n.includes("find") || n.includes("list") || n.includes("ls")) return `ls ${target}`.trim();

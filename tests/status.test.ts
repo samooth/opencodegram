@@ -103,10 +103,12 @@ describe("virtual shell and tool stats", () => {
       { id: "1", name: "read", input: JSON.stringify({ filePath: "/repo/src/main.ts" }), status: "success" },
       { id: "2", name: "write", input: JSON.stringify({ filePath: "/repo/src/new.ts" }), status: "success" },
       { id: "3", name: "webfetch", input: JSON.stringify({ url: "https://example.com" }), status: "success" },
-      { id: "4", name: "bash", input: JSON.stringify({ command: "ls -la" }), status: "success" },
+      { id: "4", name: "edit", input: JSON.stringify({ filePath: "/repo/src/other.ts" }), status: "success" },
+      { id: "5", name: "bash", input: JSON.stringify({ command: "ls -la" }), status: "success" },
     ], 200);
     expect(html).toContain("$ read /repo/src/main.ts");
     expect(html).toContain("$ write /repo/src/new.ts");
+    expect(html).toContain("$ edit /repo/src/other.ts");
     expect(html).toContain("$ fetch https://example.com");
     expect(html).toContain("$ ls -la");
   });

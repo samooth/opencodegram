@@ -15,6 +15,25 @@ import type { TodoItem } from "./todos.js";
 
 const MAX_ARTIFACT_CANDIDATES = 20;
 const MAX_ARTIFACTS = 5;
+/**
+ * Whether the final answer should become its own Telegram message.
+ * In unified mode the card already carries it as a transcript block, so
+ * "auto" must not double the messages in a busy group.
+ */
+export function wantsSeparateAnswer(st: {
+  showFinalInCard: boolean;
+  longAnswerDelivery: string;
+  longAnswerThreshold: number;
+  displayMode: string;
+}, text: string): boolean {
+  const answerInCard = st.showFinalInCard && text.length <= 2400;
+  if (answerInCard) return false;
+  if (st.longAnswerDelivery === "message") return true;
+  return st.longAnswerDelivery === "auto"
+    && st.displayMode !== "unified"
+    && text.length > st.longAnswerThreshold;
+}
+
 import { formatBytes, MAX_DOCUMENT_BYTES, prepareDocument } from "./files/index.js";
 import { cancelAutoRetry, classifyFailure, decideRetry, dispatchRetry, noteTurnCompleted, updateRetryPrompt } from "./autoretry.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
@@ -853,12 +872,7 @@ const handleSessionTextEnded: EventHandler = async (event, deps) => {
       // separate messages only creates noise (parte 1/3, 2/3, …). Only deliver
       // separately when the user explicitly asked for it or the answer is too
       // long to fit in the card (showFinalInCard off / oversized).
-      const answerInCard = st.showFinalInCard && finalText.length <= 2400;
-      const sendSeparately =
-        !answerInCard && (
-          st.longAnswerDelivery === "message" ||
-          (st.longAnswerDelivery === "auto" && finalText.length > st.longAnswerThreshold)
-        );
+      const sendSeparately = wantsSeparateAnswer(st, finalText);
       if (sendSeparately) {
         if (s.lastFinalSeparatedPromptStart !== s.promptStartTime) {
           s.lastFinalSeparatedPromptStart = s.promptStartTime;
