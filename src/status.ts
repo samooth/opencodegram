@@ -192,8 +192,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const answerIsCurrent = s.lastFinalTurn === undefined || s.lastFinalTurn === s.turnSeq;
     const answerEmbedded = settings.showFinalInCard && answerIsCurrent && !!s.lastFinalText?.trim();
     const lines: string[] = [];
-    // Single "✅ Listo" state anchor at the top; detailed footer goes last.
-    lines.push(`<p><i>${s.stopped ? "⏹ Detenido" : s.lastTurnError ? "⚠️ Error" : "✅ Listo"}</i></p>`);
+    // One state indicator only: the bold receipt at the bottom. A second
+    // "✅ Listo" up here produced the duplicate the user saw.
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
     if (settings.showThinking && reasoning) {
@@ -258,8 +258,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       outputTokens: s.turnOutputTokens ?? 0,
       firstStreamedAt: s.turnFirstStreamedAt,
       promptStartTime: s.promptStartTime,
-      stopped: s.stopped,
-      error: s.lastTurnError,
       tools: s.toolCallDetails.length,
     }));
     const doneCardId = s.transcriptMessageId ?? s.statusMessageId;

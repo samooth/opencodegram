@@ -467,11 +467,10 @@ export function renderTurnFooter(input: {
   outputTokens: number;
   firstStreamedAt?: number;
   promptStartTime?: number;
-  stopped: boolean;
-  error?: string;
   tools: number;
 }): string {
-  const state = input.error ? "⚠️" : input.stopped ? "⏹" : "✅";
+  // No state emoji here: the receipt already carries the single "✅ Listo" /
+  // "⏹ Detenido" / "⚠️ Error" badge. OpenCode's own footer has no checkmark.
   const model = input.model
     ? `${input.model.providerID ?? ""}/${input.model.id ?? ""}${input.model.variant ? ` (${input.model.variant})` : ""}`
     : "—";
@@ -483,7 +482,7 @@ export function renderTurnFooter(input: {
     ? formatDuration(input.firstStreamedAt - input.promptStartTime)
     : "—";
   const parts = [
-    `${state} ${esc(input.mode)}`,
+    esc(input.mode),
     esc(model),
     dur,
     speed,
