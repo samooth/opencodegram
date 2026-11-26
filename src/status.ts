@@ -15,7 +15,7 @@ import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, renderSkillBlock, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -116,13 +116,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // user sees the tool transcript slot from the very first token and every
     // new command (read/write/etc.) is captured as it arrives.
     {
-      const count = s.toolCallDetails.length;
+      const shellDetails = s.toolCallDetails.filter((d) => (d.name || "").toLowerCase() !== "skill");
+      const count = shellDetails.length;
       if (count) {
         const collapsed = s.shellCollapsed === true;
         const label = collapsed ? `⚡ Shell (${count}) ▸` : `⚡ Shell (${count}) ▾`;
         lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:shell:${s.sessionId}">${label}</tg-button></tg-button-row>`);
         if (!collapsed) {
-          const shellText = renderVirtualShell(s.toolCallDetails, shellCap);
+          const shellText = renderVirtualShell(shellDetails, shellCap);
           lines.push(`<blockquote><pre language='bash'>${esc(shellText)}</pre></blockquote>`);
         }
       } else {
@@ -140,6 +141,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (settings.showPartialText && s.buffer.trim()) {
       lines.push(renderPartialText(s.buffer, partialCap));
     }
+    // Skills get their own line at the bottom, with a puzzle-piece icon.
+    const skills = renderSkillBlock(s.toolCallDetails);
+    if (skills) lines.push(skills);
     // Toolcall statistics + clock/prompt live in `bottom`, which the card
     // layout treats as protected tail (it trims history, never this). Putting
     // them here also keeps a SINGLE message id at the very bottom.
@@ -209,7 +213,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
 
     // 3) Shell virtual (all toolcalls as `$ <cmd>` lines).
-    const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
+    const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill");
     if (settings.showTools && virtualDetails.length) {
       const sc = s.shellDoneCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:shell:${s.sessionId}">⚡ Shell (${virtualDetails.length}) ${sc ? "▸" : "▾"}</tg-button></tg-button-row>`);
@@ -229,6 +233,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
+    const doneSkills = renderSkillBlock(s.toolCallDetails);
+    if (doneSkills) lines.push(doneSkills);
     // Receipt keeps only the outcome (edits/test); prompt and telemetry are
     // already at the top, exactly like the live card.
     const edits = summarizeEdits(s, s.toolCallDetails);
@@ -516,7 +522,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
 
       let shellBlock = "";
-      const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
+      const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill");
       if (settings.showTools && virtualDetails.length) {
         const shellText = renderVirtualShell(virtualDetails, 180);
         shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;

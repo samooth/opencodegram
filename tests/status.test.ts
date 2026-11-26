@@ -135,13 +135,15 @@ describe("virtual shell and tool stats", () => {
     expect(html).toContain("líneas)");
   });
 
-  test("skill activation renders as a shell command", async () => {
-    const { renderVirtualShell } = await import("../src/status-render.js");
-    const html = renderVirtualShell([
+  test("skill activation is its own bottom line, not a shell command", async () => {
+    const { renderVirtualShell, renderSkillBlock } = await import("../src/status-render.js");
+    const details = [
       { id: "s1", name: "skill", input: JSON.stringify({ id: "telegram-rich-messages" }), status: "success" },
-    ], 200);
-    expect(html).toContain("$ skill telegram-rich-messages");
-    expect(html).not.toContain('{"id"');
+    ] as any;
+    expect(renderVirtualShell(details, 200)).not.toContain("skill telegram-rich-messages");
+    const block = renderSkillBlock(details);
+    expect(block).toContain("🧩 telegram-rich-messages");
+    expect(block).not.toContain('{"id"');
   });
 
   test("execute tool shows the code, not the tool name", async () => {

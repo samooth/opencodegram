@@ -283,6 +283,8 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
   const order: string[] = [];
   const counts = new Map<string, { count: number; last: ChatSession["toolCallDetails"][number] }>();
   for (const d of details) {
+    // Skills are shown by renderSkillBlock, never as shell commands.
+    if ((d.name || "").toLowerCase() === "skill") continue;
     const cmd = toCommand(d.name, d.input);
     const existing = counts.get(cmd);
     if (existing) {
@@ -318,6 +320,22 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
     }
   }
   return lines.join("\n");
+}
+
+/** Activated skills as their own bottom line, not mixed into the shell. */
+export function renderSkillBlock(details: ChatSession["toolCallDetails"]): string {
+  const names = new Set<string>();
+  for (const d of details) {
+    if ((d.name || "").toLowerCase() !== "skill") continue;
+    let name = "skill";
+    try {
+      const parsed = JSON.parse(d.input || "{}") as Record<string, unknown>;
+      name = String(parsed.name ?? parsed.id ?? "skill");
+    } catch { /* keep fallback */ }
+    names.add(name);
+  }
+  if (!names.size) return "";
+  return `<p><i>🧩 ${[...names].map((n) => esc(n)).join(" · ")}</i></p>`;
 }
 
 /** Compact toolcall statistics line with per-type icons, meant for the card footer. */
