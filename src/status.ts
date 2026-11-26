@@ -137,10 +137,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
     }
     // Toolcall statistics live at the very bottom, as a compact icon line.
-    const stats = renderToolStats(s.toolCallDetails);
     const cardId = s.transcriptMessageId ?? s.statusMessageId;
     const idSuffix = debugTraceEnabled && cardId ? ` · #${cardId}` : "";
-    const statsLine = stats ? `<p><i>${esc(stats)}${idSuffix}</i></p>` : (idSuffix ? `<p><i>#${cardId}</i></p>` : "");
+    // Simple counter at the very bottom; the full breakdown is in the footer.
+    const toolCount = s.toolCallDetails.length;
+    const statsLine = `<p><i>🔧 ${toolCount}${idSuffix}</i></p>`;
     // In compact mode the strip must leave room for the tool-stats line at the
     // bottom, otherwise the final clamp eats it. Cap the strip so the footer
     // always survives.
