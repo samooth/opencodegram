@@ -31,7 +31,9 @@ export function renderPartialText(raw: string, max: number): string {
     /(^|\n)\s*[$>]\s/.test(text) ||
     /(^|\n)\s*(cd|ls|find|grep|cat|echo|python3?|node|bun|git|curl|npm|pip)\b/.test(text) ||
     /2>\/dev\/null|--?[a-z][a-z-]*\b|\|\s*\w+/.test(text);
-  const marker = truncated ? "…\n" : "";
+  // No "…" marker: the blockquote is expandable and the answer continues in
+  // the transcript; a marker here produced repeated ellipses in the card.
+  const marker = "";
   if (looksLikeCode) {
     return `<p><i>💬 escribiendo…</i></p>\n<blockquote expandable><pre><code>${esc(marker + body)}</code></pre></blockquote>`;
   }
@@ -452,6 +454,44 @@ export function renderTurnReceipt(input: TurnReceiptInput): string {
   return `<p>${lines.join("<br/>")}</p>`;
 }
 
+
+/**
+ * Compact one-line turn footer, modeled after OpenCode's own TUI receipt:
+ *   Build · Hy4 flash Free · 2m 55s · 164.1 tok/s · 1m 14s ttft
+ * Rendered once, at the very bottom of the card (above resources/id).
+ */
+export function renderTurnFooter(input: {
+  mode: string;
+  model?: { providerID?: string; id?: string; variant?: string };
+  durationMs: number;
+  outputTokens: number;
+  firstStreamedAt?: number;
+  promptStartTime?: number;
+  stopped: boolean;
+  error?: string;
+  tools: number;
+}): string {
+  const state = input.error ? "⚠️" : input.stopped ? "⏹" : "✅";
+  const model = input.model
+    ? `${input.model.providerID ?? ""}/${input.model.id ?? ""}${input.model.variant ? ` (${input.model.variant})` : ""}`
+    : "—";
+  const dur = input.durationMs > 0 ? formatDuration(input.durationMs) : "—";
+  const speed = input.durationMs > 0 && input.outputTokens > 0
+    ? `${(input.outputTokens / (input.durationMs / 1000)).toFixed(1)} tok/s`
+    : "—";
+  const ttft = input.firstStreamedAt && input.promptStartTime && input.firstStreamedAt > input.promptStartTime
+    ? formatDuration(input.firstStreamedAt - input.promptStartTime)
+    : "—";
+  const parts = [
+    `${state} ${esc(input.mode)}`,
+    esc(model),
+    dur,
+    speed,
+    `ttft ${ttft}`,
+    `🔧 ${input.tools}`,
+  ];
+  return `<p><i>${parts.join(" · ")}</i></p>`;
+}
 
 /** Live "thinking" block shown at the bottom while a turn is in progress. */
 export function renderThinkingBottom(s: ChatSession, settings: ChatSettings): string {

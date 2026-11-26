@@ -211,6 +211,10 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
       const tailParts = [extraBottom, resources ? `<hr/>\n${resources}` : ""].filter(Boolean);
       const headFixed = [...headParts, extraTop].filter(Boolean).join("");
       const tailFixed = tailParts.join("\n\n");
+      // While the turn is streaming, the live strip (extraTop) already carries
+      // the current answer. Rendering the paginated history underneath only
+      // duplicates it and adds a second "…" (the user saw five of them).
+      if (opts?.working && !view.reading) blocks = [];
       // Account for the joins, the `<hr/>` separator and the truncation ellipsis.
       const budget = Math.max(0, LAYOUT_LIMIT - headFixed.length - tailFixed.length - 20);
       let content = blocks.map((b) => b.html).join("\n\n");

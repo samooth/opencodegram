@@ -78,10 +78,10 @@ describe("partial text rendering", () => {
     expect(html).not.toContain("…mp -iname");
   });
 
-  test("truncates at line boundaries with an explicit marker", () => {
+  test("truncates at line boundaries without a repeated-ellipsis marker", () => {
         const buffer = Array.from({ length: 20 }, (_, i) => `echo line ${i}`).join("\n");
     const html = renderPartialText(buffer, 60);
-    expect(html).toContain("…\n");
+    expect(html).not.toContain("…\n");
     // No partial line like "echo line 1" cut mid-number.
     const body = html.replace(/<[^>]+>/g, "");
     for (const line of body.split("\n").filter(Boolean)) {

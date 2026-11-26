@@ -15,7 +15,7 @@ import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -191,17 +191,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const answerIsCurrent = s.lastFinalTurn === undefined || s.lastFinalTurn === s.turnSeq;
     const answerEmbedded = settings.showFinalInCard && answerIsCurrent && !!s.lastFinalText?.trim();
     const lines: string[] = [];
-    // Precise state of the LAST turn, right at the top: what happened and how
-    // long it took, before any collapsed context.
-    {
-      const state = s.stopped ? "⏹ Detenido" : s.lastTurnError ? "⚠️ Error" : "✅ Listo";
-      const dur = s.turnFinishedAt && s.promptStartTime
-        ? ` · ${((s.turnFinishedAt - s.promptStartTime) / 1000).toFixed(1)}s`
-        : "";
-      const tools = s.toolCallDetails.length ? ` · 🔧 ${s.toolCallDetails.length}` : "";
-      lines.push(`<p><b>${state}</b><i>${dur}${tools}</i></p>`);
-    }
-
+    // Single "✅ Listo" state anchor at the top; detailed footer goes last.
+    lines.push(`<p><i>${s.stopped ? "⏹ Detenido" : s.lastTurnError ? "⚠️ Error" : "✅ Listo"}</i></p>`);
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
     if (settings.showThinking && reasoning) {
@@ -234,8 +225,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
     if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
-    // Receipt goes LAST, just above the message id: the answer stays prominent
-    // and "✅ Listo" is the final signal that the turn actually finished.
+    // Detailed receipt then the compact OpenCode-style footer.
     const prompt = store?.lastPromptBySession.get(s.sessionId);
     const edits = summarizeEdits(s, s.toolCallDetails);
     const test = detectTestRun(s.toolCallDetails);
@@ -246,6 +236,17 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       edits: edits.files ? edits : undefined,
       test,
       telemetry: turnTelemetry(s, Date.now(), settings.showTokenSpeed),
+    }));
+    lines.push(renderTurnFooter({
+      mode: settings.displayMode === "unified" ? "Unificado" : "Build",
+      model: s.model,
+      durationMs: s.turnFinishedAt && s.promptStartTime ? s.turnFinishedAt - s.promptStartTime : 0,
+      outputTokens: s.turnOutputTokens ?? 0,
+      firstStreamedAt: s.turnFirstStreamedAt,
+      promptStartTime: s.promptStartTime,
+      stopped: s.stopped,
+      error: s.lastTurnError,
+      tools: s.toolCallDetails.length,
     }));
     const doneCardId = s.transcriptMessageId ?? s.statusMessageId;
     if (debugTraceEnabled && doneCardId) lines.push(`<p><i>#${doneCardId}</i></p>`);
