@@ -108,6 +108,10 @@ export type ChatSession = {
   turnSeq?: number;
   /** Generation counter: stale deltas from a previous turn are discarded. */
   turnGeneration?: number;
+  /** Collapse state for the finished card block toggles. */
+  reasoningDoneCollapsed?: boolean;
+  thoughtsDoneCollapsed?: boolean;
+  shellDoneCollapsed?: boolean;
   /** Last publish timestamp + coalesced retry for central throttle. */
   _lastPublishAt?: number;
   _publishScheduled?: boolean;

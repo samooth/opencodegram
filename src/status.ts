@@ -196,23 +196,36 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
     if (settings.showThinking && reasoning) {
-      // Keep enough reasoning to be readable when expanded; the answer already
-      // took its share, so 1500 is a sane floor for the finished card.
-      const budget = answerEmbedded ? 1200 : 1800;
-      lines.push(`<blockquote expandable>🧠 Razonamiento\n${markdownToHtml(truncateMiddle(reasoning.trim(), budget))}</blockquote>`);
+      const rc = s.reasoningDoneCollapsed === true;
+      lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:reasoning:${s.sessionId}">🧠 Razonamiento ${rc ? "▸" : "▾"}</tg-button></tg-button-row>`);
+      if (!rc) {
+        // Each COT entry gets its own native collapsible sub-block.
+        const entries = reasoning.split(/\n{2,}---\n{2,}|\n---\n/).filter((e) => e.trim());
+        const budget = answerEmbedded ? 1200 : 1800;
+        const shown = entries.length > 1 ? entries.map((e) => `<blockquote expandable>${markdownToHtml(truncateMiddle(e.trim(), budget))}</blockquote>`).join("\n") : `<blockquote>${markdownToHtml(truncateMiddle(reasoning.trim(), budget))}</blockquote>`;
+        lines.push(shown);
+      }
     }
 
     // 2) Pensamiento (compact activity, collapsed).
     if (settings.showThinking || settings.showLatestThought) {
-      const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false, settings.showTools);
-      if (doneActivity) lines.push(doneActivity);
+      const tc = s.thoughtsDoneCollapsed === true;
+      lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:thoughts:${s.sessionId}">💭 Pensamiento ${tc ? "▸" : "▾"}</tg-button></tg-button-row>`);
+      if (!tc) {
+        const doneActivity = renderActivity(s.activity, answerEmbedded ? "low" : settings.cardVerbosity, true, Date.now(), false, settings.showTools);
+        if (doneActivity) lines.push(doneActivity);
+      }
     }
 
     // 3) Shell virtual (all toolcalls as `$ <cmd>` lines).
     const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
     if (settings.showTools && virtualDetails.length) {
-      const shellText = renderVirtualShell(virtualDetails, 500);
-      lines.push(`<blockquote expandable>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`);
+      const sc = s.shellDoneCollapsed === true;
+      lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:shell:${s.sessionId}">⚡ Shell (${virtualDetails.length}) ${sc ? "▸" : "▾"}</tg-button></tg-button-row>`);
+      if (!sc) {
+        const shellText = renderVirtualShell(virtualDetails, 500);
+        lines.push(`<blockquote><pre language='bash'>${esc(shellText)}</pre></blockquote>`);
+      }
     }
 
     // 4) Respuesta (answer) — visible directly, below the shell.

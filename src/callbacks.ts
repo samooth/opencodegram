@@ -1053,6 +1053,18 @@ async function handleResourcesToggle(deps: BotDeps, cq: TelegramCallbackQuery, c
 }
 
 async function handleBlockToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, _threadId: number | undefined, _messageId: number | undefined, data: string) {
+  const done = data.match(/^block:done:(reasoning|thoughts|shell):(.+)$/);
+  if (done) {
+    await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
+    const s = deps.store.findSessionById(done[2]);
+    if (!s) return;
+    const k = done[1];
+    if (k === "reasoning") s.reasoningDoneCollapsed = !s.reasoningDoneCollapsed;
+    else if (k === "thoughts") s.thoughtsDoneCollapsed = !s.thoughtsDoneCollapsed;
+    else s.shellDoneCollapsed = !s.shellDoneCollapsed;
+    await deps.status.publishCard(chatId, s).catch(() => {});
+    return;
+  }
   const m = data.match(/^block:(reasoning|thoughts|shell):(.+)$/);
   if (!m) return;
   await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));

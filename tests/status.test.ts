@@ -169,7 +169,7 @@ describe("reasoning always collapsed by default", () => {
     await status.publishCard(7, s);
     const html = published[0]?.extraTop ?? "";
     expect(html).toContain("🧠 Razonamiento");
-    expect(html).toMatch(/<blockquote expandable>🧠 Razonamiento/);
+    expect(html).toMatch(/data="block:done:reasoning:/);
   });
 });
 
@@ -242,7 +242,7 @@ describe("finished card collapses reasoning regardless of profile", () => {
     const html = published[0]?.extraTop ?? "";
     // No expanded detail marker (▴) in the finished card.
     expect(html).not.toContain("▴");
-    expect(html).toMatch(/<blockquote expandable>🧠 Razonamiento/);
+    expect(html).toMatch(/data="block:done:reasoning:/);
     expect(html).toMatch(/<blockquote expandable>💭 Pensamientos/);
   });
 });
