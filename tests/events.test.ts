@@ -58,7 +58,7 @@ describe("handleEvent", () => {
     for (let i = 0; i < 5; i++) {
       await handleEvent({ type: "session.text.delta", data: { sessionID: "ses_delta", delta: "x" } }, deps);
     }
-    await new Promise((r) => setTimeout(r, 650));
+    await new Promise((r) => setTimeout(r, 3100)); // STREAM_FLUSH_MS + margin
     expect(session.buffer).toBe("xxxxx");
     expect(updates).toBe(1);
   });

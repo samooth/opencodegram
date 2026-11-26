@@ -5,6 +5,8 @@
 export const RICH_MESSAGE_LIMIT = 32000;
 /** Plain-text fallback (Telegram limit 4096) keeps a safety margin. */
 export const PLAIN_MESSAGE_LIMIT = 3900;
+/** Coalesce streamed text deltas into one card edit every 3s (readability). */
+export const STREAM_FLUSH_MS = 3000;
 export const STATUS_EDIT_INTERVAL_MS = 5000;
 export const STATUS_MIN_UPDATE_GAP_MS = 1200;
 /**

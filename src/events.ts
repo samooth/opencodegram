@@ -1,4 +1,4 @@
-import { RICH_MESSAGE_LIMIT } from "./constants.js";
+import { RICH_MESSAGE_LIMIT, STREAM_FLUSH_MS } from "./constants.js";
 import type { Config } from "./config.js";
 import type { OpenCodeBridge } from "./opencode.js";
 import type { SessionStore } from "./store.js";
@@ -501,18 +501,19 @@ const handleSessionTextDelta: EventHandler = async (event, deps) => {
     // First streamed token timestamp (authoritative metric for tok/s in 2.3.0).
     if (!s.turnFirstStreamedAt) s.turnFirstStreamedAt = Date.now();
   }
-  // Coalesce a burst of deltas into a single card update (500ms). updateStatus
+  // Coalesce streamed text into one edit every 3s: the partial answer grows
+  // in readable chunks instead of jittering on every token. updateStatus
   // still applies its own throttle and the adaptive 429 backoff.
   if (!s.deltaFlushTimer) {
     s.deltaFlushTimer = setTimeout(() => {
       s.deltaFlushTimer = undefined;
       // Resolve the delivery target at flush time: the session may have moved
-      // to another tab during the 500ms coalescing window.
+      // to another tab during the coalescing window.
       const targetChat = deps.store.resolveChatId(s.sessionId) ?? chatId;
       // Force past the idle throttle: streamed reasoning must appear promptly.
       // The adaptive 429 backoff still gates the actual Telegram edit.
       updateStatus(targetChat, s, true).catch((err) => console.warn("[events]", err?.message ?? err));
-    }, 500);
+    }, STREAM_FLUSH_MS);
   }
 };
 
