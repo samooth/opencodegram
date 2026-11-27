@@ -220,3 +220,33 @@ describe("TUI prompt routing", () => {
     expect(store.lastPromptBySession.get("ses_tui")).toBe("explica tu progreso");
   });
 });
+
+describe("external form answers", () => {
+  test("form.replied from the TUI updates the Telegram form in place", async () => {
+    const { deps } = makeDeps();
+    const edited: any[] = [];
+    deps.tg.editRichMessage = async (...args: any[]) => { edited.push(args); return { message_id: args[1] }; };
+    deps.pendingForms.set(55, {
+      formId: "f1", sessionId: "ses_f", chatId: 100, title: "Prueba",
+      fields: [{ key: "a", title: "Campo A" }], answers: {}, submitted: false,
+    } as any);
+    deps.pendingFormsById.set("f1", 55);
+    await handleEvent({ type: "form.replied", data: { id: "f1", sessionID: "ses_f", answer: { a: "valor TUI" } } } as any, deps);
+    expect(edited).toHaveLength(1);
+    expect(edited[0][2]).toContain("Formulario respondido (TUI)");
+    expect(edited[0][2]).toContain("valor TUI");
+    expect(deps.pendingForms.has(55)).toBe(false);
+    expect(deps.pendingFormsById.has("f1")).toBe(false);
+  });
+
+  test("form.cancelled from the TUI closes the Telegram form", async () => {
+    const { deps } = makeDeps();
+    const edited: any[] = [];
+    deps.tg.editRichMessage = async (...args: any[]) => { edited.push(args); return { message_id: args[1] }; };
+    deps.pendingForms.set(56, { formId: "f2", sessionId: "ses_f", chatId: 100, title: "Prueba", fields: [], answers: {}, submitted: false } as any);
+    deps.pendingFormsById.set("f2", 56);
+    await handleEvent({ type: "form.cancelled", data: { id: "f2", sessionID: "ses_f" } } as any, deps);
+    expect(edited[0][2]).toContain("Formulario cancelado (TUI)");
+    expect(deps.pendingForms.has(56)).toBe(false);
+  });
+});

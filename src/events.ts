@@ -1089,6 +1089,41 @@ const handleFormCreated: EventHandler = async (event, deps) => {
   }
 };
 
+/**
+ * OpenCode emits form.replied / form.cancelled when the form is answered
+ * outside Telegram (e.g. in the TUI). Reflect it in the same Telegram message
+ * so the card is not left with a live keyboard nobody can use.
+ */
+const handleFormExternal: EventHandler = async (event, deps) => {
+  const { tg, pendingForms, pendingFormsById } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const formId = String(e.data?.id ?? e.data?.formID ?? "");
+  const messageId = pendingFormsById.get(formId);
+  if (messageId === undefined) return; // already answered from Telegram
+  const state = pendingForms.get(messageId);
+  if (!state) {
+    pendingFormsById.delete(formId);
+    return;
+  }
+  const cancelled = e.type === "form.cancelled";
+  const answer = (e.data?.answer ?? {}) as Record<string, unknown>;
+  const lines = state.fields.map((field) => {
+    const value = answer[field.key];
+    const text = Array.isArray(value) ? value.join(", ") : String(value ?? "—");
+    return `<b>${esc(field.title ?? field.key)}</b>: <code>${esc(text)}</code>`;
+  });
+  const html = cancelled
+    ? `<b>Formulario cancelado (TUI)</b>\n<code>${esc(formId)}</code>`
+    : `<b>Formulario respondido (TUI)</b>\n<code>${esc(formId)}</code>\n\n${lines.join("\n")}`;
+  if (state.timeoutHandle) clearTimeout(state.timeoutHandle);
+  pendingForms.delete(messageId);
+  pendingFormsById.delete(formId);
+  await tg.editRichMessage(state.chatId, messageId, html, {
+    ...threadOpts(state.threadId),
+    reply_markup: { inline_keyboard: [] },
+  }).catch((err) => console.warn("[events] external form reply failed", String(err)));
+};
+
 const handlePermissionReplied: EventHandler = async (event, deps) => {
   const { tg, pendingPermissions } = deps;
   const e = event as { type: string; data?: Record<string, unknown> };
@@ -1486,6 +1521,8 @@ export const eventHandlers = new Map<string, EventHandler>([
   ["session.text.ended", handleSessionTextEnded],
   ["permission.asked", handlePermissionAsked],
   ["form.created", handleFormCreated],
+  ["form.replied", handleFormExternal],
+  ["form.cancelled", handleFormExternal],
   ["permission.replied", handlePermissionReplied],
   ["session.execution.failed", handleSessionExecutionFailed],
   ["session.step.started", handleSessionStepStarted],
