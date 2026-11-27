@@ -1317,14 +1317,18 @@ const handleTodoUpdated: EventHandler = async (event, deps) => {
  */
 function rememberTodosFromTool(deps: EventsDeps, sessionId: string, d: Record<string, unknown>): boolean {
   const name = String(d.name ?? "").toLowerCase();
-  if (name !== "todowrite" && name !== "todo") return false;
+  // `session.tool.called` / `session.tool.success` omit the tool name, so the
+  // todos payload itself is the reliable signal. A name, when present, must
+  // still be the todo tool.
+  if (name && name !== "todowrite" && name !== "todo") return false;
   const input = (d.input ?? {}) as Record<string, unknown>;
   const metadata = (d.metadata ?? {}) as Record<string, unknown>;
   const raw = Array.isArray(input.todos) ? input.todos
     : Array.isArray(metadata.todos) ? metadata.todos
     : undefined;
-  const todos = todoItemsFrom(raw);
+  const todos = todoItemsFrom(raw).filter((t) => t.content.length > 0);
   if (!todos.length) return false;
+  dtrace("todos", "from_tool", { sessionID: sessionId, name, count: todos.length });
   deps.store.rememberTodos(sessionId, todos);
   return true;
 }

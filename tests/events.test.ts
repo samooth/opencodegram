@@ -71,10 +71,12 @@ describe("handleEvent", () => {
       { content: "Terminar", status: "pending", priority: "medium" },
     ]);
 
+    // Real OpenCode 2.3.0 omits `name` on tool.success and puts the items in
+    // metadata.todos — the checklist must still update.
     await handleEvent({
       type: "session.tool.success",
       data: {
-        sessionID: "ses_todo", id: "call_1", name: "todowrite",
+        sessionID: "ses_todo", id: "call_1",
         metadata: { todos: [
           { content: "Preparar", status: "completed" },
           { content: "Revisar", status: "completed" },

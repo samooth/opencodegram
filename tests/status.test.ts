@@ -327,6 +327,29 @@ describe("finished card collapses reasoning regardless of profile", () => {
   });
 });
 
+describe("todo checklist in the card", () => {
+  test("renders the remembered todos as a checklist in the card", async () => {
+    const published: any[] = [];
+    const transcript = { publish: async (_c: number, _s: any, o: any) => { published.push(o); return 1; }, addBlock: () => {}, refloat: async () => 1 } as any;
+    const todos = [
+      { content: "Preparar", status: "completed", priority: "medium" },
+      { content: "Revisar", status: "in_progress", priority: "medium" },
+      { content: "Terminar", status: "pending", priority: "medium" },
+    ];
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}), getSettings: () => ({ ...DEFAULT_SETTINGS }) as any,
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => todos } as any, transcript,
+    } as any);
+    await status.publishCard(7, makeSession({ statusFinished: true }));
+    const html = published[0]?.extraTop ?? "";
+    expect(html).toContain("📋 Tareas (1/3)");
+    expect(html).toContain("✅ Preparar");
+    expect(html).toContain("🔄 Revisar");
+    expect(html).toContain("⬜ Terminar");
+  });
+});
+
 describe("answer visible in the finished card", () => {
   test("answer appears after shell virtual with state by the prompt", async () => {
     const { createTurnActivity, recordThought } = await import("../src/activity.js");
