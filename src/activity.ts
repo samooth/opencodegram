@@ -6,7 +6,7 @@
  * extra messages or callbacks are needed.
  */
 import { isBusCallText, isBusToolName } from "./busplugin.js";
-import { esc, executeCodeSummary, stripAgentMonologue } from "./util.js";
+import { esc, executeCodeSummary, isFormTool, stripAgentMonologue } from "./util.js";
 import { describeToolInput } from "./editutil.js";
 import type { CardVerbosity } from "./settings.js";
 
@@ -22,6 +22,8 @@ export type ActivityEntry = {
   ok?: boolean;
   open: boolean;
   toolId?: string;
+  /** Original tool name, needed to recognize forms after labelFor(). */
+  toolName?: string;
 };
 
 export type TurnActivity = {
@@ -59,7 +61,7 @@ function labelFor(name: string, kind: ActivityKind): string {
     case "search": return name ? name.charAt(0).toUpperCase() + name.slice(1) : "Búsqueda";
     case "edit": return "Edición";
     case "shell": return "Shell";
-    default: return name || "Herramienta";
+    default: return isFormTool(name) ? "Formulario" : (name || "Herramienta");
   }
 }
 
@@ -127,10 +129,11 @@ export function recordTool(a: TurnActivity, name: string, input: string, opts: {
   return push(a, {
     kind,
     label: labelFor(name, kind),
-    detail: toolDetail(kind, input),
+    detail: isFormTool(name) ? input : toolDetail(kind, input),
     at,
     open: true,
     toolId: opts.toolId,
+    toolName: name,
   });
 }
 
@@ -163,6 +166,39 @@ function toolDetail(kind: ActivityKind, input: string): string {
   }
   const code = executeCodeSummary(input);
   return code || input;
+}
+
+type FormQuestion = { header?: unknown; question?: unknown; options?: unknown };
+
+function parseFormQuestions(input: string): FormQuestion[] | undefined {
+  try {
+    const parsed = JSON.parse(input) as { questions?: unknown };
+    if (Array.isArray(parsed?.questions)) return parsed.questions as FormQuestion[];
+  } catch {
+    // Not JSON — fall through to the generic tool detail.
+  }
+  return undefined;
+}
+
+/** Rich HTML for the form question and its options (already escaped inside). */
+function formDetailHtml(input: string, cap: number): string {
+  const qs = parseFormQuestions(input);
+  if (!qs?.length) return "";
+  const lines: string[] = [];
+  for (const q of qs.slice(0, 3)) {
+    const header = String(q.header ?? "").trim();
+    const text = String(q.question ?? "").trim();
+    lines.push(`<p>${header ? `<b>${esc(truncate(header, 60))}</b> · ` : ""}<i>${esc(truncate(text, Math.max(cap, 160)))}</i></p>`);
+    const options = Array.isArray(q.options) ? q.options : [];
+    for (const o of options.slice(0, 5)) {
+      const opt = o as { label?: unknown; description?: unknown };
+      const label = String(opt?.label ?? "").trim();
+      if (!label) continue;
+      const desc = String(opt?.description ?? "").trim();
+      lines.push(`<p>• ${esc(truncate(label, Math.max(cap, 140)))}${desc ? ` — ${esc(truncate(desc, 70))}` : ""}</p>`);
+    }
+  }
+  return lines.join("");
 }
 
 /** Replace the placeholder detail with the real input from session.tool.called. */
@@ -203,7 +239,8 @@ type ActivityBlock = { head: string; detail: string; expandable?: boolean };
 function entryHead(e: ActivityEntry, now: number, showOpen = true): string {
   const status = e.ok === true ? " ✅" : e.ok === false ? " ❌" : e.open && showOpen ? " ⏳" : "";
   const duration = fmtDuration(e.durationMs ?? Math.max(0, now - e.at));
-  return `${ICONS[e.kind]} <b>${esc(e.label)}</b> · ${duration}${status}`;
+  const icon = isFormTool(e.toolName ?? e.label) ? "📋" : ICONS[e.kind];
+  return `${icon} <b>${esc(e.label)}</b> · ${duration}${status}`;
 }
 
 function detailPara(text: string, detailCap: number): string {
@@ -249,6 +286,14 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
     const e = visible[i];
     if (e.kind === "shell" || e.kind === "thought" || e.kind === "edit" || e.label === "skill" || isBusCallText(e.detail) || isBusToolName(e.label)) { i++; continue; }
     if (e.kind === "read" || e.kind === "search") { i++; continue; }
+    if (isFormTool(e.toolName ?? e.label)) {
+      // Forms arrive as a JSON `questions` array: render the question and its
+      // options instead of dumping the raw payload into the card.
+      const form = formDetailHtml(e.detail, detailCap);
+      blocks.push({ head: entryHead(e, now, expanded), detail: form || detailPara(e.detail, detailCap) });
+      i++;
+      continue;
+    }
     blocks.push({ head: entryHead(e, now, expanded), detail: detailPara(e.detail, detailCap) });
     i++;
   }

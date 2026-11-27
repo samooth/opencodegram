@@ -5,6 +5,7 @@ import type { TranscriptManager } from "./transcriptmanager.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
 import { describeToolInput, isEditTool, isTodoTool, editStats } from "./editutil.js";
+import { isFormTool } from "./util.js";
 import { contextUsage, esc, isAgentMonologue, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
 import { isBusCallText, isBusToolName, parseBusEnvelope } from "./busplugin.js";
@@ -382,7 +383,7 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
   for (const d of details) {
     // Skills are shown by renderSkillBlock and todos by renderTodos; neither
     // belongs in the virtual shell transcript.
-    if ((d.name || "").toLowerCase() === "skill" || isTodoTool(d.name)) continue;
+    if ((d.name || "").toLowerCase() === "skill" || isTodoTool(d.name) || isFormTool(d.name)) continue;
     if (toCommand(d.name, d.input) === "bus") continue;
     const cmd = toCommand(d.name, d.input);
     const existing = counts.get(cmd);
@@ -441,7 +442,7 @@ export function renderSkillBlock(details: ChatSession["toolCallDetails"]): strin
 export function renderToolStats(details: ChatSession["toolCallDetails"]): string {
   // Todo bookkeeping gets its own checklist line; counting it as an edit or
   // as a shell command made the bottom stats misleading.
-  const visible = details.filter((d) => !isTodoTool(d.name));
+  const visible = details.filter((d) => !isTodoTool(d.name) && !isFormTool(d.name));
   if (!visible.length) return "";
   const count = (pred: (d: ChatSession["toolCallDetails"][number]) => boolean): number =>
     visible.filter(pred).length;

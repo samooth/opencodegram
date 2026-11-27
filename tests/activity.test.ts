@@ -11,6 +11,30 @@ import {
   updateToolDetail,
 } from "../src/activity.js";
 
+describe("form activity", () => {
+  test("renders a question form as question + options, not raw JSON", () => {
+    const a = createTurnActivity();
+    const input = JSON.stringify({ questions: [{
+      header: "Enfoque",
+      question: "¿Cómo quieres usar ARTEX para seguir analizando bnbwebs.com?",
+      options: [
+        { label: "Metodología ARTEX sin desplegar", description: "Rápido, sin coste" },
+        { label: "Desplegar infraestructura" },
+      ],
+    }] });
+    recordTool(a, "question", input, { toolId: "f1" });
+    finishTool(a, "f1", true, { at: 16_500 });
+    const out = renderActivity(a, "medium", true, 16_500, true);
+    expect(out).toContain("📋");
+    expect(out).toContain("Formulario");
+    expect(out).toContain("Enfoque");
+    expect(out).toContain("¿Cómo quieres usar ARTEX");
+    expect(out).toContain("Metodología ARTEX sin desplegar");
+    expect(out).toContain("• Desplegar infraestructura");
+    expect(out).not.toContain('{"questions"');
+  });
+});
+
 describe("turn activity counters", () => {
   test("renders nothing when no activity was recorded", () => {
     expect(renderActivity(createTurnActivity(), "medium", false)).toBe("");

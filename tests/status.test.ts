@@ -350,6 +350,32 @@ describe("todo checklist in the card", () => {
   });
 });
 
+describe("live answer section", () => {
+  test("accumulates completed and streaming answers below the shell with a toggle", async () => {
+    const published: any[] = [];
+    const transcript = { publish: async (_c: number, _s: any, o: any) => { published.push(o); return 1; }, addBlock: () => {}, refloat: async () => 1 } as any;
+    const blocks = [
+      { kind: "answer", html: "<p>primera respuesta</p>", text: "primera respuesta", at: 1, turn: 1 },
+      { kind: "answer", html: "<p>segunda respuesta</p>", text: "segunda respuesta", at: 2, turn: 1 },
+    ];
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, showPartialText: true, showTools: true }) as any,
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: { lastPromptBySession: new Map(), getTodos: () => [], getTranscript: () => blocks } as any,
+      transcript,
+    } as any);
+    const s = makeSession({ statusFinished: false, statusMessageId: 5, turnSeq: 1, buffer: "respuesta en curso" });
+    await status.publishCard(7, s);
+    const html = published[0]?.extraTop ?? "";
+    expect(html).toContain('data="block:answer:ses_x"');
+    expect(html).toContain("primera respuesta");
+    expect(html).toContain("segunda respuesta");
+    expect(html).toContain("respuesta en curso");
+    expect(html.indexOf("💬 Respuesta")).toBeLessThan(html.indexOf("respuesta en curso"));
+  });
+});
+
 describe("answer visible in the finished card", () => {
   test("answer appears after shell virtual with state by the prompt", async () => {
     const { createTurnActivity, recordThought } = await import("../src/activity.js");

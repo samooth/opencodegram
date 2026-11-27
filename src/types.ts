@@ -119,10 +119,11 @@ export type ChatSession = {
   /** Last publish timestamp + coalesced retry for central throttle. */
   _lastPublishAt?: number;
   _publishScheduled?: boolean;
-  /** Whether a live-card block is collapsed (reasoning / thoughts / shell). */
+  /** Whether a live-card block is collapsed (reasoning / thoughts / shell / answer). */
   shellCollapsed?: boolean;
   reasoningCollapsed?: boolean;
   thoughtsCollapsed?: boolean;
+  answerCollapsed?: boolean;
   /** Cumulative tool-call counters for the session (dashboard/stats). */
   toolStats?: { total: number; success: number; failed: number };
   /** Last final answer text, kept for "view full" actions. */

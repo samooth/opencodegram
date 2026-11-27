@@ -47,6 +47,31 @@ function makeDeps() {
   return deps;
 }
 
+describe("use: session picker", () => {
+  test("does not publish a second empty card after connecting", async () => {
+    const deps = makeDeps();
+    let published = 0;
+    let shown = 0;
+    const sent: any[] = [];
+    let refloated = 0;
+    const cs = { sessionId: "ses_connect", buffer: "", toolCallDetails: [], stopped: false } as any;
+    deps.sessions.activateSession = async () => cs;
+    deps.sessions.syncTopicTitle = async () => {};
+    deps.store.routeKey = () => "123";
+    deps.pendingGroupPrompts = new Map();
+    deps.transcript = { refloat: async () => { refloated++; } };
+    deps.status.publishCard = async () => { published++; };
+    deps.panels.showStatus = async () => { shown++; };
+    deps.tg.sendRichMessage = async (...args: any[]) => { sent.push(args); return { message_id: 9 }; };
+    const cq = { id: "1", from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data: "use:ses_connect" } as any;
+    await handleCallback(deps, cq);
+    expect(refloated).toBe(1);
+    expect(published).toBe(0);
+    expect(sent).toHaveLength(0);
+    expect(shown).toBe(1);
+  });
+});
+
 describe("form cancellation", () => {
   test("cancel closes the Telegram form AND cancels it in OpenCode", async () => {
     const deps = makeDeps();

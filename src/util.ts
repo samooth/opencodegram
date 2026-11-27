@@ -1,3 +1,9 @@
+/** OpenCode's `question` tool renders its own form block, never raw JSON. */
+export function isFormTool(name: string): boolean {
+  const n = (name || "").toLowerCase();
+  return n === "question" || n === "form" || n.includes("form_") || n.includes("_form");
+}
+
 export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

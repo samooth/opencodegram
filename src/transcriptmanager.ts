@@ -175,9 +175,31 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // Normally the compact card fits a phone screen (≤1.200 chars). When the
     // final answer is embedded, raise the budget so clampText never cuts it.
     const LAYOUT_LIMIT = view.answerInCard ? RICH_MESSAGE_LIMIT : view.compact ? 1200 : RICH_MESSAGE_LIMIT;
-    const all = opts.hideKinds?.length
+    const rawBlocks = opts.hideKinds?.length
       ? blocksOf(s).filter((b) => !opts.hideKinds!.includes(b.kind))
       : blocksOf(s);
+    // Canonical reading order inside a turn. The answer is recorded at
+    // text.ended, while reasoning/edit blocks are added later by finishStatus,
+    // so the stored order used to be answer → thinking → tools. Sort a COPY so
+    // the card always shows reasoning → tools → answer (below the shell).
+    const kindOrder: Record<string, number> = { thinking: 0, tools: 1, answer: 2, meta: 3 };
+    const sorted = [...rawBlocks].sort((a, b) => {
+      const ta = a.turn ?? -1;
+      const tb = b.turn ?? -1;
+      if (ta !== tb) return ta - tb;
+      return (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9);
+    });
+    // pageBreak was stamped on whichever block arrived first (the answer),
+    // so after sorting it must move to the first block of each turn or the
+    // reasoning/tools page would be split away from the answer. Copy the
+    // blocks: the pagination cache lives on the stored array itself.
+    const seenTurns = new Set<number>();
+    const all = sorted.map((b) => {
+      if (b.turn === undefined) return { ...b };
+      const first = !seenTurns.has(b.turn);
+      seenTurns.add(b.turn);
+      return { ...b, pageBreak: first };
+    });
     let pages = paginateTranscript(all);
     // When the answer is embedded in the strip, pages that end up holding only
     // the answer block would render as an empty extra page. Drop them so the

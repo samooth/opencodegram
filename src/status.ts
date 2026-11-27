@@ -3,10 +3,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatSession, CardView } from "./types.js";
-import { pendingEditsKey } from "./store.js";
+import { pendingEditsKey, type SessionStore } from "./store.js";
 import type { ChatSettings } from "./settings.js";
 import { isEditTool, isTodoTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
-import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripAgentMonologue, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
+import { clampText, colorDiff, copyTextButton, esc, isFormTool, markdownToHtml, sessionHeader, stripAgentMonologue, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { RICH_MESSAGE_LIMIT, STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
 import { dtrace, debugTraceEnabled } from "./debuglog.js";
@@ -18,6 +18,28 @@ import { renderTodos } from "./todos.js";
 import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, renderBusBlock, renderSkillBlock, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
+
+/**
+ * Accumulate every answer produced in the current turn. OpenCode ends a
+ * streamed step before each tool call, so `s.buffer` alone shows only the last
+ * fragment; the completed fragments are already stored as `answer` transcript
+ * blocks. Showing both keeps the whole answer visible while the turn works.
+ */
+function liveAnswerHtml(s: ChatSession, store: SessionStore | undefined, cap: number): { html: string; preview: string } | undefined {
+  const blocks = store?.getTranscript?.(s.sessionId) ?? [];
+  const parts = blocks
+    .filter((b) => b.kind === "answer" && (b.turn === undefined || b.turn === s.turnSeq))
+    .map((b) => b.text.trim())
+    .filter(Boolean);
+  const streaming = s.buffer?.trim() ?? "";
+  if (streaming && !parts.some((p) => streaming.startsWith(p.slice(0, 100)))) parts.push(streaming);
+  const combined = parts.join("\n\n").trim();
+  if (!combined) return undefined;
+  return {
+    html: renderPartialText(combined, cap),
+    preview: combined.split("\n").map((l) => l.trim()).find(Boolean) ?? "",
+  };
+}
 
 export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdits, rememberCot, rememberStatusMessage, forgetStatusMessage, store, transcript, dashboard, mcpEvents, ocActiveSessionIds }: StatusDeps) {
   /**
@@ -115,7 +137,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // ⚡ Virtual shell: visible while working (unless showShell is off), even
     // when empty, so the tool transcript slot is there from the first token.
     if (settings.showShell) {
-      const shellDetails = s.toolCallDetails.filter((d) => (d.name || "").toLowerCase() !== "skill" && !isTodoTool(d.name));
+      const shellDetails = s.toolCallDetails.filter((d) => (d.name || "").toLowerCase() !== "skill" && !isTodoTool(d.name) && !isFormTool(d.name));
       const count = shellDetails.length;
       if (count) {
         const collapsed = s.shellCollapsed === true;
@@ -135,10 +157,18 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         lines.push('<tg-button-row align="left"><tg-button type="callback_data" style="link" data="panel:bg">Enviar comando a segundo plano</tg-button></tg-button-row>');
       }
     }
-    // Partial answer LAST among the work blocks: reasoning → thoughts → shell
-    // → answer, the same reading order as the finished card.
-    if (settings.showPartialText && s.buffer.trim()) {
-      lines.push(renderPartialText(s.buffer, partialCap));
+    // Respuesta LAST among the work blocks: reasoning → thoughts → shell →
+    // answer. Unlike the old one-shot partial text, this section ACCUMULATES
+    // every streamed answer in the turn (each tool call ends one step and
+    // resets the buffer), so the answer never disappears mid-turn.
+    if (settings.showPartialText) {
+      const answerHtml = liveAnswerHtml(s, store, partialCap);
+      if (answerHtml) {
+        const collapsed = s.answerCollapsed === true;
+        lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:answer:${s.sessionId}">💬 Respuesta ${collapsed ? "▸" : "▾"}</tg-button></tg-button-row>`);
+        if (!collapsed) lines.push(answerHtml.html);
+        else if (answerHtml.preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(answerHtml.preview, 140))}</i></blockquote>`);
+      }
     }
     // Skills get their own line at the bottom, with a puzzle-piece icon.
     const skills = renderSkillBlock(s.toolCallDetails);
@@ -184,7 +214,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const doneTelemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
     const doneState = s.stopped ? "⏹" : s.lastTurnError ? "⚠️" : "✅";
     if (donePrompt?.trim()) lines.push(`<p><i>${doneState} ${esc(truncateMiddle(donePrompt.trim(), 100))}</i></p>`);
-    else lines.push(`<p><i>${doneState}</i></p>`);
+    else lines.push(`<p><i>${doneState} ${s.stopped ? "Parado" : s.lastTurnError ? "Falló" : "Lista"}</i></p>`);
     // One state indicator only: the bold receipt at the bottom.
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
@@ -216,7 +246,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
 
     // 3) Shell virtual (all toolcalls as `$ <cmd>` lines).
-    const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill" && !isTodoTool(detail.name));
+    const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill" && !isTodoTool(detail.name) && !isFormTool(detail.name));
     if (settings.showTools && settings.showShell && virtualDetails.length) {
       const sc = s.shellDoneCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:shell:${s.sessionId}">⚡ Shell (${virtualDetails.length}) ${sc ? "▸" : "▾"}</tg-button></tg-button-row>`);
@@ -389,6 +419,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // blocks. Honour them up front so the card never hides details behind
     // "▾ Detalles" when the user already asked to see them in Settings.
     s.activityExpanded = settings.showThinking || settings.showShell || settings.showTools;
+    // Each turn starts with the answer visible: the user asked to follow it
+    // live instead of watching it vanish on every tool call.
+    s.answerCollapsed = false;
     s.readingMode = false;
     s.cardMenuExpanded = false;
     s.lastViewedTurn = undefined;
@@ -548,7 +581,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
 
       let shellBlock = "";
-      const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill" && !isTodoTool(detail.name));
+      const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill" && !isTodoTool(detail.name) && !isFormTool(detail.name));
       if (settings.showTools && settings.showShell && virtualDetails.length) {
         const shellText = renderVirtualShell(virtualDetails, 180);
         shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;

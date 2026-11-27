@@ -132,6 +132,22 @@ describe("transcript manager", () => {
     return { store, transcript, sent, edited };
   }
 
+describe("block reading order", () => {
+  test("renders reasoning and tools before the answer even when they were recorded later", () => {
+    const { transcript } = makeHarness();
+    const s = makeSession({ turnSeq: 1, statusFinished: true });
+    // Real order: answer at text.ended, thinking/tools added by finishStatus.
+    transcript.addBlock(s, "answer", "<p>LA RESPUESTA</p>", "LA RESPUESTA");
+    transcript.addBlock(s, "thinking", "<p>EL RAZONAMIENTO</p>", "EL RAZONAMIENTO");
+    transcript.addBlock(s, "tools", "<p>LAS HERRAMIENTAS</p>", "LAS HERRAMIENTAS");
+    const page = transcript.renderPage(s, { extraTop: "", showResources: false });
+    expect(page).toBeDefined();
+    const html = page!.html;
+    expect(html.indexOf("EL RAZONAMIENTO")).toBeLessThan(html.indexOf("LAS HERRAMIENTAS"));
+    expect(html.indexOf("LAS HERRAMIENTAS")).toBeLessThan(html.indexOf("LA RESPUESTA"));
+  });
+});
+
   test("publish reuses the same message instead of sending one per block", async () => {
     const { transcript, sent, edited } = makeHarness();
     const s = makeSession();

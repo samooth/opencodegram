@@ -1053,7 +1053,7 @@ async function handleBlockToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatI
     await deps.status.publishCard(chatId, s).catch(() => {});
     return;
   }
-  const m = data.match(/^block:(reasoning|thoughts|shell):(.+)$/);
+  const m = data.match(/^block:(reasoning|thoughts|shell|answer):(.+)$/);
   if (!m) return;
   await deps.tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   const s = deps.store.findSessionById(m[2]);
@@ -1061,6 +1061,7 @@ async function handleBlockToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatI
   const block = m[1];
   if (block === "reasoning") s.reasoningCollapsed = !s.reasoningCollapsed;
   else if (block === "thoughts") s.thoughtsCollapsed = !s.thoughtsCollapsed;
+  else if (block === "answer") s.answerCollapsed = !s.answerCollapsed;
   else s.shellCollapsed = !s.shellCollapsed;
   const refresh = s.statusFinished ? deps.status.publishCard(chatId, s) : deps.status.updateStatus(chatId, s, true);
   await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -1219,10 +1220,13 @@ export const CALLBACK_DISPATCH: Record<string, CallbackHandler> = {
         // this topic: refloat so this session gets its OWN message, preserving
         // the old one as static history (no mixing of two sessions in one card).
         if (deps.transcript?.refloat) {
+          // Keep the previous card as static history. Do NOT publish here: a
+          // freshly activated session has no prompt/answer in local state yet,
+          // so publishCard would create a second, nearly empty card before
+          // showStatus() replaces the tapped message with the status panel.
           await deps.transcript.refloat(chatId, cs, { keep: true });
           cs.transcriptMessageId = undefined;
           cs.statusMessageId = undefined;
-          await deps.status.publishCard(chatId, cs).catch((err) => console.warn("[callbacks] refloat publish", err?.message ?? err));
         }
       }
       // A message may have been waiting for the user to pick a session.
