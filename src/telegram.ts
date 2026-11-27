@@ -313,7 +313,7 @@ export class TelegramClient {
       : html;
     const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(tagged));
     if (isHeaderOnlyRichMessage(safe)) {
-      console.warn("[telegram] skipped header-only message", { chatId });
+      dtrace("tg", "skipHeaderOnly", { chatId, head: safe.slice(0, 140), from: (new Error().stack ?? "").split("\n")[2]?.trim().slice(0, 120) });
       return Promise.resolve({ message_id: 0 } as TelegramMessage);
     }
     const body = { chat_id: chatId, rich_message: { html: safe }, ...opts };
@@ -357,7 +357,7 @@ export class TelegramClient {
     // Never blank an existing card down to just its header: Telegram then
     // shows an "empty" message. Keep the previous content instead.
     if (isHeaderOnlyRichMessage(safe)) {
-      console.warn("[telegram] skipped header-only edit", { chatId, messageId });
+      dtrace("tg", "skipHeaderOnlyEdit", { chatId, messageId, head: safe.slice(0, 140), from: (new Error().stack ?? "").split("\n")[2]?.trim().slice(0, 120) });
       return Promise.resolve(undefined);
     }
     // editMessageText must not carry message_thread_id: Telegram rejects it
