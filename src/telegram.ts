@@ -85,6 +85,21 @@ function sanitizeUtf8(input: string): string {
   return out;
 }
 
+/**
+ * A rich message with nothing but the session header (and the optional debug
+ * id) renders as an "empty" message in Telegram. Detect it before sending so
+ * no caller can publish one by accident.
+ */
+export function isHeaderOnlyRichMessage(html: string): boolean {
+  const body = html
+    .replace(/<p><i>#L\d+<\/i><\/p>/g, "")
+    .replace(/<tg-button-row[\s\S]*?<\/tg-button-row>/g, "")
+    .trim();
+  const paragraphs = (body.match(/<p\b/g) ?? []).length;
+  if (paragraphs !== 1 || /<\/?(?:blockquote|h[1-6]|pre|table|ul|ol|hr)\b/i.test(body)) return false;
+  return /ses_[a-z0-9]+/i.test(body) && body.replace(/<[^>]+>/g, "").trim().length <= 120;
+}
+
 function stripDraftOnlyRichBlocks(html: string): string {
   // <tg-thinking> is valid only in drafts; never send in finals/edits.
   return html.replace(/<tg-thinking\b[^>]*>[\s\S]*?<\/tg-thinking>/gi, "").replace(/<tg-thinking\b[^>]*\/>/gi, "");
@@ -297,6 +312,10 @@ export class TelegramClient {
       ? (() => { const localId = nextLocalId(); return `<p><i>${localId}</i></p>\n${html}<p><i>${localId}</i></p>`; })()
       : html;
     const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(tagged));
+    if (isHeaderOnlyRichMessage(safe)) {
+      console.warn("[telegram] skipped header-only message", { chatId });
+      return Promise.resolve({ message_id: 0 } as TelegramMessage);
+    }
     const body = { chat_id: chatId, rich_message: { html: safe }, ...opts };
     return this.call<TelegramMessage>("sendRichMessage", body).catch(async (err) => {
       const msg = String(err);
