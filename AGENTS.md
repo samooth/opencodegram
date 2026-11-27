@@ -243,11 +243,12 @@ In that mode cards carry `#L<id>` markers at head and tail to correlate a
 Telegram message with its log lines.
 
 - Wired at startup in `src/index.ts`; passed into deps as `sessionTrace`.
-- Existing breadcrumbs cover the whole prompt path: `message.audit` (message
-  received), `message.consumed` (reason: `awaitingReason` / `awaitingPermissionAdd`
-  / `media` / `command`), `message.resolved` (session/route resolution),
-  `prompt.dispatch` (sent to OpenCode), `route.*`, `turn.final`,
-  `text.ended.*`, `[events] [step.failed]`, etc.
+- Existing `sessionTrace` breadcrumbs cover the prompt path: `message.audit`
+  (message received), `message.consumed` (reason: `awaitingReason` /
+  `awaitingPermissionAdd` / `media` / `command`), `message.resolved`
+  (session/route resolution), `prompt.dispatch` (sent to OpenCode), `route.*`
+  and `turn.final`. The `text.ended.*`, `send.final` and `[events] [step.failed]`
+  lines come from `logger.breadcrumb` → `pm2 logs`, not from `sessions.log`.
 - To trace a new code path, call `deps.sessionTrace?.("event.name", { key: value })`
   at each decision/early-return point. Keep fields small and scalar (no raw
   text/media). Never log tokens or PII.

@@ -15,7 +15,7 @@ import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, renderBusBlock, renderSkillBlock, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderLiveAnswer, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, renderBusBlock, renderSkillBlock, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -49,7 +49,7 @@ function liveAnswerHtml(s: ChatSession, store: SessionStore | undefined, cap: nu
   const combined = parts.join("\n\n").trim();
   if (!combined) return undefined;
   return {
-    html: renderPartialText(combined, cap),
+    html: renderLiveAnswer(combined, cap),
     preview: combined.split("\n").map((l) => l.trim()).find(Boolean) ?? "",
   };
 }

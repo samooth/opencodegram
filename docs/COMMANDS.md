@@ -25,16 +25,18 @@
 
 ## Settings and permissions
 
-Both commands simply open a **button panel**: every toggle, role and maintenance
-action can be performed by tapping buttons (including `🔐 Permisos`, `➕ Añadir
-usuario` and `🗄 Datos`). The argument forms below remain as a fallback.
+`/settings` opens a button panel; it takes no arguments. Roles and maintenance
+actions are also reachable by button (`🔐 Permisos`, `➕ Añadir usuario`, `🗄 Datos`).
 
-- `/settings` — show and toggle bot behavior per chat (with quick profiles):
-  - **Mode & delivery**: `displayMode` (`unified` pinned dashboard M1 + conversation M2, or `flexible`), card behavior (`fija (edita en sitio)` / `única (borra anterior)` / `nueva (conserva anterior)`: each turn gets its own card created immediately with live streaming; `fija` keeps editing the same card), long-answer delivery (`en tarjeta` / `mensaje aparte` / `auto`) and threshold.
-  - **Profiles**: `Unificado`, `Unificado+msg`, `Flexible`.
-  - **Visualization**: thinking/tools/COT/latest thought & tool, token speed, partial text, compact final, session name/topic options.
-  - **Shell, files, voice, resources**: shell/tool input, auto artifacts, preview lines, diff style, voice transcription, resource usage/history.
-  - In unified mode, M2 streams the latest thought at the bottom and long answers can be opened in full with **`📄 Ver completo`** (or delivered as separate rich-text messages, split at markdown section boundaries).
+- `/settings` — per-chat behavior:
+  - **Presets**: `Minimal`, `Balanceado`, `Detallado`, `Terminal`.
+  - **Display**: `displayMode` (`unified` = pinned dashboard M1 + conversation
+    M2, or `flexible`), card behavior (`fixed` / `refloat` / `refloat_keep`),
+    answer-in-card, sections expanded, TUI prompts and locale.
+  - **Card details**: resources, theme, diff style, preview/history, token speed,
+    compact card, thinking/tool toggles and celebration.
+  - In unified mode, M2 streams the live strip; long answers can be opened with
+    **`📄 Ver completo`** or delivered as separate messages when configured.
 - `/permissions` — granular ACLs for the current thread/topic (admin only):
   `readonly on|off`, `inherit on|off`, `add @usuario|id [operator|admin]`,
   `remove @usuario|id`. Users are shown as `@username` in the panel; the bot
@@ -105,10 +107,8 @@ documents.
 
 - `/context` — token window, usage and recent messages.
 - `/search <término>` — busca en el historial de la sesión y muestra resultados con página y highlight.
-- `/sync` — show the session digest: metadata header (model, directory,
-  message/tool counts), the last 6 messages rendered in full with truncation
-  hints, and older messages as a compact one-line timeline; long digests are
-  split into several messages instead of being silently clamped.
+- `/sync` — show a single card with the last turn of the session (header,
+  prompt and last answer), the same layout used by **Conectar**.
 - `/compact` — compact session history.
 - `/usage` — global usage and cost.
 - `/vcs` — branch and changed-file count.

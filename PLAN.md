@@ -2,8 +2,9 @@
 
 > **Note:** This is the original proposal (v1.1). The shipped implementation is
 > a Bun + TypeScript daemon (see `README.md`, `docs/ARCHITECTURE.md` and
-> `AGENTS.md`); it uses JSON persistence under `data/`, not SQLite, and does
-> not ship the OpenCode plugin/TUI/embedded host described below. Treat this
+> `AGENTS.md`); it uses a single SQLite database under `data/` (with JSON
+> mirror/migration) and does not ship the OpenCode plugin/TUI/embedded host
+> described below. Treat this
 > document as historical design context. Environment-specific values in examples
 > are placeholders only.
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createStatusManager } from "../src/status.js";
-import { renderPartialText } from "../src/status-render.js";
+import { renderPartialText, renderToolStats } from "../src/status-render.js";
 import { DEFAULT_SETTINGS } from "../src/settings.js";
 import type { ChatSession } from "../src/types.js";
 
@@ -350,6 +350,17 @@ describe("todo checklist in the card", () => {
   });
 });
 
+describe("tool stats robustness", () => {
+  test("does not throw on plain-text tool input", () => {
+    const stats = renderToolStats([
+      { id: "1", name: "bash", input: "pytest -q", status: "success" },
+      { id: "2", name: "read", input: "README.md", status: "success" },
+    ] as any);
+    expect(stats).toContain("🔧 2");
+    expect(stats).toContain("📖1");
+  });
+});
+
 describe("subagents in the card", () => {
   test("lists how many and which child sessions are working", async () => {
     const published: any[] = [];
@@ -403,6 +414,8 @@ describe("live answer section", () => {
     expect(html).toContain("segunda respuesta");
     expect(html).toContain("respuesta en curso");
     expect(html.indexOf("💬 Respuesta")).toBeLessThan(html.indexOf("respuesta en curso"));
+    expect(html).not.toContain("<pre>");
+    expect(html).not.toContain("escribiendo…");
   });
 });
 

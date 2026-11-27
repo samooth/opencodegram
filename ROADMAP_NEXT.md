@@ -57,9 +57,9 @@
 
 ### A. Robustez y observabilidad
 - [ ] Graceful degradation si OpenCode cae: notificar, reintentar y no colgar.
-- [ ] Daemon persistente para Whisper (diseñar según entorno).
+- [x] Daemon persistente para Whisper (`whisper_daemon.py`, configurable por env).
 - [ ] Coalescing de deltas (publicar cada 500 ms en vez de cada delta).
-- [ ] Caché LRU de lecturas recientes para no repetir I/O.
+- [x] Caché LRU de lecturas recientes (`src/files/read.ts`).
 - [ ] Exportar rango de turnos (desde/hasta turno N).
 - [ ] Métricas de latencia de transcripción.
 - [ ] Ampliar logging: cubrir los `.catch` restantes en rutas de archivo/media.
@@ -67,12 +67,12 @@
 ### B. UX del card y sesiones
 - [ ] Secciones colapsables por sesión (no globales).
 - [ ] `/retry` con selección de turno.
-- [ ] `/search` sobre prompts de usuario (hoy solo bloques).
-- [ ] Resumen automático de sesión para el título del topic.
-- [ ] Modo solo lectura para grupos.
+- [x] `/search` sobre prompts de usuario y bloques.
+- [x] Resumen automático de sesión para el título del topic.
+- [x] Modo solo lectura para grupos (ACL por topic).
 - [ ] Preview de imágenes en el card.
 - [ ] Progreso de descarga para archivos grandes.
-- [ ] Paginación de botones del card (>56 páginas).
+- [x] Paginación de botones del card (>56 páginas).
 - [ ] Adaptación de tema claro/oscuro a preferencias de Telegram.
 
 ### C. Seguridad (residuales)
@@ -92,7 +92,7 @@
 - [x] Helper `jsonRead`/`jsonWrite` con migración transparente desde `data/*.json` (espejo JSON como backup, external edits ganan).
 - [x] Migrar `permissions.ts` a la BD central (incluye importación de `permissions.db` 0.3.x y `permissions.json`).
 - [x] Migrar `settings.ts`, `store.ts` y `updates.ts` al helper SQLite.
-- [x] Tests `tests/db.test.ts`: migración JSON/DB legada, persistencia entre instancias, espejo y estadísticas (8 tests).
+- [x] Tests `tests/db.test.ts`: migración JSON/DB legada, persistencia entre instancias, espejo y estadísticas (9 tests).
 - [x] Panel "🗄 Datos" accesible por botón desde el panel principal (sin `/comandos`).
 - [x] Callbacks `db:info`, `db:refresh`, `db:vacuum` (admin), `db:back` con render en el mismo mensaje.
 - [x] Convertir los comandos del bot en botones `botcmd:` dentro de `⚡ Comandos` (peligrosos excluidos).

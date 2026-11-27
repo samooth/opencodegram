@@ -43,7 +43,7 @@
 | `logger.ts` | Structured logging |
 | `mcp.ts` | MCP server/resource bridge |
 | `metrics.ts` | Counters and error recording |
-| `ops.ts` | Health endpoint, metrics, disk guard |
+| `ops.ts` | Health endpoint, metrics, disk guard and private web app (`/app`) |
 | `ratethrottle.ts` | Adaptive per-chat edit throttle after Telegram 429s |
 | `transcribe.ts` | Local voice-note transcription |
 | `filebrowser.ts` | `/ls`, `/find`, `/read` rendering and inline navigation |
@@ -51,6 +51,18 @@
 | `vcs.ts` | VCS and worktree helpers |
 | `webhook.ts` | Optional webhook server |
 | `constants.ts` | Named intervals and limits |
+| `permissions.ts` | Per-thread/topic ACLs and @username resolution |
+| `config.ts` | Zod-validated environment configuration |
+| `doctor.ts` | Startup diagnostics (`bun run doctor`) |
+| `opencode.ts` | OpenCode HTTP bridge, models, sessions and cost |
+| `persist.ts` | Atomic JSON helpers (legacy migration source) |
+| `apitypes.ts`, `dangerous.ts` | Shared payload types and confirmation list |
+| `activity.ts` | Per-turn activity blocks (thoughts, reads, shells, forms) |
+| `syncview.ts`, `formui.ts` | One-card digest and interactive form rendering |
+| `stats.ts`, `widgets.ts` | Usage stats panel/report and Telegram widgets |
+| `webauth.ts` | Single-use codes and cookies for the private web app |
+| `whisper_daemon.py` | Persistent Whisper transcription daemon (SSE) |
+| `callbacks/history.ts`, `commands/*` | History actions and slash-command handlers |
 
 ## Reply-to routing
 

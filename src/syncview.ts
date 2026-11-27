@@ -230,7 +230,14 @@ export function buildLastTurnCard(
   const lastUser = [...items].reverse().find((i) => itemRole(i) === "user");
   const raw = lastUser?.text;
   const prompt = typeof raw === "string" ? raw.trim() : raw ? JSON.stringify(raw) : "";
-  if (prompt) lines.push(`<p><i>📝 ${esc(withHint(prompt, 300))}</i></p>`);
+  if (prompt) {
+    // withHint() already emits an <i> hint; escaping the whole result showed
+    // the literal tag in /sync and "Conectar" for long prompts.
+    const hinted = prompt.length > 300
+      ? `${esc(prompt.slice(0, 300))}\n<i>… (+${prompt.length - 300} caracteres)</i>`
+      : esc(prompt);
+    lines.push(`<p><i>📝 ${hinted}</i></p>`);
+  }
 
   const lastAnswer = [...items].reverse().find((i) => itemRole(i) === "assistant" && assistantText(i));
   const answer = lastAnswer ? assistantText(lastAnswer) : "";

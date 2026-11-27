@@ -1100,7 +1100,7 @@ const handleFormCreated: EventHandler = async (event, deps) => {
 const handleFormExternal: EventHandler = async (event, deps) => {
   const { tg, pendingForms, pendingFormsById } = deps;
   const e = event as { type: string; data?: Record<string, unknown> };
-  const formId = String(e.data?.id ?? e.data?.formID ?? "");
+  const formId = String((e.data?.form as { id?: unknown } | undefined)?.id ?? e.data?.id ?? e.data?.formID ?? "");
   const messageId = pendingFormsById.get(formId);
   if (messageId === undefined) return; // already answered from Telegram
   const state = pendingForms.get(messageId);
@@ -1301,7 +1301,8 @@ const handleTodoUpdated: EventHandler = async (event, deps) => {
   const e = event as { type: string; data?: Record<string, unknown> };
   const sessionId = (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined;
   const todos = todoItemsFrom(e.data?.todos);
-  if (!sessionId || !todos.length) return;
+  // An empty array is meaningful: the agent cleared the checklist.
+  if (!sessionId) return;
   store.rememberTodos(sessionId, todos);
   const chatId = store.resolveChatId(sessionId);
   const s = store.findSessionById(sessionId);
@@ -1326,8 +1327,9 @@ function rememberTodosFromTool(deps: EventsDeps, sessionId: string, d: Record<st
   const raw = Array.isArray(input.todos) ? input.todos
     : Array.isArray(metadata.todos) ? metadata.todos
     : undefined;
+  if (!Array.isArray(raw)) return false;
   const todos = todoItemsFrom(raw).filter((t) => t.content.length > 0);
-  if (!todos.length) return false;
+  // `todos: []` clears the checklist; only a missing payload is ignored.
   dtrace("todos", "from_tool", { sessionID: sessionId, name, count: todos.length });
   deps.store.rememberTodos(sessionId, todos);
   return true;

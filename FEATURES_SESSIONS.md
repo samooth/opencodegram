@@ -4,7 +4,7 @@
 > implemented in the current daemon; this document is kept for reference only.
 > See `docs/COMMANDS.md` and `docs/ARCHITECTURE.md` for the current behavior.
 
-Scope for the next OpenCodegram iteration: fork, rename, archive, delete, diff, context view, and compact.
+Original scope for the iteration that implemented fork, rename, archive, delete, diff, context view and compact.
 
 ## 1. Fork session
 

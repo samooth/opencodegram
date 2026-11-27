@@ -42,6 +42,23 @@ export function renderPartialText(raw: string, max: number): string {
   return `<p><i>💬 escribiendo…</i></p>\n<blockquote expandable>${esc(marker + body)}</blockquote>`;
 }
 
+/**
+ * Readable live answer for the 💬 Respuesta section. Unlike renderPartialText,
+ * this never applies the shell/code heuristic: an ordinary answer with a dash
+ * or a `|` must not turn into a `<pre><code>` block.
+ */
+export function renderLiveAnswer(raw: string, max: number): string {
+  const text = raw.trim();
+  if (!text) return "";
+  let body = text;
+  if (body.length > max) {
+    body = body.slice(0, max);
+    const cut = body.lastIndexOf("\n");
+    if (cut > max / 2) body = body.slice(0, cut);
+  }
+  return `<blockquote expandable>${markdownToHtml(body)}</blockquote>`;
+}
+
 export function parseShellCommand(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -457,9 +474,19 @@ export function renderToolStats(details: ChatSession["toolCallDetails"]): string
   };
   const failed = count((d) => d.status === "failed");
   const skills = count((d) => (d.name || "").toLowerCase() === "skill");
-  const bus = count((d) => isBusCallText(JSON.stringify((JSON.parse(d.input || "{}") as Record<string, unknown>).code ?? "")) || /^bus[_-]/i.test(d.name || ""));
+  // Tool inputs can be plain text (e.g. "pytest -q"), so never let a stats
+  // line throw: a SyntaxError here froze the card on its previous content.
+  const busCode = (input: string | undefined): string => {
+    try {
+      const parsed = JSON.parse(input || "{}") as Record<string, unknown>;
+      return typeof parsed?.code === "string" ? parsed.code : "";
+    } catch {
+      return input ?? "";
+    }
+  };
+  const bus = count((d) => isBusCallText(busCode(d.input)) || /^bus[_-]/i.test(d.name || ""));
   const parts = [
-    `🔧 ${details.length}`,
+    `🔧 ${visible.length}`,
     `⚡${count(n("shell"))}`,
     `📖${count(n("read"))}`,
     `✏️${count(n("edit"))}`,
@@ -615,6 +642,7 @@ export function renderTurnReceipt(input: TurnReceiptInput): string {
     const count = input.test.count !== undefined ? ` · ${input.test.count} ${mark}` : ` ${mark}`;
     lines.push(`🧪 <code>${esc(input.test.command)}</code>${count}`);
   }
+  if (!lines.length) return "";
   return `<p>${lines.join("<br/>")}</p>`;
 }
 

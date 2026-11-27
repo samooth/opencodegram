@@ -268,7 +268,7 @@ activity from Browse/Playwright is shown on the card. Enabling
 `experimental.todo` in the OpenCode config adds the 📋 task checklist to the
 card (opencodegram reads both `todo.updated` and `todowrite` events).
 
-## Troubleshooting
+### Browse troubleshooting
 
 - `docker compose exec opencode browse status` shows the relay, extension,
   pairing state and agent tabs.

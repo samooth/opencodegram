@@ -211,7 +211,13 @@ export class SessionStore {
       this.subagentsByParent.set(parentId, children);
     }
     const previous = children.get(childId);
-    children.set(childId, { title: title || previous?.title, at: previous?.at ?? Date.now() });
+    children.set(childId, { title: title || previous?.title, at: Date.now() });
+    // Bound the in-memory registry: old forks must not live forever.
+    const MAX_SUBAGENTS = 50;
+    if (children.size > MAX_SUBAGENTS) {
+      const oldest = [...children.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, children.size - MAX_SUBAGENTS);
+      for (const [id] of oldest) children.delete(id);
+    }
   };
 
   forgetSubagent = (parentId: string, childId: string): void => {
@@ -706,6 +712,8 @@ export class SessionStore {
 
   forgetSession = (sessionId: string) => {
     this.sessionsById.delete(sessionId);
+    for (const children of this.subagentsByParent.values()) children.delete(sessionId);
+    this.subagentsByParent.delete(sessionId);
     for (const [cid, cs] of this.sessionsByChat) if (cs.sessionId === sessionId) this.sessionsByChat.delete(cid);
     for (const [key, cs] of this.sessionsByThread) if (cs.sessionId === sessionId) this.sessionsByThread.delete(key);
     for (const [k, v] of this.activeSessionByRoute) if (v === sessionId) this.activeSessionByRoute.delete(k);

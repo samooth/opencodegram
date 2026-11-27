@@ -54,6 +54,36 @@ const DEFAULT_VIEW: CardView = { compact: false, reading: false, showResources: 
 
 const viewOf = (s: ChatSession, opts?: PublishOpts): CardView & PublishOpts => ({ ...DEFAULT_VIEW, ...(s.cardView ?? {}), ...(opts ?? {}) });
 
+/**
+ * Canonical reading order inside a turn: reasoning → tools → answer → meta.
+ * Answers are recorded at text.ended but reasoning/edit blocks arrive later
+ * from finishStatus, so the stored order is wrong. Returns a COPY with pageBreak
+ * on the first block of each turn; the cache lives on the stored array so
+ * pagination still benefits from its own cache.
+ */
+const orderedCache = new WeakMap<TranscriptBlock[], { len: number; lastAt: number; blocks: TranscriptBlock[] }>();
+function orderedBlocks(stored: TranscriptBlock[]): TranscriptBlock[] {
+  const lastAt = stored.length ? stored[stored.length - 1].at : 0;
+  const cached = orderedCache.get(stored);
+  if (cached && cached.len === stored.length && cached.lastAt === lastAt) return cached.blocks;
+  const kindOrder: Record<string, number> = { thinking: 0, tools: 1, answer: 2, meta: 3 };
+  const sorted = [...stored].sort((a, b) => {
+    const ta = a.turn ?? -1;
+    const tb = b.turn ?? -1;
+    if (ta !== tb) return ta - tb;
+    return (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9);
+  });
+  const seenTurns = new Set<number>();
+  const blocks = sorted.map((b) => {
+    if (b.turn === undefined) return { ...b };
+    const first = !seenTurns.has(b.turn);
+    seenTurns.add(b.turn);
+    return { ...b, pageBreak: first };
+  });
+  orderedCache.set(stored, { len: stored.length, lastAt, blocks });
+  return blocks;
+}
+
 export type TranscriptManager = ReturnType<typeof createTranscriptManager>;
 
 /**
@@ -178,28 +208,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     const rawBlocks = opts.hideKinds?.length
       ? blocksOf(s).filter((b) => !opts.hideKinds!.includes(b.kind))
       : blocksOf(s);
-    // Canonical reading order inside a turn. The answer is recorded at
-    // text.ended, while reasoning/edit blocks are added later by finishStatus,
-    // so the stored order used to be answer → thinking → tools. Sort a COPY so
-    // the card always shows reasoning → tools → answer (below the shell).
-    const kindOrder: Record<string, number> = { thinking: 0, tools: 1, answer: 2, meta: 3 };
-    const sorted = [...rawBlocks].sort((a, b) => {
-      const ta = a.turn ?? -1;
-      const tb = b.turn ?? -1;
-      if (ta !== tb) return ta - tb;
-      return (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9);
-    });
-    // pageBreak was stamped on whichever block arrived first (the answer),
-    // so after sorting it must move to the first block of each turn or the
-    // reasoning/tools page would be split away from the answer. Copy the
-    // blocks: the pagination cache lives on the stored array itself.
-    const seenTurns = new Set<number>();
-    const all = sorted.map((b) => {
-      if (b.turn === undefined) return { ...b };
-      const first = !seenTurns.has(b.turn);
-      seenTurns.add(b.turn);
-      return { ...b, pageBreak: first };
-    });
+    const all = orderedBlocks(rawBlocks);
     let pages = paginateTranscript(all);
     // When the answer is embedded in the strip, pages that end up holding only
     // the answer block would render as an empty extra page. Drop them so the
@@ -808,7 +817,7 @@ ${body}
 
   /** Navigate to a specific page of the transcript. */
   const goToPage = async (chatId: number, s: ChatSession, page: number): Promise<void> => {
-    const pages = paginateTranscript(blocksOf(s));
+    const pages = paginateTranscript(orderedBlocks(blocksOf(s)));
     if (!pages.length) return;
     const clamped = Math.min(Math.max(0, page), pages.length - 1);
     const shownTurn = turnOfPage(pages[clamped]);
@@ -1110,7 +1119,7 @@ ${body}
   };
 
   /** Total number of pages currently available. */
-  const pageCount = (s: ChatSession): number => paginateTranscript(blocksOf(s)).length;
+  const pageCount = (s: ChatSession): number => paginateTranscript(orderedBlocks(blocksOf(s))).length;
 
   /** Strip resources and buttons from a card that is no longer the active one. */
   const cleanupCard = async (chatId: number, messageId: number): Promise<void> => {

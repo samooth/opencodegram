@@ -110,15 +110,16 @@ sets `env_file: ".env"`. Extra process-level variables can be added to its
 | Group | Commands |
 | --- | --- |
 | Sessions | `/start`, `/help`, `/status`, `/session`, `/sessions`, `/running`, `/use`, `/new`, `/stop`, `/abort`, `/retry`, `/cancel`, `/fork`, `/rename`, `/archive`, `/unarchive`, `/delete`, `/deletesessions` |
-| Models | `/models`, `/model`, `/agents`, `/agent`, `/skill`, `/skills` |
+| Models | `/models`, `/model`, `/agents`, `/agent`, `/goal`, `/skill`, `/skills` |
 | Files | `/file`, `/ls`, `/find`, `/read`, `/tree`, `/zip` |
 | Session tools | `/diff`, `/context`, `/sync`, `/compact`, `/usage`, `/todos`, `/search` |
 | Project | `/vcs`, `/branches`, `/branch`, `/stage`, `/unstage`, `/commit`, `/worktrees`, `/worktree`, `/forms`, `/formreply`, `/mcp` |
-| Chat | `/settings`, `/permissions`, `/commands`, `/ops`, `/web`, `/buttons`, `/unlink` |
+| Chat | `/settings`, `/permissions`, `/commands`, `/ops`, `/web`, `/buttons`, `/unlink`, `/stats` |
+| Background | `/bg` (`/background`), `/widget` |
 
-Full reference: [docs/COMMANDS.md](docs/COMMANDS.md). All of them can also be
-launched from `🏠 Panel` → `⚡ Comandos` as buttons; dangerous commands are
-intentionally excluded from buttons.
+Full reference: [docs/COMMANDS.md](docs/COMMANDS.md). Almost all of them can
+also be launched from `🏠 Panel` → `⚡ Comandos` as buttons; dangerous commands
+are intentionally excluded from buttons.
 
 ## Tests
 

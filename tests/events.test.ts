@@ -87,6 +87,16 @@ describe("handleEvent", () => {
     expect(store.getTodos("ses_todo").every((t) => t.status === "completed")).toBe(true);
   });
 
+  test("an empty todo list clears the checklist", async () => {
+    const { deps, store } = makeDeps();
+    store.rememberTodos("ses_clear", [{ content: "Viejo", status: "pending", priority: "medium" }]);
+    await handleEvent({
+      type: "session.tool.called",
+      data: { sessionID: "ses_clear", id: "c1", name: "todowrite", input: { todos: [] } },
+    }, deps);
+    expect(store.getTodos("ses_clear")).toEqual([]);
+  });
+
   test("keeps supporting the legacy todo.updated event", async () => {
     const { deps, store } = makeDeps();
     await handleEvent({
