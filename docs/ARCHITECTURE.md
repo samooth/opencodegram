@@ -16,8 +16,11 @@
 | `store.ts` | Route tables and SQLite persistence (JSON mirror in `data/*.json`) |
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
-| `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
-| `todos.ts` | TODO checklist types and rich-HTML rendering |
+| `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs, stats, bus) |
+| `todos.ts` | OpenCode `todo` checklist types and rich-HTML rendering |
+| `busplugin.ts` | Agent-bus plugin detection, `bus_*` tool names and envelope parsing |
+| `debuglog.ts` | Numbered `dtrace` breadcrumbs (`DEBUG_TRACE_ENABLED`) |
+| `i18n.ts` | Process locale and card strings (`t()`) |
 | `dashboard.ts` | Pinned dashboard (M1) in unified mode: controls, model, resources, tool stats |
 | `transcript.ts` | Transcript blocks, splitting and pagination |
 | `transcriptmanager.ts` | Session card (M2): serialized publish, pagination, refloat/recovery |
@@ -120,7 +123,7 @@
 
 ## Tests
 
-`bun test` runs the Bun suite in `tests/` (403 tests across 42 files):
+`bun test` runs the Bun suite in `tests/` (483 tests across 48 files):
 
 - `db.test.ts` — SQLite migration (JSON + legacy `permissions.db`), persistence across instances, JSON mirror and stats.
 - `store.test.ts` — route/tab isolation, persistence and retirement.
@@ -169,13 +172,16 @@ Turn lifecycle (one card per turn):
    view of the current turn (the live strip plus this turn's blocks) instead of
    repeating the previous turn's page; ◀ browsing still reaches the full
    history. Blocks are tagged with the turn sequence and the first block of a
-   turn starts a fresh page.
+   turn starts a fresh page. The live strip carries a collapsible 💬 Respuesta
+   section that accumulates all streamed answers of the turn below the shell.
 3. `session.step.ended` with `finish !== "tool-calls"` (or `session.idle`) →
    `finishStatus`: thinking/tools are recorded in the transcript, Stop is
    removed and M2 is finalized; the finished card stays in place for
    pagination.
 4. `session.text.ended` → final answer is added to the transcript (restoring
-   the full paginated view); depending on settings/length it may also be sent
+   the full paginated view). Blocks are sorted reasoning → tools → answer at
+   render time so the answer stays below the shell even though it was recorded
+   before the later reasoning/edit blocks. Depending on settings/length it may also be sent
    as separate rich-text message(s) split at markdown section boundaries
    (`splitBySections`: one part per heading, code fences kept intact) and is
    available via **“Ver completo”**; topic title sync runs.

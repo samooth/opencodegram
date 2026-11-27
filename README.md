@@ -33,9 +33,8 @@ action is reachable from a button, so typing slash commands is optional.
 - **VCS & worktrees** — branch/status, diff, worktree create/remove/switch.
 - **Settings** — per-chat profiles and toggles for display/delivery, thinking,
   tools, shell, previews, artifacts, voice, compact final, card theme and
-  verbosity, plus a collapsible resource block and a compact activity summary
-  (`3 pensamientos · 3 lecturas · 1 herramienta ▾`, expandable in the same card
-  with per-file diff/read buttons).
+  verbosity, plus collapsible resource indicators and per-turn activity blocks
+  (thoughts, reads, shells, forms); counters live in a single footer line.
 - **SQLite & button-driven UI** — all persisted state lives in a single
   `data/opencodegram.db` (legacy JSON files are imported and kept as a mirror).
   `🏠 Panel` exposes sessions, models, files, status, settings, permissions and
@@ -44,12 +43,16 @@ action is reachable from a button, so typing slash commands is optional.
 - **Docker** — two-service stack (`opencode` + bot) with optional OpenCode Browse
   (real browser via extension) and always-on Playwright MCP (headless Chromium
   for web debugging). OpenCode pinned to 2.3.0.
-- **MCP events** — experimental events from OpenCode 2.3.0 shown on the card;
-  fork/subagent badges and background-subagent counts.
+- **MCP events & tasks** — experimental MCP events, a 🤖 block listing each
+  subagent session (ID, title, busy state), the OpenCode `todo` checklist, and
+  agent-bus calls in their own collapsible 📨 section.
 - **Web app** — `/web` opens a private Mission Control page (enabled only when
   `WEB_APP_TOKEN` is set) with live session and metric data; groups get inline
   buttons only.
-- **Tests** — 403 Bun tests across 42 files + TypeScript typecheck + build.
+- **Live answer** — a collapsible 💬 Respuesta section accumulates every
+  streamed answer of the turn below the virtual shell; the state icon sits next
+  to the prompt and telemetry/tool stats stay at the very bottom.
+- **Tests** — 483 Bun tests across 48 files + TypeScript typecheck + build.
 
 ## Quick start
 
@@ -130,6 +133,7 @@ bun run build
 - [Setup](docs/SETUP.md)
 - [Commands](docs/COMMANDS.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [UI/UX WoW](docs/UX_WOW.md)
 - [Roadmap](ROADMAP_NEXT.md)
 - [Agent guide](AGENTS.md)
 

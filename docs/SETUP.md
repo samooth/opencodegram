@@ -264,7 +264,9 @@ All options live in `.env` (see `.env.example` for the full annotated list):
 Per-chat settings (via `/settings`) include `cardTheme` (`auto`/`light`/`dark`)
 and `cardVerbosity` (`low`/`medium`/`high`, mapped from OpenCode 2.3.0's
 transcript verbosity). The daemon enables experimental `mcp_events` so MCP
-activity from Browse/Playwright is shown on the card.
+activity from Browse/Playwright is shown on the card. Enabling
+`experimental.todo` in the OpenCode config adds the 📋 task checklist to the
+card (opencodegram reads both `todo.updated` and `todowrite` events).
 
 ## Troubleshooting
 

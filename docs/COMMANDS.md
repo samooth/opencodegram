@@ -9,7 +9,8 @@
 - `/stop`, `/abort` — stop the active turn.
 - `/cancel` — cancel a pending action (permission reason, active turn).
 - `/unlink` — disconnect all sessions from this group (keeps session data).
-- `/todos` — show the task checklist for the active session (from OpenCode `todo.updated`).
+- `/todos` — show the task checklist for the active session (OpenCode's
+  `todo.updated` event or the `todowrite` tool in 2.3.0).
 - `/retry` — re-run the last prompt (useful after rate limits). Works from any
   topic in the chat: if the current tab has no session it falls back to the most
   recently used session in that chat.

@@ -41,10 +41,10 @@
 - Adaptive per-chat throttle, enriched `/ops` health (throttles + GPU).
 - OpenCode 2.3.0 in Docker: background subagents and fork/subagent badges, MCP
   events, quieter transcripts (card verbosity setting).
-- Compact activity summary on the card (`+3 thoughts · 3 reads · 1 tool`),
-  expandable in place via native Telegram blockquote, with an explicit toggle
-  button, one expandable row per entry, edits and file buttons in the same card,
-  and keyboards cleared from previous cards — no extra messages.
+- Expandable per-turn activity blocks (thoughts, reads, shells, forms) with a
+  single footer stats line, a live 💬 Respuesta section that accumulates all
+  streamed answers below the shell, a 🤖 block listing subagent sessions, and
+  the OpenCode `todo` checklist; no extra messages.
 - Browser tooling: optional OpenCode Browse (real browser via extension) and
   always-on Playwright MCP (headless Chromium for web debugging).
 - Streaming transcription (SSE) with partial text published to the card.
@@ -97,7 +97,7 @@
 - [x] Callbacks `db:info`, `db:refresh`, `db:vacuum` (admin), `db:back` con render en el mismo mensaje.
 - [x] Convertir los comandos del bot en botones `botcmd:` dentro de `⚡ Comandos` (peligrosos excluidos).
 - [x] Documentar BD y panel por botones en README/AGENTS/ARCHITECTURE/COMMANDS.
-- [x] Validar `typecheck && test && build` (403 tests), recargar daemon y commitear.
+- [x] Validar `typecheck && test && build` (483 tests), recargar daemon y commitear.
 
 ### Siguiente orden sugerido
 SQLite + botones → graceful degradation → resumen automático → `/retry` con turno → `/search` sobre prompts → daemon Whisper.

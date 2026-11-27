@@ -81,7 +81,7 @@ Main modules:
 | `sessions.ts` | Create, activate, restore, retire sessions; topic title sync |
 | `status.ts` | Turn/status lifecycle, live publishing and mode behavior |
 | `status-render.ts` | Pure rendering helpers for the status card (live strip, tools, diffs) |
-| `activity.ts` | Per-turn compact activity counters, expandable summary and P1.2 live action rail |
+| `activity.ts` | Per-turn activity blocks (thoughts, reads, shells, forms) with expandable summaries; no loose counter row |
 | `todos.ts` | TODO checklist types and rich-HTML rendering |
 | `apitypes.ts` | Shared structural types for OpenCode/Telegram payloads (no `any` in src) |
 | `dangerous.ts` | Shared list of commands requiring confirmation |
@@ -103,7 +103,7 @@ Main modules:
 | `files/*` | Safe path resolution, listing, search, text preview, documents, zip, summary, tree |
 | `autoretry.ts` | Bounded auto-retry state after rate limits |
 | `ratethrottle.ts` | Adaptive per-chat edit throttle after Telegram 429s |
-| `syncview.ts` | Shared digest renderer for "Conectar" and `/sync` (header, recent messages, older timeline) |
+| `syncview.ts` | One-card digest for "Conectar" and `/sync` (header, last prompt, last answer) |
 | `botcommands.ts` | Single source of `BOT_COMMANDS` |
 | `constants.ts` | Named intervals and limits |
 | `editutil.ts` | Edit detection and diff formatting |
@@ -122,6 +122,9 @@ Main modules:
 | `commands/stats.ts` | `/stats` command with period/scope filters and HTML export |
 | `widgets.ts` | Telegram widget support: resource-monitor widget, `widget_query` handling and HTML template |
 | `webauth.ts` | Single-use codes and short-lived session cookies for the private web app |
+| `busplugin.ts` | Native agent-bus plugin detection, `bus_*` tool names and envelope parsing |
+| `debuglog.ts` | Numbered breadcrumbs (`D###`) in `data/debug.log`, opt-in via `DEBUG_TRACE_ENABLED` |
+| `i18n.ts` | Process locale and `t()` strings for the card |
 
 ## Routing invariants
 
@@ -147,7 +150,7 @@ Limits: documents 45 MB, text preview 160 KB / 160 lines, zip excludes
 
 ## Tests
 
-`bun test` covers (403 tests across 42 files):
+`bun test` covers (483 tests across 48 files):
 
 - `tests/store.test.ts` — route/tab isolation, persistence, retirement,
   reply-to message routing and dead-chat binding cleanup.
@@ -233,6 +236,11 @@ When diagnosing lost/slow prompts, use the existing **session trace** breadcrumb
 instead of ad-hoc `console.log`. `sessionTrace(event, fields)` writes a
 timestamped JSON line to `data/sessions.log` (rotated at 1 MB). It is **opt-in**
 via `SESSION_TRACE_ENABLED=true` in `.env` (default `false` → no-op).
+
+`dtrace(category, event, fields)` is a second, independent tracer: numbered
+breadcrumbs (`D###`) in `data/debug.log`, enabled with `DEBUG_TRACE_ENABLED=true`.
+In that mode cards carry `#L<id>` markers at head and tail to correlate a
+Telegram message with its log lines.
 
 - Wired at startup in `src/index.ts`; passed into deps as `sessionTrace`.
 - Existing breadcrumbs cover the whole prompt path: `message.audit` (message

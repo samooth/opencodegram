@@ -9,7 +9,7 @@
 **P0, P1 y P2 completados** (18 nov 2026). Extensión 0.4.0 (20 nov 2026):
 estado centralizado en SQLite y panel gestionable casi íntegramente por botones.
 
-Validado con `bun run typecheck`, `bun test` (403 tests en 42 archivos) y
+Validado con `bun run typecheck`, `bun test` (483 tests en 48 archivos) y
 `bun run build`.
 
 ### Extensión 0.4.0 — SQLite + botones
@@ -25,8 +25,8 @@ Validado con `bun run typecheck`, `bun test` (403 tests en 42 archivos) y
 1. **Una pantalla por card.** El estado, la telemetría y las acciones caben sin
    scroll. El transcript completo vive detrás de `📖 Leer` / paginación.
 2. **Cada estado tiene una acción primaria.** Nunca un callejón sin salida.
-3. **El detalle es opt-in.** Contadores compactos + `▾ Detalles`; nunca una
-   pared de tool calls por defecto.
+3. **El detalle es opt-in.** Bloques colapsables (razonamiento, pensamiento,
+   shell, respuesta) y `▾ Detalles`; nunca una pared de tool calls por defecto.
 4. **Números consistentes.** `1m 42s`, `4.2k tok`, `38 tok/s`, `+48 −12`, `68% ctx`.
 5. **Copy 100% en español**, un emoji por fila, sin sopa de emojis.
 6. **Telegram-native.** Nada de widgets en grupos/topics. Botones inline,
@@ -37,7 +37,7 @@ Validado con `bun run typecheck`, `bun test` (403 tests en 42 archivos) y
 ## P0 — Impacto máximo, bajo riesgo (1–2 días)
 
 ### P0.1 Copy deck en español y estados consistentes
-- [x] Traducir estados del card: `Working…` → `⏳ Trabajando…`, `Done` → `✅ Listo`, `Stopped` → `⏹ Detenido`.
+- [x] Traducir estados del card: `Working…` → `⏳ Trabajando…`, `Done` → `✅` junto al prompt (sin `Listo` abajo), `Stopped` → `⏹`.
 - [x] Traducir secciones: `Thinking` → `Razonamiento`, `Tool calls` → `Herramientas`, `Edits` → `Cambios`.
 - [x] Traducir contadores de actividad: pensamientos, lecturas, búsquedas, ediciones, comandos, herramientas.
 - [x] Traducir botones: `Stop` → `Detener`, `Models` → `Modelos`, `Sessions` → `Sesiones`, `Full diffs` → `Diffs`.
@@ -88,7 +88,7 @@ Validado con `bun run typecheck`, `bun test` (403 tests en 42 archivos) y
 - [x] El detalle completo sigue en `▾ Detalles`.
 
 ### P1.3 Navegación por turnos
-- [x] `Turno 3/12` en lugar de `3/12`; selector con resumen de una línea.
+- [x] `turno 3` en lugar de `🎯 3`; selector con resumen de una línea.
 - [x] `⏭ Último` visible si el usuario se alejó del final.
 - [x] Mini “previously on…” de 2 líneas al cambiar de turno.
 
