@@ -247,6 +247,48 @@ export function parseBusSend(code: string): { to: string; type: string; subject:
   return { to, type, subject };
 }
 
+/** Any tools.bus.<method>({...}) call inside an `execute` code block. */
+export function parseBusCall(code: string): { method: string; args: Record<string, string> } | null {
+  const m = code.match(/tools\.bus\.(\w+)\s*\(\s*\{([\s\S]*?)\}\s*\)/);
+  if (!m) return null;
+  const args: Record<string, string> = {};
+  for (const key of ["to", "type", "subject", "alias", "role", "bus", "who", "sessionID", "limit"]) {
+    const a = m[2].match(new RegExp(`${key}\\s*:\\s*["']([^"']*)["']`));
+    if (a) args[key] = a[1];
+  }
+  return { method: m[1], args };
+}
+
+/** Human-readable label for a bus call (one line, no JS). */
+export function formatBusCall(call: { method: string; args: Record<string, string> }): string {
+  const { method, args } = call;
+  const parts = [`bus:${method}`];
+  if (method === "send") {
+    if (args.to) parts.push(`→ ${args.to}`);
+    if (args.type) parts.push(args.type);
+    if (args.subject) parts.push(`· ${args.subject.slice(0, 70)}`);
+  } else {
+    if (args.to || args.who || args.alias) parts.push(args.to || args.who || args.alias!);
+    if (args.bus) parts.push(`@${args.bus}`);
+    if (args.role) parts.push(`(${args.role})`);
+    if (args.type) parts.push(args.type);
+  }
+  return parts.join(" ");
+}
+
+/** All bus calls as their own bottom section, never mixed into the shell. */
+export function renderBusBlock(details: ChatSession["toolCallDetails"]): string {
+  const lines: string[] = [];
+  for (const d of details) {
+    if ((d.name || "").toLowerCase() !== "execute") continue;
+    let code = "";
+    try { code = String((JSON.parse(d.input || "{}") as Record<string, unknown>).code ?? ""); } catch { /* ignore */ }
+    const call = parseBusCall(code);
+    if (call) lines.push(`<p><i>📨 ${esc(formatBusCall(call))}</i></p>`);
+  }
+  return lines.join("");
+}
+
 /**
  * Turn every tool call into a virtual-shell command line (`$ read file …`),
  * so reads, writes and web fetches read like shell invocations instead of
@@ -269,16 +311,8 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
     }
     if (n === "execute") {
       const code = parseShellCommand(input ?? "") ?? "";
-      // Agent-to-agent messages are a bus send, not a shell command: show who
-      // received it and the subject instead of a wall of JavaScript.
-      const bus = parseBusSend(code);
-      if (bus) {
-        const parts = ["bus:send"];
-        if (bus.to) parts.push(`→ ${bus.to}`);
-        if (bus.type) parts.push(bus.type);
-        if (bus.subject) parts.push(`· ${bus.subject.slice(0, 70)}`);
-        return parts.join(" ");
-      }
+      // Agent-bus calls are rendered in their own section (renderBusBlock).
+      if (parseBusCall(code)) return "bus";
       const firstLine = code.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
       return firstLine ? `execute ${firstLine}` : "execute";
     }
@@ -312,6 +346,7 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
   for (const d of details) {
     // Skills are shown by renderSkillBlock, never as shell commands.
     if ((d.name || "").toLowerCase() === "skill") continue;
+    if (toCommand(d.name, d.input) === "bus") continue;
     const cmd = toCommand(d.name, d.input);
     const existing = counts.get(cmd);
     if (existing) {

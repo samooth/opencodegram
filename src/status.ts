@@ -15,7 +15,7 @@ import { renderResourceBlock } from "./resources.js";
 import { recordTurnStatFromSession } from "./stats.js";
 import { closeOpen, createTurnActivity, renderActivity } from "./activity.js";
 import { renderTodos } from "./todos.js";
-import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, renderSkillBlock, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
+import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, parseToolInput, relativeEditPath, renderPartialText, renderToolStats, renderVirtualShell, renderThinkingBottom, renderLatestToolBottom, renderTurnReceipt, renderTurnFooter, renderBusBlock, renderSkillBlock, shortToolArg, summarizeEdits, turnTelemetry, StatusDeps } from "./status-render.js";
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
@@ -143,6 +143,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // Skills get their own line at the bottom, with a puzzle-piece icon.
     const skills = renderSkillBlock(s.toolCallDetails);
     if (skills) lines.push(skills);
+    const bus = renderBusBlock(s.toolCallDetails);
+    if (bus) lines.push(bus);
     // Toolcall statistics + clock/prompt live in `bottom`, which the card
     // layout treats as protected tail (it trims history, never this). Putting
     // them here also keeps a SINGLE message id at the very bottom.
@@ -234,6 +236,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     if (s.detached) lines.push("<p><i>🔀 En segundo plano · otra sesión ocupa la pestaña.</i></p>");
     const doneSkills = renderSkillBlock(s.toolCallDetails);
     if (doneSkills) lines.push(doneSkills);
+    const doneBus = renderBusBlock(s.toolCallDetails);
+    if (doneBus) lines.push(doneBus);
     // Receipt keeps only the outcome (edits/test); prompt and telemetry are
     // already at the top, exactly like the live card.
     const edits = summarizeEdits(s, s.toolCallDetails);

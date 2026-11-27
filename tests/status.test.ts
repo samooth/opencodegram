@@ -175,15 +175,15 @@ describe("virtual shell and tool stats", () => {
     expect(html).not.toMatch(/^\$ execute$/m);
   });
 
-  test("bus.send renders as a readable bus line, not raw JavaScript", async () => {
-    const { renderVirtualShell, parseBusSend } = await import("../src/status-render.js");
-    const code = 'const r = await tools.bus.send({\n to: "F4 dev",\n type: "REPORT",\n subject: "Puerta encolada",\n body: "Confirmado"\n});\nreturn r';
-    expect(parseBusSend(code)).toEqual({ to: "F4 dev", type: "REPORT", subject: "Puerta encolada" });
-    const html = renderVirtualShell([
-      { id: "1", name: "execute", input: JSON.stringify({ code }), status: "success" },
-    ], 200);
-    expect(html).toContain("$ bus:send → F4 dev REPORT · Puerta encolada");
-    expect(html).not.toContain("tools.bus.send");
+  test("bus calls render in their own section, not in the shell", async () => {
+    const { renderVirtualShell, renderBusBlock, parseBusCall, formatBusCall } = await import("../src/status-render.js");
+    const code = 'const r = await tools.bus.send({\n to: "F4 dev",\n type: "REPORT",\n subject: "Puerta encolada"\n});\nreturn r';
+    const call = parseBusCall(code);
+    expect(call?.method).toBe("send");
+    expect(formatBusCall(call!)).toContain("→ F4 dev REPORT · Puerta encolada");
+    const details = [{ id: "1", name: "execute", input: JSON.stringify({ code }), status: "success" }] as any;
+    expect(renderVirtualShell(details, 200)).not.toContain("tools.bus");
+    expect(renderBusBlock(details)).toContain("📨 bus:send → F4 dev REPORT · Puerta encolada");
   });
 
   test("accumulates identical commands instead of overwriting", async () => {
