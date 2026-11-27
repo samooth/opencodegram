@@ -244,7 +244,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
     const thoughtBudget = expanded ? 1800 : 1400;
     let kept = lines;
     while (kept.length > 1 && kept.join("").length > thoughtBudget) kept = kept.slice(1);
-    const detail = (kept.length !== lines.length ? "<p><i>… anteriores</i></p>" : "") + kept.join("");
+    const detail = (kept.length !== lines.length ? "<p><i>Más anteriores</i></p>" : "") + kept.join("");
     blocks.push({ head: `💭 Pensamientos (${thoughts.length})`, detail, expandable: true });
   }
 
@@ -292,7 +292,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   const budget = expanded ? 1800 : 1400;
   let kept = blocks;
   while (kept.length > 1 && renderBody(kept).length > budget) kept = kept.slice(1);
-  if (kept.length !== blocks.length) kept = [{ head: "<i>… anteriores</i>", detail: "" }, ...kept];
+  if (kept.length !== blocks.length) kept = [{ head: "<i>Más anteriores</i>", detail: "" }, ...kept];
 
   const hint = expanded ? " ▴" : " ▾";
   return `<p>${parts.join(" · ")}${hint}</p>\n${renderBody(kept)}`;

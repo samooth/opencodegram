@@ -305,7 +305,7 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
   const hidden = Math.max(0, order.length - MAX_CMDS);
   const visible = hidden > 0 ? order.slice(-MAX_CMDS) : order;
   const lines: string[] = [];
-  if (hidden > 0) lines.push(`… ${hidden} comando${hidden === 1 ? "" : "s"} anteriores`);
+  if (hidden > 0) lines.push(`(${hidden} comando${hidden === 1 ? "" : "s"} anteriores)`);
   for (const cmd of visible) {
     const entry = counts.get(cmd)!;
     const d = entry.last;

@@ -229,7 +229,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
           kept.unshift(blocks[i]);
           used += len;
         }
-        content = (kept.length < blocks.length ? "<i>…</i>\n\n" : "") + kept.map((b) => b.html).join("\n\n");
+        content = kept.map((b) => b.html).join("\n\n");
         // A single block bigger than the budget: cut it safely.
         if (content.length > budget) content = clampText(content, budget);
       }

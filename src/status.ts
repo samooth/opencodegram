@@ -77,7 +77,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (!collapsed) {
         // renderActivity has its own budget; in compact mode cap it here so
         // thoughts stay as a short preview instead of being deleted later.
-        lines.push(compact ? clampText(activityBlock, activityCap) : activityBlock);
+        lines.push(compact ? clampText(activityBlock, activityCap).replace(/\n…$/, "") : activityBlock);
       } else {
         // Always show at least the counts summary so thoughts are visible
         // even when the detailed rows are folded away.
@@ -154,7 +154,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // Compact: shrink the strip instead of DELETING sections. Dropping the
     // reasoning/thought lines made the user think those never happened.
     let top = lines.join("");
-    if (compact && top.length > 1100) top = clampText(top, 1100);
+    if (compact && top.length > 1100) top = clampText(top, 1100).replace(/\n…$/, "");
     return {
       top,
       bottom: statsLine,
@@ -205,7 +205,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // Keep the actual thought text. "low" verbosity used here made
         // detailCap = 0, so toggling back showed only labels with no content.
         const doneActivity = renderActivity(s.activity, settings.cardVerbosity, true, Date.now(), false, settings.showTools);
-        if (doneActivity) lines.push(clampText(doneActivity, 8000));
+        if (doneActivity) lines.push(clampText(doneActivity, 8000).replace(/\n…$/, ""));
       } else {
         const preview = stripAgentMonologue(s.activity?.entries.filter((e) => e.kind === "thought").slice(-1)[0]?.detail?.trim() ?? "");
         if (preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(preview, 140))}</i></blockquote>`);
