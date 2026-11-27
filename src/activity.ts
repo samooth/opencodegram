@@ -5,7 +5,7 @@
  * compact line plus a single native Telegram `<blockquote expandable>` so no
  * extra messages or callbacks are needed.
  */
-import { parseBusCall } from "./status-render.js";
+import { isBusCallText, isBusToolName } from "./busplugin.js";
 import { esc, executeCodeSummary, stripAgentMonologue } from "./util.js";
 import { describeToolInput } from "./editutil.js";
 import type { CardVerbosity } from "./settings.js";
@@ -223,7 +223,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   if (a.shells) parts.push(`${a.shells} ${a.shells === 1 ? "comando" : "comandos"}`);
   // Skill activation belongs to the virtual shell ($ skill <name>), not here.
   const skills = a.entries.filter((e) => e.label === "skill").length;
-  const busSends = a.entries.filter((e) => !!parseBusCall(e.detail)).length;
+  const busSends = a.entries.filter((e) => isBusCallText(e.detail) || isBusToolName(e.label)).length;
   const toolsShown = Math.max(0, a.tools - skills - busSends);
   if (toolsShown) parts.push(`${toolsShown} ${toolsShown === 1 ? "herramienta" : "herramientas"}`);
   if (!parts.length) return "";
@@ -258,7 +258,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   let i = 0;
   while (i < visible.length) {
     const e = visible[i];
-    if (e.kind === "shell" || e.kind === "thought" || e.kind === "edit" || e.label === "skill" || parseBusCall(e.detail)) { i++; continue; }
+    if (e.kind === "shell" || e.kind === "thought" || e.kind === "edit" || e.label === "skill" || isBusCallText(e.detail) || isBusToolName(e.label)) { i++; continue; }
     if (e.kind === "read" || e.kind === "search") { i++; continue; }
     blocks.push({ head: entryHead(e, now, expanded), detail: detailPara(e.detail, detailCap) });
     i++;

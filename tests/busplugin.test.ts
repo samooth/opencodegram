@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { busPluginInstalled, isBusToolName, parseBusEnvelope } from "../src/busplugin.js";
+import { busPluginInstalled, isBusCallText, isBusToolName, parseBusEnvelope } from "../src/busplugin.js";
 import { renderBusBlock } from "../src/status-render.js";
 
 describe("agent-bus plugin support", () => {
@@ -36,4 +36,10 @@ describe("agent-bus plugin support", () => {
   test("plugin detection returns a boolean without throwing", () => {
     expect(typeof busPluginInstalled()).toBe("boolean");
   });
+});
+
+test("truncated bus calls are still detected", () => {
+  const truncated = 'return await tools.bus.send({ to: "F4 dev", type: "REPORT", subject: "muy largo...';
+  expect(isBusCallText(truncated)).toBe(true);
+  expect(isBusCallText("return await compute();")).toBe(false);
 });

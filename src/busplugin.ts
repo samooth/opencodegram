@@ -36,6 +36,11 @@ export function resetBusPluginCache(): void {
   cached = undefined;
 }
 
+/** True for any text containing a tools.bus.<method>(...) call (even truncated). */
+export function isBusCallText(text: string): boolean {
+  return /tools\.bus\.\w+\s*\(/i.test(text || "");
+}
+
 /** Tool names emitted by the plugin when codemode is off. */
 export function isBusToolName(name: string): boolean {
   return /^bus[_-]/i.test(name || "") || /^agentbus/i.test(name || "");
