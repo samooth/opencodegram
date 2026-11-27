@@ -170,7 +170,7 @@ describe("card receipts", () => {
     store.lastPromptBySession.set(s.sessionId, "arregla el card");
     await status.publishCard(7, s);
     const top = published[0]?.extraTop ?? "";
-    expect(top).toContain("✅ <b>Listo</b>");
+    expect(top).toContain("✅ ");
     expect(top).toContain("⏱ 1m 42s");
     expect(top).toContain("✏️ <b>1 archivo</b> · +1 −1");
     expect(top).toContain("bun test");
@@ -187,7 +187,8 @@ describe("card receipts", () => {
     });
     await status.publishCard(7, s);
     const top = published[0]?.extraTop ?? "";
-    expect(top).toContain("⚠️ <b>Turno interrumpido</b>");
+    expect(top).toContain("⚠️");
+    expect(top).not.toContain("Turno interrumpido");
     expect(top).toContain("429 rate limit exceeded");
     expect(top).not.toContain("retry later");
   });

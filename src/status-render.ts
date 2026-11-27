@@ -566,6 +566,8 @@ export function turnTelemetry(s: ChatSession, now = Date.now(), showSpeed = true
 }
 
 export type TurnReceiptInput = {
+  /** Show the state badge here (false when it already sits by the prompt). */
+  showState?: boolean;
   stopped: boolean;
   error?: string;
   prompt?: string;
@@ -580,13 +582,15 @@ export type TurnReceiptInput = {
  */
 export function renderTurnReceipt(input: TurnReceiptInput): string {
   const lines: string[] = [];
-  lines.push(
-    input.error
-      ? "⚠️ <b>Turno interrumpido</b>"
-      : input.stopped
-        ? "⏹ <b>Detenido</b>"
-        : "✅ <b>Listo</b>",
-  );
+  if (input.showState !== false) {
+    lines.push(
+      input.error
+        ? "⚠️ <b>Turno interrumpido</b>"
+        : input.stopped
+          ? "⏹ <b>Detenido</b>"
+          : "✅ <b>Listo</b>",
+    );
+  }
   if (input.error?.trim()) {
     // A friendly classification first, then the raw detail: "Provider
     // returned error" alone told the user nothing actionable.

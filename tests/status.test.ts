@@ -328,7 +328,7 @@ describe("finished card collapses reasoning regardless of profile", () => {
 });
 
 describe("answer visible in the finished card", () => {
-  test("answer appears after shell virtual and Listo receipt", async () => {
+  test("answer appears after shell virtual with state by the prompt", async () => {
     const { createTurnActivity, recordThought } = await import("../src/activity.js");
     const { PRESET_SETTINGS } = await import("../src/settings.js");
     const published: any[] = [];
@@ -352,13 +352,11 @@ describe("answer visible in the finished card", () => {
     const html = published[0]?.extraTop ?? "";
     const reasoningIdx = html.indexOf("🧠 Razonamiento");
     const shellIdx = html.indexOf("⚡ Shell");
-    const doneIdx = html.indexOf("✅ <b>Listo</b>");
     const answerIdx = html.indexOf("💬 Respuesta");
-    // New order: reasoning → shell → Respuesta → Listo (receipt last).
+    // State sits next to the prompt at the top; answer follows the shell.
     expect(reasoningIdx).toBeGreaterThanOrEqual(0);
     expect(shellIdx).toBeGreaterThan(reasoningIdx);
     expect(answerIdx).toBeGreaterThan(shellIdx);
-    expect(doneIdx).toBeGreaterThan(answerIdx);
     expect(html).toContain(answer);
   });
 

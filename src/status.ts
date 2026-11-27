@@ -50,7 +50,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // showed the assistant's own previous answer in the card).
     const prompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
       ?? store?.lastPromptBySession.get(s.sessionId);
-    if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`);
+    const liveState = s.stopped ? "⏹" : s.lastTurnError ? "⚠️" : "⏳";
+    if (prompt?.trim()) lines.push(`<p><i>${liveState} ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`);
     // Each live section is its OWN collapsible block, so the user can follow
     // reasoning, thoughts and tools independently as they stream in.
     // 🧠 Razonamiento (live reasoning buffer, streamed from the model).
@@ -181,7 +182,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const donePrompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
       ?? store?.lastPromptBySession.get(s.sessionId);
     const doneTelemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
-    if (donePrompt?.trim()) lines.push(`<p><i>📝 ${esc(truncateMiddle(donePrompt.trim(), 100))}</i></p>`);
+    const doneState = s.stopped ? "⏹" : s.lastTurnError ? "⚠️" : "✅";
+    if (donePrompt?.trim()) lines.push(`<p><i>${doneState} ${esc(truncateMiddle(donePrompt.trim(), 100))}</i></p>`);
+    else lines.push(`<p><i>${doneState}</i></p>`);
     // One state indicator only: the bold receipt at the bottom.
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
@@ -242,6 +245,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const edits = summarizeEdits(s, s.toolCallDetails);
     const test = detectTestRun(s.toolCallDetails);
     lines.push(renderTurnReceipt({
+      showState: false,
       stopped: s.stopped,
       error: s.lastTurnError,
       edits: edits.files ? edits : undefined,

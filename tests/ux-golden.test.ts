@@ -159,7 +159,7 @@ describe("P2 golden UX states", () => {
     });
     await status.publishCard(7, s);
     const html = published[0].extraTop;
-    expect(html).toContain("✅ <b>Listo</b>");
+    expect(html).toContain("✅ ");
     expect(html).toContain("⏱ 1m 42s");
     expect(html).toContain("✏️ <b>1 archivo</b> · +1 −1");
     expect(html).toContain("🧪 <code>bun test</code>");
@@ -172,10 +172,10 @@ describe("P2 golden UX states", () => {
     const { status, published } = makeHarness();
     const stopped = makeSession({ statusFinished: true, stopped: true });
     await status.publishCard(7, stopped);
-    expect(published[0].extraTop).toContain("⏹ <b>Detenido</b>");
+    expect(published[0].extraTop).toContain("⏹ ");
     const error = makeSession({ statusFinished: true, lastTurnError: "429 rate limit exceeded" });
     await status.publishCard(7, error);
-    expect(published[1].extraTop).toContain("⚠️ <b>Turno interrumpido</b>");
+    expect(published[1].extraTop).toContain("⚠️ ");
   });
 
   test("every state keeps callback_data within 64 bytes and buttons non-empty", () => {
@@ -336,14 +336,12 @@ describe("finished card reading order", () => {
     const reasoning = html.indexOf("🧠 Razonamiento");
     const thinking = html.indexOf("Pensamiento");
     const shell = html.indexOf("⚡ Shell");
-    const done = html.indexOf("✅ <b>Listo</b>");
     const answer = html.indexOf("💬 Respuesta");
-    // New order: reasoning → pensamiento → shell → Respuesta → Listo (receipt last).
+    // State is by the prompt; answer follows the shell.
     expect(reasoning).toBeGreaterThanOrEqual(0);
     expect(thinking).toBeGreaterThan(reasoning);
     expect(shell).toBeGreaterThan(thinking);
     expect(answer).toBeGreaterThan(shell);
-    expect(done).toBeGreaterThan(answer);
   });
 
   test("settings disable each block", async () => {
@@ -361,6 +359,6 @@ describe("finished card reading order", () => {
     await status.publishCard(7, s);
     const html = published[0].extraTop as string;
     expect(html).not.toContain("🧠 Razonamiento");
-    expect(html).toContain("✅ <b>Listo</b>");
+    expect(html).toContain("✅ ");
   });
 });
