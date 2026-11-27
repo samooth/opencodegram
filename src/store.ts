@@ -200,15 +200,55 @@ export class SessionStore {
 
   getSessionStatus = (sessionId: string): string | undefined => this.sessionStatusBySession.get(sessionId);
 
-  /** Count subagents (forks) of a parent that are still busy. */
-  getActiveSubagents = (parentId: string): { total: number; busy: number } => {
-    let total = 0, busy = 0;
+  /** Lightweight registry of child/subagent sessions seen in the event stream. */
+  private subagentsByParent = new Map<string, Map<string, { title?: string; at: number }>>();
+
+  rememberSubagent = (parentId: string, childId: string, title?: string): void => {
+    if (!parentId || !childId || parentId === childId) return;
+    let children = this.subagentsByParent.get(parentId);
+    if (!children) {
+      children = new Map();
+      this.subagentsByParent.set(parentId, children);
+    }
+    const previous = children.get(childId);
+    children.set(childId, { title: title || previous?.title, at: previous?.at ?? Date.now() });
+  };
+
+  forgetSubagent = (parentId: string, childId: string): void => {
+    this.subagentsByParent.get(parentId)?.delete(childId);
+  };
+
+  /**
+   * Subagents (forks) of a parent with their ids/titles and busy state, so the
+   * card can show not just a count but WHICH sessions are working.
+   */
+  getActiveSubagents = (parentId: string): {
+    total: number;
+    busy: number;
+    children: Array<{ sessionId: string; title?: string; busy: boolean; status: string }>;
+  } => {
+    const ids = new Set<string>();
+    const titles = new Map<string, string | undefined>();
+    for (const [childId, info] of this.subagentsByParent.get(parentId) ?? []) {
+      ids.add(childId);
+      titles.set(childId, info.title);
+    }
     for (const cs of this.sessionsById.values()) {
       if (cs.parentId !== parentId) continue;
-      total++;
-      if (this.sessionStatusBySession.get(cs.sessionId) === "busy" || (!!cs.statusMessageId && !cs.statusFinished)) busy++;
+      ids.add(cs.sessionId);
+      if (!titles.get(cs.sessionId)) titles.set(cs.sessionId, cs.topicTitle);
     }
-    return { total, busy };
+    const children = [...ids].map((sessionId) => {
+      const status = this.sessionStatusBySession.get(sessionId) ?? "idle";
+      const cs = this.sessionsById.get(sessionId);
+      return {
+        sessionId,
+        title: titles.get(sessionId),
+        status,
+        busy: status === "busy" || (!!cs?.statusMessageId && !cs.statusFinished),
+      };
+    });
+    return { total: children.length, busy: children.filter((c) => c.busy).length, children };
   };
 
   rememberActiveRoute = (chatId: number, threadId: number | undefined, sessionId: string) => {

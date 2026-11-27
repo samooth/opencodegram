@@ -19,6 +19,19 @@ import { capDiff, detectTestRun, getToolSummary, isShellTool, lastReasoning, par
 
 export type StatusManager = ReturnType<typeof createStatusManager>;
 
+/** Show which subagent sessions belong to this turn, not just a counter. */
+function renderSubagentBlock(s: ChatSession, store: SessionStore | undefined): string {
+  const subs = store?.getActiveSubagents?.(s.sessionId);
+  if (!subs?.total) return "";
+  const head = `🤖 <b>Subagentes (${subs.total})</b>${subs.busy ? ` · ${subs.busy} activo${subs.busy === 1 ? "" : "s"}` : ""}`;
+  const lines = subs.children.map((c) => {
+    const icon = c.busy ? "⏳" : "✅";
+    const title = c.title?.trim() ? ` · ${esc(truncateMiddle(c.title.trim(), 60))}` : "";
+    return `<p>${icon} <code>${esc(c.sessionId.slice(0, 12))}</code>${title}${c.busy ? " activo" : ""}</p>`;
+  });
+  return `<blockquote>${head}${lines.join("")}</blockquote>`;
+}
+
 /**
  * Accumulate every answer produced in the current turn. OpenCode ends a
  * streamed step before each tool call, so `s.buffer` alone shows only the last
@@ -117,11 +130,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       if (shell) lines.push(settings.cardVerbosity === "low" ? `<blockquote expandable>${shell}</blockquote>` : shell);
     }
     // Subagents (forks) running in background — new in OpenCode 2.3.0.
-    const subs = store?.getActiveSubagents?.(s.sessionId);
-    if (subs && subs.total > 0) {
-      const label = subs.busy > 0 ? `🤖 ${subs.busy}/${subs.total} subagentes activos` : `🤖 ${subs.total} subagentes`;
-      lines.push(`<p><i>${label}</i></p>`);
-    }
+    const subagents = renderSubagentBlock(s, store);
+    if (subagents) lines.push(subagents);
     // Recent MCP events (experimental, 2.3.0).
     const mcpEvts = mcpEvents?.get(s.sessionId);
     if (mcpEvts?.length) {
@@ -244,6 +254,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         if (preview) lines.push(`<blockquote expandable><i>${esc(truncateMiddle(preview, 140))}</i></blockquote>`);
       }
     }
+
+    const doneSubagents = renderSubagentBlock(s, store);
+    if (doneSubagents) lines.push(doneSubagents);
 
     // 3) Shell virtual (all toolcalls as `$ <cmd>` lines).
     const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill" && !isTodoTool(detail.name) && !isFormTool(detail.name));

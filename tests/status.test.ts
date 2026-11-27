@@ -350,6 +350,36 @@ describe("todo checklist in the card", () => {
   });
 });
 
+describe("subagents in the card", () => {
+  test("lists how many and which child sessions are working", async () => {
+    const published: any[] = [];
+    const transcript = { publish: async (_c: number, _s: any, o: any) => { published.push(o); return 1; }, addBlock: () => {}, refloat: async () => 1 } as any;
+    const status = createStatusManager({
+      tg: {} as any, threadOptsFor: () => ({}),
+      getSettings: () => ({ ...DEFAULT_SETTINGS }) as any,
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+      store: {
+        lastPromptBySession: new Map(), getTodos: () => [], getTranscript: () => [],
+        getActiveSubagents: () => ({
+          total: 2, busy: 1,
+          children: [
+            { sessionId: "ses_child_111111", title: "Auditoría web", busy: true, status: "busy" },
+            { sessionId: "ses_child_222222", title: "Revisión", busy: false, status: "idle" },
+          ],
+        }),
+      } as any,
+      transcript,
+    } as any);
+    await status.publishCard(7, makeSession({ statusFinished: false, statusMessageId: 5 }));
+    const html = published[0]?.extraTop ?? "";
+    expect(html).toContain("🤖 <b>Subagentes (2)</b> · 1 activo");
+    expect(html).toContain("ses_child_11");
+    expect(html).toContain("Auditoría web");
+    expect(html).toContain("ses_child_22");
+    expect(html).toContain("Revisión");
+  });
+});
+
 describe("live answer section", () => {
   test("accumulates completed and streaming answers below the shell with a toggle", async () => {
     const published: any[] = [];

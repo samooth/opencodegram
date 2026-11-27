@@ -1589,6 +1589,12 @@ export async function handleEvent(event: { type: string; data?: unknown }, deps:
       const sess = (res as { data?: Record<string, unknown> })?.data ?? res;
       const parentId = (sess as { parentID?: string; parent?: string })?.parentID
         ?? (sess as { parent?: string })?.parent;
+      // Register the child even when the parent has no bound chat: the card
+      // must be able to list which subagent sessions exist, not just count
+      // the ones that happen to have a Telegram route.
+      if (parentId) {
+        deps.store.rememberSubagent(parentId, sessionId, (sess as { title?: string })?.title);
+      }
       const parentChat = parentId ? deps.store.resolveChatId(parentId) : undefined;
       if (parentChat !== undefined) {
         deps.store.rememberSessionChat(sessionId, parentChat);
@@ -1613,6 +1619,10 @@ export async function handleEvent(event: { type: string; data?: unknown }, deps:
       }
     } catch (err) {
     }
+  }
+  const knownChild = sessionId ? deps.store.findSessionById(sessionId) : undefined;
+  if (knownChild?.parentId) {
+    deps.store.rememberSubagent(knownChild.parentId, knownChild.sessionId, knownChild.topicTitle);
   }
   logger.debug("events", e.type, JSON.stringify(e.data ?? {}).slice(0, 300));
   const _item = e.data?.item as { type?: string; payload?: { text?: string } } | undefined;

@@ -105,6 +105,22 @@ describe("SessionStore routing", () => {
   });
 });
 
+describe("subagent registry", () => {
+  test("lists child sessions with titles and busy state", () => {
+    const s = new SessionStore(dataDir);
+    s.rememberSubagent("ses_parent", "ses_child_111111", "Auditoría web");
+    s.rememberSubagent("ses_parent", "ses_child_222222", "Revisión");
+    s.setSessionStatus("ses_child_111111", "busy");
+    const info = s.getActiveSubagents("ses_parent");
+    expect(info.total).toBe(2);
+    expect(info.busy).toBe(1);
+    expect(info.children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sessionId: "ses_child_111111", title: "Auditoría web", busy: true }),
+      expect.objectContaining({ sessionId: "ses_child_222222", title: "Revisión", busy: false }),
+    ]));
+  });
+});
+
 describe("SessionStore reply-to routing", () => {
   test("findSessionByAnyMessage resolves from the explicit map", () => {
     const store = new SessionStore(dataDir);
