@@ -43,7 +43,7 @@ describe("activity summary in the session card", () => {
     await status.publishCard(7, s);
 
     const top = published[0]?.extraTop ?? "";
-    expect(top).toContain("1 pensamiento");
+    expect(top).toContain("💭 Pensamientos (1)");
     expect(top).not.toContain("1 lectura");
     expect(top).toContain("<blockquote");
     expect(top).toContain("analizo el repo");
@@ -59,7 +59,7 @@ describe("activity summary in the session card", () => {
 
     expect(s.activity!.entries.some((e) => e.open)).toBe(false);
     const done = published[published.length - 1]?.extraTop ?? "";
-    expect(done).toContain("1 pensamiento · 1 comando");
+    expect(done).toContain("💭 Pensamientos (1)");
   });
 
   test("startStatus resets activity for the new turn", async () => {
@@ -81,7 +81,7 @@ describe("activity summary in the session card", () => {
     await status.publishCard(7, s);
 
     const top = published[0]?.extraTop ?? "";
-    expect(top).toContain("1 pensamiento");
+    expect(top).toContain("💭 Pensamientos (1)");
     expect(top).toContain("<blockquote");
     expect(top).not.toContain("texto secreto");
   });

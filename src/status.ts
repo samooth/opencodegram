@@ -42,8 +42,8 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const partialCap = basePartial + hiddenBudget;
     const lines: string[] = [];
     // Header (name · id · model · 🎯turn) is added by the transcript manager.
-    // Right below it: the prompt, then the live clock/context/speed, so the
-    // reader sees WHAT this turn is about before the work blocks.
+    // Right below it: the prompt. The live clock/context/speed goes at the
+    // very bottom with the tool stats.
     const telemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
     // Use the prompt bound to THIS turn by beginTurn(), not the global
     // lastPromptBySession (which can be overwritten by non-user events and
@@ -51,7 +51,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const prompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
       ?? store?.lastPromptBySession.get(s.sessionId);
     if (prompt?.trim()) lines.push(`<p><i>📝 ${esc(truncateMiddle(prompt.trim(), 100))}</i></p>`);
-    if (telemetry.length) lines.push(`<p><i>${esc(telemetry.join(" · "))}</i></p>`);
     // Each live section is its OWN collapsible block, so the user can follow
     // reasoning, thoughts and tools independently as they stream in.
     // 🧠 Razonamiento (live reasoning buffer, streamed from the model).
@@ -150,8 +149,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // them here also keeps a SINGLE message id at the very bottom.
     const cardId = s.transcriptMessageId ?? s.statusMessageId;
     const idSuffix = debugTraceEnabled && cardId ? ` · #${cardId}` : "";
-    const toolCount = s.toolCallDetails.length;
-    const statsLine = `<p><i>🔧 ${toolCount}${idSuffix}</i></p>`;
+    const toolStats = renderToolStats(s.toolCallDetails) || "🔧 0";
+    const telemetryLine = telemetry.length ? `<p><i>${esc(telemetry.join(" · "))}</i></p>` : "";
+    const statsLine = `${telemetryLine}<p><i>${toolStats}${idSuffix}</i></p>`;
     // Compact: shrink the strip instead of DELETING sections. Dropping the
     // reasoning/thought lines made the user think those never happened.
     let top = lines.join("");
@@ -177,12 +177,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const answerIsCurrent = s.lastFinalTurn === undefined || s.lastFinalTurn === s.turnSeq;
     const answerEmbedded = settings.showFinalInCard && answerIsCurrent && !!s.lastFinalText?.trim();
     const lines: string[] = [];
-    // Same top block as the live card: prompt, then the live clock/context.
+    // Same top block as the live card: the prompt. Telemetry goes last.
     const donePrompt = (s.turnSeq !== undefined ? store?.getTurnPrompt?.(s.sessionId, s.turnSeq) : undefined)
       ?? store?.lastPromptBySession.get(s.sessionId);
     const doneTelemetry = turnTelemetry(s, Date.now(), settings.showTokenSpeed);
     if (donePrompt?.trim()) lines.push(`<p><i>📝 ${esc(truncateMiddle(donePrompt.trim(), 100))}</i></p>`);
-    if (doneTelemetry.length) lines.push(`<p><i>${esc(doneTelemetry.join(" · "))}</i></p>`);
     // One state indicator only: the bold receipt at the bottom.
     // 1) Razonamiento (collapsed, at the top).
     const reasoning = lastReasoning(s);
@@ -256,6 +255,11 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     const finishedAt = s.turnFinishedAt ?? 0;
     const startedAt = s.promptStartTime ?? 0;
     const streamedAt = s.turnFirstStreamedAt ?? 0;
+    const doneTelemetryLine = doneTelemetry.length ? `<p><i>${esc(doneTelemetry.join(" · "))}</i></p>` : "";
+    const doneStats = renderToolStats(s.toolCallDetails) || "🔧 0";
+    const doneCardIdForStats = s.transcriptMessageId ?? s.statusMessageId;
+    const doneIdSuffix = debugTraceEnabled && doneCardIdForStats ? ` · #${doneCardIdForStats}` : "";
+    lines.push(`${doneTelemetryLine}<p><i>${doneStats}${doneIdSuffix}</i></p>`);
     lines.push(renderTurnFooter({
       mode: settings.displayMode === "unified" ? "Unificado" : "Build",
       model: s.model,
@@ -266,8 +270,6 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       promptStartTime: s.promptStartTime,
       tools: s.toolCallDetails.length,
     }));
-    const doneCardId = s.transcriptMessageId ?? s.statusMessageId;
-    if (debugTraceEnabled && doneCardId) lines.push(`<p><i>#${doneCardId}</i></p>`);
 
     return lines.join("");
   };

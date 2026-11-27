@@ -137,7 +137,7 @@ describe("P2 golden UX states", () => {
     const html = (published[0].extraTop ?? "") + (published[0].extraBottom ?? "");
     expect(html).not.toContain("⏳ Trabajando…");
     expect(html).toContain("⏱ 12s");
-    expect(html).toContain("1 pensamiento");
+    expect(html).toContain("💭 Pensamientos (1)");
     expect(html).not.toContain("Lectura ·");
     expect(html).not.toContain("Últimas acciones");
     expect(published[0].working).toBe(true);

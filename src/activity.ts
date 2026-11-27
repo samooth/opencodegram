@@ -215,19 +215,8 @@ function detailPara(text: string, detailCap: number): string {
 /** Render the compact summary line plus one native expandable detail block. */
 export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbosity, _finished: boolean, now = Date.now(), expanded = false, hideShells = false): string {
   if (!a) return "";
-  const parts: string[] = [];
-  if (a.thoughts) parts.push(`${a.thoughts} ${a.thoughts === 1 ? "pensamiento" : "pensamientos"}`);
-  // Reads/searches are rendered in the virtual shell, not here.
-  // Edits are rendered in the virtual shell ($ write …), not here.
-  // if (a.edits) parts.push(...);
-  if (a.shells) parts.push(`${a.shells} ${a.shells === 1 ? "comando" : "comandos"}`);
-  // Skill activation belongs to the virtual shell ($ skill <name>), not here.
-  const skills = a.entries.filter((e) => e.label === "skill").length;
-  const busSends = a.entries.filter((e) => isBusCallText(e.detail) || isBusToolName(e.label)).length;
-  const toolsShown = Math.max(0, a.tools - skills - busSends);
-  if (toolsShown) parts.push(`${toolsShown} ${toolsShown === 1 ? "herramienta" : "herramientas"}`);
-  if (!parts.length) return "";
-
+  // The counters live in the single final stats line of the card, never as
+  // a loose summary row under the thought blocks.
   const detailCap = verbosity === "low" ? 0 : verbosity === "high" ? 360 : 90;
   // Collapsed stays compact (a handful of rows); the toggle reveals the rest.
   const maxEntries = expanded
@@ -297,8 +286,7 @@ export function renderActivity(a: TurnActivity | undefined, verbosity: CardVerbo
   while (kept.length > 1 && renderBody(kept).length > budget) kept = kept.slice(1);
   if (kept.length !== blocks.length) kept = [{ head: "<i>Más anteriores</i>", detail: "" }, ...kept];
 
-  const hint = expanded ? " ▴" : " ▾";
-  return `<p>${parts.join(" · ")}${hint}</p>\n${renderBody(kept)}`;
+  return renderBody(kept);
 }
 
 /**

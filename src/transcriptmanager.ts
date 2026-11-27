@@ -271,7 +271,7 @@ export function createTranscriptManager({ tg, store, threadOptsFor, renderResour
     // Compact: fold the turn number into the header line instead of spending
     // a whole row. If this is the newest turn, N/N adds no information.
     const turnTag = pageTurn
-      ? (pageTurn >= totalTurns ? `🎯 ${pageTurn}` : `🎯 ${pageTurn}/${totalTurns}`)
+      ? (pageTurn >= totalTurns ? `turno ${pageTurn}` : `turno ${pageTurn}/${totalTurns}`)
       : page.total > 1 ? `📄 ${page.index + 1}/${page.total}` : "";
     const header = `<p>${baseHeader}${turnTag ? ` · <i>${turnTag}</i>` : ""}</p>`;
     // Mini "previously on…" (two lines) when the user jumps to another turn.

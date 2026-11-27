@@ -16,21 +16,22 @@ describe("turn activity counters", () => {
     expect(renderActivity(createTurnActivity(), "medium", false)).toBe("");
   });
 
-  test("summarizes recorded thoughts with a plus prefix while working", () => {
+  test("shows a single thought block without a loose counter line", () => {
     const a = createTurnActivity();
     recordThought(a, "primero", { at: 1000 });
     recordThought(a, "segundo", { at: 2000 });
     recordThought(a, "tercero", { at: 3000 });
     const out = renderActivity(a, "medium", false, 4000);
-    expect(out).toContain("3 pensamientos");
+    expect(out).toContain("💭 Pensamientos (3)");
+    expect(out).not.toContain("3 pensamientos ·");
   });
 
-  test("uses a minus prefix for a finished turn", () => {
+  test("renders the thought block for a finished turn", () => {
     const a = createTurnActivity();
     recordThought(a, "listo", { at: 1000 });
     const out = renderActivity(a, "medium", true, 1500);
-    expect(out).toContain("1 pensamiento");
-    expect(out).not.toContain("+1 pensamiento");
+    expect(out).toContain("💭 Pensamientos (1)");
+    expect(out).not.toMatch(/^<p>/);
   });
 
   test("categorizes reads, searches, edits and shells into counters", () => {
@@ -50,8 +51,8 @@ describe("turn activity counters", () => {
     expect(out).not.toContain("lectura");
     expect(out).not.toContain("búsqueda");
     expect(out).not.toContain("edición");
-    expect(out).toContain("1 comando");
-    expect(out).toContain("1 herramienta");
+    expect(out).not.toContain("1 comando");
+    expect(out).not.toContain("1 herramienta");
   });
 
   test("does not double count reads as generic tools", () => {
@@ -129,7 +130,7 @@ describe("turn activity counters", () => {
     const a = createTurnActivity();
     for (let i = 0; i < 100; i++) recordThought(a, `pensamiento ${i}`, { at: 1000 + i });
     const out = renderActivity(a, "high", false, 2000);
-    expect(out).toContain("100 pensamientos");
+    expect(out).toContain("💭 Pensamientos (6)");
     expect(out).not.toContain("pensamiento 0\n");
     expect((out.match(/Pensamiento ·/g) ?? []).length).toBeLessThanOrEqual(40);
   });
@@ -261,10 +262,10 @@ describe("turn activity counters", () => {
     expect(expanded.length).toBeGreaterThan(collapsed.length);
   });
 
-  test("summary line is a block element so it does not glue to the prompt", () => {
+  test("activity starts with the block itself, not a counter paragraph", () => {
     const a = createTurnActivity();
     recordThought(a, "algo", { at: 1000 });
-    expect(renderActivity(a, "medium", false, 1100, false)).toMatch(/^<p>/);
+    expect(renderActivity(a, "medium", false, 1100, false)).toMatch(/^<blockquote/);
   });
 
   test("gives each entry its own expandable block in collapsed mode", () => {

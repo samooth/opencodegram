@@ -7,7 +7,7 @@ import type { ChatSettings } from "./settings.js";
 import { describeToolInput, isEditTool, editStats } from "./editutil.js";
 import { contextUsage, esc, isAgentMonologue, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
-import { isBusToolName, parseBusEnvelope } from "./busplugin.js";
+import { isBusCallText, isBusToolName, parseBusEnvelope } from "./busplugin.js";
 
 export function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -451,11 +451,15 @@ export function renderToolStats(details: ChatSession["toolCallDetails"]): string
       : !/shell|read|cat|edit|write|patch|fetch|web|grep|glob|search|find/.test(l);
   };
   const failed = count((d) => d.status === "failed");
+  const skills = count((d) => (d.name || "").toLowerCase() === "skill");
+  const bus = count((d) => isBusCallText(JSON.stringify((JSON.parse(d.input || "{}") as Record<string, unknown>).code ?? "")) || /^bus[_-]/i.test(d.name || ""));
   const parts = [
     `🔧 ${details.length}`,
     `⚡${count(n("shell"))}`,
     `📖${count(n("read"))}`,
     `✏️${count(n("edit"))}`,
+    `🧩${skills}`,
+    `📨${bus}`,
     `🌐${count(n("fetch"))}`,
     `🔍${count(n("search"))}`,
   ];
