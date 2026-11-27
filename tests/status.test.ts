@@ -47,6 +47,25 @@ describe("status finishStatus", () => {
     expect(s.statusMessageId).toBeUndefined();
   });
 
+  test("celebrateOnDone reacts with 🎉 once on a successful turn", async () => {
+    const reactions: any[] = [];
+    const tg = {
+      editRichMessage: async () => ({ message_id: 1 }),
+      sendRichMessage: async () => ({ message_id: 2 }),
+      setMessageReaction: async (...args: any[]) => { reactions.push(args); return true; },
+    } as any;
+    const status = createStatusManager({
+      tg, threadOptsFor: () => ({}),
+      getSettings: () => ({ celebrateOnDone: true }) as any,
+      pendingEdits: new Map(), rememberCot: () => {}, rememberStatusMessage: () => {}, forgetStatusMessage: () => {},
+    } as any);
+    const s = makeSession({ statusMessageId: 42, transcriptMessageId: 77, targetChatId: 7 });
+    await status.finishStatus(7, s);
+    expect(reactions).toEqual([[7, 77, "🎉"]]);
+    await status.finishStatus(7, s); // idempotent, no second reaction
+    expect(reactions).toHaveLength(1);
+  });
+
   test("startStatus shows activity detail when a think/shell/tool toggle is on", async () => {
     const status = createStatusManager({
       tg: { editRichMessage: async () => ({ message_id: 1 }), sendRichMessage: async () => ({ message_id: 2 }) } as any,

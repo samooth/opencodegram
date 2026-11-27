@@ -73,6 +73,7 @@ describe("SettingsStore", () => {
     expect(minimal.cardPreset).toBe("minimal");
     expect(minimal.showThinking).toBe(false);
     expect(minimal.cardVerbosity).toBe("low");
+    expect(minimal.sectionsExpanded).toBe(false);
     expect(store.get(200).cardPreset).toBe("balanced");
     const reloaded = new SettingsStore(dataDir);
     expect(reloaded.get(100).cardPreset).toBe("minimal");

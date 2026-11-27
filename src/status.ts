@@ -112,10 +112,9 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // 4. TODO checklist for the session (from todo.updated events).
     const todosBlock = renderTodos(store?.getTodos?.(s.sessionId) ?? []);
     if (todosBlock) lines.push(todosBlock);
-    // ⚡ Virtual shell: ALWAYS visible while working, even when empty, so the
-    // user sees the tool transcript slot from the very first token and every
-    // new command (read/write/etc.) is captured as it arrives.
-    {
+    // ⚡ Virtual shell: visible while working (unless showShell is off), even
+    // when empty, so the tool transcript slot is there from the first token.
+    if (settings.showShell) {
       const shellDetails = s.toolCallDetails.filter((d) => (d.name || "").toLowerCase() !== "skill");
       const count = shellDetails.length;
       if (count) {
@@ -214,7 +213,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 
     // 3) Shell virtual (all toolcalls as `$ <cmd>` lines).
     const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill");
-    if (settings.showTools && virtualDetails.length) {
+    if (settings.showTools && settings.showShell && virtualDetails.length) {
       const sc = s.shellDoneCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:shell:${s.sessionId}">⚡ Shell (${virtualDetails.length}) ${sc ? "▸" : "▾"}</tg-button></tg-button-row>`);
       if (!sc) {
@@ -540,7 +539,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
 
       let shellBlock = "";
       const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill");
-      if (settings.showTools && virtualDetails.length) {
+      if (settings.showTools && settings.showShell && virtualDetails.length) {
         const shellText = renderVirtualShell(virtualDetails, 180);
         shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;
       }
@@ -644,6 +643,12 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       s.statusEditPromise = undefined;
     }
     const settings = getSettings(chatId);
+    // Optional 🎉 on a successful turn (opt-in, default off). The idempotent
+    // early return above prevents reacting twice for the same turn.
+    const doneId = s.transcriptMessageId ?? s.statusMessageId;
+    if (settings.celebrateOnDone && !s.stopped && !s.lastTurnError && doneId !== undefined) {
+      tg.setMessageReaction(chatId, doneId, "🎉").catch((err) => console.warn("[status] celebrate failed", err));
+    }
     const editDetails = s.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
 
     if (transcript) {

@@ -31,6 +31,7 @@ export const PRESET_LABELS: Record<CardPreset, string> = {
 export const PRESET_SETTINGS: Record<CardPreset, Partial<ChatSettings>> = {
   minimal: {
     compactCard: true,
+    sectionsExpanded: false,
     showActionRail: false,
     showFinalInCard: false,
     cardVerbosity: "low",
