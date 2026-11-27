@@ -521,9 +521,30 @@ export async function cmd_use(deps: BotDeps, chatId: number, threadId: number | 
       return true;
     }
     try {
-      const cs = await C.activateSession(chatId, sessionId, true, threadId);
+      // Cards show only the first 8 chars (ses_e7d8). Accept a unique prefix
+      // and resolve it to the full OpenCode session id before activating.
+      let resolved = sessionId;
+      if (!deps.store.findSessionById(resolved)) {
+        const locals = [...deps.store.sessionsById.keys()].filter((key) => key.startsWith(sessionId));
+        if (locals.length === 1) resolved = locals[0];
+        else if (locals.length > 1) {
+          await send(`⚠️ ID ambiguo: ${locals.slice(0, 5).map((id) => esc(id)).join(", ")}`);
+          return true;
+        } else {
+          try {
+            const list = (await deps.oc.listSessionsCached()) as Array<{ id?: string }>;
+            const matches = list.map((item) => String(item?.id ?? "")).filter((id) => id.startsWith(sessionId));
+            if (matches.length === 1) resolved = matches[0];
+            else if (matches.length > 1) {
+              await send(`⚠️ ID ambiguo: ${matches.slice(0, 5).map((id) => esc(id)).join(", ")}`);
+              return true;
+            }
+          } catch { /* keep the original id */ }
+        }
+      }
+      const cs = await C.activateSession(chatId, resolved, true, threadId);
       if (cs) { cs.topicTitle = undefined; await deps.sessions.syncTopicTitle(chatId, cs).catch(() => {}); }
-      await send(`✅ Switched to session\n<code>${esc(sessionId)}</code>`);
+      await send(`✅ Switched to session\n<code>${esc(resolved)}</code>`);
     } catch (err) {
       await send(`failed to switch: ${esc(err instanceof Error ? err.message : String(err))}`);
     }
