@@ -582,7 +582,8 @@ export function createSessionManager({ config, tg, oc, store, settings, dashboar
         s.topicTitle = title;
         store.rememberTopicTitle(s.sessionId, title);
       }
-      if (!threadId) { logger.breadcrumb("sessions", "syncTopicTitle.skip", { sessionId: s.sessionId, reason: "no-thread" }); return; }
+      // No forum topic in this chat: nothing to rename. Expected, not a warning.
+      if (!threadId) { logger.debug("sessions", "syncTopicTitle.skip(no-thread)", s.sessionId); return; }
       s.threadId = threadId;
       s.targetThreadId = threadId;
       // Always attempt the rename (idempotent on Telegram's side): the cached
