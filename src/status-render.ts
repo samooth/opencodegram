@@ -233,6 +233,20 @@ export function isShellTool(name: string): boolean {
     normalized === "execute" || normalized.includes("shell");
 }
 
+/** Extract a tools.bus.send() call from an `execute` code block. */
+export function parseBusSend(code: string): { to: string; type: string; subject: string } | null {
+  if (!code.includes("tools.bus.send")) return null;
+  const grab = (key: string): string => {
+    const m = code.match(new RegExp(`${key}\\s*:\\s*["\`]([^"\`]*?)["\`]`));
+    return m?.[1]?.trim() ?? "";
+  };
+  const to = grab("to") || grab("to_alias");
+  const type = grab("type");
+  const subject = grab("subject");
+  if (!to && !type && !subject) return null;
+  return { to, type, subject };
+}
+
 /**
  * Turn every tool call into a virtual-shell command line (`$ read file …`),
  * so reads, writes and web fetches read like shell invocations instead of
@@ -254,10 +268,18 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
       return skillName ? `skill ${skillName}` : "skill";
     }
     if (n === "execute") {
-      // Code-execution tool: show the first meaningful line so the shell
-      // block displays what ran instead of the bare tool name.
-      const code = parseShellCommand(input ?? "");
-      const firstLine = code?.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+      const code = parseShellCommand(input ?? "") ?? "";
+      // Agent-to-agent messages are a bus send, not a shell command: show who
+      // received it and the subject instead of a wall of JavaScript.
+      const bus = parseBusSend(code);
+      if (bus) {
+        const parts = ["bus:send"];
+        if (bus.to) parts.push(`→ ${bus.to}`);
+        if (bus.type) parts.push(bus.type);
+        if (bus.subject) parts.push(`· ${bus.subject.slice(0, 70)}`);
+        return parts.join(" ");
+      }
+      const firstLine = code.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
       return firstLine ? `execute ${firstLine}` : "execute";
     }
     if (isShellTool(name)) {

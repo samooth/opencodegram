@@ -62,6 +62,15 @@ describe("turn activity counters", () => {
     expect(out).not.toContain("1 lectura");
   });
 
+  test("bus.send calls stay out of the activity block", async () => {
+    const a = createTurnActivity();
+    const code = 'await tools.bus.send({ to: "dev", type: "REPORT", subject: "ok" })';
+    recordTool(a, "execute", code, { at: 1000, toolId: "b1" });
+    const out = renderActivity(a, "high", false, 1100, true);
+    expect(out).not.toContain("tools.bus.send");
+    expect(out).not.toContain("herramienta");
+  });
+
   test("renders tool durations and success marks in the expandable detail", () => {
     const a = createTurnActivity();
     recordTool(a, "bash", "bun test", { at: 1000, toolId: "t1" });
