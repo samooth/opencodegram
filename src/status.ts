@@ -429,6 +429,14 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
         // the previous card (single message per session); "conservar" keeps the
         // finished card as history; "fija" keeps editing the same card in place.
         store?.beginTurn?.(s);
+        // beginTurn resets collapse flags to false; apply the profile's
+        // expansion preferences after it so the presets actually take effect.
+        s.reasoningCollapsed = !settings.thinkingExpanded;
+        s.thoughtsCollapsed = !settings.showThinking;
+        s.shellCollapsed = !settings.toolsExpanded;
+        s.reasoningDoneCollapsed = !settings.thinkingExpanded;
+        s.thoughtsDoneCollapsed = !settings.showThinking;
+        s.shellDoneCollapsed = !settings.toolsExpanded;
         s.transcriptFollow = true;
         // Respect the user's cardBehavior. With "tarjeta nueva" (refloat) each
         // turn gets its own message — forcing fixed here broke that choice and

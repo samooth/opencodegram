@@ -458,6 +458,12 @@ async function handleSet(deps: BotDeps, cq: TelegramCallbackQuery, chatId: numbe
     const active = deps.store.getActiveSession(chatId, threadId);
     if (active) {
       active.activityExpanded = settings.showThinking || settings.showShell || settings.showTools;
+      active.reasoningCollapsed = !settings.thinkingExpanded;
+      active.thoughtsCollapsed = !settings.showThinking;
+      active.shellCollapsed = !settings.toolsExpanded;
+      active.reasoningDoneCollapsed = !settings.thinkingExpanded;
+      active.thoughtsDoneCollapsed = !settings.showThinking;
+      active.shellDoneCollapsed = !settings.toolsExpanded;
       void deps.status.publishCard(chatId, active).catch((err) => console.warn("[callbacks]", err?.message ?? err));
     }
   }
@@ -550,6 +556,12 @@ async function handlePreset(deps: BotDeps, cq: TelegramCallbackQuery, chatId: nu
   const active = deps.store.getActiveSession(chatId, threadId);
   if (active) {
     active.activityExpanded = settings.showThinking || settings.showShell || settings.showTools;
+    active.reasoningCollapsed = !settings.thinkingExpanded;
+    active.thoughtsCollapsed = !settings.showThinking;
+    active.shellCollapsed = !settings.toolsExpanded;
+    active.reasoningDoneCollapsed = !settings.thinkingExpanded;
+    active.thoughtsDoneCollapsed = !settings.showThinking;
+    active.shellDoneCollapsed = !settings.toolsExpanded;
     void deps.status.publishCard(chatId, active).catch((err) => console.warn("[callbacks]", err?.message ?? err));
   }
   await deps.tg.answerCallbackQuery(cq.id, `🎛 Estilo: ${PRESET_LABELS[preset]}`).catch((err) => console.warn("[callbacks]", err?.message ?? err));
