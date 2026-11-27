@@ -73,6 +73,25 @@ describe("handleCallback", () => {
     expect(true).toBe(true);
   });
 
+  test("repo picker and selection edit the same message", async () => {
+    mkdirSync(join(root, "project"));
+    const deps = makeDeps();
+    const sent: any[] = [];
+    const edited: any[] = [];
+    deps.config.REPOS_DIRECTORY = root;
+    deps.tg.sendRichMessage = async (...args: any[]) => { sent.push(args); return { message_id: 1 }; };
+    deps.tg.editRichMessage = async (...args: any[]) => { edited.push(args); return { message_id: args[1] }; };
+    deps.panels.renderPanel = async () => ({ html: "<b>Panel</b>", keyboard: [] }) as any;
+    deps.sessions.createNewSession = async () => ({}) as any;
+    const cq = (id: string, data: string) => ({ id, from: { id: 1 }, message: { chat: { id: 123 }, message_id: 5 }, data } as any);
+    await handleCallback(deps, cq("1", "panel:new"));
+    expect(sent).toHaveLength(0);
+    expect(edited[0][2]).toContain("Elige el repositorio");
+    await handleCallback(deps, cq("2", "repo:project"));
+    expect(sent).toHaveLength(0);
+    expect(edited[1][2]).toContain("Panel");
+  });
+
   test("handles fs: callback delegation", async () => {
     const deps = makeDeps();
     deps.files.handleCallback = async () => true;

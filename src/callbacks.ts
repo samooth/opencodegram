@@ -770,7 +770,12 @@ async function handlePanel(deps: BotDeps, cq: TelegramCallbackQuery, chatId: num
       await tg.answerCallbackQuery(cq.id).catch((err) => console.warn("[callbacks]", err?.message ?? err));
       const keyboard: InlineKeyboard = repos.map((name) => [{ text: name, callback_data: `repo:${name}` }]);
       keyboard.push([{ text: "🏠 Panel", callback_data: "panel:home" }]);
-      await tg.sendRichMessage(chatId, "Elige el repositorio para la nueva sesión:", { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+      const html = "Elige el repositorio para la nueva sesión:";
+      if (messageId !== undefined) {
+        await tg.editRichMessage(chatId, messageId, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks] repo picker edit failed", err?.message ?? err));
+      } else {
+        await tg.sendRichMessage(chatId, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } });
+      }
       return;
     }
     await tg.answerCallbackQuery(cq.id, "Creando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
@@ -1338,6 +1343,15 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
 
   const cbData = cq.data ?? "";
   const messageId = cq.message?.message_id;
+  const replaceWithPanel = async (mid: number | undefined): Promise<void> => {
+    if (mid === undefined) return;
+    try {
+      const { html, keyboard } = await panels.renderPanel(chatId, threadId);
+      await tg.editRichMessage(chatId, mid, html, { ...threadOpts(threadId), reply_markup: { inline_keyboard: keyboard } }).catch((err) => console.warn("[callbacks] panel edit failed", err?.message ?? err));
+    } catch (err) {
+      console.warn("[callbacks] renderPanel failed", err);
+    }
+  };
   // Chat-wide state changes (delete sessions, shared settings) belong to route
   // admins only, no matter which button dispatched them.
   const adminOnly = ["set:", "cycle:", "preset:", "profile:", "del:", "delsessions:", "delconfirm:"];
@@ -1536,6 +1550,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     await tg.answerCallbackQuery(cq.id, "Creando…").catch((err) => console.warn("[callbacks]", err?.message ?? err));
     try {
       await createNewSession(chatId, false, threadId);
+      await replaceWithPanel(messageId);
     } catch (err) {
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
     }
@@ -1553,7 +1568,7 @@ export async function handleCallback(deps: BotDeps, cq: TelegramCallbackQuery): 
     const directory = resolveRepoDirectory(deps.config, repoName) ?? repoName;
     try {
       await sessions.createNewSession(chatId, false, threadId, directory);
-      await panels.sendPanel(chatId, threadId).catch((err) => console.warn("[callbacks]", err?.message ?? err));
+      await replaceWithPanel(messageId);
     } catch (err) {
       await tg.sendRichMessage(chatId, `❌ ${esc(String(err))}`, threadOpts(threadId));
     }
