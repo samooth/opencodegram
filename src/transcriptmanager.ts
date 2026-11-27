@@ -589,9 +589,17 @@ ${body}
       b.copy_text !== undefined,
     )) ?? [];
     const rows: InlineKeyboard = [primary];
-    if (total > 1) {
+    // cardKeyboard already put navigation in the same row as Stop while the
+    // turn is working. Adding another nav row duplicated ◀ / pagination / ▶.
+    const primaryHasNav = primary.some((b) =>
+      b.callback_data === `tpick:${s.sessionId}` ||
+      (typeof b.callback_data === "string" && b.callback_data.startsWith(`tpage:`)),
+    );
+    if (total > 1 && !primaryHasNav) {
       const nav = navRow(s, page, total);
-      if (page < total - 1) nav.push({ text: t("last"), callback_data: `tpage:${s.sessionId}:${total - 1}` });
+      if (page < total - 1 && !primary.some((b) => b.callback_data === `tpage:${s.sessionId}:${total - 1}`)) {
+        nav.push({ text: t("last"), callback_data: `tpage:${s.sessionId}:${total - 1}` });
+      }
       rows.push(nav);
     }
     const more: InlineButton[] = [];

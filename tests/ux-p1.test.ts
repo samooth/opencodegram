@@ -110,6 +110,19 @@ describe("P1.1 compact card and reading mode", () => {
     expect(flat.some((b) => b.text === "▾ Más")).toBe(true);
   });
 
+  test("working compact card has a single navigation row (with Stop)", () => {
+    const { transcript } = makeHarness();
+    const a = createTurnActivity();
+    a.thoughts = 2;
+    const s = makeSession({ activity: a, cardView: { compact: true, reading: false, showResources: true, unified: false } });
+    const kb = transcript.compactCardKeyboard(7, s, 1, 4, { working: true });
+    const flat = kb.flat();
+    expect(flat.filter((b) => b.text === "◀")).toHaveLength(1);
+    expect(flat.filter((b) => b.text === "▶")).toHaveLength(1);
+    expect(flat.filter((b) => (b.callback_data ?? "").startsWith("tpick:"))).toHaveLength(1);
+    expect(flat.some((b) => b.callback_data === "panel:stop")).toBe(true);
+  });
+
   test("only one Detalles toggle appears in the compact keyboard", () => {
     const { transcript } = makeHarness();
     const a = createTurnActivity();
