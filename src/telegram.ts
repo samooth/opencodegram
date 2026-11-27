@@ -354,6 +354,12 @@ export class TelegramClient {
   editRichMessage(chatId: number, messageId: number, html: string, opts: Record<string, unknown> = {}): Promise<unknown> {
     if (this.editBackoffActive(chatId)) return Promise.resolve(undefined);
     const safe = sanitizeUtf8(stripDraftOnlyRichBlocks(html));
+    // Never blank an existing card down to just its header: Telegram then
+    // shows an "empty" message. Keep the previous content instead.
+    if (isHeaderOnlyRichMessage(safe)) {
+      console.warn("[telegram] skipped header-only edit", { chatId, messageId });
+      return Promise.resolve(undefined);
+    }
     // editMessageText must not carry message_thread_id: Telegram rejects it
     // with a 400 because the message_id already identifies the topic message.
     const { message_thread_id: _threadId, ...editOpts } = opts;

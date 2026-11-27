@@ -26,3 +26,17 @@ describe("editRichMessage in topics", () => {
     expect(body.reply_markup).toBeDefined();
   });
 });
+
+describe("empty edit guard", () => {
+  test("does not blank a card down to its header", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response(JSON.stringify({ ok: true, result: true }), { status: 200 });
+    }) as any;
+    const tg = new TelegramClient("token");
+    const header = '<p>🖥 <b>AtlasKV</b> · <code>ses_e0a5</code> · <code>opencode/hy4-flash-free</code> (high)</p>';
+    await tg.editRichMessage(-100, 77, header);
+    expect(called).toBe(false);
+  });
+});
