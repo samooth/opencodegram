@@ -62,6 +62,15 @@ describe("turn activity counters", () => {
     expect(out).not.toContain("1 lectura");
   });
 
+  test("execute input shows a readable code preview, not raw JSON", () => {
+    const a = createTurnActivity();
+    const input = JSON.stringify({ code: "const body = entregado: 63 inserciones\n\n| Comprobación | Resultado |" });
+    recordTool(a, "execute", input, { at: 1000, toolId: "e1" });
+    const out = renderActivity(a, "high", false, 1100, true);
+    expect(out).toContain("const body = entregado: 63 inserciones");
+    expect(out).not.toContain('{"code"');
+  });
+
   test("bus.send calls stay out of the activity block", async () => {
     const a = createTurnActivity();
     const code = 'await tools.bus.send({ to: "dev", type: "REPORT", subject: "ok" })';

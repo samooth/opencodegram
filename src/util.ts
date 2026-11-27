@@ -230,6 +230,18 @@ export function isAgentMonologue(text: string): boolean {
   return AGENT_MONOLOGUE.test(text.trim());
 }
 
+/** Readable preview of an `execute` tool input ({ code: "..." }). */
+export function executeCodeSummary(input: string, max = 140): string {
+  try {
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    if (typeof parsed?.code === "string") {
+      const first = parsed.code.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+      return first ? truncate(first, max) : "";
+    }
+  } catch { /* not JSON */ }
+  return "";
+}
+
 export function toolIcon(name: string): string {
   const n = (name || "").toLowerCase();
   if (n.includes("read")) return "📖";

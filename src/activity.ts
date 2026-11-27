@@ -6,7 +6,7 @@
  * extra messages or callbacks are needed.
  */
 import { parseBusSend } from "./status-render.js";
-import { esc, stripAgentMonologue } from "./util.js";
+import { esc, executeCodeSummary, stripAgentMonologue } from "./util.js";
 import { describeToolInput } from "./editutil.js";
 import type { CardVerbosity } from "./settings.js";
 
@@ -161,7 +161,8 @@ function toolDetail(kind: ActivityKind, input: string): string {
     if (kind === "search") return target.hint || target.file || input;
     return target.file ? (target.hint ? `${target.file}:${target.hint}` : target.file) : input;
   }
-  return input;
+  const code = executeCodeSummary(input);
+  return code || input;
 }
 
 /** Replace the placeholder detail with the real input from session.tool.called. */
