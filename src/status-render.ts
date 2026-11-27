@@ -4,7 +4,7 @@ import type { SessionStore } from "./store.js";
 import type { TranscriptManager } from "./transcriptmanager.js";
 import type { TelegramClient } from "./telegram.js";
 import type { ChatSettings } from "./settings.js";
-import { describeToolInput, isEditTool, editStats } from "./editutil.js";
+import { describeToolInput, isEditTool, isTodoTool, editStats } from "./editutil.js";
 import { contextUsage, esc, isAgentMonologue, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
 import { isBusCallText, isBusToolName, parseBusEnvelope } from "./busplugin.js";
@@ -380,8 +380,9 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
   const order: string[] = [];
   const counts = new Map<string, { count: number; last: ChatSession["toolCallDetails"][number] }>();
   for (const d of details) {
-    // Skills are shown by renderSkillBlock, never as shell commands.
-    if ((d.name || "").toLowerCase() === "skill") continue;
+    // Skills are shown by renderSkillBlock and todos by renderTodos; neither
+    // belongs in the virtual shell transcript.
+    if ((d.name || "").toLowerCase() === "skill" || isTodoTool(d.name)) continue;
     if (toCommand(d.name, d.input) === "bus") continue;
     const cmd = toCommand(d.name, d.input);
     const existing = counts.get(cmd);
@@ -438,9 +439,12 @@ export function renderSkillBlock(details: ChatSession["toolCallDetails"]): strin
 
 /** Compact toolcall statistics line with per-type icons, meant for the card footer. */
 export function renderToolStats(details: ChatSession["toolCallDetails"]): string {
-  if (!details.length) return "";
+  // Todo bookkeeping gets its own checklist line; counting it as an edit or
+  // as a shell command made the bottom stats misleading.
+  const visible = details.filter((d) => !isTodoTool(d.name));
+  if (!visible.length) return "";
   const count = (pred: (d: ChatSession["toolCallDetails"][number]) => boolean): number =>
-    details.filter(pred).length;
+    visible.filter(pred).length;
   const n = (name: string) => (d: ChatSession["toolCallDetails"][number]) => {
     const l = (d.name || "").toLowerCase();
     return name === "shell" ? isShellTool(d.name)

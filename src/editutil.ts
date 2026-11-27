@@ -1,7 +1,14 @@
 export type DiffStyle = "simple" | "unified";
 
+/** Todo bookkeeping is rendered as its own checklist, never as a file edit. */
+export function isTodoTool(name: string): boolean {
+  const n = (name || "").toLowerCase();
+  return n === "todo" || n === "todowrite" || n === "todoread";
+}
+
 export function isEditTool(name: string, input?: string): boolean {
   const normalized = name.toLowerCase();
+  if (isTodoTool(name)) return false;
   if (
     normalized === "edit" ||
     normalized.includes("edit") ||

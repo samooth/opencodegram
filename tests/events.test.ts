@@ -45,6 +45,55 @@ function makeDeps() {
 }
 
 describe("handleEvent", () => {
+  test("captures todos from the todowrite tool (OpenCode 2.3.0 has no todo.updated)", async () => {
+    const { deps, store } = makeDeps();
+    const session = {
+      sessionId: "ses_todo", buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [],
+      stopped: false, targetChatId: 100,
+    } as any;
+    store.sessionsById.set("ses_todo", session);
+    store.chatBySession.set("ses_todo", 100);
+
+    await handleEvent({
+      type: "session.tool.called",
+      data: {
+        sessionID: "ses_todo", id: "call_1", name: "todowrite",
+        input: { todos: [
+          { content: "Preparar", status: "completed" },
+          { content: "Revisar", status: "in_progress" },
+          { content: "Terminar", status: "pending" },
+        ] },
+      },
+    }, deps);
+    expect(store.getTodos("ses_todo")).toEqual([
+      { content: "Preparar", status: "completed", priority: "medium" },
+      { content: "Revisar", status: "in_progress", priority: "medium" },
+      { content: "Terminar", status: "pending", priority: "medium" },
+    ]);
+
+    await handleEvent({
+      type: "session.tool.success",
+      data: {
+        sessionID: "ses_todo", id: "call_1", name: "todowrite",
+        metadata: { todos: [
+          { content: "Preparar", status: "completed" },
+          { content: "Revisar", status: "completed" },
+          { content: "Terminar", status: "completed" },
+        ] },
+      },
+    }, deps);
+    expect(store.getTodos("ses_todo").every((t) => t.status === "completed")).toBe(true);
+  });
+
+  test("keeps supporting the legacy todo.updated event", async () => {
+    const { deps, store } = makeDeps();
+    await handleEvent({
+      type: "todo.updated",
+      data: { sessionID: "ses_legacy", todos: [{ content: "Viejo", status: "in_progress", priority: "high" }] },
+    }, deps);
+    expect(store.getTodos("ses_legacy")).toEqual([{ content: "Viejo", status: "in_progress", priority: "high" }]);
+  });
+
   test("coalesces text deltas into a single updateStatus call", async () => {
     const { deps, store } = makeDeps();
     let updates = 0;

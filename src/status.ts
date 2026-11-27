@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ChatSession, CardView } from "./types.js";
 import { pendingEditsKey } from "./store.js";
 import type { ChatSettings } from "./settings.js";
-import { isEditTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
+import { isEditTool, isTodoTool, extractEditFile, formatEditDiff, editStats } from "./editutil.js";
 import { clampText, colorDiff, copyTextButton, esc, markdownToHtml, sessionHeader, stripAgentMonologue, stripRestatedPrompt, threadOpts, toolIcon, truncate, truncateMiddle } from "./util.js";
 import { throttleGap } from "./ratethrottle.js";
 import { RICH_MESSAGE_LIMIT, STATUS_BACKGROUND_GAP_MS, STATUS_MIN_UPDATE_GAP_MS } from "./constants.js";
@@ -115,7 +115,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     // ⚡ Virtual shell: visible while working (unless showShell is off), even
     // when empty, so the tool transcript slot is there from the first token.
     if (settings.showShell) {
-      const shellDetails = s.toolCallDetails.filter((d) => (d.name || "").toLowerCase() !== "skill");
+      const shellDetails = s.toolCallDetails.filter((d) => (d.name || "").toLowerCase() !== "skill" && !isTodoTool(d.name));
       const count = shellDetails.length;
       if (count) {
         const collapsed = s.shellCollapsed === true;
@@ -216,7 +216,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
     }
 
     // 3) Shell virtual (all toolcalls as `$ <cmd>` lines).
-    const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill");
+    const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill" && !isTodoTool(detail.name));
     if (settings.showTools && settings.showShell && virtualDetails.length) {
       const sc = s.shellDoneCollapsed === true;
       lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:done:shell:${s.sessionId}">⚡ Shell (${virtualDetails.length}) ${sc ? "▸" : "▾"}</tg-button></tg-button-row>`);
@@ -548,7 +548,7 @@ export function createStatusManager({ tg, threadOptsFor, getSettings, pendingEdi
       }
 
       let shellBlock = "";
-      const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill");
+      const virtualDetails = s.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && (detail.name || "").toLowerCase() !== "skill" && !isTodoTool(detail.name));
       if (settings.showTools && settings.showShell && virtualDetails.length) {
         const shellText = renderVirtualShell(virtualDetails, 180);
         shellBlock = `<blockquote${settings.shellExpanded ? "" : " expandable"}>⚡ Shell (${virtualDetails.length})\n<pre language='bash'>${esc(shellText)}</pre></blockquote>`;
@@ -792,7 +792,7 @@ ${esc(r)}</blockquote>`);
         const activityBlock = renderActivity(target.activity, settings.cardVerbosity, true, Date.now(), false, settings.showTools);
         if (activityBlock) lines.push(activityBlock);
       }
-      const virtualDetails = target.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input));
+      const virtualDetails = target.toolCallDetails.filter((detail) => !isEditTool(detail.name, detail.input) && !isTodoTool(detail.name));
       const editDetails = target.toolCallDetails.filter((detail) => isEditTool(detail.name, detail.input));
       if (settings.showTools && virtualDetails.length) {
         const shellText = renderVirtualShell(virtualDetails, 8000);

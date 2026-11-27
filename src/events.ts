@@ -236,6 +236,9 @@ async function applyToolEvent(
   const { findSessionById, resolveChatId } = store;
   const e = event as { type: string; data?: Record<string, unknown> };
   const sessionId = e.data?.sessionID as string | undefined;
+  // OpenCode 2.3.0 reports todo changes through the `todowrite` tool, not a
+  // separate event. Capture them here so the card checklist stays in sync.
+  if (sessionId) rememberTodosFromTool(deps, sessionId, e.data ?? {});
   const s = sessionId ? findSessionById(sessionId) : undefined;
   const chatId = resolveChatId(sessionId);
   if (!s || chatId === undefined || !sessionId) return;
@@ -1283,22 +1286,48 @@ const handleSessionExecutionFailed: EventHandler = async (event, deps) => {
   if (sid) store.setSessionStatus(sid, "idle");
 };
 
-const handleTodoUpdated: EventHandler = async (event, deps) => {
-  const { store, updateStatus } = deps;
-  const e = event as { type: string; data?: Record<string, unknown> };
-  const sessionId = (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined;
-  const raw = Array.isArray(e.data?.todos) ? (e.data.todos as Array<Record<string, unknown>>) : [];
-  if (!sessionId) return;
-  const todos: TodoItem[] = raw.map((t) => ({
+/** Normalize the todo items carried by either a todo event or `todowrite`. */
+function todoItemsFrom(raw: unknown): TodoItem[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as Array<Record<string, unknown>>).map((t) => ({
     content: String(t.content ?? ""),
     status: String(t.status ?? "pending"),
     priority: String(t.priority ?? "medium"),
   }));
+}
+
+const handleTodoUpdated: EventHandler = async (event, deps) => {
+  const { store, updateStatus } = deps;
+  const e = event as { type: string; data?: Record<string, unknown> };
+  const sessionId = (e.data?.sessionID ?? (e.data?.session as { id?: string } | undefined)?.id) as string | undefined;
+  const todos = todoItemsFrom(e.data?.todos);
+  if (!sessionId || !todos.length) return;
   store.rememberTodos(sessionId, todos);
   const chatId = store.resolveChatId(sessionId);
   const s = store.findSessionById(sessionId);
   if (chatId !== undefined && s) updateStatus(chatId, s, true).catch(() => {});
 };
+
+/**
+ * OpenCode 2.3.0 does not emit a dedicated `todo.updated` event: the agent
+ * calls the `todowrite` tool instead, and the items travel in
+ * `session.tool.called` (`input.todos`) / `session.tool.success`
+ * (`metadata.todos`). Mirror those into the store so the same checklist
+ * renders in the card regardless of which event shape OpenCode uses.
+ */
+function rememberTodosFromTool(deps: EventsDeps, sessionId: string, d: Record<string, unknown>): boolean {
+  const name = String(d.name ?? "").toLowerCase();
+  if (name !== "todowrite" && name !== "todo") return false;
+  const input = (d.input ?? {}) as Record<string, unknown>;
+  const metadata = (d.metadata ?? {}) as Record<string, unknown>;
+  const raw = Array.isArray(input.todos) ? input.todos
+    : Array.isArray(metadata.todos) ? metadata.todos
+    : undefined;
+  const todos = todoItemsFrom(raw);
+  if (!todos.length) return false;
+  deps.store.rememberTodos(sessionId, todos);
+  return true;
+}
 
 const handleMcpEvent: EventHandler = async (event, deps) => {
   const { store, updateStatus } = deps;
