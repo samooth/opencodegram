@@ -183,7 +183,12 @@ describe("virtual shell and tool stats", () => {
     expect(formatBusCall(call!)).toContain("→ F4 dev REPORT · Puerta encolada");
     const details = [{ id: "1", name: "execute", input: JSON.stringify({ code }), status: "success" }] as any;
     expect(renderVirtualShell(details, 200)).not.toContain("tools.bus");
-    expect(renderBusBlock(details)).toContain("📨 bus:send → F4 dev REPORT · Puerta encolada");
+    const block = renderBusBlock(details, "ses_x");
+    expect(block).toContain('data="block:bus:ses_x:0"');
+    expect(block).toContain("📨 bus:send → F4 dev REPORT · Puerta encolada");
+    expect(block).toContain("Puerta encolada</b>");
+    // Collapsed: button stays, content disappears.
+    expect(renderBusBlock(details, "ses_x", { 0: true })).not.toContain("Puerta encolada</b>");
   });
 
   test("accumulates identical commands instead of overwriting", async () => {

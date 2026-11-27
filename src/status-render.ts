@@ -7,6 +7,7 @@ import type { ChatSettings } from "./settings.js";
 import { describeToolInput, isEditTool, editStats } from "./editutil.js";
 import { contextUsage, esc, isAgentMonologue, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
+import { isBusToolName, parseBusEnvelope } from "./busplugin.js";
 
 export function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -252,7 +253,7 @@ export function parseBusCall(code: string): { method: string; args: Record<strin
   const m = code.match(/tools\.bus\.(\w+)\s*\(\s*\{([\s\S]*?)\}\s*\)/);
   if (!m) return null;
   const args: Record<string, string> = {};
-  for (const key of ["to", "type", "subject", "alias", "role", "bus", "who", "sessionID", "limit"]) {
+  for (const key of ["to", "type", "subject", "body", "alias", "role", "bus", "who", "sessionID", "limit"]) {
     const a = m[2].match(new RegExp(`${key}\\s*:\\s*["']([^"']*)["']`));
     if (a) args[key] = a[1];
   }
@@ -277,14 +278,49 @@ export function formatBusCall(call: { method: string; args: Record<string, strin
 }
 
 /** All bus calls as their own bottom section, never mixed into the shell. */
-export function renderBusBlock(details: ChatSession["toolCallDetails"]): string {
+export function renderBusBlock(
+  details: ChatSession["toolCallDetails"],
+  sessionId: string,
+  collapsed: Record<number, boolean> = {},
+): string {
   const lines: string[] = [];
+  let idx = 0;
   for (const d of details) {
-    if ((d.name || "").toLowerCase() !== "execute") continue;
+    let call: ReturnType<typeof parseBusCall> = null;
     let code = "";
-    try { code = String((JSON.parse(d.input || "{}") as Record<string, unknown>).code ?? ""); } catch { /* ignore */ }
-    const call = parseBusCall(code);
-    if (call) lines.push(`<p><i>📨 ${esc(formatBusCall(call))}</i></p>`);
+    if (isBusToolName(d.name)) {
+      // Native bus_<method> tool (codemode off): its input IS the args.
+      try {
+        const parsed = JSON.parse(d.input || "{}") as Record<string, unknown>;
+        call = { method: d.name.replace(/^bus[_-]/i, "").toLowerCase(), args: {} };
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === "string") call.args[k] = v;
+        }
+      } catch { /* ignore */ }
+    } else if ((d.name || "").toLowerCase() === "execute") {
+      try { code = String((JSON.parse(d.input || "{}") as Record<string, unknown>).code ?? ""); } catch { /* ignore */ }
+      call = parseBusCall(code);
+    }
+    if (!call) continue;
+    const i = idx++;
+    const open = !collapsed[i];
+    const label = esc(formatBusCall(call));
+    lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:bus:${esc(sessionId)}:${i}">📨 ${label} ${open ? "▾" : "▸"}</tg-button></tg-button-row>`);
+    if (open) {
+      const a = call.args;
+      const env = parseBusEnvelope(a.body ?? "");
+      const content = [
+        a.subject ? `<b>${esc(a.subject)}</b>` : "",
+        env ? `📮 <code>${esc([env.from, env.to, env.id, env.type].filter(Boolean).join(" → "))}</code>` : "",
+        env?.replyTo ? `↩ ${esc(env.replyTo)}` : "",
+        a.body ? esc(truncate(a.body, 900)) : "",
+        a.alias ? `alias: <code>${esc(a.alias)}</code>` : "",
+        a.role ? `role: <code>${esc(a.role)}</code>` : "",
+        a.sessionID ? `session: <code>${esc(a.sessionID)}</code>` : "",
+        a.bus ? `bus: <code>${esc(a.bus)}</code>` : "",
+      ].filter(Boolean).join("\n") || esc(truncate(code, 900));
+      lines.push(`<blockquote>${content}</blockquote>`);
+    }
   }
   return lines.join("");
 }

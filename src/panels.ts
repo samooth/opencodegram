@@ -1,4 +1,5 @@
 import { RICH_MESSAGE_LIMIT } from "./constants.js";
+import { busPluginInstalled, isBusToolName } from "./busplugin.js";
 import { t } from "./i18n.js";
 import { dtrace } from "./debuglog.js";
 type SessionRow = { id?: string; title?: string; model?: { providerID?: string; id?: string }; location?: { directory?: string }; directory?: string };
@@ -463,6 +464,9 @@ export function createPanels({ tg, oc, config, getActiveSession, restoreActiveSe
       ...(ocInfo ? [["OpenCode", `v${esc((ocInfo as { version?: string }).version ?? "")} · pid ${(ocInfo as { pid?: number }).pid ?? ""} · sessions ${sessionCount}`] as [string, string]] : []),
       ["Host", `CPU: ${cpuCount} cores · Load: ${esc(load)} · Mem: ${freeMem}/${totalMem} GB`],
       ...(gpu ? [["GPU", gpu] as [string, string]] : []),
+      ["Agent bus", busPluginInstalled()
+        ? `✅ instalado · ${s?.toolCallDetails.filter((d) => isBusToolName(d.name)).length ?? 0} tools este turno`
+        : "—"],
     ];
     const unreachable = !ocInfo && s?.sessionId;
     const linesHtml = pairs.map(([k, v]) => `<p><b>${esc(k)}</b>: ${v}</p>`).join("\n");
