@@ -199,3 +199,24 @@ describe("separate answer delivery", () => {
     expect(wantsSeparateAnswer({ ...base, showFinalInCard: true }, "x".repeat(3000))).toBe(false);
   });
 });
+
+describe("TUI prompt routing", () => {
+  test("a TUI prompt goes to the card prompt line, not a standalone message", async () => {
+    const { deps, store } = makeDeps();
+    deps.settings.get = (() => ({ showTuiPrompts: true })) as any;
+    deps.startStatus = (async () => {}) as any;
+    deps.publishCard = (async () => {}) as any;
+    const s = {
+      sessionId: "ses_tui", buffer: "", reasoningBuffer: "", toolCalls: [], toolCallDetails: [],
+      stopped: false, targetChatId: 100,
+    } as any;
+    store.sessionsById.set("ses_tui", s);
+    store.chatBySession.set("ses_tui", 100);
+    await handleEvent({
+      type: "session.inbox.enqueued",
+      data: { sessionID: "ses_tui", inboxID: "msg_tui_1", item: { type: "user", payload: { text: "explica tu progreso" } } },
+    } as any, deps);
+    expect((deps.tg as any).sent).toHaveLength(0);
+    expect(store.lastPromptBySession.get("ses_tui")).toBe("explica tu progreso");
+  });
+});

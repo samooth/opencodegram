@@ -329,7 +329,13 @@ const handleSessionInbox: EventHandler = async (event, deps) => {
     const isAgentMessage = /^\[FROM @[^|]+\|\s*TO @/i.test(text);
     if (text && inboxId && !isTelegramEcho && !isAgentMessage && !publishedTuiPrompts.has(inboxId)) {
       publishedTuiPrompts.add(inboxId);
-      if (sid) noteUserPrompt(sid, text);
+      if (sid) {
+        noteUserPrompt(sid, text);
+        // Put the prompt on the card instead of sending a standalone "⌨️ TUI:"
+        // message: the card already has a 📝 line at the top, so a separate
+        // notice duplicated it and flooded the group.
+        deps.store.rememberLastPrompt?.(sid, text);
+      }
       // TUI prompts skip the Telegram message path: without this the turn had
       // no promptStartTime and the footer showed "—" for duration/tok/s/ttft.
       s.promptStartTime = Date.now();
@@ -337,15 +343,6 @@ const handleSessionInbox: EventHandler = async (event, deps) => {
       if (publishedTuiPrompts.size > 500) {
         const oldest = publishedTuiPrompts.values().next().value;
         if (oldest) publishedTuiPrompts.delete(oldest);
-      }
-      // In unified mode the card already carries the prompt at the top:
-      // a standalone TUI notice was the "extra 📌 message with a loose
-      // thought" the user saw. Keep it only outside unified.
-      if (settings.get(chatId).displayMode !== "unified") {
-        const icon = settings.get(chatId).displayMode === "unified" ? "🧩" : "🖥";
-        const html = sessionHeader(s, sid, settings.get(chatId).sessionNameInMessages, icon)
-          + `<blockquote>⌨️ <b>TUI</b>: ${esc(truncate(text, 500))}</blockquote>`;
-        await tg.sendRichMessage(chatId, html, store.threadOptsFor(s)).catch((err) => console.warn("[events] TUI prompt publish failed", String(err)));
       }
     }
   }
