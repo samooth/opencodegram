@@ -1029,14 +1029,12 @@ async function handleResourcesToggle(deps: BotDeps, cq: TelegramCallbackQuery, c
 }
 
 async function handleBlockToggle(deps: BotDeps, cq: TelegramCallbackQuery, chatId: number, _threadId: number | undefined, _messageId: number | undefined, data: string) {
-  const bus = data.match(/^block:bus:(.+):(\d+)$/);
+  const bus = data.match(/^block:bus:(.+?)(?::\d+)?$/);
   if (bus) {
     await deps.tg.answerCallbackQuery(cq.id).catch(() => {});
     const s = deps.store.findSessionById(bus[1]);
     if (!s) return;
-    const i = Number(bus[2]);
-    s.busCollapsed = s.busCollapsed ?? {};
-    s.busCollapsed[i] = !s.busCollapsed[i];
+    s.busCollapsed = !s.busCollapsed;
     const refresh = s.statusFinished ? deps.status.publishCard(chatId, s) : deps.status.updateStatus(chatId, s, true);
     await refresh.catch((err) => console.warn("[callbacks]", err?.message ?? err));
     return;

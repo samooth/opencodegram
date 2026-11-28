@@ -109,7 +109,8 @@ export type ChatSession = {
   /** Generation counter: stale deltas from a previous turn are discarded. */
   turnGeneration?: number;
   /** Per-line collapse state for agent-bus messages in the card. */
-  busCollapsed?: Record<number, boolean>;
+  /** Single collapsible agent-bus section for the turn. */
+  busCollapsed?: boolean;
   /** Turn for which the edit-transcript block was already added (dedupe). */
   lastEditBlockTurn?: number;
   /** Collapse state for the finished card block toggles. */

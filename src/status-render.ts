@@ -8,7 +8,7 @@ import { describeToolInput, isEditTool, isTodoTool, editStats } from "./editutil
 import { isFormTool } from "./util.js";
 import { contextUsage, esc, isAgentMonologue, markdownToHtml, toolIcon, truncate } from "./util.js";
 import { classifyFailure } from "./autoretry.js";
-import { isBusCallText, isBusToolName, parseBusEnvelope } from "./busplugin.js";
+import { isBusCallText, isBusToolName, parseBusCalls, parseBusEnvelope, type BusCall } from "./busplugin.js";
 
 export function truncateText(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
@@ -266,16 +266,9 @@ export function parseBusSend(code: string): { to: string; type: string; subject:
   return { to, type, subject };
 }
 
-/** Any tools.bus.<method>({...}) call inside an `execute` code block. */
-export function parseBusCall(code: string): { method: string; args: Record<string, string> } | null {
-  const m = code.match(/tools\.bus\.(\w+)\s*\(\s*\{([\s\S]*?)\}\s*\)/);
-  if (!m) return null;
-  const args: Record<string, string> = {};
-  for (const key of ["to", "type", "subject", "body", "alias", "role", "bus", "who", "sessionID", "limit"]) {
-    const a = m[2].match(new RegExp(`${key}\\s*:\\s*["']([^"']*)["']`));
-    if (a) args[key] = a[1];
-  }
-  return { method: m[1], args };
+/** First bus call in a code block (compatibility helper). */
+export function parseBusCall(code: string): BusCall | null {
+  return parseBusCalls(code)[0] ?? null;
 }
 
 /** Human-readable label for a bus call (one line, no JS). */
@@ -299,48 +292,43 @@ export function formatBusCall(call: { method: string; args: Record<string, strin
 export function renderBusBlock(
   details: ChatSession["toolCallDetails"],
   sessionId: string,
-  collapsed: Record<number, boolean> = {},
+  collapsed = false,
 ): string {
-  const lines: string[] = [];
-  let idx = 0;
+  const calls: BusCall[] = [];
   for (const d of details) {
-    let call: ReturnType<typeof parseBusCall> = null;
-    let code = "";
     if (isBusToolName(d.name)) {
       // Native bus_<method> tool (codemode off): its input IS the args.
       try {
         const parsed = JSON.parse(d.input || "{}") as Record<string, unknown>;
-        call = { method: d.name.replace(/^bus[_-]/i, "").toLowerCase(), args: {} };
-        for (const [k, v] of Object.entries(parsed)) {
-          if (typeof v === "string") call.args[k] = v;
-        }
+        const args: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) if (typeof v === "string") args[k] = v;
+        calls.push({ method: d.name.replace(/^bus[_-]/i, "").toLowerCase(), args });
       } catch { /* ignore */ }
     } else if ((d.name || "").toLowerCase() === "execute") {
+      let code = "";
       try { code = String((JSON.parse(d.input || "{}") as Record<string, unknown>).code ?? ""); } catch { /* ignore */ }
-      call = parseBusCall(code);
+      calls.push(...parseBusCalls(code));
     }
-    if (!call) continue;
-    const i = idx++;
-    const open = !collapsed[i];
-    const label = esc(formatBusCall(call));
-    lines.push(`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:bus:${esc(sessionId)}:${i}">📨 ${label} ${open ? "▾" : "▸"}</tg-button></tg-button-row>`);
-    if (open) {
-      const a = call.args;
+  }
+  if (!calls.length) return "";
+  // One collapsible section for the whole turn, whatever the bus method.
+  const rows = [`<tg-button-row align="left"><tg-button type="callback_data" style="link" data="block:bus:${esc(sessionId)}">📨 agent-bus (${calls.length}) ${collapsed ? "▸" : "▾"}</tg-button></tg-button-row>`];
+  if (!collapsed) {
+    const body = calls.map((c) => {
+      const a = c.args;
       const env = parseBusEnvelope(a.body ?? "");
-      const content = [
-        a.subject ? `<b>${esc(a.subject)}</b>` : "",
-        env ? `📮 <code>${esc([env.from, env.to, env.id, env.type].filter(Boolean).join(" → "))}</code>` : "",
-        env?.replyTo ? `↩ ${esc(env.replyTo)}` : "",
-        a.body ? esc(truncate(a.body, 900)) : "",
+      const meta = [
+        env ? `📮 ${esc([env.from, env.to, env.id, env.type].filter(Boolean).join(" → "))}` : "",
+        a.replyTo ? `↩ ${esc(a.replyTo)}` : "",
         a.alias ? `alias: <code>${esc(a.alias)}</code>` : "",
         a.role ? `role: <code>${esc(a.role)}</code>` : "",
         a.sessionID ? `session: <code>${esc(a.sessionID)}</code>` : "",
-        a.bus ? `bus: <code>${esc(a.bus)}</code>` : "",
-      ].filter(Boolean).join("\n") || esc(truncate(code, 900));
-      lines.push(`<blockquote>${content}</blockquote>`);
-    }
+      ].filter(Boolean).join(" · ");
+      return `<p>${esc(formatBusCall(c))}</p>${meta ? `<p><i>${meta}</i></p>` : ""}${a.body ? `<p>${esc(truncate(a.body, 500))}</p>` : ""}`;
+    }).join("\n");
+    rows.push(`<blockquote>${body}</blockquote>`);
   }
-  return lines.join("");
+  return rows.join("");
 }
 
 /**
@@ -365,8 +353,9 @@ export function renderVirtualShell(details: ChatSession["toolCallDetails"], limi
     }
     if (n === "execute") {
       const code = parseShellCommand(input ?? "") ?? "";
-      // Agent-bus calls are rendered in their own section (renderBusBlock).
-      if (parseBusCall(code)) return "bus";
+      // Agent-bus calls are rendered in their own section (renderBusBlock),
+      // even when the code uses a variable for the message array.
+      if (isBusCallText(code)) return "bus";
       const firstLine = code.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
       return firstLine ? `execute ${firstLine}` : "execute";
     }

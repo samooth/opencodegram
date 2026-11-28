@@ -184,11 +184,12 @@ describe("virtual shell and tool stats", () => {
     const details = [{ id: "1", name: "execute", input: JSON.stringify({ code }), status: "success" }] as any;
     expect(renderVirtualShell(details, 200)).not.toContain("tools.bus");
     const block = renderBusBlock(details, "ses_x");
-    expect(block).toContain('data="block:bus:ses_x:0"');
-    expect(block).toContain("📨 bus:send → F4 dev REPORT · Puerta encolada");
-    expect(block).toContain("Puerta encolada</b>");
+    expect(block).toContain('data="block:bus:ses_x"');
+    expect(block).toContain("📨 agent-bus (1)");
+    expect(block).toContain("bus:send → F4 dev REPORT · Puerta encolada");
+    expect(block).toContain("Puerta encolada");
     // Collapsed: button stays, content disappears.
-    expect(renderBusBlock(details, "ses_x", { 0: true })).not.toContain("Puerta encolada</b>");
+    expect(renderBusBlock(details, "ses_x", true)).not.toContain("Puerta encolada");
   });
 
   test("accumulates identical commands instead of overwriting", async () => {

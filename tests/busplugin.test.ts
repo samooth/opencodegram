@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { busPluginInstalled, isBusCallText, isBusToolName, parseBusEnvelope } from "../src/busplugin.js";
+import { busPluginInstalled, isBusCallText, isBusToolName, parseBusCalls, parseBusEnvelope } from "../src/busplugin.js";
+import { renderVirtualShell } from "../src/status-render.js";
 import { renderBusBlock } from "../src/status-render.js";
 
 describe("agent-bus plugin support", () => {
@@ -28,11 +29,33 @@ describe("agent-bus plugin support", () => {
       },
     ] as any;
     const html = renderBusBlock(details, "ses_x");
-    expect(html).toContain('data="block:bus:ses_x:0"');
-    expect(html).toContain("📨 bus:alias nginx-writer (dev)");
+    expect(html).toContain('data="block:bus:ses_x"');
+    expect(html).toContain("📨 agent-bus (1)");
+    expect(html).toContain("bus:alias nginx-writer (dev)");
     expect(html).not.toContain("{" );
   });
 
+
+  test("groups several bus:send calls that use a message array", () => {
+    const code = [
+      'const msgs = [',
+      '  { to: "AtlasKV dev", type: "DECISION", replyTo: "MSG-1", subject: "Ajusta el guard de VRAM", body: "Medido 3126/4715 MiB" },',
+      '  { to: "AtlasKV dev", type: "ALERT", subject: "Contraprueba", body: "Simular free por debajo del umbral" },',
+      '];',
+      'for (const msg of msgs) await tools.bus.send(msg);',
+    ].join("\n");
+    const calls = parseBusCalls(code);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].args.to).toBe("AtlasKV dev");
+    expect(calls[0].args.replyTo).toBe("MSG-1");
+    const details = [{ id: "1", name: "execute", input: JSON.stringify({ code }), status: "success" }] as any;
+    const html = renderBusBlock(details, "ses_x");
+    expect(html).toContain("📨 agent-bus (2)");
+    expect(html).toContain("Ajusta el guard de VRAM");
+    expect(html).toContain("Contraprueba");
+    expect(html).not.toContain("const msgs");
+    expect(renderVirtualShell(details, 200)).not.toContain("tools.bus");
+  });
   test("plugin detection returns a boolean without throwing", () => {
     expect(typeof busPluginInstalled()).toBe("boolean");
   });

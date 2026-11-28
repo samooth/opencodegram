@@ -46,6 +46,81 @@ export function isBusToolName(name: string): boolean {
   return /^bus[_-]/i.test(name || "") || /^agentbus/i.test(name || "");
 }
 
+export type BusCall = { method: string; args: Record<string, string> };
+
+const BUS_ARG_KEYS = ["from", "to", "type", "subject", "body", "replyTo", "supersedes", "alias", "role", "bus", "who", "sessionID", "limit"];
+
+function argsFromObject(text: string): Record<string, string> {
+  const args: Record<string, string> = {};
+  for (const key of BUS_ARG_KEYS) {
+    const m = text.match(new RegExp(`\\b${key}\\s*:\\s*(["'\`])([\\s\\S]*?)\\1`));
+    if (m) args[key] = m[2];
+  }
+  return args;
+}
+
+/** Split a `const msgs = [ {...}, {...} ]` literal into its top-level objects. */
+function objectLiterals(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let quote = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === "\\") { i++; continue; }
+      if (ch === quote) quote = "";
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") { quote = ch; continue; }
+    if (ch === "{") { if (depth === 0) start = i; depth++; }
+    else if (ch === "}" && depth > 0) {
+      depth--;
+      if (depth === 0 && start >= 0) { out.push(text.slice(start, i + 1)); start = -1; }
+    }
+  }
+  return out;
+}
+
+/**
+ * Parse every `tools.bus.<method>(...)` call in a code block. Handles both
+ * inline object arguments and variables holding an array of messages, e.g.
+ * `const msgs = [{ to: ..., type: ..., subject: ..., body: ... }]; tools.bus.send(msg)`.
+ */
+export function parseBusCalls(code: string): BusCall[] {
+  if (!isBusCallText(code)) return [];
+  const calls: BusCall[] = [];
+  const seen = new Set<string>();
+  const methodRe = /tools\.bus\.(\w+)\s*\(/gi;
+  let m: RegExpExecArray | null;
+  while ((m = methodRe.exec(code))) {
+    const method = m[1].toLowerCase();
+    const tail = code.slice(m.index + m[0].length);
+    const inline = tail.match(/^\s*\{[\s\S]*?\}\s*\)/);
+    if (inline) {
+      const args = argsFromObject(inline[0]);
+      const key = `${method}:${JSON.stringify(args)}`;
+      if (!seen.has(key)) { seen.add(key); calls.push({ method, args }); }
+      continue;
+    }
+    const variable = tail.match(/^\s*([A-Za-z_$][\w$]*)\s*\)/);
+    if (!variable) continue;
+    const name = variable[1];
+    // `for (const msg of msgs)` sends an alias, not the declared array name.
+    const alias = code.match(new RegExp(`for\\s*\\(\\s*(?:const|let|var)\\s+${name}\\s+of\\s+([\\w$]+)`));
+    const sourceName = alias?.[1] ?? name;
+    const def = code.match(new RegExp(`(?:const|let|var)\\s+${sourceName}\\s*=\\s*([\\s\\S]*?)(?:;|\\n\\s*(?:for|await|return|\\}|$))`));
+    if (!def) continue;
+    for (const obj of objectLiterals(def[1])) {
+      const args = argsFromObject(obj);
+      if (!Object.keys(args).length) continue;
+      const key = `${method}:${JSON.stringify(args)}`;
+      if (!seen.has(key)) { seen.add(key); calls.push({ method, args }); }
+    }
+  }
+  return calls;
+}
+
 export type BusEnvelope = {
   from?: string;
   to?: string;

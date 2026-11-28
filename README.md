@@ -45,7 +45,7 @@ action is reachable from a button, so typing slash commands is optional.
   for web debugging). OpenCode pinned to 2.3.0.
 - **MCP events & tasks** — experimental MCP events, a 🤖 block listing each
   subagent session (ID, title, busy state), the OpenCode `todo` checklist, and
-  agent-bus calls in their own collapsible 📨 section.
+  agent-bus calls grouped in one collapsible 📨 agent-bus section.
 - **Web app** — `/web` opens a private Mission Control page (enabled only when
   `WEB_APP_TOKEN` is set) with live session and metric data; groups get inline
   buttons only.
